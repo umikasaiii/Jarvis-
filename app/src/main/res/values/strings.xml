@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Default (Italian) strings. English can be added under res/values-en/. -->
+<resources>
+    <string name="app_name">JARVIS Mobile</string>
+
+    <string name="tile_label">JARVIS</string>
+
+    <string name="listening_channel_name">Sessione di ascolto</string>
+    <string name="listening_channel_desc">Notifica visibile mentre il microfono è attivo per una sessione avviata da te.</string>
+    <string name="listening_title">JARVIS è in ascolto</string>
+    <string name="listening_text">Sessione avviata da te. Il microfono è attivo.</string>
+
+    <string name="action_talk">Parla</string>
+    <string name="action_interrupt">Interrompi</string>
+    <string name="action_close">Chiudi sessione</string>
+</resources>

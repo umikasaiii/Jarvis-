@@ -1,0 +1,49 @@
+# Security & Threat Model
+
+## Assets to protect
+
+- Home Assistant token; companion-PC token.
+- Sensitive metadata; conversation history; the Obsidian vault; backups.
+- The microphone (must never be silently active).
+
+## Adversaries / threats considered
+
+| Threat | Mitigation |
+|--------|-----------|
+| Malware / other apps reading secrets | Secrets only in Android Keystore-backed store; `allowBackup=false`; secrets excluded from backup/device-transfer rules; never in `BuildConfig`, logs, or the repo. |
+| Secrets leaking via logs | `LogRedactor` masks tokens/emails/IPs/phones; content is logged only as length+hash placeholders; release builds log technical events only. |
+| Model-driven code execution | The model can only call **registered tools**. No shell, no arbitrary Intents/classes/URLs, no dynamic code loading. `calculate` is a hand-written parser, not `eval`. |
+| Over-broad file access | No `MANAGE_EXTERNAL_STORAGE`/`QUERY_ALL_PACKAGES`. Vault access is a single SAF tree URI the user grants; nothing outside it is read. |
+| Unauthorized network egress | Offline path never touches the network. Remote calls happen only under an opt-in `PrivacyProfile`; router records exactly what would be shared before sending. |
+| TLS interception | No trust-all TLS, no certificate bypass. User may install a chosen CA if needed (e.g. self-hosted HA); we never disable verification. |
+| Sensitive action without intent | Policies `HOME_SECURITY`/`DESTRUCTIVE` require confirmation **and** biometrics; security devices are never queued for delayed execution. |
+| Shoulder-surfing / lost device | Optional biometric app lock, session timeout, optional screenshot block on sensitive screens. |
+| Tampered models | SHA-256 verification on import; licenses shown before download; models never auto-downloaded. |
+
+## Controls checklist (§21)
+
+- [x] Secrets in Keystore only; none in `BuildConfig`/repo *(SecretStore lands phase 0+)*.
+- [x] No conversation text in logcat in release; automatic log redaction (`LogRedactor`, tested).
+- [ ] Explicit data export; full data wipe.
+- [ ] Optional biometric lock; session timeout; optional screenshot block.
+- [x] `allowBackup=false`; secrets excluded from backup (`data_extraction_rules.xml`).
+- [x] Strict URI validation; no trust-all TLS; no WebView auth; no dynamic code exec.
+- [ ] Model signature/checksum verification on import *(phase 3)*.
+- [x] SBOM / dependency & license list (`THIRD_PARTY_NOTICES.md`, version catalog).
+
+Legend: [x] designed/partially implemented, [ ] planned. See `CLAUDE.md` phase state.
+
+## Permissions rationale
+
+| Permission | Why | Notes |
+|-----------|-----|-------|
+| `RECORD_AUDIO` | Voice capture | Only inside a user-started, FGS-backed session. |
+| `FOREGROUND_SERVICE` + `_MICROPHONE` | Visible mic use | Android 14+ typed FGS. |
+| `POST_NOTIFICATIONS` | Session notification | Android 13+. |
+| `BLUETOOTH_CONNECT` | Route to AirPods, read device name | No location, no scanning. |
+| `INTERNET`, `ACCESS_NETWORK_STATE` | Opt-in PC/HA only | Unused on the offline path. |
+
+Not requested: `MANAGE_EXTERNAL_STORAGE`, `QUERY_ALL_PACKAGES`,
+`REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`, any Accessibility service. MagicOS
+background-kill guidance lives in `docs/DEVICE_TEST_HONOR_200.md` instead of a
+blanket battery-optimization exemption.

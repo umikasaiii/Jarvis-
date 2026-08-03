@@ -1,0 +1,72 @@
+# Models
+
+No model files are bundled in this repository (§11). They are imported by the
+user on-device via file pickers; the app copies them into app-private storage,
+verifies **SHA-256**, reads GGUF metadata, and shows the model's **license before
+download/import**.
+
+## LLM (llama.cpp, GGUF)
+
+Profiles (§11):
+
+| Profile | Model size | Context | Use |
+|---------|-----------|---------|-----|
+| **ECO** | 0.6B–1.7B quantized | 2048–4096 | Short replies, low power. |
+| **BALANCED** *(default)* | 1.7B–4B quantized | 4096 | Everyday assistant. |
+| **QUALITY** | Largest compatible | 4096+ | Best answers; warns on RAM/heat/battery. |
+
+Suggested starting models (not hard-coded into the product): **Qwen3 1.7B** or
+**Qwen3 4B** GGUF, quantized (e.g. Q4_K_M). The engine reads the chat template
+from GGUF metadata; nothing is built around a single model.
+
+### RAM-based recommendation (validate on device)
+
+| Device RAM | Recommended | Quant | Notes |
+|-----------|-------------|-------|-------|
+| ~6 GB | 0.6B–1.7B | Q4_K_M | ECO; keep context ≤ 4096. |
+| ~8 GB | 1.7B–3B | Q4_K_M | BALANCED default. |
+| ~12 GB+ (HONOR 200 higher trims) | 3B–4B | Q4_K_M / Q5 | BALANCED/QUALITY; watch thermals. |
+
+Before loading, the ModelManager checks: available RAM, free storage, ABI
+(arm64-v8a), thermal status, battery, file size, and estimated context memory. If
+the model is too large, loading is blocked with an explanation. Manual and
+memory-pressure unload are supported. A benchmark screen reports load time,
+tokens/sec, time-to-first-token, estimated RAM, context, temperature, and battery
+used.
+
+## STT + VAD (sherpa-onnx)
+
+Use official, version-pinned sherpa-onnx releases. Requirements: Italian
+recognition (multilingual model if it performs better), no network during
+inference, configurable VAD and silence thresholds, cancellation, partial results
+when supported, latency measurement, WAV fixtures for tests. Models are imported
+explicitly with checksum verification; licenses shown first. `AndroidOnDeviceSpeechEngine`
+(`SpeechRecognizer.createOnDeviceSpeechRecognizer()`) is a fallback **only when
+the on-device service is available** — a cloud recognizer is never used silently.
+
+## Response protocol (§12)
+
+The local system prompt lives at
+`app/src/main/assets/prompts/jarvis_system_it.md` (editable in-app). The model is
+asked to emit strict JSON:
+
+```json
+{
+  "assistant_text": "Testo da pronunciare",
+  "tool_calls": [],
+  "memory_proposal": null,
+  "follow_up_expected": false
+}
+```
+
+A tool call:
+
+```json
+{ "id": "uuid", "name": "nome_tool", "arguments": {}, "requires_confirmation": true }
+```
+
+Validated with Kotlin Serialization (`core/…/protocol`). On invalid JSON: (1) run
+no tools; (2) attempt exactly one controlled repair (strip fences/prose, extract
+the outermost balanced object); (3) if it still fails, treat the text as a plain
+spoken reply; (4) log only a technical error with no personal data. Grammar-
+constrained generation is used when the runtime supports it stably.

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Compose supplies the real colors; these XML themes only cover the
+         window background and the splash screen before Compose takes over. -->
+    <style name="Theme.JarvisMobile" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/jarvis_background</item>
+        <item name="android:statusBarColor">@color/jarvis_background</item>
+        <item name="android:navigationBarColor">@color/jarvis_background</item>
+    </style>
+
+    <style name="Theme.JarvisMobile.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/jarvis_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_tile_jarvis</item>
+        <item name="postSplashScreenTheme">@style/Theme.JarvisMobile</item>
+    </style>
+</resources>

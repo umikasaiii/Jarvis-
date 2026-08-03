@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Backups are disabled at the application level (allowBackup=false). These
+     rules additionally exclude the encrypted secret store and databases from
+     any device-transfer / cloud backup path (docs/SECURITY.md §21). -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="jarvis_secrets.preferences_pb" />
+        <exclude domain="file" path="datastore/jarvis_secrets.preferences_pb" />
+        <exclude domain="database" path="jarvis.db" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="jarvis_secrets.preferences_pb" />
+        <exclude domain="file" path="datastore/jarvis_secrets.preferences_pb" />
+        <exclude domain="database" path="jarvis.db" />
+    </device-transfer>
+</data-extraction-rules>

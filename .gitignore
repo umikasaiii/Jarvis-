@@ -1,0 +1,42 @@
+# Gradle
+.gradle/
+**/build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Android / IDE
+local.properties
+.idea/
+*.iml
+captures/
+.cxx/
+release/
+
+# Kotlin/Java
+*.class
+*.log
+*.hprof
+
+# Secrets & personal data — never commit (docs/SECURITY.md, docs/PRIVACY.md)
+*.keystore
+*.jks
+keystore.properties
+secrets.properties
+.env
+*.env
+server/.env
+
+# Models & personal audio — never commit (docs/MODELS.md)
+*.gguf
+*.onnx
+*.bin
+*.wav
+!app/src/test/resources/fixtures/*.wav
+!core/src/test/resources/fixtures/*.wav
+models/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Kotlin compiler
+.kotlin/
