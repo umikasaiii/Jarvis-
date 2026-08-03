@@ -12,12 +12,6 @@ import androidx.core.app.NotificationCompat
 import com.simone.jarvismobile.R
 import com.simone.jarvismobile.ui.MainActivity
 import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
@@ -34,9 +28,6 @@ class ListeningService : Service() {
 
     @Inject lateinit var coordinator: SessionCoordinator
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-    private var sessionJob: Job? = null
-
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -51,8 +42,11 @@ class ListeningService : Service() {
                 return START_NOT_STICKY
             }
         }
+        // The service exists to (a) make microphone use visible via the ongoing
+        // notification and (b) keep the process alive if the screen turns off.
+        // The actual Phase-1 session is driven by the ViewModel while the app is
+        // foreground, where audio capture is always permitted.
         goForeground()
-        startSession()
         return START_NOT_STICKY
     }
 
@@ -66,15 +60,6 @@ class ListeningService : Service() {
             )
         } else {
             startForeground(NOTIFICATION_ID, notification)
-        }
-    }
-
-    private fun startSession() {
-        if (sessionJob?.isActive == true) return
-        sessionJob = scope.launch {
-            runCatching { coordinator.runSession() }
-            // Session finished (or failed cleanly): tear the service down.
-            stopSelf()
         }
     }
 
@@ -105,9 +90,7 @@ class ListeningService : Service() {
     }
 
     override fun onDestroy() {
-        sessionJob?.cancel()
         runCatching { coordinator.resetAudio() }
-        scope.cancel()
         super.onDestroy()
     }
 

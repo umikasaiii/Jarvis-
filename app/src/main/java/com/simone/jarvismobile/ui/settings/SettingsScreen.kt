@@ -1,0 +1,123 @@
+package com.simone.jarvismobile.ui.settings
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Card
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+
+/**
+ * Settings screen. Phase-1 exposes the preferences that actually take effect:
+ * the assistant name (shown on the dashboard) and the recording-window length.
+ * Items belonging to later phases are shown as clearly-disabled placeholders,
+ * never as if they were active.
+ */
+@Composable
+fun SettingsScreen(
+    onBack: () -> Unit,
+    viewModel: SettingsViewModel = hiltViewModel(),
+) {
+    val name by viewModel.assistantName.collectAsStateWithLifecycle()
+    val seconds by viewModel.recordSeconds.collectAsStateWithLifecycle()
+
+    var nameField by remember(name) { mutableStateOf(name) }
+    var sliderValue by remember(seconds) { mutableStateOf(seconds.toFloat()) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Text("Impostazioni", style = MaterialTheme.typography.headlineSmall)
+
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Assistente", style = MaterialTheme.typography.titleMedium)
+                OutlinedTextField(
+                    value = nameField,
+                    onValueChange = { nameField = it },
+                    label = { Text("Nome") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedButton(onClick = { viewModel.setAssistantName(nameField) }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Salva nome")
+                }
+            }
+        }
+
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Registrazione", style = MaterialTheme.typography.titleMedium)
+                Text("Durata finestra: ${sliderValue.toInt()} s", style = MaterialTheme.typography.bodyMedium)
+                Slider(
+                    value = sliderValue,
+                    onValueChange = { sliderValue = it },
+                    onValueChangeFinished = { viewModel.setRecordSeconds(sliderValue.toInt()) },
+                    valueRange = 1f..8f,
+                    steps = 6,
+                )
+                Text(
+                    "Nella Fase 1 la finestra è a durata fissa; la fine-frase automatica (VAD) arriva nella Fase 2.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("In arrivo (fasi successive)", style = MaterialTheme.typography.titleMedium)
+                PlaceholderRow("Riconoscimento vocale (STT)", "Fase 2")
+                PlaceholderRow("Modello locale (LLM)", "Fase 3")
+                PlaceholderRow("Memoria Obsidian", "Fase 5")
+                PlaceholderRow("Home Assistant", "Fase 7")
+                PlaceholderRow("Companion PC", "Fase 8")
+            }
+        }
+
+        OutlinedButton(onClick = viewModel::resetAudio, modifier = Modifier.fillMaxWidth()) {
+            Text("Reset audio")
+        }
+        OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
+            Text("Indietro")
+        }
+
+        Text(
+            "JARVIS Mobile · offline-first · nessun account, nessun cloud",
+            style = MaterialTheme.typography.bodySmall,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+@Composable
+private fun PlaceholderRow(label: String, phase: String) {
+    HorizontalDivider()
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(label, style = MaterialTheme.typography.bodyMedium)
+        Text(phase, style = MaterialTheme.typography.bodySmall)
+    }
+}

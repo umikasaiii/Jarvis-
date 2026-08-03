@@ -14,10 +14,12 @@ import com.simone.jarvismobile.core.session.SpeakOutcome
 import com.simone.jarvismobile.core.state.ConversationEvent
 import com.simone.jarvismobile.core.state.ConversationState
 import com.simone.jarvismobile.core.state.ConversationStateMachine
+import com.simone.jarvismobile.data.SettingsRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
@@ -37,6 +39,7 @@ class SessionCoordinator @Inject constructor(
     private val audioRouteManager: AudioRouteManager,
     private val audioCapture: AudioCapture,
     private val tts: TextToSpeechEngine,
+    private val settings: SettingsRepository,
 ) : Fase1Environment {
 
     private val machine = ConversationStateMachine()
@@ -61,6 +64,7 @@ class SessionCoordinator @Inject constructor(
         }
         sessionMutex.withLock {
             _lastError.value = null
+            recordMs = settings.recordSeconds.first() * 1_000L
             val end = Fase1Flow(machine, this).run()
             if (end is ConversationState.RecoverableError) _lastError.value = end.code
             Log.i(TAG, "session_end state=${end::class.simpleName}")
