@@ -78,8 +78,8 @@ Plugin and all AndroidX/Compose/Material3 artifacts. Consequences:
 
 | Phase | Scope | Status |
 |------|-------|--------|
-| 0 | Foundations: project, DI, Compose, docs, CI | **In progress** — core compiles+tested; Android scaffolding written (SDK build pending) |
-| 1 | Audio loop: button/Tile/service/routing → fixed TTS in AirPods | **Code written** — needs on-device build & test |
+| 0 | Foundations: project, DI, Compose, docs, CI | **Done (build-verified)** — core 71 tests green; Android app compiles + debug APK produced by CI (run #2, `f8e94dd`) |
+| 1 | Audio loop: button/Tile/service/routing → fixed TTS in AirPods | **Compiles + APK built in CI** — real AudioRecord capture, coordinator, diagnostics; **on-device HONOR 200 test still pending** (docs/PHASE1_HONOR_TEST_CHECKLIST.md) |
 | 2 | STT + VAD (sherpa-onnx) | Not started |
 | 3 | Local LLM (llama.cpp) + model manager | Not started |
 | 4 | Full TTS + audio focus + follow-up | Partially scaffolded (TTS engine + follow-up in ViewModel) |
@@ -97,8 +97,10 @@ lint is clean, docs/decisions updated. Never leave the main branch uncompilable.
 - **Real & tested (JVM):** conversation state machine, hybrid router, tool JSON
   protocol + repair, tool registry/policies, calculate tool, log redactor,
   Markdown/frontmatter parser, retrieval ranker. → `cd core && ./gradlew test`.
-- **Written, not yet compiled (needs Android SDK):** all of `app/` — audio route
-  manager, offline TTS, listening foreground service, QS tile, Compose Home,
-  permissions, DI wiring.
+- **Compiled + packaged by CI (GitHub Actions, Android SDK):** all of `app/` —
+  audio route manager, real AudioRecord capture, offline TTS, listening foreground
+  service, QS tile, Compose Home + Diagnostics, permissions, DI wiring. A debug APK
+  is produced (`docs/ANDROID_BUILD_AUDIT.md`). On-device behavior is **not** yet
+  verified (`docs/PHASE1_HONOR_TEST_CHECKLIST.md`).
 - **Not implemented yet:** STT/VAD, llama.cpp, Room/SAF vault, HA, PC server,
   benchmarks, release signing, instrumented tests.

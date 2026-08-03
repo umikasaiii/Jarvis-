@@ -74,8 +74,20 @@ the HONOR 200 (see `docs/PHASE1_HONOR_TEST_CHECKLIST.md`).
 
 ## 5. CI results log
 
-_Updated as runs complete._
+| Run | Commit | Result | Notes |
+|-----|--------|--------|-------|
+| [#2](https://github.com/umikasaiii/Jarvis-/actions/runs/30802226114) | `f8e94dd` | ✅ **BUILD SUCCESSFUL** | All four tasks green on the first Phase-1 build (no error iterations needed thanks to the pre-emptive fixes in §2). |
 
-| Run | Commit | Result | First blocking error → fix |
-|-----|--------|--------|----------------------------|
-| _pending_ | | | |
+### Verified evidence (run #2)
+
+- Tasks: `:core:test` (green), `:app:assembleDebug` (green), `:app:testDebugUnitTest`
+  (green), `:app:lintDebug` → `BUILD SUCCESSFUL in 48s`, lint HTML report written.
+- Artifact `app-debug` (id 8851434207) contains **`app-debug.apk`** + `app-debug.apk.sha256`.
+- **APK SHA-256:** `f0f5b7c197284e38e48f631f2a31cc0f15c2d4c58b4c05d6c4b5d5e04b7a0546`
+- APK size: 64,994,357 bytes (unminified debug; the icons-extended set dominates —
+  release minification will shrink this substantially).
+- Local path after a checkout+build: `app/build/outputs/apk/debug/app-debug.apk`.
+
+A successful CI build proves the app **compiles and packages**. It does **not**
+prove the audio loop / AirPods routing works — that requires the physical HONOR
+200 test in `docs/PHASE1_HONOR_TEST_CHECKLIST.md`.
