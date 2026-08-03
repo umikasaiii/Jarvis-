@@ -240,9 +240,9 @@ private fun hintFor(state: ConversationState, micGranted: Boolean, error: String
 
 private fun friendlyError(code: String): String = when (code) {
     "tts_unavailable" -> "Voce italiana offline non disponibile: installala in Impostazioni Android › TTS"
-    "audio_begin_failed" -> "Impossibile avviare l'audio"
-    "audio_focus_lost" -> "Audio interrotto da un'altra app"
-    "record_failed", "permission" -> "Registrazione non riuscita"
+    "audio_begin_failed" -> "Impossibile avviare l'audio (audio_begin_failed)"
+    "audio_focus_lost" -> "Audio interrotto da un'altra app (audio_focus_lost)"
+    "record_failed", "permission" -> "Microfono non disponibile ($code) — verifica il permesso"
     else -> "Errore tecnico: $code"
 }
 

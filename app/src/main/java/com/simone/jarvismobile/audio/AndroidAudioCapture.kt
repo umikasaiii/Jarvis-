@@ -63,35 +63,47 @@ class AndroidAudioCapture @Inject constructor(
         }
         val bufferSize = minBuffer * 2
 
-        val record = try {
-            AudioRecord(
-                MediaRecorder.AudioSource.VOICE_COMMUNICATION,
-                sampleRate,
-                AudioFormat.CHANNEL_IN_MONO,
-                AudioFormat.ENCODING_PCM_16BIT,
-                bufferSize,
-            )
-        } catch (e: SecurityException) {
-            Log.w(TAG, LogRedactor.redact("audio_record security_exception ${e.message}"))
-            return@withContext CaptureResult.PERMISSION_DENIED
-        } catch (e: IllegalArgumentException) {
-            Log.w(TAG, "audio_record bad_config ${e.message}")
+        // Some devices/ROMs fail to initialize VOICE_COMMUNICATION when no
+        // communication device is active; fall back to MIC then DEFAULT so the
+        // built-in microphone still works.
+        val sources = intArrayOf(
+            MediaRecorder.AudioSource.VOICE_COMMUNICATION,
+            MediaRecorder.AudioSource.MIC,
+            MediaRecorder.AudioSource.DEFAULT,
+        )
+        var record: AudioRecord? = null
+        for (source in sources) {
+            val candidate = try {
+                AudioRecord(source, sampleRate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, bufferSize)
+            } catch (e: SecurityException) {
+                Log.w(TAG, LogRedactor.redact("audio_record security_exception ${e.message}"))
+                return@withContext CaptureResult.PERMISSION_DENIED
+            } catch (e: IllegalArgumentException) {
+                Log.w(TAG, "audio_record bad_config source=$source ${e.message}")
+                null
+            }
+            if (candidate != null && candidate.state == AudioRecord.STATE_INITIALIZED) {
+                Log.i(TAG, "audio_record initialized source=$source")
+                record = candidate
+                break
+            }
+            candidate?.release()
+        }
+        val rec = record
+        if (rec == null) {
+            Log.w(TAG, "audio_record no_source_initialized")
             return@withContext CaptureResult.FAILED
         }
 
         try {
-            if (record.state != AudioRecord.STATE_INITIALIZED) {
-                Log.w(TAG, "audio_record not_initialized state=${record.state}")
-                return@withContext CaptureResult.FAILED
-            }
-            record.startRecording()
+            rec.startRecording()
             val readBuffer = ShortArray(bufferSize / 2)
             val deadline = System.nanoTime() + durationMs * 1_000_000L
             while (System.nanoTime() < deadline && coroutineContext.isActive && !cancelled.get()) {
-                val n = record.read(readBuffer, 0, readBuffer.size)
+                val n = rec.read(readBuffer, 0, readBuffer.size)
                 if (n > 0) _micLevel.value = rms(readBuffer, n)
             }
-            record.stop()
+            rec.stop()
             _micLevel.value = 0f
             if (cancelled.get()) CaptureResult.FAILED else CaptureResult.COMPLETED
         } catch (e: IllegalStateException) {
@@ -99,7 +111,7 @@ class AndroidAudioCapture @Inject constructor(
             CaptureResult.FAILED
         } finally {
             // Discard everything: release the recorder; the buffer goes out of scope.
-            runCatching { record.release() }
+            runCatching { rec.release() }
             _micLevel.value = 0f
         }
     }
