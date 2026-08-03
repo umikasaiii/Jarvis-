@@ -14,6 +14,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -39,6 +40,7 @@ fun SettingsScreen(
 ) {
     val name by viewModel.assistantName.collectAsStateWithLifecycle()
     val seconds by viewModel.recordSeconds.collectAsStateWithLifecycle()
+    val useBluetooth by viewModel.useBluetooth.collectAsStateWithLifecycle()
 
     var nameField by remember(name) { mutableStateOf(name) }
     var sliderValue by remember(seconds) { mutableStateOf(seconds.toFloat()) }
@@ -65,6 +67,27 @@ fun SettingsScreen(
                 OutlinedButton(onClick = { viewModel.setAssistantName(nameField) }, modifier = Modifier.fillMaxWidth()) {
                     Text("Salva nome")
                 }
+            }
+        }
+
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                ) {
+                    Text("Usa AirPods / Bluetooth", style = MaterialTheme.typography.titleMedium)
+                    Switch(checked = useBluetooth, onCheckedChange = viewModel::setUseBluetooth)
+                }
+                Text(
+                    "Se attivo, instrada l'audio sugli AirPods quando disponibili. " +
+                        "Su alcuni telefoni (MagicOS) serve la Posizione attiva per il " +
+                        "Bluetooth: se la Posizione è spenta, JARVIS usa comunque " +
+                        "microfono e altoparlante del telefono senza chiederla. " +
+                        "Disattiva per restare sempre su telefono.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
             }
         }
 

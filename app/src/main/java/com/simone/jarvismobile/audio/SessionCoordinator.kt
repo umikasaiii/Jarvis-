@@ -104,12 +104,24 @@ class SessionCoordinator @Inject constructor(
         ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
             PackageManager.PERMISSION_GRANTED
 
+    /** Reads the system Location toggle (no permission needed just to read it). */
+    private fun isLocationEnabled(): Boolean = try {
+        val lm = context.getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager
+        lm.isLocationEnabled
+    } catch (e: Exception) {
+        false
+    }
+
     // --- Fase1Environment (real Android side effects) --------------------
 
     override suspend fun prepareAudio(): PrepareOutcome {
         if (!hasRecordPermission()) return PrepareOutcome.PermissionDenied
+        // Only route to Bluetooth when the user allows it AND the system Location
+        // toggle is on — MagicOS gates BT call-audio behind Location. Otherwise
+        // use the phone mic/speaker so the mic starts with no Location prompt.
+        val wantBluetooth = settings.useBluetooth.first() && isLocationEnabled()
         return try {
-            val input = audioRouteManager.beginSession(preferBluetooth = true)
+            val input = audioRouteManager.beginSession(preferBluetooth = wantBluetooth)
             val kind = when (input.kind) {
                 AudioDeviceKind.AIRPODS -> AudioKind.AIRPODS
                 AudioDeviceKind.BLUETOOTH_HEADSET -> AudioKind.BLUETOOTH

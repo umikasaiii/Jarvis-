@@ -23,7 +23,11 @@ class SettingsViewModel @Inject constructor(
     val recordSeconds: StateFlow<Int> = settings.recordSeconds
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsRepository.DEFAULT_RECORD_SECONDS)
 
+    val useBluetooth: StateFlow<Boolean> = settings.useBluetooth
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
+
     fun setAssistantName(value: String) = viewModelScope.launch { settings.setAssistantName(value) }
     fun setRecordSeconds(value: Int) = viewModelScope.launch { settings.setRecordSeconds(value) }
+    fun setUseBluetooth(value: Boolean) = viewModelScope.launch { settings.setUseBluetooth(value) }
     fun resetAudio() = coordinator.resetAudio()
 }

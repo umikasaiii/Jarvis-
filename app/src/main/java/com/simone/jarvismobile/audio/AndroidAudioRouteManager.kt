@@ -47,6 +47,31 @@ class AndroidAudioRouteManager @Inject constructor(
         audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
 
         val focusGranted = requestFocus()
+
+        // Phone-only path: do NOT touch any Bluetooth / communication-device APIs.
+        // On MagicOS those trigger a system Location prompt; the built-in mic and
+        // speaker work without it.
+        if (!preferBluetooth) {
+            val phone = AudioEndpoint(id = -1, productName = "", kind = AudioDeviceKind.PHONE, isSource = true)
+            val phoneOut = AudioEndpoint(id = -1, productName = "", kind = AudioDeviceKind.PHONE, isSource = false)
+            _routeState.update {
+                AudioRouteState(
+                    input = phone,
+                    output = phoneOut,
+                    requestedCommunicationDevice = phone,
+                    communicationDeviceApplied = false,
+                    sampleRate = preferredSampleRate(),
+                    channelCount = 1,
+                    hasAudioFocus = focusGranted,
+                    bluetoothConnected = false,
+                    airPodsDetected = false,
+                    usingBluetoothInput = false,
+                    lastError = if (!focusGranted) "audio_focus_denied" else null,
+                )
+            }
+            Log.i(TAG, "begin_session phone_only focus=$focusGranted")
+            return phone
+        }
         val input = selectInputEndpoint(preferBluetooth)
         val applied = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             applyCommunicationDevice(input)
