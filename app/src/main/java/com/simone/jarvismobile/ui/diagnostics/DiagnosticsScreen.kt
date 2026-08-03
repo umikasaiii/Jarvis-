@@ -1,5 +1,9 @@
 package com.simone.jarvismobile.ui.diagnostics
 
+import android.Manifest
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,6 +15,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -24,8 +29,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 /**
  * Minimal diagnostics screen (docs/ARCHITECTURE.md §8 / task §10): shows the
- * *real* audio route and lets the user run the mic/voice tests. Nothing here
- * claims a device is active unless the underlying state says so.
+ * *real* audio route and lets the user run the mic/voice tests with clear
+ * feedback. The mic test requests the RECORD_AUDIO permission if it's missing.
  */
 @Composable
 fun DiagnosticsScreen(
@@ -37,7 +42,24 @@ fun DiagnosticsScreen(
     val voice by viewModel.selectedVoiceName.collectAsStateWithLifecycle()
     val level by viewModel.micLevel.collectAsStateWithLifecycle()
     val error by viewModel.lastError.collectAsStateWithLifecycle()
+    val micStatus by viewModel.micStatus.collectAsStateWithLifecycle()
+    val voiceStatus by viewModel.voiceStatus.collectAsStateWithLifecycle()
+    val testing by viewModel.testing.collectAsStateWithLifecycle()
     val perms = viewModel.permissions()
+
+    val micPermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { result ->
+        if (result[Manifest.permission.RECORD_AUDIO] == true) viewModel.runMicTest()
+    }
+
+    fun requestMicPermissions() {
+        val toRequest = buildList {
+            add(Manifest.permission.RECORD_AUDIO)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) add(Manifest.permission.POST_NOTIFICATIONS)
+        }.toTypedArray()
+        micPermLauncher.launch(toRequest)
+    }
 
     Column(
         modifier = Modifier
@@ -65,17 +87,43 @@ fun DiagnosticsScreen(
                 HorizontalDivider()
                 Line("Stato TTS", tts.name)
                 Line("Voce offline", voice ?: "—")
-                Line("Livello microfono", "%.2f".format(level))
                 Line("Ultimo errore", error ?: "—")
             }
         }
 
-        Button(onClick = viewModel::onTestMicrophone, modifier = Modifier.fillMaxWidth()) {
-            Text("Test microfono")
+        // Live microphone level.
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Livello microfono: ${(level * 100).toInt()}%", style = MaterialTheme.typography.bodyMedium)
+                LinearProgressIndicator(
+                    progress = { level.coerceIn(0f, 1f) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (micStatus.isNotEmpty()) {
+                    Text(micStatus, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
         }
-        Button(onClick = viewModel::onTestVoice, modifier = Modifier.fillMaxWidth()) {
+
+        Button(
+            onClick = { if (viewModel.hasMicPermission()) viewModel.runMicTest() else requestMicPermissions() },
+            enabled = !testing,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(if (testing) "Test in corso…" else "Test microfono (registra 3 s)")
+        }
+
+        Button(
+            onClick = viewModel::runVoiceTest,
+            enabled = !testing,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
             Text("Test voce")
         }
+        if (voiceStatus.isNotEmpty()) {
+            Text(voiceStatus, style = MaterialTheme.typography.bodySmall)
+        }
+
         OutlinedButton(onClick = viewModel::onResetAudio, modifier = Modifier.fillMaxWidth()) {
             Text("Reset audio")
         }

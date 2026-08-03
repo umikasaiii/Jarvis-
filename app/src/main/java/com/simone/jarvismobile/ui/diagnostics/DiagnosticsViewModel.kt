@@ -7,10 +7,13 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.simone.jarvismobile.audio.AudioRouteState
+import com.simone.jarvismobile.audio.CaptureResult
 import com.simone.jarvismobile.audio.SessionCoordinator
 import com.simone.jarvismobile.audio.TtsState
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -33,6 +36,17 @@ class DiagnosticsViewModel @Inject constructor(
     val micLevel: StateFlow<Float> = coordinator.micLevel
     val lastError: StateFlow<String?> = coordinator.lastError
 
+    private val _micStatus = MutableStateFlow("")
+    val micStatus: StateFlow<String> = _micStatus.asStateFlow()
+
+    private val _voiceStatus = MutableStateFlow("")
+    val voiceStatus: StateFlow<String> = _voiceStatus.asStateFlow()
+
+    private val _testing = MutableStateFlow(false)
+    val testing: StateFlow<Boolean> = _testing.asStateFlow()
+
+    fun hasMicPermission(): Boolean = coordinator.hasRecordPermission()
+
     fun permissions(): PermissionSnapshot {
         val ctx = getApplication<Application>()
         fun granted(p: String) =
@@ -47,7 +61,38 @@ class DiagnosticsViewModel @Inject constructor(
         )
     }
 
-    fun onTestMicrophone() = viewModelScope.launch { coordinator.testMicrophone() }
-    fun onTestVoice() = viewModelScope.launch { coordinator.testVoice() }
-    fun onResetAudio() = coordinator.resetAudio()
+    /** Runs the fixed-window mic test. Caller must ensure permission first. */
+    fun runMicTest() {
+        if (_testing.value) return
+        _testing.value = true
+        _micStatus.value = "Registrazione in corso…"
+        viewModelScope.launch {
+            _micStatus.value = when (coordinator.testMicrophone()) {
+                CaptureResult.COMPLETED -> "OK · microfono acquisito"
+                CaptureResult.PERMISSION_DENIED -> "Permesso microfono negato"
+                CaptureResult.FAILED -> "Errore · registrazione non riuscita"
+            }
+            _testing.value = false
+        }
+    }
+
+    fun runVoiceTest() {
+        if (_testing.value) return
+        _testing.value = true
+        _voiceStatus.value = "Sintesi in corso…"
+        viewModelScope.launch {
+            _voiceStatus.value = if (coordinator.testVoice()) {
+                "OK · voce riprodotta"
+            } else {
+                "Voce italiana offline non disponibile — installala in Impostazioni Android › TTS"
+            }
+            _testing.value = false
+        }
+    }
+
+    fun onResetAudio() {
+        coordinator.resetAudio()
+        _micStatus.value = ""
+        _voiceStatus.value = ""
+    }
 }
