@@ -17,6 +17,10 @@ jobs:
     name: Core tests + Android debug build
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    # Needed to publish the debug APK as a GitHub Release (mobile-friendly,
+    # no-login download link).
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -67,6 +71,21 @@ jobs:
             app/build/outputs/apk/debug/app-debug.apk
             app/build/outputs/apk/debug/app-debug.apk.sha256
           if-no-files-found: error
+
+      # Publish the APK to a single, stable 'latest-debug' release so it can be
+      # downloaded directly on a phone with no login:
+      #   https://github.com/<owner>/<repo>/releases/download/latest-debug/app-debug.apk
+      - name: Publish APK to the 'latest-debug' release
+        if: success() && github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          gh release delete latest-debug --yes --cleanup-tag || true
+          gh release create latest-debug "$APK" "$APK.sha256" \
+            --title "JARVIS Mobile — debug (latest)" \
+            --notes "APK di debug piu recente. Commit ${{ github.sha }}. NB: disinstalla prima una versione precedente (la firma di debug della CI cambia a ogni build)." \
+            --target "${{ github.sha }}"
 
       # Reports are uploaded even when a previous step failed, to diagnose errors.
       - name: Upload test & lint reports
