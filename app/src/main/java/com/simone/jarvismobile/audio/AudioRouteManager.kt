@@ -27,6 +27,12 @@ data class AudioRouteState(
     val channelCount: Int = 0,
     val hasAudioFocus: Boolean = false,
     val bluetoothConnected: Boolean = false,
+    /** A Bluetooth endpoint that looks like AirPods is present. */
+    val airPodsDetected: Boolean = false,
+    /** True only when input is actually routed through a Bluetooth device. */
+    val usingBluetoothInput: Boolean = false,
+    /** Last technical audio error code (redacted; no personal data). */
+    val lastError: String? = null,
 )
 
 /**

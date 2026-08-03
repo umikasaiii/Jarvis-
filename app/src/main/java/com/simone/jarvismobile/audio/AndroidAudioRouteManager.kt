@@ -6,6 +6,7 @@ import android.media.AudioDeviceInfo
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Build
+import android.util.Log
 import androidx.annotation.RequiresApi
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -56,6 +57,7 @@ class AndroidAudioRouteManager @Inject constructor(
         }
 
         val output = currentOutputEndpoint()
+        val endpoints = availableEndpoints()
         _routeState.update {
             it.copy(
                 input = input,
@@ -65,9 +67,19 @@ class AndroidAudioRouteManager @Inject constructor(
                 sampleRate = preferredSampleRate(),
                 channelCount = 1,
                 hasAudioFocus = focusGranted,
-                bluetoothConnected = availableEndpoints().any { e -> e.kind.isBluetooth() },
+                bluetoothConnected = endpoints.any { e -> e.kind.isBluetooth() },
+                airPodsDetected = endpoints.any { e -> e.kind == AudioDeviceKind.AIRPODS },
+                usingBluetoothInput = applied && input.kind.isBluetooth(),
+                lastError = if (!focusGranted) "audio_focus_denied" else null,
             )
         }
+        // Redacted technical log only: device kind, temporary id, selection result.
+        // No product name is logged (may reveal a person's device name).
+        Log.i(
+            TAG,
+            "begin_session focus=$focusGranted input_kind=${input.kind} " +
+                "input_id=${input.id} comm_applied=$applied output_kind=${output?.kind}",
+        )
         return input
     }
 
@@ -80,7 +92,13 @@ class AndroidAudioRouteManager @Inject constructor(
         }
         abandonFocus()
         audioManager.mode = previousMode
-        _routeState.update { AudioRouteState(bluetoothConnected = it.bluetoothConnected) }
+        _routeState.update {
+            AudioRouteState(
+                bluetoothConnected = it.bluetoothConnected,
+                airPodsDetected = it.airPodsDetected,
+            )
+        }
+        Log.i(TAG, "end_session route_restored")
     }
 
     override fun availableEndpoints(): List<AudioEndpoint> {
@@ -167,6 +185,10 @@ class AndroidAudioRouteManager @Inject constructor(
         AudioDeviceInfo.TYPE_BUILTIN_EARPIECE -> AudioDeviceKind.PHONE
         AudioDeviceInfo.TYPE_BUILTIN_SPEAKER -> AudioDeviceKind.SPEAKER
         else -> AudioDeviceKind.UNKNOWN
+    }
+
+    private companion object {
+        const val TAG = "JarvisAudioRoute"
     }
 }
 

@@ -5,45 +5,80 @@ on:
     branches: [ main, "claude/**" ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch: {}
 
-# No heavy model downloads happen in CI (docs/MODELS.md); models are never in the repo.
+# No AI models are ever downloaded in CI (docs/MODELS.md); models are never in the repo.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  core:
-    name: Domain core (JVM) — build & test
+  build:
+    name: Core tests + Android debug build
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '21'
-      - name: Test :core
-        working-directory: core
-        run: ./gradlew test --no-daemon --stacktrace
+      - name: Checkout
+        uses: actions/checkout@v4
 
-  android:
-    name: Android app — assemble, unit test, lint
-    runs-on: ubuntu-latest
-    # The Android job needs the Android SDK and access to dl.google.com. On
-    # networks that block that host, this job cannot resolve AGP/AndroidX
-    # (see docs/DECISIONS/0003). GitHub-hosted runners have both.
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - name: Validate Gradle wrapper
+        uses: gradle/actions/wrapper-validation@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
+
+      - name: Set up Gradle (with cache)
+        uses: gradle/actions/setup-gradle@v4
+
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
-      - name: Assemble debug
-        run: ./gradlew :app:assembleDebug --no-daemon --stacktrace
-      - name: Unit tests
-        run: ./gradlew :app:testDebugUnitTest --no-daemon --stacktrace
-      - name: Lint
-        run: ./gradlew :app:lintDebug --no-daemon --stacktrace
+
+      # ---- Domain core (pure Kotlin/JVM). Runs as a standalone build via -p. ----
+      - name: Core unit tests
+        run: ./gradlew --no-daemon -p core test
+
+      # ---- Android app. assembleDebug also builds the composite :core. ----
+      - name: Assemble debug APK
+        run: ./gradlew --no-daemon :app:assembleDebug
+
+      - name: Android unit tests
+        run: ./gradlew --no-daemon :app:testDebugUnitTest
+
+      - name: Android lint (debug)
+        run: ./gradlew --no-daemon :app:lintDebug
+
+      - name: Compute APK SHA-256
+        if: success()
+        run: |
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          test -f "$APK" || { echo "APK not found at $APK"; exit 1; }
+          sha256sum "$APK" | tee "$APK.sha256"
+          ls -l "$APK"
+
       - name: Upload debug APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: app-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            app/build/outputs/apk/debug/app-debug.apk.sha256
+          if-no-files-found: error
+
+      # Reports are uploaded even when a previous step failed, to diagnose errors.
+      - name: Upload test & lint reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports
+          path: |
+            core/build/reports/**
+            core/build/test-results/**
+            app/build/reports/**
+            app/build/test-results/**
+            app/build/outputs/lint-results-*.*
           if-no-files-found: warn
+          retention-days: 14

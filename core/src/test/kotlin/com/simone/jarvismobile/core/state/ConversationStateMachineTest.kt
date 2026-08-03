@@ -136,6 +136,22 @@ class ConversationStateMachineTest {
     }
 
     @Test
+    fun `phase1 skip to speaking transitions from finalizing`() {
+        val m = machine()
+        toState(m, ConversationState.FinalizingSpeech)
+        assertEquals(ConversationState.Speaking, m.dispatch(ConversationEvent.SkipToSpeaking))
+    }
+
+    @Test
+    fun `recoverable failure from any active state is recoverable`() {
+        val m = machine()
+        toState(m, ConversationState.Listening)
+        val s = m.dispatch(ConversationEvent.RecoverableFailure("audio_focus_lost"))
+        assertTrue(s is ConversationState.RecoverableError)
+        assertEquals("audio_focus_lost", (s as ConversationState.RecoverableError).code)
+    }
+
+    @Test
     fun `illegal transitions are ignored`() {
         val m = machine()
         // AnswerReady while Idle is meaningless and must be a no-op

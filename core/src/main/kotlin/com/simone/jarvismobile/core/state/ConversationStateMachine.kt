@@ -38,6 +38,8 @@ class ConversationStateMachine(
         when (event) {
             is ConversationEvent.CancelRequested ->
                 return if (state.isTerminal()) state else ConversationState.Cancelled
+            is ConversationEvent.RecoverableFailure ->
+                return if (state.isTerminal()) state else ConversationState.RecoverableError(event.code)
             is ConversationEvent.FatalFailure -> return ConversationState.FatalError(event.code)
             is ConversationEvent.PermissionDenied -> return ConversationState.PermissionRequired
             is ConversationEvent.ModelMissing -> return ConversationState.ModelUnavailable
@@ -55,7 +57,6 @@ class ConversationStateMachine(
             ConversationState.PreparingAudio -> when (event) {
                 ConversationEvent.AudioReady -> ConversationState.Listening
                 ConversationEvent.BluetoothLost -> ConversationState.BluetoothUnavailable
-                is ConversationEvent.RecoverableFailure -> ConversationState.RecoverableError(event.code)
                 ConversationEvent.Timeout -> ConversationState.RecoverableError("audio_prepare_timeout")
                 else -> state
             }
@@ -70,6 +71,8 @@ class ConversationStateMachine(
 
             ConversationState.FinalizingSpeech -> when (event) {
                 ConversationEvent.SpeechEnded, ConversationEvent.AudioReady -> ConversationState.Transcribing
+                // Phase-1 shortcut: no STT/LLM yet, speak a fixed reply.
+                ConversationEvent.SkipToSpeaking -> ConversationState.Speaking
                 ConversationEvent.Timeout -> ConversationState.RecoverableError("finalize_timeout")
                 else -> state
             }
@@ -106,7 +109,6 @@ class ConversationStateMachine(
                     if (state == ConversationState.ThinkingRemote) ConversationState.ThinkingLocal
                     else ConversationState.NetworkUnavailable
                 ConversationEvent.Timeout -> ConversationState.RecoverableError("think_timeout")
-                is ConversationEvent.RecoverableFailure -> ConversationState.RecoverableError(event.code)
                 else -> state
             }
 
@@ -120,7 +122,6 @@ class ConversationStateMachine(
             ConversationState.ExecutingTool -> when (event) {
                 ConversationEvent.ToolFinished -> ConversationState.Speaking
                 ConversationEvent.Timeout -> ConversationState.RecoverableError("tool_timeout")
-                is ConversationEvent.RecoverableFailure -> ConversationState.RecoverableError(event.code)
                 else -> state
             }
 

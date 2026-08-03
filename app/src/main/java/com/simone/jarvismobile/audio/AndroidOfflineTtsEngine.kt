@@ -31,6 +31,9 @@ class AndroidOfflineTtsEngine @Inject constructor(
     private val _state = MutableStateFlow(TtsState.IDLE)
     override val state = _state.asStateFlow()
 
+    private val _selectedVoiceName = MutableStateFlow<String?>(null)
+    override val selectedVoiceName = _selectedVoiceName.asStateFlow()
+
     private var tts: TextToSpeech? = null
     private val pending = mutableMapOf<String, CompletableDeferred<Unit>>()
 
@@ -93,6 +96,7 @@ class AndroidOfflineTtsEngine @Inject constructor(
         }
         val chosen = italian.firstOrNull { it.isMale() } ?: italian.first()
         engine.voice = chosen
+        _selectedVoiceName.value = chosen.name
         return true
     }
 

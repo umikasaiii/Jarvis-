@@ -4,6 +4,7 @@
     <string name="app_name">JARVIS Mobile</string>
 
     <string name="tile_label">JARVIS</string>
+    <string name="tile_subtitle_idle">Tocca per parlare</string>
 
     <string name="listening_channel_name">Sessione di ascolto</string>
     <string name="listening_channel_desc">Notifica visibile mentre il microfono è attivo per una sessione avviata da te.</string>

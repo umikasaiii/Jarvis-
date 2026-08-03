@@ -18,6 +18,15 @@ sealed interface ConversationEvent {
     data class TranscriptReady(val text: String) : ConversationEvent
     data object MemoryRetrieved : ConversationEvent
 
+    /**
+     * Phase-1 ONLY shortcut: there is no STT/retrieval/LLM yet, so after audio is
+     * finalized we jump straight to speaking a fixed reply. This is an explicit,
+     * documented test transition (FinalizingSpeech → Speaking) — it does not
+     * simulate any Transcribing/Routing/Thinking activity. Removed once phase 2+
+     * wire the real pipeline. See docs/IMPLEMENTATION_PLAN.md §"Phase 1".
+     */
+    data object SkipToSpeaking : ConversationEvent
+
     data class Routed(val target: RouteTarget) : ConversationEvent
 
     /** Model/tool planner produced a reply that needs a sensitive tool confirmation. */

@@ -1,10 +1,13 @@
 package com.simone.jarvismobile.ui.home
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -17,13 +20,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.material3.MaterialTheme.colorScheme
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -42,10 +42,12 @@ import com.simone.jarvismobile.core.state.ConversationState
 @Composable
 fun HomeScreen(
     autoStart: Boolean = false,
+    onOpenDiagnostics: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val route by viewModel.routeState.collectAsStateWithLifecycle()
+    val level by viewModel.micLevel.collectAsStateWithLifecycle()
 
     LaunchedEffect(autoStart) {
         if (autoStart) viewModel.onTalkPressed()
@@ -63,20 +65,20 @@ fun HomeScreen(
             Text(
                 text = "JARVIS",
                 style = MaterialTheme.typography.headlineMedium,
-                color = colorScheme.primary,
+                color = MaterialTheme.colorScheme.primary,
             )
 
             StatusStrip(
                 ready = state == ConversationState.Idle,
-                airPods = route.output?.productName?.contains("AirPods", true) == true ||
-                    route.input?.productName?.contains("AirPods", true) == true,
-                usingBluetooth = route.communicationDeviceApplied,
+                airPods = route.airPodsDetected,
+                usingBluetooth = route.usingBluetoothInput,
             )
 
             Spacer(Modifier.size(8.dp))
 
             TalkButton(
                 state = state,
+                level = level,
                 onPress = viewModel::onTalkPressed,
                 onCancel = viewModel::onCancel,
             )
@@ -86,6 +88,10 @@ fun HomeScreen(
                 style = MaterialTheme.typography.bodyLarge,
                 textAlign = TextAlign.Center,
             )
+
+            TextButton(onClick = onOpenDiagnostics) {
+                Text("Diagnostica")
+            }
         }
     }
 }
@@ -93,16 +99,17 @@ fun HomeScreen(
 @Composable
 private fun TalkButton(
     state: ConversationState,
+    level: Float,
     onPress: () -> Unit,
     onCancel: () -> Unit,
 ) {
-    val idle = state == ConversationState.Idle || state.isRestingLike()
+    val idle = state.isRestingLike()
     val color = when {
         state == ConversationState.Listening -> Color(0xFF2ECC71)
         state == ConversationState.Speaking -> Color(0xFF3498DB)
         state is ConversationState.RecoverableError ||
             state is ConversationState.FatalError -> Color(0xFFE74C3C)
-        idle -> colorScheme.primary
+        idle -> MaterialTheme.colorScheme.primary
         else -> Color(0xFFF39C12)
     }
     Box(
@@ -114,12 +121,17 @@ private fun TalkButton(
             .clickable { if (idle) onPress() else onCancel() },
         contentAlignment = Alignment.Center,
     ) {
-        Icon(
-            imageVector = Icons.Filled.Mic,
-            contentDescription = "Parla",
-            tint = Color.White,
-            modifier = Modifier.size(72.dp),
-        )
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(
+                imageVector = Icons.Filled.Mic,
+                contentDescription = "Parla",
+                tint = Color.White,
+                modifier = Modifier.size(72.dp),
+            )
+            if (state == ConversationState.Listening) {
+                Text("%.0f%%".format(level * 100), color = Color.White)
+            }
+        }
     }
 }
 

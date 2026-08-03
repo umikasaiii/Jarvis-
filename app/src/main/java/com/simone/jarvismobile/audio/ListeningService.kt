@@ -3,6 +3,7 @@ package com.simone.jarvismobile.audio
 import android.app.Notification
 import android.app.PendingIntent
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
@@ -13,37 +14,49 @@ import com.simone.jarvismobile.ui.MainActivity
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
- * Foreground service of type `microphone` that hosts a single, user-started
- * listening session (docs/ARCHITECTURE.md §9). A persistent notification makes
- * microphone use unmistakably visible and offers Parla / Interrompi / Chiudi.
+ * Foreground service of type `microphone` hosting a single, user-started Phase-1
+ * session (docs/ARCHITECTURE.md §9). A persistent notification makes microphone
+ * use unmistakably visible and offers Parla / Interrompi / Chiudi.
  *
- * The service is NEVER started automatically and there is no always-on mic.
+ * It is NEVER started automatically and there is no always-on mic. It owns the
+ * mic while foregrounded and drives [SessionCoordinator]; it does not auto-restart
+ * recording (`START_NOT_STICKY`).
  */
 @AndroidEntryPoint
 class ListeningService : Service() {
 
-    @Inject lateinit var audioRouteManager: AudioRouteManager
+    @Inject lateinit var coordinator: SessionCoordinator
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private var sessionJob: Job? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_STOP_SESSION -> { stopSelf(); return START_NOT_STICKY }
-            ACTION_INTERRUPT -> { SessionBus.emitInterrupt(); return START_STICKY }
+            ACTION_STOP_SESSION -> {
+                coordinator.cancel()
+                stopSelf()
+                return START_NOT_STICKY
+            }
+            ACTION_INTERRUPT -> {
+                coordinator.cancel()
+                return START_NOT_STICKY
+            }
         }
-        startForegroundListening()
-        return START_STICKY
+        goForeground()
+        startSession()
+        return START_NOT_STICKY
     }
 
-    private fun startForegroundListening() {
+    private fun goForeground() {
         val notification = buildNotification()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(
@@ -54,10 +67,14 @@ class ListeningService : Service() {
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
-        scope.launch {
-            // Fase 1: route audio toward AirPods when present. The full capture →
-            // VAD → STT pipeline is wired in phases 2–3.
-            runCatching { audioRouteManager.beginSession(preferBluetooth = true) }
+    }
+
+    private fun startSession() {
+        if (sessionJob?.isActive == true) return
+        sessionJob = scope.launch {
+            runCatching { coordinator.runSession() }
+            // Session finished (or failed cleanly): tear the service down.
+            stopSelf()
         }
     }
 
@@ -74,7 +91,6 @@ class ListeningService : Service() {
             .setOngoing(true)
             .setContentIntent(contentIntent)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
-            .addAction(0, getString(R.string.action_talk), action(ACTION_TALK))
             .addAction(0, getString(R.string.action_interrupt), action(ACTION_INTERRUPT))
             .addAction(0, getString(R.string.action_close), action(ACTION_STOP_SESSION))
             .build()
@@ -89,7 +105,8 @@ class ListeningService : Service() {
     }
 
     override fun onDestroy() {
-        runCatching { audioRouteManager.endSession() }
+        sessionJob?.cancel()
+        runCatching { coordinator.resetAudio() }
         scope.cancel()
         super.onDestroy()
     }
@@ -101,12 +118,13 @@ class ListeningService : Service() {
         const val ACTION_INTERRUPT = "com.simone.jarvismobile.action.INTERRUPT"
         const val ACTION_STOP_SESSION = "com.simone.jarvismobile.action.STOP"
 
-        fun start(context: android.content.Context) {
+        /** Must be called from a foreground context (Activity), per §7 Tile flow. */
+        fun start(context: Context) {
             val intent = Intent(context, ListeningService::class.java).setAction(ACTION_TALK)
             context.startForegroundService(intent)
         }
 
-        fun stop(context: android.content.Context) {
+        fun stop(context: Context) {
             context.startService(
                 Intent(context, ListeningService::class.java).setAction(ACTION_STOP_SESSION),
             )

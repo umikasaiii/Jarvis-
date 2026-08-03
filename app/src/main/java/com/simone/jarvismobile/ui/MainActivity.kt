@@ -10,7 +10,6 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
-import com.simone.jarvismobile.ui.home.HomeScreen
 import com.simone.jarvismobile.ui.theme.JarvisTheme
 import dagger.hilt.android.AndroidEntryPoint
 
@@ -39,7 +38,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             JarvisTheme {
-                HomeScreen(autoStart = startListening)
+                JarvisApp(autoStartListening = startListening)
             }
         }
     }

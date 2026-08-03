@@ -1,7 +1,9 @@
 package com.simone.jarvismobile.di
 
+import com.simone.jarvismobile.audio.AndroidAudioCapture
 import com.simone.jarvismobile.audio.AndroidAudioRouteManager
 import com.simone.jarvismobile.audio.AndroidOfflineTtsEngine
+import com.simone.jarvismobile.audio.AudioCapture
 import com.simone.jarvismobile.audio.AudioRouteManager
 import com.simone.jarvismobile.audio.TextToSpeechEngine
 import dagger.Binds
@@ -26,4 +28,8 @@ abstract class AudioModule {
     @Binds
     @Singleton
     abstract fun bindTextToSpeechEngine(impl: AndroidOfflineTtsEngine): TextToSpeechEngine
+
+    @Binds
+    @Singleton
+    abstract fun bindAudioCapture(impl: AndroidAudioCapture): AudioCapture
 }
