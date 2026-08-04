@@ -41,8 +41,11 @@ fun ModelsScreen(
     val status by viewModel.status.collectAsStateWithLifecycle()
     val busy by viewModel.busy.collectAsStateWithLifecycle()
 
+    // GetContent (ACTION_GET_CONTENT) is more permissive than OpenDocument on
+    // OEM ROMs (MagicOS/EMUI grey out unknown types like .task in the document
+    // picker). It lets the user pick the model file from any file manager.
     val importLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument(),
+        ActivityResultContracts.GetContent(),
     ) { uri -> uri?.let { viewModel.importModel(it) } }
 
     Column(
@@ -65,7 +68,7 @@ fun ModelsScreen(
         }
 
         Button(
-            onClick = { importLauncher.launch(arrayOf("*/*")) },
+            onClick = { importLauncher.launch("*/*") },
             enabled = !busy,
             modifier = Modifier.fillMaxWidth(),
         ) {
