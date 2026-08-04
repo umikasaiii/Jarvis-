@@ -86,7 +86,10 @@ class LitertLmEngine @Inject constructor(
             // A fresh conversation per turn keeps generation stateless: the full
             // prompt (system + transcript) is built upstream in SessionCoordinator.
             e.createConversation().use { conversation ->
-                conversation.sendMessage(prompt).text
+                // sendMessage returns a Message; Message.toString() concatenates its
+                // text Contents into the plain reply string (Content.Text.toString()
+                // is the raw text). Blocking call — we are on Dispatchers.Default.
+                conversation.sendMessage(prompt).toString()
             }
         } catch (t: Throwable) {
             Log.w(TAG, "llm_generate_failed ${t.javaClass.simpleName}")
