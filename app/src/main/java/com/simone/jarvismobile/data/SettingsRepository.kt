@@ -27,6 +27,29 @@ class SettingsRepository @Inject constructor(
         val NAME = stringPreferencesKey("assistant_name")
         val RECORD_SECONDS = intPreferencesKey("record_seconds")
         val USE_BLUETOOTH = booleanPreferencesKey("use_bluetooth")
+        val MODEL_PATH = stringPreferencesKey("llm_model_path")
+        val MODEL_NAME = stringPreferencesKey("llm_model_name")
+    }
+
+    /** Absolute path of the LLM model to auto-load, or empty if none chosen. */
+    val modelPath: Flow<String> =
+        context.settingsDataStore.data.map { it[Keys.MODEL_PATH] ?: "" }
+
+    val modelName: Flow<String> =
+        context.settingsDataStore.data.map { it[Keys.MODEL_NAME] ?: "" }
+
+    suspend fun setActiveModel(path: String, name: String) {
+        context.settingsDataStore.edit {
+            it[Keys.MODEL_PATH] = path
+            it[Keys.MODEL_NAME] = name
+        }
+    }
+
+    suspend fun clearActiveModel() {
+        context.settingsDataStore.edit {
+            it.remove(Keys.MODEL_PATH)
+            it.remove(Keys.MODEL_NAME)
+        }
     }
 
     val assistantName: Flow<String> =

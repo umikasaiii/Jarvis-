@@ -127,6 +127,10 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.okhttp.logging)
 
+    // On-device LLM (Phase 3) + SAF document access for model import.
+    implementation(libs.mediapipe.tasks.genai)
+    implementation(libs.androidx.documentfile)
+
     // Unit tests.
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

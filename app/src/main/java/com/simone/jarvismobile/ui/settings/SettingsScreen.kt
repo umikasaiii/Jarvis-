@@ -36,6 +36,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
+    onOpenModels: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val name by viewModel.assistantName.collectAsStateWithLifecycle()
@@ -120,6 +121,9 @@ fun SettingsScreen(
             }
         }
 
+        OutlinedButton(onClick = onOpenModels, modifier = Modifier.fillMaxWidth()) {
+            Text("Modelli (AI locale)")
+        }
         OutlinedButton(onClick = viewModel::resetAudio, modifier = Modifier.fillMaxWidth()) {
             Text("Reset audio")
         }

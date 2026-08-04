@@ -9,6 +9,8 @@ import com.simone.jarvismobile.core.state.ConversationEvent
 import com.simone.jarvismobile.core.state.ConversationState
 import com.simone.jarvismobile.core.state.ConversationStateMachine
 import com.simone.jarvismobile.core.state.RouteTarget
+import com.simone.jarvismobile.llm.LlmEngine
+import com.simone.jarvismobile.llm.LlmLoadState
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -35,10 +37,20 @@ class SessionCoordinator @Inject constructor(
     private val audioCapture: AudioCapture,
     private val stt: SpeechToTextEngine,
     private val tts: TextToSpeechEngine,
+    private val llm: LlmEngine,
 ) {
 
     private val machine = ConversationStateMachine()
     val state: StateFlow<ConversationState> = machine.state
+
+    val llmLoadState: StateFlow<LlmLoadState> = llm.loadState
+    val loadedModelName: StateFlow<String?> = llm.loadedModelName
+
+    private val systemPrompt: String by lazy {
+        runCatching {
+            context.assets.open("prompts/jarvis_system_it.md").bufferedReader().use { it.readText() }
+        }.getOrDefault("Sei JARVIS, un assistente personale offline. Rispondi in italiano, breve e naturale.")
+    }
 
     val micLevel: StateFlow<Float> = audioCapture.micLevel
     val routeState: StateFlow<AudioRouteState> = audioRouteManager.routeState
@@ -101,7 +113,7 @@ class SessionCoordinator @Inject constructor(
                 machine.dispatch(ConversationEvent.TranscriptReady(result.text)) // -> RetrievingMemory
                 machine.dispatch(ConversationEvent.MemoryRetrieved) // -> Routing
                 machine.dispatch(ConversationEvent.Routed(RouteTarget.LOCAL)) // -> ThinkingLocal
-                val answer = phase2Reply(result.text)
+                val answer = generateAnswer(result.text)
                 _reply.value = answer
                 machine.dispatch(ConversationEvent.AnswerReady) // -> Speaking
                 speakOut(answer)
@@ -136,8 +148,24 @@ class SessionCoordinator @Inject constructor(
         }
     }
 
-    /** Phase-2 placeholder "brain": echoes understanding. Replaced by the LLM in Phase 3. */
-    private fun phase2Reply(transcript: String): String = "Ho capito: $transcript"
+    /**
+     * Generates the reply. When a local model is loaded it answers for real
+     * (Phase 3); otherwise it falls back to the Phase-2 echo and points the user
+     * to the Models screen.
+     */
+    private suspend fun generateAnswer(transcript: String): String {
+        if (llm.loadState.value != LlmLoadState.LOADED) {
+            return "Ho capito: $transcript. Carica un modello nella schermata Modelli per risposte vere."
+        }
+        _diagnostic.value = "thinking (llm ${loadedModelName.value})"
+        val prompt = buildString {
+            append(systemPrompt.trim())
+            append("\n\nUtente: ").append(transcript)
+            append("\nJARVIS:")
+        }
+        return llm.generate(prompt)?.trim()?.ifBlank { null }
+            ?: "Non sono riuscito a generare una risposta con il modello."
+    }
 
     private suspend fun speakOut(text: String) {
         if (tts.ensureReady()) {

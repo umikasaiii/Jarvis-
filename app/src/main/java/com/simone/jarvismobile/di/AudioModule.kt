@@ -8,6 +8,8 @@ import com.simone.jarvismobile.audio.AudioCapture
 import com.simone.jarvismobile.audio.AudioRouteManager
 import com.simone.jarvismobile.audio.SpeechToTextEngine
 import com.simone.jarvismobile.audio.TextToSpeechEngine
+import com.simone.jarvismobile.llm.LlmEngine
+import com.simone.jarvismobile.llm.MediaPipeLlmEngine
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -38,4 +40,8 @@ abstract class AudioModule {
     @Binds
     @Singleton
     abstract fun bindSpeechToTextEngine(impl: AndroidOnDeviceSpeechEngine): SpeechToTextEngine
+
+    @Binds
+    @Singleton
+    abstract fun bindLlmEngine(impl: MediaPipeLlmEngine): LlmEngine
 }

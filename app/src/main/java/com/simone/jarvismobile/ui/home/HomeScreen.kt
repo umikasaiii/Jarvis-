@@ -64,6 +64,7 @@ fun HomeScreen(
     autoStart: Boolean = false,
     onOpenDiagnostics: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
+    onOpenModels: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -75,6 +76,7 @@ fun HomeScreen(
     val transcript by viewModel.transcript.collectAsStateWithLifecycle()
     val reply by viewModel.reply.collectAsStateWithLifecycle()
     val partial by viewModel.partial.collectAsStateWithLifecycle()
+    val loadedModelName by viewModel.loadedModelName.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
     var micGranted by remember {
@@ -212,7 +214,12 @@ fun HomeScreen(
                 StatusTile("Modalità", "Offline-first", accent = JarvisAccent, modifier = Modifier.weight(1f))
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                StatusTile("Modello", "Non caricato", accent = Color(0xFF6B7A83), modifier = Modifier.weight(1f))
+                StatusTile(
+                    "Modello",
+                    loadedModelName ?: "Non caricato",
+                    accent = if (loadedModelName != null) JarvisGreen else Color(0xFF6B7A83),
+                    modifier = Modifier.weight(1f),
+                )
                 StatusTile("Memoria", "Non attiva", accent = Color(0xFF6B7A83), modifier = Modifier.weight(1f))
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -231,7 +238,10 @@ fun HomeScreen(
                 )
             }
 
-            TextButton(onClick = onOpenDiagnostics) { Text("Diagnostica", color = JarvisAccent) }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = onOpenModels) { Text("Modelli", color = JarvisAccent) }
+                TextButton(onClick = onOpenDiagnostics) { Text("Diagnostica", color = JarvisAccent) }
+            }
 
             Text(
                 text = "v${com.simone.jarvismobile.BuildConfig.VERSION_NAME} · build ${com.simone.jarvismobile.BuildConfig.BUILD_ID}",

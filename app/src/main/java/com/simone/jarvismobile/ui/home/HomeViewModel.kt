@@ -37,6 +37,8 @@ class HomeViewModel @Inject constructor(
     val transcript: StateFlow<String> = coordinator.transcript
     val reply: StateFlow<String> = coordinator.reply
     val partial: StateFlow<String> = coordinator.partialTranscript
+    val llmLoadState: StateFlow<com.simone.jarvismobile.llm.LlmLoadState> = coordinator.llmLoadState
+    val loadedModelName: StateFlow<String?> = coordinator.loadedModelName
 
     val assistantName: StateFlow<String> = settings.assistantName
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsRepository.DEFAULT_NAME)
