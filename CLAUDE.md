@@ -79,7 +79,7 @@ Plugin and all AndroidX/Compose/Material3 artifacts. Consequences:
 | Phase | Scope | Status |
 |------|-------|--------|
 | 0 | Foundations: project, DI, Compose, docs, CI | **Done (build-verified)** — core 71 tests green; Android app compiles + debug APK produced by CI (run #2, `f8e94dd`) |
-| 1 | Audio loop: button/Tile/service/routing → fixed TTS in AirPods | **Compiles + APK built in CI** — real AudioRecord capture, coordinator, diagnostics; **on-device HONOR 200 test still pending** (docs/PHASE1_HONOR_TEST_CHECKLIST.md) |
+| 1 | Audio loop: button/Tile/service/routing → fixed TTS in AirPods | **Verified on HONOR 200** — real AudioRecord capture confirmed on-device (build `7342e6a`); press → record → fixed TTS reply. No STT/LLM by design. Root causes fixed on the way: stable debug signing (updates now install in place) and a MagicOS foreground-service/audio-focus conflict (orb now uses the same minimal capture path as the working diagnostics test). |
 | 2 | STT + VAD (sherpa-onnx) | Not started |
 | 3 | Local LLM (llama.cpp) + model manager | Not started |
 | 4 | Full TTS + audio focus + follow-up | Partially scaffolded (TTS engine + follow-up in ViewModel) |
@@ -100,7 +100,12 @@ lint is clean, docs/decisions updated. Never leave the main branch uncompilable.
 - **Compiled + packaged by CI (GitHub Actions, Android SDK):** all of `app/` —
   audio route manager, real AudioRecord capture, offline TTS, listening foreground
   service, QS tile, Compose Home + Diagnostics, permissions, DI wiring. A debug APK
-  is produced (`docs/ANDROID_BUILD_AUDIT.md`). On-device behavior is **not** yet
-  verified (`docs/PHASE1_HONOR_TEST_CHECKLIST.md`).
+  is produced (`docs/ANDROID_BUILD_AUDIT.md`), signed with a committed stable debug
+  key so updates install in place, and published to the `latest-debug` GitHub Release.
+- **Verified on-device (HONOR 200, build `7342e6a`):** microphone capture on the
+  main push-to-talk control (the Home orb), after fixing a MagicOS
+  foreground-service/audio-focus conflict — the orb now uses the same minimal
+  capture path as the Diagnostics "Test microfono". The reply is still the fixed
+  Phase-1 phrase (no STT/LLM yet).
 - **Not implemented yet:** STT/VAD, llama.cpp, Room/SAF vault, HA, PC server,
   benchmarks, release signing, instrumented tests.
