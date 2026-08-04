@@ -39,6 +39,7 @@ class HomeViewModel @Inject constructor(
     val reply: StateFlow<String> = coordinator.reply
     val partial: StateFlow<String> = coordinator.partialTranscript
     val messages: StateFlow<List<ChatMessage>> = coordinator.messages
+    val sending: StateFlow<Boolean> = coordinator.sending
     val llmLoadState: StateFlow<com.simone.jarvismobile.llm.LlmLoadState> = coordinator.llmLoadState
     val loadedModelName: StateFlow<String?> = coordinator.loadedModelName
 
@@ -72,5 +73,10 @@ class HomeViewModel @Inject constructor(
     /** Clears the conversation and the model's in-session memory. */
     fun onNewConversation() {
         coordinator.newConversation()
+    }
+
+    /** Sends a typed message (written-chat alternative to voice). */
+    fun onSendText(text: String) {
+        viewModelScope.launch { coordinator.sendText(text) }
     }
 }

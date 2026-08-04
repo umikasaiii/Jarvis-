@@ -91,6 +91,10 @@ class SessionCoordinator @Inject constructor(
     private val _diagnostic = MutableStateFlow("")
     val diagnostic: StateFlow<String> = _diagnostic.asStateFlow()
 
+    /** True while a typed (written-chat) message is being answered. */
+    private val _sending = MutableStateFlow(false)
+    val sending: StateFlow<Boolean> = _sending.asStateFlow()
+
     private val sessionMutex = Mutex()
 
     /** Runs one conversation turn. Safe to call repeatedly; ignores overlap. */
@@ -219,6 +223,16 @@ class SessionCoordinator @Inject constructor(
      * points the user to the Models screen.
      */
     private suspend fun generateAnswer(transcript: String): String {
+        // "Ricorda …" → save a note to the vault (works even without a model).
+        extractRememberContent(transcript)?.let { content ->
+            val saved = runCatching { memory.remember(content) }.getOrDefault(false)
+            _diagnostic.value = if (saved) "memoria: salvato" else "memoria: nessun vault"
+            return if (saved) {
+                "Ho annotato: $content"
+            } else {
+                "Non ho un vault collegato dove salvare. Aprilo in Impostazioni › Memoria."
+            }
+        }
         if (llm.loadState.value != LlmLoadState.LOADED) {
             return "Ho capito: $transcript. Carica un modello nella schermata Modelli per risposte vere."
         }
@@ -249,6 +263,46 @@ class SessionCoordinator @Inject constructor(
      * multi-turn memory otherwise persists across presses while the model stays
      * loaded, so context builds up naturally between turns.
      */
+    /**
+     * Written-chat entry point: answer a TYPED message (no mic, no TTS). Shares the
+     * same reply pipeline as voice — memory retrieval, multi-turn context, and the
+     * "ricorda …" command all work — and appends both sides to the on-screen log.
+     */
+    suspend fun sendText(text: String) {
+        val message = text.trim()
+        if (message.isBlank() || sessionMutex.isLocked) return
+        sessionMutex.withLock {
+            _lastError.value = null
+            _sending.value = true
+            try {
+                appendMessage(fromUser = true, text = message)
+                _transcript.value = message
+                _diagnostic.value = "chat scritta"
+                val answer = generateAnswer(message)
+                _reply.value = answer
+                appendMessage(fromUser = false, text = answer)
+            } catch (e: Exception) {
+                _lastError.value = "text_crash_${e.javaClass.simpleName}"
+                _diagnostic.value = "CRASH ${e.javaClass.simpleName}"
+            } finally {
+                _sending.value = false
+            }
+        }
+    }
+
+    /** Recognizes a "remember this" command and returns the note content, or null. */
+    private fun extractRememberContent(text: String): String? {
+        val trimmed = text.trim()
+        val lower = trimmed.lowercase()
+        for (prefix in REMEMBER_PREFIXES) {
+            if (lower.startsWith(prefix)) {
+                val content = trimmed.substring(prefix.length).trim().trim(':', '-', ' ').trim()
+                if (content.isNotEmpty()) return content
+            }
+        }
+        return null
+    }
+
     /** Builds the vault memory index in the background if a vault is configured. */
     suspend fun ensureMemoryReady() = memory.ensureBuilt()
 
@@ -319,6 +373,13 @@ class SessionCoordinator @Inject constructor(
 
         /** How many vault chunks to inject as grounding context per question. */
         const val MEMORY_TOP_K = 4
+
+        /** Command prefixes (longest first) that save the rest as a memory note. */
+        private val REMEMBER_PREFIXES = listOf(
+            "ricorda che ", "ricorda di ", "ricordati che ", "ricordati di ",
+            "prendi nota che ", "prendi nota di ", "prendi nota ",
+            "nota che ", "annota che ", "annota ", "ricorda ", "nota ",
+        )
         private const val TAG = "JarvisSession"
     }
 }

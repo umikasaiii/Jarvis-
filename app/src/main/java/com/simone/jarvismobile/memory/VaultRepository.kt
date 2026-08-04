@@ -9,6 +9,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -28,12 +30,16 @@ class VaultRepository @Inject constructor(
     /** A raw Markdown note read from the vault. */
     data class RawNote(val path: String, val content: String)
 
-    /** Persists the picked vault folder and takes a durable read permission. */
+    /**
+     * Persists the picked vault folder and takes a durable read+write permission
+     * (write is needed so JARVIS can save "ricorda …" notes back into the vault;
+     * on a read-only provider the write simply fails gracefully later).
+     */
     suspend fun setVault(treeUri: Uri) {
         runCatching {
             context.contentResolver.takePersistableUriPermission(
                 treeUri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
             )
         }
         settings.setVaultUri(treeUri.toString())
@@ -74,6 +80,41 @@ class VaultRepository @Inject constructor(
         out
     }
 
+    /**
+     * Appends a timestamped line to `JARVIS/Memoria.md` inside the vault, creating
+     * the folder/file if needed. Read-modify-write with truncate ("w") for maximum
+     * provider compatibility (the memory file stays small). Returns false if there
+     * is no vault or the provider is read-only.
+     */
+    suspend fun appendMemory(text: String): Boolean = withContext(Dispatchers.IO) {
+        val body = text.trim()
+        if (body.isEmpty()) return@withContext false
+        val uriStr = settings.vaultUri.first()
+        if (uriStr.isBlank()) return@withContext false
+        val tree = DocumentFile.fromTreeUri(context, Uri.parse(uriStr)) ?: return@withContext false
+        runCatching {
+            val folder = tree.findFile(MEMORY_DIR)?.takeIf { it.isDirectory }
+                ?: tree.createDirectory(MEMORY_DIR)
+                ?: return@withContext false
+            val file = folder.findFile(MEMORY_FILE)
+                ?: folder.createFile("text/markdown", MEMORY_FILE)
+                ?: return@withContext false
+            val existing = context.contentResolver.openInputStream(file.uri)
+                ?.bufferedReader()?.use { it.readText() } ?: ""
+            val base = when {
+                existing.isBlank() -> "# Memoria di JARVIS\n\n"
+                existing.endsWith("\n") -> existing
+                else -> "$existing\n"
+            }
+            val stamp = LocalDateTime.now().format(TS)
+            val out = base + "- [$stamp] $body\n"
+            context.contentResolver.openOutputStream(file.uri, "w")?.use {
+                it.write(out.toByteArray(Charsets.UTF_8))
+            } ?: return@withContext false
+            true
+        }.getOrDefault(false)
+    }
+
     private fun collect(dir: DocumentFile, prefix: String, out: MutableList<RawNote>) {
         for (f in dir.listFiles()) {
             val name = f.name ?: continue
@@ -86,5 +127,11 @@ class VaultRepository @Inject constructor(
                 out += RawNote("$prefix$name", content)
             }
         }
+    }
+
+    private companion object {
+        const val MEMORY_DIR = "JARVIS"
+        const val MEMORY_FILE = "Memoria.md"
+        val TS: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
     }
 }

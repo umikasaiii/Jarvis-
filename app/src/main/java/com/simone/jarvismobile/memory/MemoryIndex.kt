@@ -79,6 +79,19 @@ class MemoryIndex @Inject constructor(
         }
     }
 
+    /** Whether a vault is connected (so callers can offer to save memories). */
+    suspend fun isConfigured(): Boolean = vault.isConfigured()
+
+    /**
+     * Saves a user "remember this" note into the vault and refreshes the index so
+     * it is retrievable straight away. Returns false if there is no writable vault.
+     */
+    suspend fun remember(text: String): Boolean {
+        val ok = vault.appendMemory(text)
+        if (ok) rebuild()
+        return ok
+    }
+
     /** Drops the index (e.g. after the vault is disconnected). */
     fun clear() {
         chunks = emptyList()

@@ -95,11 +95,12 @@ fun MemoryScreen(
                 HorizontalDivider()
                 Text(
                     "Scegli la cartella del tuo vault Obsidian (o una qualsiasi cartella con file " +
-                        ".md). JARVIS legge le note in sola lettura, le indicizza sul dispositivo e, " +
-                        "quando fai una domanda, recupera i pezzi più pertinenti e li usa come " +
-                        "contesto. Niente viene caricato online; i file restano la fonte di verità e " +
-                        "l'indice è una cache ricostruibile. Aggiorna con “Reindicizza” dopo aver " +
-                        "modificato le note.",
+                        ".md). JARVIS indicizza le note sul dispositivo e, quando fai una domanda, " +
+                        "recupera i pezzi più pertinenti e li usa come contesto. Puoi anche fargli " +
+                        "salvare qualcosa dicendo o scrivendo “ricorda che …”: lo aggiunge a " +
+                        "JARVIS/Memoria.md nel vault. Niente viene caricato online; i file restano " +
+                        "la fonte di verità e l'indice è una cache ricostruibile. Usa “Reindicizza” " +
+                        "dopo aver modificato le note a mano.",
                     style = MaterialTheme.typography.bodySmall,
                 )
             }

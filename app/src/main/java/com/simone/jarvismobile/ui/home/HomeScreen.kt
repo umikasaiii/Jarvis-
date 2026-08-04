@@ -19,12 +19,15 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -78,6 +81,9 @@ fun HomeScreen(
     val diagnostic by viewModel.diagnostic.collectAsStateWithLifecycle()
     val partial by viewModel.partial.collectAsStateWithLifecycle()
     val messages by viewModel.messages.collectAsStateWithLifecycle()
+    val sending by viewModel.sending.collectAsStateWithLifecycle()
+
+    var textInput by remember { mutableStateOf("") }
     val loadedModelName by viewModel.loadedModelName.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
@@ -206,6 +212,47 @@ fun HomeScreen(
                 }
                 TextButton(onClick = viewModel::onNewConversation) {
                     Text("Nuova conversazione", color = JarvisAmber)
+                }
+            }
+
+            // Written-chat input — an alternative to the voice orb. Works without
+            // the microphone; the reply appears in the log above (no TTS).
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                val canSend = textInput.isNotBlank() && !sending
+                fun send() {
+                    val msg = textInput.trim()
+                    if (msg.isNotEmpty()) {
+                        viewModel.onSendText(msg)
+                        textInput = ""
+                    }
+                }
+                OutlinedTextField(
+                    value = textInput,
+                    onValueChange = { textInput = it },
+                    modifier = Modifier.weight(1f),
+                    placeholder = { Text("Scrivi un messaggio…", color = Color(0xFF6E7C85)) },
+                    enabled = !sending,
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = Color(0xFFE4EAEE)),
+                )
+                IconButton(onClick = { send() }, enabled = canSend) {
+                    if (sending) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            color = JarvisAccent,
+                            strokeWidth = 2.dp,
+                        )
+                    } else {
+                        Icon(
+                            Icons.AutoMirrored.Filled.Send,
+                            contentDescription = "Invia",
+                            tint = if (canSend) JarvisAccent else Color(0xFF6B7A83),
+                        )
+                    }
                 }
             }
 
