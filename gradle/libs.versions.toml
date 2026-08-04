@@ -30,7 +30,7 @@ turbine = "1.1.0"
 mockwebserver = "4.12.0"
 biometric = "1.2.0-alpha05"
 splashscreen = "1.0.1"
-mediapipeGenai = "0.10.27"
+mediapipeGenai = "0.10.29"
 documentfile = "1.0.1"
 
 [libraries]
