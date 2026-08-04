@@ -4,7 +4,6 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.simone.jarvismobile.audio.AudioRouteState
-import com.simone.jarvismobile.audio.ListeningService
 import com.simone.jarvismobile.audio.SessionCoordinator
 import com.simone.jarvismobile.audio.TtsState
 import com.simone.jarvismobile.core.state.ConversationState
@@ -41,17 +40,19 @@ class HomeViewModel @Inject constructor(
 
     fun hasRecordPermission(): Boolean = coordinator.hasRecordPermission()
 
-    /** Called once the user has granted (or already had) the mic permission. */
+    /**
+     * Phase-1 entry point. Runs the session directly in the foreground — NO
+     * foreground service — so the capture path is identical to the working
+     * Diagnostics "Test microfono". This avoids the MagicOS foreground-service /
+     * audio-focus quirk that blocked the main mic while the isolated test worked.
+     * Android shows the mic indicator while the Activity is visible, so
+     * microphone use stays visible.
+     */
     fun onTalkPressed() {
-        ListeningService.start(getApplication())
-        viewModelScope.launch {
-            coordinator.runSession()
-            ListeningService.stop(getApplication())
-        }
+        viewModelScope.launch { coordinator.runSession() }
     }
 
     fun onCancel() {
         coordinator.cancel()
-        ListeningService.stop(getApplication())
     }
 }

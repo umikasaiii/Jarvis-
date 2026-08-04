@@ -44,12 +44,12 @@ class AndroidAudioRouteManager @Inject constructor(
 
     override suspend fun beginSession(preferBluetooth: Boolean): AudioEndpoint {
         previousMode = audioManager.mode
-        val focusGranted = requestFocus()
 
-        // Phone-only path: keep the NORMAL audio mode and do NOT touch any
-        // Bluetooth / communication-device APIs. Communication mode without an
-        // active comm device can break built-in mic capture and route playback to
-        // the earpiece; on MagicOS the BT calls also trigger a Location prompt.
+        // Phone-only path: do the ABSOLUTE MINIMUM — no audio-focus request, no
+        // audio-mode change, no Bluetooth/communication-device APIs. This makes
+        // capture behave exactly like a bare AudioRecord (the working Diagnostics
+        // "Test microfono"); requesting communication focus/mode was blocking the
+        // built-in mic on MagicOS.
         if (!preferBluetooth) {
             val phone = AudioEndpoint(id = -1, productName = "", kind = AudioDeviceKind.PHONE, isSource = true)
             val phoneOut = AudioEndpoint(id = -1, productName = "", kind = AudioDeviceKind.PHONE, isSource = false)
@@ -61,19 +61,19 @@ class AndroidAudioRouteManager @Inject constructor(
                     communicationDeviceApplied = false,
                     sampleRate = preferredSampleRate(),
                     channelCount = 1,
-                    hasAudioFocus = focusGranted,
+                    hasAudioFocus = false,
                     bluetoothConnected = false,
                     airPodsDetected = false,
                     usingBluetoothInput = false,
-                    lastError = if (!focusGranted) "audio_focus_denied" else null,
                 )
             }
-            Log.i(TAG, "begin_session phone_only focus=$focusGranted")
+            Log.i(TAG, "begin_session phone_only minimal")
             return phone
         }
 
-        // Bluetooth path: switch to communication mode so BT SCO / the modern
-        // communication-device API routes voice capture to the headset.
+        // Bluetooth path: request focus + switch to communication mode so BT SCO /
+        // the modern communication-device API routes voice capture to the headset.
+        val focusGranted = requestFocus()
         audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
         val input = selectInputEndpoint(preferBluetooth)
         val applied = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
