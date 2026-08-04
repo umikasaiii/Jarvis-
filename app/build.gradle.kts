@@ -20,6 +20,11 @@ android {
         versionCode = 1
         versionName = "0.1.0"
 
+        // Short build id (git SHA in CI, "local" otherwise) shown in the UI so we
+        // can verify which build is actually installed on the device.
+        val buildId = (System.getenv("GITHUB_SHA") ?: "local").take(7)
+        buildConfigField("String", "BUILD_ID", "\"$buildId\"")
+
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         // Prioritize the Honor 200 / Snapdragon 7 Gen 3 target (arm64-v8a). A
@@ -30,10 +35,23 @@ android {
         }
     }
 
+    signingConfigs {
+        // A fixed, committed DEBUG keystore so every build (local or CI) is signed
+        // with the same key. This lets debug APKs update in place without an
+        // uninstall. Debug-only; not a release key.
+        getByName("debug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
         debug {
             isMinifyEnabled = false
             applicationIdSuffix = ".debug"
+            signingConfig = signingConfigs.getByName("debug")
         }
         release {
             isMinifyEnabled = true

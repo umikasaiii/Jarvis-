@@ -204,6 +204,12 @@ fun HomeScreen(
             }
 
             TextButton(onClick = onOpenDiagnostics) { Text("Diagnostica", color = JarvisAccent) }
+
+            Text(
+                text = "v${com.simone.jarvismobile.BuildConfig.VERSION_NAME} · build ${com.simone.jarvismobile.BuildConfig.BUILD_ID}",
+                style = MaterialTheme.typography.labelSmall,
+                color = Color(0xFF5A666E),
+            )
         }
     }
 }

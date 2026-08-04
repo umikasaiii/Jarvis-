@@ -19,6 +19,10 @@ release/
 # Secrets & personal data — never commit (docs/SECURITY.md, docs/PRIVACY.md)
 *.keystore
 *.jks
+# Exception: the DEBUG-only keystore is committed on purpose so every CI build is
+# signed with the same key and updates install over each other. It is NOT a
+# release key and holds no secret (standard debug password "android").
+!app/debug.keystore
 keystore.properties
 secrets.properties
 .env
