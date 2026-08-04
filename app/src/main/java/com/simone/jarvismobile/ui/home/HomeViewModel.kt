@@ -34,6 +34,7 @@ class HomeViewModel @Inject constructor(
     val ttsState: StateFlow<TtsState> = coordinator.ttsState
     val micLevel: StateFlow<Float> = coordinator.micLevel
     val lastError: StateFlow<String?> = coordinator.lastError
+    val diagnostic: StateFlow<String> = coordinator.diagnostic
 
     val assistantName: StateFlow<String> = settings.assistantName
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsRepository.DEFAULT_NAME)

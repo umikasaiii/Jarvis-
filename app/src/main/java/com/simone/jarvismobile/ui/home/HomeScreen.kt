@@ -70,6 +70,7 @@ fun HomeScreen(
     val level by viewModel.micLevel.collectAsStateWithLifecycle()
     val error by viewModel.lastError.collectAsStateWithLifecycle()
     val name by viewModel.assistantName.collectAsStateWithLifecycle()
+    val diagnostic by viewModel.diagnostic.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
     var micGranted by remember {
@@ -192,6 +193,16 @@ fun HomeScreen(
             }
 
             Spacer(Modifier.height(4.dp))
+            if (diagnostic.isNotEmpty()) {
+                Text(
+                    text = "· $diagnostic",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color(0xFF6E7C85),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                )
+            }
+
             TextButton(onClick = onOpenDiagnostics) { Text("Diagnostica", color = JarvisAccent) }
         }
     }

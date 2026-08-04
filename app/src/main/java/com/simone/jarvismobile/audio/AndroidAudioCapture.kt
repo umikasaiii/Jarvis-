@@ -37,6 +37,9 @@ class AndroidAudioCapture @Inject constructor(
     private val _micLevel = MutableStateFlow(0f)
     override val micLevel = _micLevel.asStateFlow()
 
+    private val _lastDetail = MutableStateFlow("")
+    override val lastDetail = _lastDetail.asStateFlow()
+
     private val cancelled = AtomicBoolean(false)
 
     override fun cancel() {
@@ -47,6 +50,7 @@ class AndroidAudioCapture @Inject constructor(
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO)
             != PackageManager.PERMISSION_GRANTED
         ) {
+            _lastDetail.value = "permission_denied"
             return@withContext CaptureResult.PERMISSION_DENIED
         }
         cancelled.set(false)
@@ -58,6 +62,7 @@ class AndroidAudioCapture @Inject constructor(
             AudioFormat.ENCODING_PCM_16BIT,
         )
         if (minBuffer <= 0) {
+            _lastDetail.value = "min_buffer_invalid=$minBuffer"
             Log.w(TAG, "audio_record min_buffer_invalid=$minBuffer")
             return@withContext CaptureResult.FAILED
         }
@@ -72,41 +77,62 @@ class AndroidAudioCapture @Inject constructor(
             MediaRecorder.AudioSource.DEFAULT,
         )
         var record: AudioRecord? = null
+        var usedSource = -1
+        val states = StringBuilder()
         for (source in sources) {
             val candidate = try {
                 AudioRecord(source, sampleRate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, bufferSize)
             } catch (e: SecurityException) {
+                _lastDetail.value = "security_exception"
                 Log.w(TAG, LogRedactor.redact("audio_record security_exception ${e.message}"))
                 return@withContext CaptureResult.PERMISSION_DENIED
             } catch (e: IllegalArgumentException) {
+                states.append("src$source:iae ")
                 Log.w(TAG, "audio_record bad_config source=$source ${e.message}")
                 null
             }
             if (candidate != null && candidate.state == AudioRecord.STATE_INITIALIZED) {
-                Log.i(TAG, "audio_record initialized source=$source")
+                usedSource = source
                 record = candidate
                 break
             }
+            states.append("src$source:st${candidate?.state} ")
             candidate?.release()
         }
         val rec = record
         if (rec == null) {
-            Log.w(TAG, "audio_record no_source_initialized")
+            _lastDetail.value = "no_source_init $states".trim()
+            Log.w(TAG, "audio_record no_source_initialized $states")
             return@withContext CaptureResult.FAILED
         }
+        _lastDetail.value = "init source=$usedSource"
 
         try {
             rec.startRecording()
             val readBuffer = ShortArray(bufferSize / 2)
             val deadline = System.nanoTime() + durationMs * 1_000_000L
+            var peak = 0f
+            var totalRead = 0L
             while (System.nanoTime() < deadline && coroutineContext.isActive && !cancelled.get()) {
                 val n = rec.read(readBuffer, 0, readBuffer.size)
-                if (n > 0) _micLevel.value = rms(readBuffer, n)
+                if (n > 0) {
+                    totalRead += n
+                    val lvl = rms(readBuffer, n)
+                    if (lvl > peak) peak = lvl
+                    _micLevel.value = lvl
+                }
             }
             rec.stop()
             _micLevel.value = 0f
-            if (cancelled.get()) CaptureResult.FAILED else CaptureResult.COMPLETED
+            if (cancelled.get()) {
+                _lastDetail.value = "cancelled source=$usedSource"
+                CaptureResult.FAILED
+            } else {
+                _lastDetail.value = "ok source=$usedSource read=$totalRead peak=${"%.2f".format(peak)}"
+                CaptureResult.COMPLETED
+            }
         } catch (e: IllegalStateException) {
+            _lastDetail.value = "illegal_state source=$usedSource"
             Log.w(TAG, "audio_record illegal_state ${e.message}")
             CaptureResult.FAILED
         } finally {

@@ -34,6 +34,9 @@ class AndroidOfflineTtsEngine @Inject constructor(
     private val _selectedVoiceName = MutableStateFlow<String?>(null)
     override val selectedVoiceName = _selectedVoiceName.asStateFlow()
 
+    private val _lastDetail = MutableStateFlow("")
+    override val lastDetail = _lastDetail.asStateFlow()
+
     private var tts: TextToSpeech? = null
     private var ready = false
     private val pending = mutableMapOf<String, CompletableDeferred<Unit>>()
@@ -49,6 +52,7 @@ class AndroidOfflineTtsEngine @Inject constructor(
             }
             if (created == null) {
                 _state.value = TtsState.ERROR
+                _lastDetail.value = "init_failed (no usable TTS engine)"
                 return false
             }
             tts = created
@@ -99,8 +103,14 @@ class AndroidOfflineTtsEngine @Inject constructor(
      * Returns false only when no offline voice/language is available at all.
      */
     private fun setupLanguageAndVoice(engine: TextToSpeech): Boolean {
-        val chosenLocale = listOf(Locale.ITALIAN, Locale.getDefault())
-            .firstOrNull { isInstalledOffline(engine, it) }
+        val itAvail = isInstalledOffline(engine, Locale.ITALIAN)
+        val defLoc = Locale.getDefault()
+        val defAvail = isInstalledOffline(engine, defLoc)
+        val chosenLocale = when {
+            itAvail -> Locale.ITALIAN
+            defAvail -> defLoc
+            else -> null
+        }
         if (chosenLocale != null) {
             runCatching { engine.language = chosenLocale }
         }
@@ -113,18 +123,24 @@ class AndroidOfflineTtsEngine @Inject constructor(
             ?: offline.firstOrNull { it.isMale() }
             ?: offline.firstOrNull()
 
+        val base = "engine=${runCatching { engine.defaultEngine }.getOrNull()} " +
+            "it=$itAvail def=${defLoc.language}:$defAvail voices=${voices.size} offline=${offline.size}"
+
         if (chosen != null) {
             runCatching { engine.voice = chosen }
             _selectedVoiceName.value = chosen.name
+            _lastDetail.value = "ok voice=${chosen.name} $base"
             return true
         }
         // No enumerable offline voice, but the engine may still synthesize offline
         // for an installed language (some engines expose few Voice objects).
         if (chosenLocale != null) {
             _selectedVoiceName.value = "engine:${chosenLocale.language}"
+            _lastDetail.value = "engine_lang=${chosenLocale.language} $base"
             return true
         }
         _selectedVoiceName.value = null
+        _lastDetail.value = "no_offline_voice $base"
         return false
     }
 

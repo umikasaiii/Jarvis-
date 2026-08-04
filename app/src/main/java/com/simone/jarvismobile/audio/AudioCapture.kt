@@ -14,6 +14,9 @@ interface AudioCapture {
     /** Normalized microphone level (0f..1f), updated while capturing. */
     val micLevel: StateFlow<Float>
 
+    /** Technical detail of the last capture attempt (for diagnostics; redacted). */
+    val lastDetail: StateFlow<String>
+
     /** Captures for [durationMs] then stops. Returns the outcome; never throws. */
     suspend fun capture(durationMs: Long): CaptureResult
 

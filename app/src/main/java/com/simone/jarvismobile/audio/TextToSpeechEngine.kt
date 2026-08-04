@@ -18,6 +18,9 @@ interface TextToSpeechEngine {
     /** Name of the resolved offline voice (for diagnostics), or null if none. */
     val selectedVoiceName: StateFlow<String?>
 
+    /** Technical detail of the last init/voice-setup attempt (for diagnostics). */
+    val lastDetail: StateFlow<String>
+
     /** True once an offline Italian voice has been resolved and is ready. */
     suspend fun ensureReady(): Boolean
 

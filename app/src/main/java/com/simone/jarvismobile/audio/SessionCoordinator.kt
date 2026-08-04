@@ -53,6 +53,10 @@ class SessionCoordinator @Inject constructor(
     private val _lastError = MutableStateFlow<String?>(null)
     val lastError: StateFlow<String?> = _lastError.asStateFlow()
 
+    /** Human/technical breadcrumb of the last session's stages (for diagnostics). */
+    private val _diagnostic = MutableStateFlow("")
+    val diagnostic: StateFlow<String> = _diagnostic.asStateFlow()
+
     private val sessionMutex = Mutex()
     private var recordMs: Long = DEFAULT_RECORD_MS
 
@@ -64,10 +68,17 @@ class SessionCoordinator @Inject constructor(
         }
         sessionMutex.withLock {
             _lastError.value = null
-            recordMs = settings.recordSeconds.first() * 1_000L
-            val end = Fase1Flow(machine, this).run()
-            if (end is ConversationState.RecoverableError) _lastError.value = end.code
-            Log.i(TAG, "session_end state=${end::class.simpleName}")
+            _diagnostic.value = "start"
+            try {
+                recordMs = settings.recordSeconds.first() * 1_000L
+                val end = Fase1Flow(machine, this).run()
+                if (end is ConversationState.RecoverableError) _lastError.value = end.code
+                Log.i(TAG, "session_end state=${end::class.simpleName}")
+            } catch (e: Exception) {
+                _lastError.value = "crash_${e.javaClass.simpleName}"
+                _diagnostic.value = "CRASH ${e.javaClass.simpleName}: ${e.message}"
+                Log.w(TAG, "session_crash ${e.javaClass.simpleName}")
+            }
         }
     }
 
@@ -128,25 +139,36 @@ class SessionCoordinator @Inject constructor(
                 else -> AudioKind.PHONE
             }
             val fellBack = kind == AudioKind.PHONE && routeState.value.bluetoothConnected
+            _diagnostic.value = "prepare ok bt=$wantBluetooth in=${input.kind}"
             PrepareOutcome.Ready(kind, fellBack)
         } catch (e: Exception) {
-            _lastError.value = "audio_begin_failed"
+            _diagnostic.value = "prepare FAIL ${e.javaClass.simpleName}: ${e.message}"
             PrepareOutcome.Failure("audio_begin_failed")
         }
     }
 
-    override suspend fun record(): RecordOutcome = when (audioCapture.capture(recordMs)) {
-        CaptureResult.COMPLETED -> RecordOutcome.Completed
-        CaptureResult.PERMISSION_DENIED -> RecordOutcome.Failure("permission")
-        CaptureResult.FAILED -> RecordOutcome.Failure("record_failed")
+    override suspend fun record(): RecordOutcome {
+        val result = audioCapture.capture(recordMs)
+        _diagnostic.value = "record $result [${audioCapture.lastDetail.value}]"
+        return when (result) {
+            CaptureResult.COMPLETED -> RecordOutcome.Completed
+            CaptureResult.PERMISSION_DENIED -> RecordOutcome.Failure("permission")
+            CaptureResult.FAILED -> RecordOutcome.Failure("record_failed")
+        }
     }
 
-    override suspend fun ensureTtsReady(): Boolean = tts.ensureReady()
+    override suspend fun ensureTtsReady(): Boolean {
+        val ok = tts.ensureReady()
+        _diagnostic.value = "tts ready=$ok st=${tts.state.value} voice=${tts.selectedVoiceName.value} [${tts.lastDetail.value}]"
+        return ok
+    }
 
     override suspend fun speak(): SpeakOutcome = try {
         tts.speak(FIXED_REPLY)
+        _diagnostic.value = "speak done st=${tts.state.value}"
         SpeakOutcome.Done
     } catch (e: Exception) {
+        _diagnostic.value = "speak FAIL ${e.message}"
         SpeakOutcome.Failure("tts_error")
     }
 
