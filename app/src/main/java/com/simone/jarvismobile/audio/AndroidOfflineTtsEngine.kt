@@ -35,29 +35,38 @@ class AndroidOfflineTtsEngine @Inject constructor(
     override val selectedVoiceName = _selectedVoiceName.asStateFlow()
 
     private var tts: TextToSpeech? = null
+    private var ready = false
     private val pending = mutableMapOf<String, CompletableDeferred<Unit>>()
 
     override suspend fun ensureReady(): Boolean {
-        if (tts != null) return true
-        val ready = suspendCancellableCoroutine { cont ->
-            val engine = TextToSpeech(context) { status ->
-                cont.resume(status == TextToSpeech.SUCCESS)
+        if (ready) return true
+        val engine = tts ?: run {
+            val created = suspendCancellableCoroutine { cont ->
+                var ref: TextToSpeech? = null
+                ref = TextToSpeech(context) { status ->
+                    cont.resume(if (status == TextToSpeech.SUCCESS) ref else null)
+                }
             }
-            tts = engine
+            if (created == null) {
+                _state.value = TtsState.ERROR
+                return false
+            }
+            tts = created
+            configureEngine(created)
+            created
         }
-        if (!ready) {
-            _state.value = TtsState.ERROR
-            return false
-        }
-        configureEngine()
-        return selectOfflineItalianVoice()
+        ready = setupLanguageAndVoice(engine)
+        if (!ready) _state.value = TtsState.ERROR
+        return ready
     }
 
-    private fun configureEngine() {
-        val engine = tts ?: return
+    private fun configureEngine(engine: TextToSpeech) {
+        // Play through the media output so the reply is audible on the phone
+        // loudspeaker (and on AirPods via A2DP when connected). Communication
+        // usage could route to the quiet earpiece with no comm device active.
         engine.setAudioAttributes(
             AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                .setUsage(AudioAttributes.USAGE_MEDIA)
                 .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                 .build(),
         )
@@ -80,24 +89,50 @@ class AndroidOfflineTtsEngine @Inject constructor(
     }
 
     /**
-     * Picks an Italian voice, preferring a male, non-network voice. Returns false
-     * when only network voices exist (we refuse to silently use the cloud).
+     * Chooses a language + voice, tolerant of devices without a dedicated offline
+     * Italian voice. Order of preference:
+     *   1. Italian, if its data is installed (offline).
+     *   2. the device default locale, if installed offline.
+     * Then an offline (non-network) voice for that language, preferring a male
+     * one; else any offline voice. We never silently use a network-only voice —
+     * but we do fall back to an installed language rather than failing outright.
+     * Returns false only when no offline voice/language is available at all.
      */
-    private fun selectOfflineItalianVoice(): Boolean {
-        val engine = tts ?: return false
-        val italian = engine.voices?.filter {
-            it.locale.language == Locale.ITALIAN.language &&
-                !it.isNetworkConnectionRequired &&
-                !it.features.orEmpty().contains(TextToSpeech.Engine.KEY_FEATURE_NETWORK_SYNTHESIS)
-        }.orEmpty()
-        if (italian.isEmpty()) {
-            _state.value = TtsState.ERROR
-            return false
+    private fun setupLanguageAndVoice(engine: TextToSpeech): Boolean {
+        val chosenLocale = listOf(Locale.ITALIAN, Locale.getDefault())
+            .firstOrNull { isInstalledOffline(engine, it) }
+        if (chosenLocale != null) {
+            runCatching { engine.language = chosenLocale }
         }
-        val chosen = italian.firstOrNull { it.isMale() } ?: italian.first()
-        engine.voice = chosen
-        _selectedVoiceName.value = chosen.name
-        return true
+
+        val voices = runCatching { engine.voices }.getOrNull().orEmpty()
+        val offline = voices.filter { !it.isNetworkConnectionRequired }
+        val forLocale = offline.filter { chosenLocale != null && it.locale.language == chosenLocale.language }
+        val chosen = forLocale.firstOrNull { it.isMale() }
+            ?: forLocale.firstOrNull()
+            ?: offline.firstOrNull { it.isMale() }
+            ?: offline.firstOrNull()
+
+        if (chosen != null) {
+            runCatching { engine.voice = chosen }
+            _selectedVoiceName.value = chosen.name
+            return true
+        }
+        // No enumerable offline voice, but the engine may still synthesize offline
+        // for an installed language (some engines expose few Voice objects).
+        if (chosenLocale != null) {
+            _selectedVoiceName.value = "engine:${chosenLocale.language}"
+            return true
+        }
+        _selectedVoiceName.value = null
+        return false
+    }
+
+    private fun isInstalledOffline(engine: TextToSpeech, locale: Locale): Boolean {
+        val r = runCatching { engine.isLanguageAvailable(locale) }.getOrDefault(TextToSpeech.LANG_NOT_SUPPORTED)
+        return r == TextToSpeech.LANG_AVAILABLE ||
+            r == TextToSpeech.LANG_COUNTRY_AVAILABLE ||
+            r == TextToSpeech.LANG_COUNTRY_VAR_AVAILABLE
     }
 
     override suspend fun speak(text: String) {
@@ -125,6 +160,7 @@ class AndroidOfflineTtsEngine @Inject constructor(
         stop()
         tts?.shutdown()
         tts = null
+        ready = false
     }
 
     private fun Voice.isMale(): Boolean {

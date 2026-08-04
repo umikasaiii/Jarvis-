@@ -44,13 +44,12 @@ class AndroidAudioRouteManager @Inject constructor(
 
     override suspend fun beginSession(preferBluetooth: Boolean): AudioEndpoint {
         previousMode = audioManager.mode
-        audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
-
         val focusGranted = requestFocus()
 
-        // Phone-only path: do NOT touch any Bluetooth / communication-device APIs.
-        // On MagicOS those trigger a system Location prompt; the built-in mic and
-        // speaker work without it.
+        // Phone-only path: keep the NORMAL audio mode and do NOT touch any
+        // Bluetooth / communication-device APIs. Communication mode without an
+        // active comm device can break built-in mic capture and route playback to
+        // the earpiece; on MagicOS the BT calls also trigger a Location prompt.
         if (!preferBluetooth) {
             val phone = AudioEndpoint(id = -1, productName = "", kind = AudioDeviceKind.PHONE, isSource = true)
             val phoneOut = AudioEndpoint(id = -1, productName = "", kind = AudioDeviceKind.PHONE, isSource = false)
@@ -72,6 +71,10 @@ class AndroidAudioRouteManager @Inject constructor(
             Log.i(TAG, "begin_session phone_only focus=$focusGranted")
             return phone
         }
+
+        // Bluetooth path: switch to communication mode so BT SCO / the modern
+        // communication-device API routes voice capture to the headset.
+        audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
         val input = selectInputEndpoint(preferBluetooth)
         val applied = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             applyCommunicationDevice(input)
