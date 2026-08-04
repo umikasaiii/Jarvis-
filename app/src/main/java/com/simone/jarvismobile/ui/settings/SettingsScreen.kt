@@ -42,6 +42,7 @@ fun SettingsScreen(
     val name by viewModel.assistantName.collectAsStateWithLifecycle()
     val seconds by viewModel.recordSeconds.collectAsStateWithLifecycle()
     val useBluetooth by viewModel.useBluetooth.collectAsStateWithLifecycle()
+    val followUpEnabled by viewModel.followUpEnabled.collectAsStateWithLifecycle()
 
     var nameField by remember(name) { mutableStateOf(name) }
     var sliderValue by remember(seconds) { mutableStateOf(seconds.toFloat()) }
@@ -94,6 +95,26 @@ fun SettingsScreen(
 
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                ) {
+                    Text("Conversazione a mani libere", style = MaterialTheme.typography.titleMedium)
+                    Switch(checked = followUpEnabled, onCheckedChange = viewModel::setFollowUpEnabled)
+                }
+                Text(
+                    "Se attivo, dopo la risposta il microfono si riapre da solo per qualche " +
+                        "secondo: puoi rispondere o incalzare senza ripremere. Se resti in " +
+                        "silenzio, si chiude da solo. Nessun microfono sempre acceso: la " +
+                        "finestra è breve e legata alla conversazione appena avvenuta.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Registrazione", style = MaterialTheme.typography.titleMedium)
                 Text("Durata finestra: ${sliderValue.toInt()} s", style = MaterialTheme.typography.bodyMedium)
                 Slider(
@@ -104,7 +125,8 @@ fun SettingsScreen(
                     steps = 6,
                 )
                 Text(
-                    "Nella Fase 1 la finestra è a durata fissa; la fine-frase automatica (VAD) arriva nella Fase 2.",
+                    "Usata per il test microfono. Nel parlato normale la fine-frase è " +
+                        "automatica (il riconoscitore chiude da solo al silenzio).",
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
@@ -113,9 +135,8 @@ fun SettingsScreen(
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("In arrivo (fasi successive)", style = MaterialTheme.typography.titleMedium)
-                PlaceholderRow("Riconoscimento vocale (STT)", "Fase 2")
-                PlaceholderRow("Modello locale (LLM)", "Fase 3")
                 PlaceholderRow("Memoria Obsidian", "Fase 5")
+                PlaceholderRow("Strumenti / azioni", "Fase 6")
                 PlaceholderRow("Home Assistant", "Fase 7")
                 PlaceholderRow("Companion PC", "Fase 8")
             }

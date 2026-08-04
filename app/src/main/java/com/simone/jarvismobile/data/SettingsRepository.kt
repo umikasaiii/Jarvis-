@@ -27,6 +27,7 @@ class SettingsRepository @Inject constructor(
         val NAME = stringPreferencesKey("assistant_name")
         val RECORD_SECONDS = intPreferencesKey("record_seconds")
         val USE_BLUETOOTH = booleanPreferencesKey("use_bluetooth")
+        val FOLLOW_UP = booleanPreferencesKey("follow_up_enabled")
         val MODEL_PATH = stringPreferencesKey("llm_model_path")
         val MODEL_NAME = stringPreferencesKey("llm_model_name")
     }
@@ -67,6 +68,15 @@ class SettingsRepository @Inject constructor(
     val useBluetooth: Flow<Boolean> =
         context.settingsDataStore.data.map { it[Keys.USE_BLUETOOTH] ?: true }
 
+    /**
+     * Whether, after JARVIS finishes speaking, the microphone re-opens for a few
+     * seconds so the user can reply without pressing again (Phase 4 hands-free
+     * follow-up). The window is short and tied to the just-finished exchange — no
+     * always-on background mic (docs/PRIVACY.md). Off = one press, one exchange.
+     */
+    val followUpEnabled: Flow<Boolean> =
+        context.settingsDataStore.data.map { it[Keys.FOLLOW_UP] ?: true }
+
     suspend fun setAssistantName(value: String) {
         context.settingsDataStore.edit { it[Keys.NAME] = value.trim().ifBlank { DEFAULT_NAME } }
     }
@@ -77,6 +87,10 @@ class SettingsRepository @Inject constructor(
 
     suspend fun setUseBluetooth(value: Boolean) {
         context.settingsDataStore.edit { it[Keys.USE_BLUETOOTH] = value }
+    }
+
+    suspend fun setFollowUpEnabled(value: Boolean) {
+        context.settingsDataStore.edit { it[Keys.FOLLOW_UP] = value }
     }
 
     companion object {

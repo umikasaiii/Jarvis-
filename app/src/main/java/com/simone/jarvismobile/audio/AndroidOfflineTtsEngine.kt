@@ -2,6 +2,8 @@ package com.simone.jarvismobile.audio
 
 import android.content.Context
 import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.speech.tts.Voice
@@ -40,6 +42,46 @@ class AndroidOfflineTtsEngine @Inject constructor(
     private var tts: TextToSpeech? = null
     private var ready = false
     private val pending = mutableMapOf<String, CompletableDeferred<Unit>>()
+
+    // --- Audio focus (Phase 4) ------------------------------------------------
+    // While JARVIS speaks we hold TRANSIENT audio focus so music/podcasts pause
+    // (or duck) and then resume when we finish — proper audio manners. Focus is
+    // scoped to playback ONLY, never to listening: requesting focus around the
+    // recognizer is what previously broke mic capture on MagicOS.
+    private val audioManager by lazy {
+        context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    }
+    private var focusRequest: AudioFocusRequest? = null
+    private val focusListener = AudioManager.OnAudioFocusChangeListener { change ->
+        // If something with higher priority takes over (e.g. a phone call), stop
+        // talking rather than speak over it.
+        if (change == AudioManager.AUDIOFOCUS_LOSS ||
+            change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT
+        ) {
+            stop()
+        }
+    }
+
+    private fun requestAudioFocus() {
+        if (focusRequest != null) return
+        val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build(),
+            )
+            .setOnAudioFocusChangeListener(focusListener)
+            .setWillPauseWhenDucked(true)
+            .build()
+        focusRequest = request
+        runCatching { audioManager.requestAudioFocus(request) }
+    }
+
+    private fun abandonAudioFocus() {
+        focusRequest?.let { req -> runCatching { audioManager.abandonAudioFocusRequest(req) } }
+        focusRequest = null
+    }
 
     override suspend fun ensureReady(): Boolean {
         if (ready) return true
@@ -156,19 +198,26 @@ class AndroidOfflineTtsEngine @Inject constructor(
         val id = UUID.randomUUID().toString()
         val done = CompletableDeferred<Unit>()
         pending[id] = done
+        requestAudioFocus()
         val result = engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, id)
         if (result != TextToSpeech.SUCCESS) {
             _state.value = TtsState.ERROR
             pending.remove(id)
+            abandonAudioFocus()
             return
         }
-        done.await()
+        try {
+            done.await()
+        } finally {
+            abandonAudioFocus()
+        }
     }
 
     override fun stop() {
         tts?.stop()
         pending.values.forEach { it.complete(Unit) }
         pending.clear()
+        abandonAudioFocus()
         _state.value = TtsState.IDLE
     }
 

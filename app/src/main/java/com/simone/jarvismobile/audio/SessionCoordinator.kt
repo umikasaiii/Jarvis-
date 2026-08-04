@@ -9,25 +9,31 @@ import com.simone.jarvismobile.core.state.ConversationEvent
 import com.simone.jarvismobile.core.state.ConversationState
 import com.simone.jarvismobile.core.state.ConversationStateMachine
 import com.simone.jarvismobile.core.state.RouteTarget
+import com.simone.jarvismobile.data.SettingsRepository
 import com.simone.jarvismobile.llm.LlmEngine
 import com.simone.jarvismobile.llm.LlmLoadState
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Owns a single conversation turn and is the single source of truth the UI
- * observes. Phase 2 wires real offline speech-to-text: listen → transcribe →
- * (Phase-2 echo reply) → speak, driving the shared [ConversationStateMachine].
+ * Owns the conversation and is the single source of truth the UI observes:
+ * listen → transcribe → LLM answer → speak, driving the shared
+ * [ConversationStateMachine]. Phase 4 makes it hands-free — after speaking, the
+ * mic re-opens for a short follow-up window so the user can reply without
+ * pressing again (see [runTurn]); the loop ends on silence or when follow-up is
+ * disabled in Settings.
  *
  * The capture path stays minimal (the recognizer opens its own mic); no
- * foreground service and no audio-focus/communication-mode juggling on the
- * phone-only path — that was what blocked the mic on MagicOS. Audio is never
+ * foreground service and no audio-focus/communication-mode juggling around
+ * listening — that was what blocked the mic on MagicOS. Audio focus is held only
+ * while speaking (TTS), so music ducks/pauses politely. Audio is never
  * persisted; logs are technical and redacted.
  */
 @Singleton
@@ -38,6 +44,7 @@ class SessionCoordinator @Inject constructor(
     private val stt: SpeechToTextEngine,
     private val tts: TextToSpeechEngine,
     private val llm: LlmEngine,
+    private val settings: SettingsRepository,
 ) {
 
     private val machine = ConversationStateMachine()
@@ -94,6 +101,12 @@ class SessionCoordinator @Inject constructor(
         }
     }
 
+    /**
+     * Runs the conversation as a hands-free loop (Phase 4): listen → answer →
+     * speak, then — if follow-up is enabled — re-open the mic for a short window
+     * so the user can reply without pressing again. The loop ends on silence, on
+     * an error, when follow-up is off, or after [MAX_FOLLOW_UPS] exchanges.
+     */
     private suspend fun runTurn() {
         machine.dispatch(ConversationEvent.StartRequested) // -> PreparingAudio
         if (!hasRecordPermission()) {
@@ -104,7 +117,33 @@ class SessionCoordinator @Inject constructor(
         machine.dispatch(ConversationEvent.AudioReady) // -> Listening
         _diagnostic.value = "listening (stt)"
 
-        when (val result = stt.transcribe("it-IT")) {
+        val followUpEnabled = runCatching { settings.followUpEnabled.first() }.getOrDefault(true)
+        var turn = 0
+        while (true) {
+            val spoke = processTurn(stt.transcribe("it-IT"), isFollowUp = turn > 0)
+            if (!spoke) return // a terminal/no-speech outcome was handled inside
+
+            // A reply was spoken; the machine is now in FollowUpWindow.
+            if (!followUpEnabled || turn + 1 >= MAX_FOLLOW_UPS) {
+                machine.dispatch(ConversationEvent.FollowUpTimeout) // -> Idle
+                return
+            }
+            // Re-open the mic for the follow-up — no re-press needed.
+            _diagnostic.value = "follow-up: parla pure…"
+            _transcript.value = ""
+            machine.dispatch(ConversationEvent.SpeechStarted) // FollowUpWindow -> PreparingAudio
+            machine.dispatch(ConversationEvent.AudioReady)    // -> Listening
+            turn++
+        }
+    }
+
+    /**
+     * Handles one recognizer result. Returns true when a reply was spoken and the
+     * machine is parked in FollowUpWindow (so the caller may re-open the mic);
+     * false when the turn reached a terminal/no-speech outcome (already dispatched).
+     */
+    private suspend fun processTurn(result: SttResult, isFollowUp: Boolean): Boolean =
+        when (result) {
             is SttResult.Text -> {
                 _transcript.value = result.text
                 _diagnostic.value = "heard: ${result.text.take(40)}"
@@ -118,16 +157,24 @@ class SessionCoordinator @Inject constructor(
                 machine.dispatch(ConversationEvent.AnswerReady) // -> Speaking
                 speakOut(answer)
                 machine.dispatch(ConversationEvent.SpeechSynthesisFinished) // -> FollowUpWindow
-                machine.dispatch(ConversationEvent.FollowUpTimeout) // -> Idle
+                true
             }
 
             SttResult.NoSpeech -> {
-                _diagnostic.value = "no_speech"
-                machine.dispatch(ConversationEvent.SpeechEnded)
-                machine.dispatch(ConversationEvent.SpeechEnded)
-                machine.dispatch(ConversationEvent.TranscriptReady("")) // -> RecoverableError(empty_transcript)
-                _lastError.value = "empty_transcript"
-                speakOut("Non ho sentito nulla. Riprova.")
+                if (isFollowUp) {
+                    // Graceful close of the follow-up window: the user simply
+                    // didn't continue. Return to Idle quietly, no nagging prompt.
+                    _diagnostic.value = "follow-up chiuso (silenzio)"
+                    machine.dispatch(ConversationEvent.Reset) // -> Idle
+                } else {
+                    _diagnostic.value = "no_speech"
+                    machine.dispatch(ConversationEvent.SpeechEnded)
+                    machine.dispatch(ConversationEvent.SpeechEnded)
+                    machine.dispatch(ConversationEvent.TranscriptReady("")) // -> RecoverableError
+                    _lastError.value = "empty_transcript"
+                    speakOut("Non ho sentito nulla. Riprova.")
+                }
+                false
             }
 
             is SttResult.Unavailable -> {
@@ -138,15 +185,16 @@ class SessionCoordinator @Inject constructor(
                     "Il riconoscimento vocale offline non è disponibile su questo telefono. " +
                         "Nella prossima fase userò un motore incluso nell'app.",
                 )
+                false
             }
 
             is SttResult.Failure -> {
                 _diagnostic.value = "stt_fail: ${result.code}"
                 _lastError.value = result.code
                 machine.dispatch(ConversationEvent.RecoverableFailure(result.code))
+                false
             }
         }
-    }
 
     /**
      * Generates the reply. When a local model is loaded it answers for real
@@ -220,6 +268,9 @@ class SessionCoordinator @Inject constructor(
     companion object {
         const val DEFAULT_RECORD_MS = 3_000L
         const val FIXED_REPLY = "Sistema audio operativo. Sono pronto."
+
+        /** Safety cap on consecutive hands-free exchanges before requiring a press. */
+        const val MAX_FOLLOW_UPS = 8
         private const val TAG = "JarvisSession"
     }
 }
