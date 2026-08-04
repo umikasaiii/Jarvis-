@@ -14,6 +14,14 @@ import javax.inject.Singleton
 /** A model file imported into app-private storage. */
 data class LocalModel(val name: String, val path: String, val sizeBytes: Long)
 
+/** Outcome of importing a model file. */
+sealed interface ImportResult {
+    data class Ok(val model: LocalModel) : ImportResult
+    /** The copy did not match the source size (truncated) — file was removed. */
+    data class Incomplete(val expectedBytes: Long, val copiedBytes: Long) : ImportResult
+    data class Failed(val reason: String) : ImportResult
+}
+
 /**
  * Imports and lists on-device LLM model files. Models are copied into the app's
  * private `files/models` directory (no MANAGE_EXTERNAL_STORAGE, no arbitrary file
@@ -32,24 +40,44 @@ class ModelManager @Inject constructor(
             .orEmpty()
 
     /**
-     * Copies the picked document into app-private storage. Returns the imported
-     * [LocalModel] or null on failure. Large files are streamed, not held in memory.
+     * Copies the picked document into app-private storage, streaming (not held in
+     * memory), and verifies the copied size against the source size to catch a
+     * truncated/incomplete copy before the user tries to load a broken model.
      */
-    suspend fun importModel(uri: Uri): LocalModel? = withContext(Dispatchers.IO) {
+    suspend fun importModel(uri: Uri): ImportResult = withContext(Dispatchers.IO) {
         val name = displayName(uri) ?: "model-${System.currentTimeMillis()}.task"
+        val expected = sourceSize(uri)
         val target = File(modelsDir(), name)
         try {
             context.contentResolver.openInputStream(uri).use { input ->
-                if (input == null) return@withContext null
+                if (input == null) return@withContext ImportResult.Failed("stream_null")
                 target.outputStream().use { output ->
                     input.copyTo(output, bufferSize = 1 shl 20)
+                    output.flush()
                 }
             }
-            LocalModel(target.name, target.absolutePath, target.length())
+            val copied = target.length()
+            if (expected > 0 && copied != expected) {
+                runCatching { target.delete() }
+                ImportResult.Incomplete(expected, copied)
+            } else {
+                ImportResult.Ok(LocalModel(target.name, target.absolutePath, copied))
+            }
         } catch (e: Exception) {
             runCatching { if (target.exists()) target.delete() }
-            null
+            ImportResult.Failed(e.javaClass.simpleName)
         }
+    }
+
+    private fun sourceSize(uri: Uri): Long {
+        context.contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)
+            ?.use { c ->
+                if (c.moveToFirst()) {
+                    val idx = c.getColumnIndex(OpenableColumns.SIZE)
+                    if (idx >= 0 && !c.isNull(idx)) return c.getLong(idx)
+                }
+            }
+        return -1L
     }
 
     fun deleteModel(path: String): Boolean = runCatching { File(path).delete() }.getOrDefault(false)

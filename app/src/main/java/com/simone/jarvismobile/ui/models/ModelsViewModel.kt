@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.simone.jarvismobile.data.SettingsRepository
+import com.simone.jarvismobile.llm.ImportResult
 import com.simone.jarvismobile.llm.LlmEngine
 import com.simone.jarvismobile.llm.LlmLoadState
 import com.simone.jarvismobile.llm.LocalModel
@@ -47,8 +48,14 @@ class ModelsViewModel @Inject constructor(
         _busy.value = true
         _status.value = "Importazione in corso… (i modelli sono grandi, può richiedere qualche minuto)"
         viewModelScope.launch {
-            val imported = modelManager.importModel(uri)
-            _status.value = if (imported != null) "Importato: ${imported.name}" else "Importazione non riuscita"
+            _status.value = when (val r = modelManager.importModel(uri)) {
+                is ImportResult.Ok -> "Importato: ${r.model.name} (${r.model.sizeBytes / (1024 * 1024)} MiB, completo)"
+                is ImportResult.Incomplete ->
+                    "Copia incompleta: attesi ${r.expectedBytes / (1024 * 1024)} MiB, " +
+                        "copiati ${r.copiedBytes / (1024 * 1024)} MiB. File rimosso. " +
+                        "Riprova, o copia prima il file in Download con un altro file manager."
+                is ImportResult.Failed -> "Importazione non riuscita (${r.reason})"
+            }
             refresh()
             _busy.value = false
         }
