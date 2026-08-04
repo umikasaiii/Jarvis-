@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import com.simone.jarvismobile.audio.AudioRouteState
 import com.simone.jarvismobile.audio.CaptureResult
 import com.simone.jarvismobile.audio.SessionCoordinator
+import com.simone.jarvismobile.audio.SttResult
 import com.simone.jarvismobile.audio.TtsState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -44,6 +45,12 @@ class DiagnosticsViewModel @Inject constructor(
 
     private val _testing = MutableStateFlow(false)
     val testing: StateFlow<Boolean> = _testing.asStateFlow()
+
+    private val _sttStatus = MutableStateFlow("")
+    val sttStatus: StateFlow<String> = _sttStatus.asStateFlow()
+    val sttPartial: StateFlow<String> = coordinator.partialTranscript
+
+    fun sttAvailable(): Boolean = coordinator.sttAvailable()
 
     fun hasMicPermission(): Boolean = coordinator.hasRecordPermission()
 
@@ -90,9 +97,25 @@ class DiagnosticsViewModel @Inject constructor(
         }
     }
 
+    fun runSttTest() {
+        if (_testing.value) return
+        _testing.value = true
+        _sttStatus.value = "In ascolto… parla ora"
+        viewModelScope.launch {
+            _sttStatus.value = when (val r = coordinator.testStt()) {
+                is SttResult.Text -> "Riconosciuto: \"${r.text}\""
+                SttResult.NoSpeech -> "Nessun parlato riconosciuto"
+                is SttResult.Unavailable -> "Non disponibile: ${r.reason}"
+                is SttResult.Failure -> "Errore: ${r.code}"
+            }
+            _testing.value = false
+        }
+    }
+
     fun onResetAudio() {
         coordinator.resetAudio()
         _micStatus.value = ""
         _voiceStatus.value = ""
+        _sttStatus.value = ""
     }
 }

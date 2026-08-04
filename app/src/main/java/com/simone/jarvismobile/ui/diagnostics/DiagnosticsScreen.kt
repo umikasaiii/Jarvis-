@@ -45,6 +45,8 @@ fun DiagnosticsScreen(
     val micStatus by viewModel.micStatus.collectAsStateWithLifecycle()
     val voiceStatus by viewModel.voiceStatus.collectAsStateWithLifecycle()
     val testing by viewModel.testing.collectAsStateWithLifecycle()
+    val sttStatus by viewModel.sttStatus.collectAsStateWithLifecycle()
+    val sttPartial by viewModel.sttPartial.collectAsStateWithLifecycle()
     val perms = viewModel.permissions()
 
     val micPermLauncher = rememberLauncherForActivityResult(
@@ -87,7 +89,28 @@ fun DiagnosticsScreen(
                 HorizontalDivider()
                 Line("Stato TTS", tts.name)
                 Line("Voce offline", voice ?: "—")
+                Line("STT on-device", yesNo(viewModel.sttAvailable()))
                 Line("Ultimo errore", error ?: "—")
+            }
+        }
+
+        // Speech-to-text test (Phase 2).
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Riconoscimento vocale", style = MaterialTheme.typography.titleMedium)
+                if (sttPartial.isNotEmpty()) {
+                    Text("“$sttPartial”", style = MaterialTheme.typography.bodyMedium)
+                }
+                if (sttStatus.isNotEmpty()) {
+                    Text(sttStatus, style = MaterialTheme.typography.bodyMedium)
+                }
+                Button(
+                    onClick = { if (viewModel.hasMicPermission()) viewModel.runSttTest() else requestMicPermissions() },
+                    enabled = !testing,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(if (testing) "In ascolto…" else "Test riconoscimento vocale")
+                }
             }
         }
 

@@ -5,42 +5,37 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.util.Log
 import androidx.core.content.ContextCompat
-import com.simone.jarvismobile.core.session.AudioKind
-import com.simone.jarvismobile.core.session.Fase1Environment
-import com.simone.jarvismobile.core.session.Fase1Flow
-import com.simone.jarvismobile.core.session.PrepareOutcome
-import com.simone.jarvismobile.core.session.RecordOutcome
-import com.simone.jarvismobile.core.session.SpeakOutcome
 import com.simone.jarvismobile.core.state.ConversationEvent
 import com.simone.jarvismobile.core.state.ConversationState
 import com.simone.jarvismobile.core.state.ConversationStateMachine
-import com.simone.jarvismobile.data.SettingsRepository
+import com.simone.jarvismobile.core.state.RouteTarget
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Owns a single Phase-1 session and is the single source of truth the UI and the
- * foreground service observe. It implements the pure [Fase1Environment] with real
- * Android audio + TTS and runs the flow against the shared [ConversationStateMachine].
+ * Owns a single conversation turn and is the single source of truth the UI
+ * observes. Phase 2 wires real offline speech-to-text: listen → transcribe →
+ * (Phase-2 echo reply) → speak, driving the shared [ConversationStateMachine].
  *
- * Only one session runs at a time (guarded by [sessionMutex]). Audio buffers are
- * never persisted; logs are technical and redacted.
+ * The capture path stays minimal (the recognizer opens its own mic); no
+ * foreground service and no audio-focus/communication-mode juggling on the
+ * phone-only path — that was what blocked the mic on MagicOS. Audio is never
+ * persisted; logs are technical and redacted.
  */
 @Singleton
 class SessionCoordinator @Inject constructor(
     @ApplicationContext private val context: Context,
     private val audioRouteManager: AudioRouteManager,
     private val audioCapture: AudioCapture,
+    private val stt: SpeechToTextEngine,
     private val tts: TextToSpeechEngine,
-    private val settings: SettingsRepository,
-) : Fase1Environment {
+) {
 
     private val machine = ConversationStateMachine()
     val state: StateFlow<ConversationState> = machine.state
@@ -49,18 +44,23 @@ class SessionCoordinator @Inject constructor(
     val routeState: StateFlow<AudioRouteState> = audioRouteManager.routeState
     val ttsState: StateFlow<TtsState> = tts.state
     val selectedVoiceName: StateFlow<String?> = tts.selectedVoiceName
+    val partialTranscript: StateFlow<String> = stt.partial
+
+    private val _transcript = MutableStateFlow("")
+    val transcript: StateFlow<String> = _transcript.asStateFlow()
+
+    private val _reply = MutableStateFlow("")
+    val reply: StateFlow<String> = _reply.asStateFlow()
 
     private val _lastError = MutableStateFlow<String?>(null)
     val lastError: StateFlow<String?> = _lastError.asStateFlow()
 
-    /** Human/technical breadcrumb of the last session's stages (for diagnostics). */
     private val _diagnostic = MutableStateFlow("")
     val diagnostic: StateFlow<String> = _diagnostic.asStateFlow()
 
     private val sessionMutex = Mutex()
-    private var recordMs: Long = DEFAULT_RECORD_MS
 
-    /** Runs one complete Phase-1 session. Safe to call repeatedly; ignores overlap. */
+    /** Runs one conversation turn. Safe to call repeatedly; ignores overlap. */
     suspend fun runSession() {
         if (sessionMutex.isLocked) {
             Log.i(TAG, "session_skip already_running")
@@ -68,29 +68,102 @@ class SessionCoordinator @Inject constructor(
         }
         sessionMutex.withLock {
             _lastError.value = null
+            _transcript.value = ""
+            _reply.value = ""
             _diagnostic.value = "start"
             try {
-                recordMs = settings.recordSeconds.first() * 1_000L
-                val end = Fase1Flow(machine, this).run()
-                if (end is ConversationState.RecoverableError) _lastError.value = end.code
-                Log.i(TAG, "session_end state=${end::class.simpleName}")
+                runTurn()
             } catch (e: Exception) {
                 _lastError.value = "crash_${e.javaClass.simpleName}"
                 _diagnostic.value = "CRASH ${e.javaClass.simpleName}: ${e.message}"
                 Log.w(TAG, "session_crash ${e.javaClass.simpleName}")
+                machine.dispatch(ConversationEvent.RecoverableFailure("crash"))
             }
         }
     }
 
+    private suspend fun runTurn() {
+        machine.dispatch(ConversationEvent.StartRequested) // -> PreparingAudio
+        if (!hasRecordPermission()) {
+            _diagnostic.value = "no_mic_permission"
+            machine.dispatch(ConversationEvent.PermissionDenied)
+            return
+        }
+        machine.dispatch(ConversationEvent.AudioReady) // -> Listening
+        _diagnostic.value = "listening (stt)"
+
+        when (val result = stt.transcribe("it-IT")) {
+            is SttResult.Text -> {
+                _transcript.value = result.text
+                _diagnostic.value = "heard: ${result.text.take(40)}"
+                machine.dispatch(ConversationEvent.SpeechEnded)   // -> FinalizingSpeech
+                machine.dispatch(ConversationEvent.SpeechEnded)   // -> Transcribing
+                machine.dispatch(ConversationEvent.TranscriptReady(result.text)) // -> RetrievingMemory
+                machine.dispatch(ConversationEvent.MemoryRetrieved) // -> Routing
+                machine.dispatch(ConversationEvent.Routed(RouteTarget.LOCAL)) // -> ThinkingLocal
+                val answer = phase2Reply(result.text)
+                _reply.value = answer
+                machine.dispatch(ConversationEvent.AnswerReady) // -> Speaking
+                speakOut(answer)
+                machine.dispatch(ConversationEvent.SpeechSynthesisFinished) // -> FollowUpWindow
+                machine.dispatch(ConversationEvent.FollowUpTimeout) // -> Idle
+            }
+
+            SttResult.NoSpeech -> {
+                _diagnostic.value = "no_speech"
+                machine.dispatch(ConversationEvent.SpeechEnded)
+                machine.dispatch(ConversationEvent.SpeechEnded)
+                machine.dispatch(ConversationEvent.TranscriptReady("")) // -> RecoverableError(empty_transcript)
+                _lastError.value = "empty_transcript"
+                speakOut("Non ho sentito nulla. Riprova.")
+            }
+
+            is SttResult.Unavailable -> {
+                _diagnostic.value = "stt_unavailable: ${result.reason}"
+                _lastError.value = "stt_unavailable"
+                machine.dispatch(ConversationEvent.RecoverableFailure("stt_unavailable"))
+                speakOut(
+                    "Il riconoscimento vocale offline non è disponibile su questo telefono. " +
+                        "Nella prossima fase userò un motore incluso nell'app.",
+                )
+            }
+
+            is SttResult.Failure -> {
+                _diagnostic.value = "stt_fail: ${result.code}"
+                _lastError.value = result.code
+                machine.dispatch(ConversationEvent.RecoverableFailure(result.code))
+            }
+        }
+    }
+
+    /** Phase-2 placeholder "brain": echoes understanding. Replaced by the LLM in Phase 3. */
+    private fun phase2Reply(transcript: String): String = "Ho capito: $transcript"
+
+    private suspend fun speakOut(text: String) {
+        if (tts.ensureReady()) {
+            tts.speak(text)
+        } else {
+            _diagnostic.value = "${_diagnostic.value} | tts_unavailable [${tts.lastDetail.value}]"
+        }
+    }
+
     fun cancel() {
+        stt.cancel()
         audioCapture.cancel()
         tts.stop()
         machine.dispatch(ConversationEvent.CancelRequested)
     }
 
+    // --- Diagnostics helpers --------------------------------------------
+
+    fun sttAvailable(): Boolean = stt.isAvailable()
+
+    /** Diagnostics: run one recognition in isolation. */
+    suspend fun testStt(): SttResult = stt.transcribe("it-IT")
+
     /** Diagnostics: record a fixed window only, to exercise the mic + level meter. */
     suspend fun testMicrophone(): CaptureResult {
-        val result = audioCapture.capture(recordMs)
+        val result = audioCapture.capture(DEFAULT_RECORD_MS)
         if (result != CaptureResult.COMPLETED) _lastError.value = "mic_test_${result.name.lowercase()}"
         return result
     }
@@ -102,79 +175,19 @@ class SessionCoordinator @Inject constructor(
         return true
     }
 
-    /** Diagnostics: stop everything and return the machine to a usable state. */
     fun resetAudio() {
+        stt.cancel()
         audioCapture.cancel()
         tts.stop()
         audioRouteManager.endSession()
         machine.dispatch(ConversationEvent.Reset)
         _lastError.value = null
+        _diagnostic.value = ""
     }
 
     fun hasRecordPermission(): Boolean =
         ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
             PackageManager.PERMISSION_GRANTED
-
-    /** Reads the system Location toggle (no permission needed just to read it). */
-    private fun isLocationEnabled(): Boolean = try {
-        val lm = context.getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager
-        lm.isLocationEnabled
-    } catch (e: Exception) {
-        false
-    }
-
-    // --- Fase1Environment (real Android side effects) --------------------
-
-    override suspend fun prepareAudio(): PrepareOutcome {
-        if (!hasRecordPermission()) return PrepareOutcome.PermissionDenied
-        // Only route to Bluetooth when the user allows it AND the system Location
-        // toggle is on — MagicOS gates BT call-audio behind Location. Otherwise
-        // use the phone mic/speaker so the mic starts with no Location prompt.
-        val wantBluetooth = settings.useBluetooth.first() && isLocationEnabled()
-        return try {
-            val input = audioRouteManager.beginSession(preferBluetooth = wantBluetooth)
-            val kind = when (input.kind) {
-                AudioDeviceKind.AIRPODS -> AudioKind.AIRPODS
-                AudioDeviceKind.BLUETOOTH_HEADSET -> AudioKind.BLUETOOTH
-                else -> AudioKind.PHONE
-            }
-            val fellBack = kind == AudioKind.PHONE && routeState.value.bluetoothConnected
-            _diagnostic.value = "prepare ok bt=$wantBluetooth in=${input.kind}"
-            PrepareOutcome.Ready(kind, fellBack)
-        } catch (e: Exception) {
-            _diagnostic.value = "prepare FAIL ${e.javaClass.simpleName}: ${e.message}"
-            PrepareOutcome.Failure("audio_begin_failed")
-        }
-    }
-
-    override suspend fun record(): RecordOutcome {
-        val result = audioCapture.capture(recordMs)
-        _diagnostic.value = "record $result [${audioCapture.lastDetail.value}]"
-        return when (result) {
-            CaptureResult.COMPLETED -> RecordOutcome.Completed
-            CaptureResult.PERMISSION_DENIED -> RecordOutcome.Failure("permission")
-            CaptureResult.FAILED -> RecordOutcome.Failure("record_failed")
-        }
-    }
-
-    override suspend fun ensureTtsReady(): Boolean {
-        val ok = tts.ensureReady()
-        _diagnostic.value = "tts ready=$ok st=${tts.state.value} voice=${tts.selectedVoiceName.value} [${tts.lastDetail.value}]"
-        return ok
-    }
-
-    override suspend fun speak(): SpeakOutcome = try {
-        tts.speak(FIXED_REPLY)
-        _diagnostic.value = "speak done st=${tts.state.value}"
-        SpeakOutcome.Done
-    } catch (e: Exception) {
-        _diagnostic.value = "speak FAIL ${e.message}"
-        SpeakOutcome.Failure("tts_error")
-    }
-
-    override suspend fun endSession() {
-        audioRouteManager.endSession()
-    }
 
     companion object {
         const val DEFAULT_RECORD_MS = 3_000L

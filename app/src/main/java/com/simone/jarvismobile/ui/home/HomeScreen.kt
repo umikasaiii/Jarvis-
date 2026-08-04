@@ -71,6 +71,9 @@ fun HomeScreen(
     val error by viewModel.lastError.collectAsStateWithLifecycle()
     val name by viewModel.assistantName.collectAsStateWithLifecycle()
     val diagnostic by viewModel.diagnostic.collectAsStateWithLifecycle()
+    val transcript by viewModel.transcript.collectAsStateWithLifecycle()
+    val reply by viewModel.reply.collectAsStateWithLifecycle()
+    val partial by viewModel.partial.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
     var micGranted by remember {
@@ -172,6 +175,30 @@ fun HomeScreen(
                 textAlign = TextAlign.Center,
             )
 
+            // Live partial transcript while listening.
+            if (state == ConversationState.Listening && partial.isNotEmpty()) {
+                Text(
+                    text = "“$partial”",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = Color(0xFFB8C4CC),
+                    textAlign = TextAlign.Center,
+                )
+            }
+
+            // Conversation: what you said + JARVIS's reply.
+            if (transcript.isNotEmpty() || reply.isNotEmpty()) {
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (transcript.isNotEmpty()) {
+                            ConversationLine("Tu", transcript, JarvisAccent)
+                        }
+                        if (reply.isNotEmpty()) {
+                            ConversationLine(name, reply, JarvisGreen)
+                        }
+                    }
+                }
+            }
+
             Spacer(Modifier.height(6.dp))
 
             // Status grid — honest values (unimplemented subsystems show "non attivo").
@@ -211,6 +238,22 @@ fun HomeScreen(
                 color = Color(0xFF5A666E),
             )
         }
+    }
+}
+
+@Composable
+private fun ConversationLine(speaker: String, text: String, accent: Color) {
+    Column {
+        Text(
+            text = speaker.uppercase(),
+            style = MaterialTheme.typography.labelSmall,
+            color = accent,
+        )
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodyLarge,
+            color = Color(0xFFE4EAEE),
+        )
     }
 }
 

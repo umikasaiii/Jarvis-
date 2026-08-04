@@ -27,6 +27,14 @@
          REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, any Accessibility service. See
          docs/PRIVACY.md and docs/SECURITY.md. -->
 
+    <!-- Make the on-device speech recognition service visible (Android 11+ package
+         visibility). Used by the offline SpeechRecognizer (Phase 2). -->
+    <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+    </queries>
+
     <application
         android:name=".JarvisApplication"
         android:allowBackup="false"
