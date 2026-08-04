@@ -81,7 +81,7 @@ Plugin and all AndroidX/Compose/Material3 artifacts. Consequences:
 | 0 | Foundations: project, DI, Compose, docs, CI | **Done (build-verified)** — core 71 tests green; Android app compiles + debug APK produced by CI (run #2, `f8e94dd`) |
 | 1 | Audio loop: button/Tile/service/routing → fixed TTS in AirPods | **Verified on HONOR 200** — real AudioRecord capture confirmed on-device (build `7342e6a`); press → record → fixed TTS reply. No STT/LLM by design. Root causes fixed on the way: stable debug signing (updates now install in place) and a MagicOS foreground-service/audio-focus conflict (orb now uses the same minimal capture path as the working diagnostics test). |
 | 2 | STT (offline) | **Verified on HONOR 200** (build `8ee7275`) — offline Android on-device recognizer transcribes Italian; Home shows partial + transcript, Diagnostics has an STT test. sherpa-onnx (bundled, model-import) can replace it behind `SpeechToTextEngine`. VAD via recognizer end-of-speech. |
-| 3 | Local LLM (llama.cpp) + model manager | Not started |
+| 3 | Local LLM + model manager | **In progress** — engine is **LiteRT-LM** (`.litertlm`, `com.google.ai.edge.litertlm:litertlm-android`) behind `LlmEngine`; `ModelManager` imports `.litertlm` to app-private storage; Models screen imports/loads. Switched off the MediaPipe LLM `.task` path (maintenance-mode API, corrupt-download "Unable to open zip archive"). On-device load/generate not yet device-verified. |
 | 4 | Full TTS + audio focus + follow-up | Partially scaffolded (TTS engine + follow-up in ViewModel) |
 | 5 | Obsidian memory (SAF, FTS, retrieval) | Ranking + parser done in `:core`; SAF/Room pending |
 | 6 | Tool system | Protocol, registry, policies done in `:core`; Android tools pending |

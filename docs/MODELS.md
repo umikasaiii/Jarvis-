@@ -5,6 +5,19 @@ user on-device via file pickers; the app copies them into app-private storage,
 verifies **SHA-256**, reads GGUF metadata, and shows the model's **license before
 download/import**.
 
+## LLM — Phase 3 engine: LiteRT-LM (`.litertlm`)
+
+The shipping Phase-3 engine is **LiteRT-LM** (Google AI Edge,
+`com.google.ai.edge.litertlm:litertlm-android`) behind the `LlmEngine` interface
+(`LitertLmEngine`). It runs fully offline on a `.litertlm` model the user imports;
+the CPU backend is used for maximum device compatibility. This replaced the
+MediaPipe LLM Inference API (`.task`), which Google put in maintenance mode and
+which failed to open several current Gemma bundles ("Unable to open zip archive")
+— frequently a corrupt/incomplete phone download. `.litertlm` models come from
+verified sources: the **Google AI Edge Gallery** app or the **LiteRT community on
+Hugging Face**. The `LlmEngine` seam keeps a llama.cpp/GGUF engine (below) a
+drop-in alternative for later.
+
 ## LLM (llama.cpp, GGUF)
 
 Profiles (§11):

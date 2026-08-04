@@ -127,8 +127,8 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.okhttp.logging)
 
-    // On-device LLM (Phase 3) + SAF document access for model import.
-    implementation(libs.mediapipe.tasks.genai)
+    // On-device LLM (Phase 3, LiteRT-LM) + SAF document access for model import.
+    implementation(libs.litertlm.android)
     implementation(libs.androidx.documentfile)
 
     // Unit tests.

@@ -2,7 +2,9 @@ package com.simone.jarvismobile.llm
 
 import android.content.Context
 import android.util.Log
-import com.google.mediapipe.tasks.genai.llminference.LlmInference
+import com.google.ai.edge.litertlm.Backend
+import com.google.ai.edge.litertlm.Engine
+import com.google.ai.edge.litertlm.EngineConfig
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -12,14 +14,19 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * On-device LLM backed by MediaPipe LLM Inference. Runs fully offline on a model
- * file the user imports (`.task`/`.litertlm` produced for MediaPipe). No network,
- * no cloud.
+ * On-device LLM backed by LiteRT-LM (Google AI Edge). Runs fully offline on a
+ * `.litertlm` model file the user imports — the format AI Edge Gallery / the
+ * HuggingFace LiteRT community publish, and Google's current direction now that
+ * the MediaPipe LLM Inference API is in maintenance mode.
+ *
+ * We use the CPU backend for maximum device compatibility (the GPU/NPU backends
+ * need extra native libraries and are model-dependent). Everything is offline;
+ * the model file is imported by the user and never bundled.
  *
  * Not compiled in the scaffolding container (no Android SDK); built in CI.
  */
 @Singleton
-class MediaPipeLlmEngine @Inject constructor(
+class LitertLmEngine @Inject constructor(
     @ApplicationContext private val context: Context,
 ) : LlmEngine {
 
@@ -32,19 +39,24 @@ class MediaPipeLlmEngine @Inject constructor(
     private val _lastLoadDetail = MutableStateFlow("")
     override val lastLoadDetail = _lastLoadDetail.asStateFlow()
 
-    @Volatile private var inference: LlmInference? = null
+    @Volatile private var engine: Engine? = null
 
     override suspend fun load(modelPath: String, modelName: String): Boolean =
         withContext(Dispatchers.Default) {
             _loadState.value = LlmLoadState.LOADING
-            runCatching { inference?.close() }
-            inference = null
+            runCatching { engine?.close() }
+            engine = null
             try {
-                val options = LlmInference.LlmInferenceOptions.builder()
-                    .setModelPath(modelPath)
-                    .setMaxTokens(MAX_TOKENS)
-                    .build()
-                inference = LlmInference.createFromOptions(context, options)
+                val config = EngineConfig(
+                    modelPath = modelPath,
+                    backend = Backend.CPU(),
+                    // Writable dir for compiled artifacts → faster subsequent loads.
+                    cacheDir = context.cacheDir.absolutePath,
+                )
+                val e = Engine(config)
+                // Can take several seconds; we are already off the main thread.
+                e.initialize()
+                engine = e
                 _loadedModelName.value = modelName
                 _lastLoadDetail.value = ""
                 _loadState.value = LlmLoadState.LOADED
@@ -55,34 +67,39 @@ class MediaPipeLlmEngine @Inject constructor(
                 _lastLoadDetail.value = "${e.javaClass.simpleName}: ${e.message?.take(220) ?: ""}"
                 _loadState.value = LlmLoadState.ERROR
                 _loadedModelName.value = null
+                runCatching { engine?.close() }
+                engine = null
                 false
             }
         }
 
     override fun unload() {
-        runCatching { inference?.close() }
-        inference = null
+        runCatching { engine?.close() }
+        engine = null
         _loadState.value = LlmLoadState.UNLOADED
         _loadedModelName.value = null
     }
 
     override suspend fun generate(prompt: String): String? = withContext(Dispatchers.Default) {
-        val engine = inference ?: return@withContext null
+        val e = engine ?: return@withContext null
         try {
-            engine.generateResponse(prompt)
-        } catch (e: Throwable) {
-            Log.w(TAG, "llm_generate_failed ${e.javaClass.simpleName}")
+            // A fresh conversation per turn keeps generation stateless: the full
+            // prompt (system + transcript) is built upstream in SessionCoordinator.
+            e.createConversation().use { conversation ->
+                conversation.sendMessage(prompt).text
+            }
+        } catch (t: Throwable) {
+            Log.w(TAG, "llm_generate_failed ${t.javaClass.simpleName}")
             null
         }
     }
 
     override fun cancel() {
-        // MediaPipe's synchronous generateResponse cannot be interrupted mid-call;
-        // cancellation applies to the surrounding coroutine. No-op here.
+        // sendMessage is synchronous and not interruptible mid-call; cancellation
+        // applies to the surrounding coroutine. No-op here.
     }
 
     private companion object {
         const val TAG = "JarvisLlm"
-        const val MAX_TOKENS = 1024
     }
 }

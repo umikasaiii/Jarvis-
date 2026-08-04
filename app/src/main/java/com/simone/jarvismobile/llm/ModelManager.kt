@@ -45,7 +45,7 @@ class ModelManager @Inject constructor(
      * truncated/incomplete copy before the user tries to load a broken model.
      */
     suspend fun importModel(uri: Uri): ImportResult = withContext(Dispatchers.IO) {
-        val name = displayName(uri) ?: "model-${System.currentTimeMillis()}.task"
+        val name = displayName(uri) ?: "model-${System.currentTimeMillis()}.litertlm"
         val expected = sourceSize(uri)
         val target = File(modelsDir(), name)
         try {

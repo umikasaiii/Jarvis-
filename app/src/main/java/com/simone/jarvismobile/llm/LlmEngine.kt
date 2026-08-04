@@ -6,9 +6,9 @@ enum class LlmLoadState { UNLOADED, LOADING, LOADED, ERROR }
 
 /**
  * Local, on-device language model (docs/ARCHITECTURE.md §5). Phase 3 ships
- * [MediaPipeLlmEngine]; the interface stays swappable so a llama.cpp engine can
- * replace it later. Everything runs offline; the model file is imported by the
- * user (never bundled).
+ * [LitertLmEngine] (LiteRT-LM, `.litertlm` models); the interface stays swappable
+ * so another backend can replace it later. Everything runs offline; the model
+ * file is imported by the user (never bundled).
  */
 interface LlmEngine {
     val loadState: StateFlow<LlmLoadState>
