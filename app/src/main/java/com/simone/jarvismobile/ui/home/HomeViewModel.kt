@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.simone.jarvismobile.audio.AudioRouteState
+import com.simone.jarvismobile.audio.ChatMessage
 import com.simone.jarvismobile.audio.SessionCoordinator
 import com.simone.jarvismobile.audio.TtsState
 import com.simone.jarvismobile.core.state.ConversationState
@@ -37,6 +38,7 @@ class HomeViewModel @Inject constructor(
     val transcript: StateFlow<String> = coordinator.transcript
     val reply: StateFlow<String> = coordinator.reply
     val partial: StateFlow<String> = coordinator.partialTranscript
+    val messages: StateFlow<List<ChatMessage>> = coordinator.messages
     val llmLoadState: StateFlow<com.simone.jarvismobile.llm.LlmLoadState> = coordinator.llmLoadState
     val loadedModelName: StateFlow<String?> = coordinator.loadedModelName
 
@@ -59,5 +61,10 @@ class HomeViewModel @Inject constructor(
 
     fun onCancel() {
         coordinator.cancel()
+    }
+
+    /** Clears the conversation and the model's in-session memory. */
+    fun onNewConversation() {
+        coordinator.newConversation()
     }
 }

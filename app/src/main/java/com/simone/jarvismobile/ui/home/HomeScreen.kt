@@ -48,6 +48,9 @@ import com.simone.jarvismobile.core.state.ConversationState
 import com.simone.jarvismobile.ui.components.ReactorOrb
 import com.simone.jarvismobile.ui.components.StatusTile
 
+/** How many recent chat lines to show on Home (full history stays in memory). */
+private const val MAX_VISIBLE_MESSAGES = 10
+
 private val JarvisAccent = Color(0xFF4FD1E0)
 private val JarvisGreen = Color(0xFF2ECC71)
 private val JarvisBlue = Color(0xFF3B9EFF)
@@ -73,9 +76,8 @@ fun HomeScreen(
     val error by viewModel.lastError.collectAsStateWithLifecycle()
     val name by viewModel.assistantName.collectAsStateWithLifecycle()
     val diagnostic by viewModel.diagnostic.collectAsStateWithLifecycle()
-    val transcript by viewModel.transcript.collectAsStateWithLifecycle()
-    val reply by viewModel.reply.collectAsStateWithLifecycle()
     val partial by viewModel.partial.collectAsStateWithLifecycle()
+    val messages by viewModel.messages.collectAsStateWithLifecycle()
     val loadedModelName by viewModel.loadedModelName.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
@@ -188,17 +190,22 @@ fun HomeScreen(
                 )
             }
 
-            // Conversation: what you said + JARVIS's reply.
-            if (transcript.isNotEmpty() || reply.isNotEmpty()) {
+            // Conversation log — the running chat (mirrors the model's memory).
+            // Shows the most recent turns; the full history stays in memory.
+            if (messages.isNotEmpty()) {
                 Card(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        if (transcript.isNotEmpty()) {
-                            ConversationLine("Tu", transcript, JarvisAccent)
-                        }
-                        if (reply.isNotEmpty()) {
-                            ConversationLine(name, reply, JarvisGreen)
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        messages.takeLast(MAX_VISIBLE_MESSAGES).forEach { m ->
+                            ConversationLine(
+                                speaker = if (m.fromUser) "Tu" else name,
+                                text = m.text,
+                                accent = if (m.fromUser) JarvisAccent else JarvisGreen,
+                            )
                         }
                     }
+                }
+                TextButton(onClick = viewModel::onNewConversation) {
+                    Text("Nuova conversazione", color = JarvisAmber)
                 }
             }
 
@@ -220,7 +227,15 @@ fun HomeScreen(
                     accent = if (loadedModelName != null) JarvisGreen else Color(0xFF6B7A83),
                     modifier = Modifier.weight(1f),
                 )
-                StatusTile("Memoria", "Non attiva", accent = Color(0xFF6B7A83), modifier = Modifier.weight(1f))
+                run {
+                    val exchanges = messages.count { it.fromUser }
+                    StatusTile(
+                        "Memoria",
+                        if (exchanges == 0) "Vuota" else "$exchanges scambi",
+                        accent = if (exchanges > 0) JarvisGreen else Color(0xFF6B7A83),
+                        modifier = Modifier.weight(1f),
+                    )
+                }
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 StatusTile("PC", "Non configurato", accent = Color(0xFF6B7A83), modifier = Modifier.weight(1f))

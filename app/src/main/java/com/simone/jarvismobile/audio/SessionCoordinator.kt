@@ -22,6 +22,9 @@ import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/** One line of the on-screen conversation log. */
+data class ChatMessage(val fromUser: Boolean, val text: String)
+
 /**
  * Owns the conversation and is the single source of truth the UI observes:
  * listen → transcribe → LLM answer → speak, driving the shared
@@ -70,6 +73,15 @@ class SessionCoordinator @Inject constructor(
 
     private val _reply = MutableStateFlow("")
     val reply: StateFlow<String> = _reply.asStateFlow()
+
+    /** On-screen conversation log (mirrors the model's in-session memory). */
+    private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
+    val messages: StateFlow<List<ChatMessage>> = _messages.asStateFlow()
+
+    private fun appendMessage(fromUser: Boolean, text: String) {
+        if (text.isBlank()) return
+        _messages.value = _messages.value + ChatMessage(fromUser, text.trim())
+    }
 
     private val _lastError = MutableStateFlow<String?>(null)
     val lastError: StateFlow<String?> = _lastError.asStateFlow()
@@ -146,6 +158,7 @@ class SessionCoordinator @Inject constructor(
         when (result) {
             is SttResult.Text -> {
                 _transcript.value = result.text
+                appendMessage(fromUser = true, text = result.text)
                 _diagnostic.value = "heard: ${result.text.take(40)}"
                 machine.dispatch(ConversationEvent.SpeechEnded)   // -> FinalizingSpeech
                 machine.dispatch(ConversationEvent.SpeechEnded)   // -> Transcribing
@@ -154,6 +167,7 @@ class SessionCoordinator @Inject constructor(
                 machine.dispatch(ConversationEvent.Routed(RouteTarget.LOCAL)) // -> ThinkingLocal
                 val answer = generateAnswer(result.text)
                 _reply.value = answer
+                appendMessage(fromUser = false, text = answer)
                 machine.dispatch(ConversationEvent.AnswerReady) // -> Speaking
                 speakOut(answer)
                 machine.dispatch(ConversationEvent.SpeechSynthesisFinished) // -> FollowUpWindow
@@ -218,6 +232,7 @@ class SessionCoordinator @Inject constructor(
      */
     fun newConversation() {
         llm.resetConversation()
+        _messages.value = emptyList()
         _transcript.value = ""
         _reply.value = ""
         _diagnostic.value = "nuova conversazione"
