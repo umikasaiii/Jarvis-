@@ -7,10 +7,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.simone.jarvismobile.ui.diagnostics.DiagnosticsScreen
 import com.simone.jarvismobile.ui.home.HomeScreen
+import com.simone.jarvismobile.ui.memory.MemoryScreen
 import com.simone.jarvismobile.ui.models.ModelsScreen
 import com.simone.jarvismobile.ui.settings.SettingsScreen
 
-private enum class Screen { HOME, DIAGNOSTICS, SETTINGS, MODELS }
+private enum class Screen { HOME, DIAGNOSTICS, SETTINGS, MODELS, MEMORY }
 
 /** Lightweight top-level navigation between the Phase-1..3 screens. */
 @Composable
@@ -28,7 +29,9 @@ fun JarvisApp(autoStartListening: Boolean = false) {
         Screen.SETTINGS -> SettingsScreen(
             onBack = { screen = Screen.HOME },
             onOpenModels = { screen = Screen.MODELS },
+            onOpenMemory = { screen = Screen.MEMORY },
         )
         Screen.MODELS -> ModelsScreen(onBack = { screen = Screen.HOME })
+        Screen.MEMORY -> MemoryScreen(onBack = { screen = Screen.HOME })
     }
 }

@@ -37,6 +37,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 fun SettingsScreen(
     onBack: () -> Unit,
     onOpenModels: () -> Unit = {},
+    onOpenMemory: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val name by viewModel.assistantName.collectAsStateWithLifecycle()
@@ -135,7 +136,6 @@ fun SettingsScreen(
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("In arrivo (fasi successive)", style = MaterialTheme.typography.titleMedium)
-                PlaceholderRow("Memoria Obsidian", "Fase 5")
                 PlaceholderRow("Strumenti / azioni", "Fase 6")
                 PlaceholderRow("Home Assistant", "Fase 7")
                 PlaceholderRow("Companion PC", "Fase 8")
@@ -144,6 +144,9 @@ fun SettingsScreen(
 
         OutlinedButton(onClick = onOpenModels, modifier = Modifier.fillMaxWidth()) {
             Text("Modelli (AI locale)")
+        }
+        OutlinedButton(onClick = onOpenMemory, modifier = Modifier.fillMaxWidth()) {
+            Text("Memoria (appunti Obsidian)")
         }
         OutlinedButton(onClick = viewModel::newConversation, modifier = Modifier.fillMaxWidth()) {
             Text("Nuova conversazione (svuota memoria)")

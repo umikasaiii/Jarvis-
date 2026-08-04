@@ -45,6 +45,12 @@ class HomeViewModel @Inject constructor(
     val assistantName: StateFlow<String> = settings.assistantName
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsRepository.DEFAULT_NAME)
 
+    init {
+        // Build the vault memory index in the background so retrieval is ready by
+        // the time the user talks (no-op if no vault is configured).
+        viewModelScope.launch { coordinator.ensureMemoryReady() }
+    }
+
     fun hasRecordPermission(): Boolean = coordinator.hasRecordPermission()
 
     /**

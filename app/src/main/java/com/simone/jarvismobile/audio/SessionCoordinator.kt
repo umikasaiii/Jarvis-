@@ -12,6 +12,7 @@ import com.simone.jarvismobile.core.state.RouteTarget
 import com.simone.jarvismobile.data.SettingsRepository
 import com.simone.jarvismobile.llm.LlmEngine
 import com.simone.jarvismobile.llm.LlmLoadState
+import com.simone.jarvismobile.memory.MemoryIndex
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -48,6 +49,7 @@ class SessionCoordinator @Inject constructor(
     private val tts: TextToSpeechEngine,
     private val llm: LlmEngine,
     private val settings: SettingsRepository,
+    private val memory: MemoryIndex,
 ) {
 
     private val machine = ConversationStateMachine()
@@ -220,8 +222,25 @@ class SessionCoordinator @Inject constructor(
         if (llm.loadState.value != LlmLoadState.LOADED) {
             return "Ho capito: $transcript. Carica un modello nella schermata Modelli per risposte vere."
         }
-        _diagnostic.value = "thinking (llm ${loadedModelName.value})"
-        return llm.chat(transcript, systemPrompt.trim())?.trim()?.ifBlank { null }
+        // Retrieve relevant notes from the Obsidian vault (Phase 5) and, if any,
+        // prepend them as grounding context to the question. Non-fatal: on any
+        // failure or empty vault we just ask the model without extra context.
+        val retrieved = runCatching { memory.retrieve(transcript, MEMORY_TOP_K) }.getOrDefault(emptyList())
+        val userMessage = if (retrieved.isEmpty()) {
+            _diagnostic.value = "thinking (llm ${loadedModelName.value})"
+            transcript
+        } else {
+            _diagnostic.value = "memoria: ${retrieved.size} frammenti · llm ${loadedModelName.value}"
+            buildString {
+                append("Contesto dai miei appunti (usa solo se pertinente; non citarlo se non serve):\n")
+                retrieved.forEach { r ->
+                    append("- [").append(r.chunk.title).append("] ")
+                    append(r.chunk.text.replace('\n', ' ').trim().take(400)).append('\n')
+                }
+                append("\nDomanda: ").append(transcript)
+            }
+        }
+        return llm.chat(userMessage, systemPrompt.trim())?.trim()?.ifBlank { null }
             ?: "Non sono riuscito a generare una risposta con il modello."
     }
 
@@ -230,6 +249,9 @@ class SessionCoordinator @Inject constructor(
      * multi-turn memory otherwise persists across presses while the model stays
      * loaded, so context builds up naturally between turns.
      */
+    /** Builds the vault memory index in the background if a vault is configured. */
+    suspend fun ensureMemoryReady() = memory.ensureBuilt()
+
     fun newConversation() {
         llm.resetConversation()
         _messages.value = emptyList()
@@ -294,6 +316,9 @@ class SessionCoordinator @Inject constructor(
 
         /** Safety cap on consecutive hands-free exchanges before requiring a press. */
         const val MAX_FOLLOW_UPS = 8
+
+        /** How many vault chunks to inject as grounding context per question. */
+        const val MEMORY_TOP_K = 4
         private const val TAG = "JarvisSession"
     }
 }

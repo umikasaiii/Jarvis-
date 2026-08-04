@@ -30,6 +30,19 @@ class SettingsRepository @Inject constructor(
         val FOLLOW_UP = booleanPreferencesKey("follow_up_enabled")
         val MODEL_PATH = stringPreferencesKey("llm_model_path")
         val MODEL_NAME = stringPreferencesKey("llm_model_name")
+        val VAULT_URI = stringPreferencesKey("vault_tree_uri")
+    }
+
+    /** Persisted SAF tree URI of the Obsidian vault, or empty if none chosen. */
+    val vaultUri: Flow<String> =
+        context.settingsDataStore.data.map { it[Keys.VAULT_URI] ?: "" }
+
+    suspend fun setVaultUri(uri: String) {
+        context.settingsDataStore.edit { it[Keys.VAULT_URI] = uri }
+    }
+
+    suspend fun clearVaultUri() {
+        context.settingsDataStore.edit { it.remove(Keys.VAULT_URI) }
     }
 
     /** Absolute path of the LLM model to auto-load, or empty if none chosen. */
