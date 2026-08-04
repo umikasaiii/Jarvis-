@@ -163,10 +163,11 @@ fun HomeScreen(
                 color = Color(0xFFE4EAEE),
                 textAlign = TextAlign.Center,
             )
+            val showingError = error != null && state.isRestingLike()
             Text(
                 text = hintFor(state, micGranted, error),
                 style = MaterialTheme.typography.bodyMedium,
-                color = Color(0xFF8A99A3),
+                color = if (showingError) JarvisRed else Color(0xFF8A99A3),
                 textAlign = TextAlign.Center,
             )
 

@@ -90,7 +90,11 @@ class ListeningService : Service() {
     }
 
     override fun onDestroy() {
-        runCatching { coordinator.resetAudio() }
+        // Only cancel an in-progress capture/TTS if the service is torn down; do
+        // NOT reset the conversation state or clear lastError here, otherwise a
+        // just-finished error would be wiped instantly and become unreadable.
+        // cancel() is a no-op once the machine is already in a terminal state.
+        runCatching { coordinator.cancel() }
         super.onDestroy()
     }
 
