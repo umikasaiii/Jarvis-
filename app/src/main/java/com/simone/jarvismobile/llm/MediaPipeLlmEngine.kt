@@ -29,6 +29,9 @@ class MediaPipeLlmEngine @Inject constructor(
     private val _loadedModelName = MutableStateFlow<String?>(null)
     override val loadedModelName = _loadedModelName.asStateFlow()
 
+    private val _lastLoadDetail = MutableStateFlow("")
+    override val lastLoadDetail = _lastLoadDetail.asStateFlow()
+
     @Volatile private var inference: LlmInference? = null
 
     override suspend fun load(modelPath: String, modelName: String): Boolean =
@@ -43,11 +46,13 @@ class MediaPipeLlmEngine @Inject constructor(
                     .build()
                 inference = LlmInference.createFromOptions(context, options)
                 _loadedModelName.value = modelName
+                _lastLoadDetail.value = ""
                 _loadState.value = LlmLoadState.LOADED
                 Log.i(TAG, "llm_loaded")
                 true
             } catch (e: Throwable) {
                 Log.w(TAG, "llm_load_failed ${e.javaClass.simpleName}")
+                _lastLoadDetail.value = "${e.javaClass.simpleName}: ${e.message?.take(220) ?: ""}"
                 _loadState.value = LlmLoadState.ERROR
                 _loadedModelName.value = null
                 false

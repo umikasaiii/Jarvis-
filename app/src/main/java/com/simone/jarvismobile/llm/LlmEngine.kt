@@ -14,6 +14,9 @@ interface LlmEngine {
     val loadState: StateFlow<LlmLoadState>
     val loadedModelName: StateFlow<String?>
 
+    /** Technical detail of the last load attempt (real engine error; for diagnostics). */
+    val lastLoadDetail: StateFlow<String>
+
     /** Loads a model from an app-private file path. Returns true on success. */
     suspend fun load(modelPath: String, modelName: String): Boolean
 

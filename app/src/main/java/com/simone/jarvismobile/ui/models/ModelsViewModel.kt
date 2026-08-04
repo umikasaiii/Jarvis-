@@ -64,7 +64,7 @@ class ModelsViewModel @Inject constructor(
             _status.value = if (ok) {
                 "Modello caricato: ${model.name}"
             } else {
-                "Caricamento fallito. Il file potrebbe non essere un modello MediaPipe (.task) valido o troppo grande per la RAM."
+                "Caricamento fallito. Dettaglio: ${llm.lastLoadDetail.value.ifBlank { "errore sconosciuto" }}"
             }
             _busy.value = false
         }
