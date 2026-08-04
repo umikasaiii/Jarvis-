@@ -36,7 +36,9 @@ server/.env
 *.wav
 !app/src/test/resources/fixtures/*.wav
 !core/src/test/resources/fixtures/*.wav
-models/
+# Imported model files live at the repo root only; anchor so this does NOT match
+# the source package app/.../ui/models/.
+/models/
 
 # OS
 .DS_Store
