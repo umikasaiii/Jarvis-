@@ -197,22 +197,30 @@ class SessionCoordinator @Inject constructor(
         }
 
     /**
-     * Generates the reply. When a local model is loaded it answers for real
-     * (Phase 3); otherwise it falls back to the Phase-2 echo and points the user
-     * to the Models screen.
+     * Generates the reply. When a local model is loaded it answers for real via a
+     * multi-turn [LlmEngine.chat] that REMEMBERS the earlier exchanges (the model
+     * keeps the conversation history); otherwise it falls back to the echo and
+     * points the user to the Models screen.
      */
     private suspend fun generateAnswer(transcript: String): String {
         if (llm.loadState.value != LlmLoadState.LOADED) {
             return "Ho capito: $transcript. Carica un modello nella schermata Modelli per risposte vere."
         }
         _diagnostic.value = "thinking (llm ${loadedModelName.value})"
-        val prompt = buildString {
-            append(systemPrompt.trim())
-            append("\n\nUtente: ").append(transcript)
-            append("\nJARVIS:")
-        }
-        return llm.generate(prompt)?.trim()?.ifBlank { null }
+        return llm.chat(transcript, systemPrompt.trim())?.trim()?.ifBlank { null }
             ?: "Non sono riuscito a generare una risposta con il modello."
+    }
+
+    /**
+     * Starts a fresh conversation: the model forgets the previous chat. The
+     * multi-turn memory otherwise persists across presses while the model stays
+     * loaded, so context builds up naturally between turns.
+     */
+    fun newConversation() {
+        llm.resetConversation()
+        _transcript.value = ""
+        _reply.value = ""
+        _diagnostic.value = "nuova conversazione"
     }
 
     private suspend fun speakOut(text: String) {

@@ -3,12 +3,17 @@ package com.simone.jarvismobile.llm
 import android.content.Context
 import android.util.Log
 import com.google.ai.edge.litertlm.Backend
+import com.google.ai.edge.litertlm.Contents
+import com.google.ai.edge.litertlm.Conversation
+import com.google.ai.edge.litertlm.ConversationConfig
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -41,15 +46,28 @@ class LitertLmEngine @Inject constructor(
 
     @Volatile private var engine: Engine? = null
 
+    // A single conversation reused across turns so the model REMEMBERS the chat
+    // (KV cache / history). Created lazily on the first chat() after a load/reset.
+    @Volatile private var conversation: Conversation? = null
+
+    // Serializes chat() calls: sendMessage is blocking and a Conversation is not
+    // safe to drive from two coroutines at once.
+    private val chatMutex = Mutex()
+
     override suspend fun load(modelPath: String, modelName: String): Boolean =
         withContext(Dispatchers.Default) {
             _loadState.value = LlmLoadState.LOADING
+            resetConversation()
             runCatching { engine?.close() }
             engine = null
             try {
                 val config = EngineConfig(
                     modelPath = modelPath,
                     backend = Backend.CPU(),
+                    // Context window (sum of input+output tokens). Larger = the
+                    // model can remember a much longer conversation before it must
+                    // drop the oldest turns. 4096 is a good balance on ~8 GB RAM.
+                    maxNumTokens = MAX_CONTEXT_TOKENS,
                     // Writable dir for compiled artifacts → faster subsequent loads.
                     cacheDir = context.cacheDir.absolutePath,
                 )
@@ -74,6 +92,7 @@ class LitertLmEngine @Inject constructor(
         }
 
     override fun unload() {
+        resetConversation()
         runCatching { engine?.close() }
         engine = null
         _loadState.value = LlmLoadState.UNLOADED
@@ -83,18 +102,40 @@ class LitertLmEngine @Inject constructor(
     override suspend fun generate(prompt: String): String? = withContext(Dispatchers.Default) {
         val e = engine ?: return@withContext null
         try {
-            // A fresh conversation per turn keeps generation stateless: the full
-            // prompt (system + transcript) is built upstream in SessionCoordinator.
-            e.createConversation().use { conversation ->
+            // A fresh conversation per call keeps generation stateless (no memory).
+            e.createConversation().use { conv ->
                 // sendMessage returns a Message; Message.toString() concatenates its
                 // text Contents into the plain reply string (Content.Text.toString()
                 // is the raw text). Blocking call — we are on Dispatchers.Default.
-                conversation.sendMessage(prompt).toString()
+                conv.sendMessage(prompt).toString()
             }
         } catch (t: Throwable) {
             Log.w(TAG, "llm_generate_failed ${t.javaClass.simpleName}")
             null
         }
+    }
+
+    override suspend fun chat(userText: String, systemPrompt: String): String? =
+        withContext(Dispatchers.Default) {
+            val e = engine ?: return@withContext null
+            chatMutex.withLock {
+                try {
+                    val conv = conversation ?: e.createConversation(
+                        ConversationConfig(systemInstruction = Contents.of(systemPrompt)),
+                    ).also { conversation = it }
+                    // Only the new user message is sent; the conversation keeps the
+                    // whole history internally, so the model remembers the context.
+                    conv.sendMessage(userText).toString()
+                } catch (t: Throwable) {
+                    Log.w(TAG, "llm_chat_failed ${t.javaClass.simpleName}")
+                    null
+                }
+            }
+        }
+
+    override fun resetConversation() {
+        runCatching { conversation?.close() }
+        conversation = null
     }
 
     override fun cancel() {
@@ -104,5 +145,8 @@ class LitertLmEngine @Inject constructor(
 
     private companion object {
         const val TAG = "JarvisLlm"
+
+        /** Context window (input+output tokens) — how much conversation fits in memory. */
+        const val MAX_CONTEXT_TOKENS = 4096
     }
 }

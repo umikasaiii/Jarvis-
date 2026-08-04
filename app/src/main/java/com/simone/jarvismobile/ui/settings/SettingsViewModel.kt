@@ -34,4 +34,5 @@ class SettingsViewModel @Inject constructor(
     fun setUseBluetooth(value: Boolean) = viewModelScope.launch { settings.setUseBluetooth(value) }
     fun setFollowUpEnabled(value: Boolean) = viewModelScope.launch { settings.setFollowUpEnabled(value) }
     fun resetAudio() = coordinator.resetAudio()
+    fun newConversation() = coordinator.newConversation()
 }

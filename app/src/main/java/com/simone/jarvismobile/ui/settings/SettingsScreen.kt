@@ -145,6 +145,9 @@ fun SettingsScreen(
         OutlinedButton(onClick = onOpenModels, modifier = Modifier.fillMaxWidth()) {
             Text("Modelli (AI locale)")
         }
+        OutlinedButton(onClick = viewModel::newConversation, modifier = Modifier.fillMaxWidth()) {
+            Text("Nuova conversazione (svuota memoria)")
+        }
         OutlinedButton(onClick = viewModel::resetAudio, modifier = Modifier.fillMaxWidth()) {
             Text("Reset audio")
         }

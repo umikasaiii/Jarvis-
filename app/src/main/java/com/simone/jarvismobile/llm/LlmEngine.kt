@@ -23,8 +23,19 @@ interface LlmEngine {
     /** Frees the model and its memory. */
     fun unload()
 
-    /** Generates a full reply for [prompt]. Returns null on failure. */
+    /** Generates a full reply for [prompt] with no memory (stateless). Null on failure. */
     suspend fun generate(prompt: String): String?
+
+    /**
+     * Multi-turn chat: sends [userText] within a conversation that persists across
+     * calls, so the model remembers the earlier exchanges (KV cache). On the first
+     * call after [load]/[resetConversation] the conversation is seeded with
+     * [systemPrompt]. Returns null on failure.
+     */
+    suspend fun chat(userText: String, systemPrompt: String): String?
+
+    /** Drops the multi-turn history and starts a fresh conversation next [chat]. */
+    fun resetConversation()
 
     fun cancel()
 }
