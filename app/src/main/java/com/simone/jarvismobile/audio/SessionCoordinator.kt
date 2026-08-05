@@ -14,6 +14,7 @@ import com.simone.jarvismobile.llm.LlmEngine
 import com.simone.jarvismobile.llm.LlmLoadState
 import com.simone.jarvismobile.memory.MemoryIndex
 import com.simone.jarvismobile.tools.CommandMatcher
+import com.simone.jarvismobile.tools.Match
 import com.simone.jarvismobile.tools.ToolOutcome
 import com.simone.jarvismobile.tools.ToolRunner
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -256,16 +257,23 @@ class SessionCoordinator @Inject constructor(
         // Phase 6: deterministic command → tool. Runs before the model, so
         // "che ore sono", "timer 10 minuti", "ricorda che …" work instantly and
         // reliably even with a small model (and even with no model loaded).
-        CommandMatcher.match(transcript)?.let { call ->
-            _diagnostic.value = "tool: ${call.name}"
-            return when (val outcome = tools.run(call)) {
-                is ToolOutcome.Done -> outcome.spoken
-                is ToolOutcome.Failed -> outcome.spoken
-                is ToolOutcome.NeedsConfirmation -> {
-                    pendingConfirmation = outcome.call
-                    outcome.prompt
+        when (val match = CommandMatcher.match(transcript)) {
+            is Match.Ask -> {
+                _diagnostic.value = "comando incompleto"
+                return match.question
+            }
+            is Match.Run -> {
+                _diagnostic.value = "tool: ${match.call.name}"
+                return when (val outcome = tools.run(match.call)) {
+                    is ToolOutcome.Done -> outcome.spoken
+                    is ToolOutcome.Failed -> outcome.spoken
+                    is ToolOutcome.NeedsConfirmation -> {
+                        pendingConfirmation = outcome.call
+                        outcome.prompt
+                    }
                 }
             }
+            null -> Unit
         }
         if (llm.loadState.value != LlmLoadState.LOADED) {
             return "Ho capito: $transcript. Carica un modello nella schermata Modelli per risposte vere."
@@ -288,8 +296,18 @@ class SessionCoordinator @Inject constructor(
                 append("\nDomanda: ").append(transcript)
             }
         }
-        return llm.chat(userMessage, systemPrompt.trim())?.trim()?.ifBlank { null }
-            ?: "Non sono riuscito a generare una risposta con il modello."
+        llm.chat(userMessage, systemPrompt.trim())?.trim()?.ifBlank { null }?.let { return it }
+
+        // Generation failed. The usual cause is an exhausted/!corrupted KV cache
+        // after a long chat, which a fresh conversation clears — so retry once
+        // (losing the in-session history, not the vault memory) before giving up.
+        Log.w(TAG, "llm_chat_null_retrying_fresh")
+        _diagnostic.value = "riprovo con conversazione nuova"
+        llm.resetConversation()
+        llm.chat(userMessage, systemPrompt.trim())?.trim()?.ifBlank { null }?.let { return it }
+
+        return "Il modello non è riuscito a rispondere. Prova «Nuova conversazione», " +
+            "o ricarica il modello dalla schermata Modelli."
     }
 
     /**
