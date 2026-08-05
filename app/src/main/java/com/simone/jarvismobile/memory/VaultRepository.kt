@@ -115,6 +115,31 @@ class VaultRepository @Inject constructor(
         }.getOrDefault(false)
     }
 
+    /**
+     * Reads back the saved "ricorda …" lines from `JARVIS/Memoria.md`, newest
+     * first. Used to answer "cosa devo fare?" from the file itself rather than
+     * from the model, so recall can never be invented.
+     */
+    suspend fun listMemories(limit: Int = 10): List<String> = withContext(Dispatchers.IO) {
+        val uriStr = settings.vaultUri.first()
+        if (uriStr.isBlank()) return@withContext emptyList()
+        val tree = DocumentFile.fromTreeUri(context, Uri.parse(uriStr)) ?: return@withContext emptyList()
+        runCatching {
+            val folder = tree.findFile(MEMORY_DIR)?.takeIf { it.isDirectory } ?: return@withContext emptyList()
+            val file = folder.findFile(MEMORY_FILE) ?: return@withContext emptyList()
+            val text = context.contentResolver.openInputStream(file.uri)
+                ?.bufferedReader()?.use { it.readText() } ?: return@withContext emptyList()
+            text.lineSequence()
+                .map { it.trim() }
+                .filter { it.startsWith("- ") }
+                .map { it.removePrefix("- ").trim() }
+                .filter { it.isNotEmpty() }
+                .toList()
+                .takeLast(limit)
+                .reversed()
+        }.getOrDefault(emptyList())
+    }
+
     private fun collect(dir: DocumentFile, prefix: String, out: MutableList<RawNote>) {
         for (f in dir.listFiles()) {
             val name = f.name ?: continue

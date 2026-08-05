@@ -201,6 +201,40 @@ class RememberTool(private val memory: MemoryIndex) : Tool {
     }
 }
 
+/**
+ * Reads the saved reminders back from the vault. Deterministic on purpose: the
+ * answer to "cosa devo fare?" comes from the file, never from the model, so it
+ * can't be invented.
+ */
+class ListMemoriesTool(private val memory: MemoryIndex) : Tool {
+    override val name = "list_memories"
+    override val description = "Elenca gli appunti e i promemoria salvati."
+    override val policy = ToolPolicy.READ_ONLY
+    override val sensitivity = SensitivityLevel.PERSONAL
+    override val requiresNetwork = false
+    override val timeoutMs = 5_000L
+
+    override fun validate(arguments: JsonObject): String? = null
+
+    override suspend fun execute(arguments: JsonObject): ToolResult {
+        if (!memory.isConfigured()) {
+            return ok("spoken" to "Non ho un vault collegato. Aprilo in Impostazioni › Memoria.")
+        }
+        val items = runCatching { memory.listMemories(10) }.getOrDefault(emptyList())
+        val spoken = when {
+            items.isEmpty() -> "Non ho nessun appunto salvato."
+            items.size == 1 -> "Hai un appunto: ${stripStamp(items.first())}."
+            else -> "Hai ${items.size} appunti: " +
+                items.joinToString("; ") { stripStamp(it) } + "."
+        }
+        return ok("count" to items.size.toString(), "spoken" to spoken)
+    }
+
+    /** "[2026-08-05 21:56] fare la revisione" -> "fare la revisione". */
+    private fun stripStamp(line: String): String =
+        line.replace(Regex("""^\[[^\]]*]\s*"""), "").trim()
+}
+
 /** "3600" -> "1 ora"; used for spoken confirmations. */
 internal fun humanDuration(seconds: Int): String {
     val h = seconds / 3600

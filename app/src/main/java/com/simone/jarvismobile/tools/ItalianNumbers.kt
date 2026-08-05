@@ -73,14 +73,27 @@ object ItalianNumbers {
     /**
      * Reads a duration like "dieci minuti", "1 ora e mezza", "30 secondi".
      * Returns seconds, or null when no duration is present.
+     *
+     * A time unit is REQUIRED unless [allowBareNumber] is set. That matters
+     * because "imposta un timer" must not be read as "1 minute" — "un" there is
+     * the article, not a quantity. Bare numbers are only accepted when the user
+     * is answering "Per quanto tempo?", where a number can only be a duration.
      */
-    fun duration(text: String): Int? {
+    fun duration(text: String, allowBareNumber: Boolean = false): Int? {
         val t = text.lowercase()
-        val unitMatch = Regex("""\b(ore|ora|minuti|minuto|min|secondi|secondo|sec)\b""").find(t)
-        val value = firstNumber(t) ?: return null
-        val unit = unitMatch?.groupValues?.get(1)
+        val unit = Regex("""\b(ore|ora|minuti|minuto|min|secondi|secondo|sec)\b""")
+            .find(t)?.groupValues?.get(1)
+
+        if (unit == null) {
+            if (!allowBareNumber) return null
+            // Answering "per quanto tempo?" with a bare number → minutes.
+            val bare = firstNumber(t) ?: return null
+            return (bare * 60).takeIf { it in 1..86_400 }
+        }
+
+        // With an explicit unit, an unstated quantity means one ("un'ora", "tra un minuto").
+        val value = firstNumber(t) ?: 1
         val seconds = when {
-            unit == null -> value * 60 // bare number in a timer context = minutes
             unit.startsWith("or") -> value * 3600
             unit.startsWith("min") -> value * 60
             else -> value

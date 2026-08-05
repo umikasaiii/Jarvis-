@@ -59,7 +59,8 @@ class ToolRunner @Inject constructor(
                     when (val result = withTimeout(tool.timeoutMs) { tool.execute(call.arguments) }) {
                         is ToolResult.Success -> {
                             val spoken = result.output["spoken"]?.jsonPrimitive?.content
-                                ?: result.output["result"]?.jsonPrimitive?.content?.let { "Risultato: $it" }
+                                ?: result.output["result"]?.jsonPrimitive?.content
+                                    ?.let { "Risultato: ${prettyNumber(it)}" }
                                 ?: "Fatto."
                             Log.i(TAG, "tool_ok ${tool.name}")
                             ToolOutcome.Done(spoken)
@@ -76,6 +77,16 @@ class ToolRunner @Inject constructor(
                     ToolOutcome.Failed("crash", "Non sono riuscito a completare l'operazione.")
                 }
             }
+        }
+    }
+
+    /** "25.0" -> "25", "2.5" -> "2,5" (spoken Italian decimals use a comma). */
+    private fun prettyNumber(raw: String): String {
+        val d = raw.toDoubleOrNull() ?: return raw
+        return if (d == Math.floor(d) && !d.isInfinite()) {
+            d.toLong().toString()
+        } else {
+            raw.trimEnd('0').trimEnd('.').replace('.', ',')
         }
     }
 

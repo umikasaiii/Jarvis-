@@ -109,8 +109,10 @@ class SessionCoordinator @Inject constructor(
     /** A tool call awaiting the user's spoken/typed confirmation, if any. */
     @Volatile private var pendingConfirmation: com.simone.jarvismobile.core.protocol.ToolCall? = null
 
-    /** A tool JARVIS asked a follow-up question about (tool name → missing slot). */
-    @Volatile private var pendingSlot: Pair<String, String>? = null
+    /** A tool JARVIS asked a follow-up question about, with what it already knows. */
+    private data class Pending(val tool: String, val missing: String, val args: Map<String, String>)
+
+    @Volatile private var pendingSlot: Pending? = null
 
     /** Runs one conversation turn. Safe to call repeatedly; ignores overlap. */
     suspend fun runSession() {
@@ -261,9 +263,10 @@ class SessionCoordinator @Inject constructor(
         }
 
         // The user is answering a question JARVIS asked ("Per quanto tempo?").
-        pendingSlot?.let { (toolName, missing) ->
+        pendingSlot?.let { pending ->
+            val toolName = pending.tool
             pendingSlot = null
-            fillSlot(toolName, missing, transcript)?.let { completed ->
+            fillSlot(pending, transcript)?.let { completed ->
                 _diagnostic.value = "tool completato: $toolName"
                 return when (val outcome = tools.run(completed)) {
                     is ToolOutcome.Done -> outcome.spoken
@@ -284,7 +287,7 @@ class SessionCoordinator @Inject constructor(
         when (val match = CommandMatcher.match(transcript)) {
             is Match.Ask -> {
                 // Remember what we were doing so the next reply completes it.
-                pendingSlot = match.tool to match.missing
+                pendingSlot = Pending(match.tool, match.missing, match.partial)
                 _diagnostic.value = "chiedo: ${match.missing}"
                 return match.question
             }
@@ -389,27 +392,44 @@ class SessionCoordinator @Inject constructor(
      * doesn't contain the missing detail, so we never guess.
      */
     private fun fillSlot(
-        toolName: String,
-        missing: String,
+        pending: Pending,
         answer: String,
     ): com.simone.jarvismobile.core.protocol.ToolCall? {
         fun build(vararg args: Pair<String, String>) =
             com.simone.jarvismobile.core.protocol.ToolCall(
                 id = java.util.UUID.randomUUID().toString(),
-                name = toolName,
+                name = pending.tool,
                 arguments = kotlinx.serialization.json.JsonObject(
                     args.associate { it.first to kotlinx.serialization.json.JsonPrimitive(it.second) },
                 ),
                 requiresConfirmation = false,
             )
 
-        return when (toolName) {
-            "set_timer" -> ItalianNumbers.duration(answer)?.let { build("seconds" to it.toString()) }
-            "set_alarm" -> ItalianNumbers.clockTime(answer)
+        val reply = answer.trim()
+        return when (pending.tool) {
+            // A bare number here can only be a duration, so accept it as minutes.
+            "set_timer" -> ItalianNumbers.duration(reply, allowBareNumber = true)
+                ?.let { build("seconds" to it.toString()) }
+
+            "set_alarm" -> ItalianNumbers.clockTime(reply)
                 ?.let { (h, m) -> build("hour" to h.toString(), "minute" to m.toString()) }
-            "remember" -> answer.trim().takeIf { it.length >= 3 }?.let { build("text" to it) }
+
+            "remember" -> when (pending.missing) {
+                // We asked WHEN: attach it to the note we already have.
+                "when" -> {
+                    val note = pending.args["text"].orEmpty()
+                    if (note.isBlank() || reply.length < 2) {
+                        null
+                    } else {
+                        build("text" to "$note — $reply")
+                    }
+                }
+                // We asked WHAT: the whole reply is the note.
+                else -> reply.takeIf { it.length >= 3 }?.let { build("text" to it) }
+            }
+
             else -> null
-        }.takeIf { missing.isNotBlank() }
+        }
     }
 
     /** Builds the vault memory index in the background if a vault is configured. */

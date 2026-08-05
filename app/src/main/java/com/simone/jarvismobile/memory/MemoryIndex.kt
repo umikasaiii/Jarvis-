@@ -82,6 +82,9 @@ class MemoryIndex @Inject constructor(
     /** Whether a vault is connected (so callers can offer to save memories). */
     suspend fun isConfigured(): Boolean = vault.isConfigured()
 
+    /** Saved reminders, newest first, read straight from the vault file. */
+    suspend fun listMemories(limit: Int = 10): List<String> = vault.listMemories(limit)
+
     /**
      * Saves a user "remember this" note into the vault and refreshes the index so
      * it is retrievable straight away. Returns false if there is no writable vault.

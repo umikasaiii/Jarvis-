@@ -12,10 +12,16 @@ sealed interface Match {
 
     /**
      * Recognised the intent but a detail is missing. JARVIS asks [question] and
-     * remembers [tool] + [missing], so the user's next reply completes the
-     * action instead of starting over.
+     * remembers [tool] + [missing] (plus anything already understood in
+     * [partial]), so the user's next reply completes the action instead of
+     * starting over.
      */
-    data class Ask(val question: String, val tool: String, val missing: String) : Match
+    data class Ask(
+        val question: String,
+        val tool: String,
+        val missing: String,
+        val partial: Map<String, String> = emptyMap(),
+    ) : Match
 }
 
 /**
@@ -80,8 +86,19 @@ object CommandMatcher {
             return Match.Ask("A che ora?", "set_alarm", "time")
         }
 
+        // --- Recall what was noted down -----------------------------------
+        if (RECALL_RE.containsMatchIn(t)) return call("list_memories")
+
         // --- Remember (checked before the calculator) ---------------------
-        rememberContent(raw)?.let { return call("remember", "text" to it) }
+        rememberContent(raw)?.let { note ->
+            // A reminder without a date is barely useful, so ask rather than
+            // storing something we can't surface at the right time.
+            return if (hasTimeReference(t)) {
+                call("remember", "text" to note)
+            } else {
+                Match.Ask("Quando?", "remember", "when", mapOf("text" to note))
+            }
+        }
         if (BARE_REMEMBER_RE.matches(t)) {
             return Match.Ask("Cosa vuoi che ricordi?", "remember", "text")
         }
@@ -159,6 +176,21 @@ object CommandMatcher {
 
     /** A bare "ricorda"/"prendi nota" with nothing to store yet. */
     private val BARE_REMEMBER_RE = Regex("""^(ricorda(mi|ti)?|prendi (una )?nota|annota|segna(ti)?)\s*$""")
+
+    /** "che impegni ho", "cosa devo fare", "cosa hai segnato" → read the notes back. */
+    private val RECALL_RE = Regex("""\b(che|quali)\s+(impegni|appuntamenti|cose|promemoria)\b|\bcosa\s+(devo|ho da)\s+fare\b|\bcosa\s+(hai|ho)\s+(segnato|annotato|scritto)\b|\bi miei (impegni|promemoria|appunti)\b|\bcosa mi ricordi\b""")
+
+    /** Does the note already say WHEN? Used to decide whether to ask. */
+    fun hasTimeReference(text: String): Boolean = TIME_REFERENCE_RE.containsMatchIn(text.lowercase())
+
+    private val TIME_REFERENCE_RE = Regex(
+        """\b(oggi|domani|dopodomani|stasera|stamattina|stanotte|adesso|subito|""" +
+            """luned[ìi]|marted[ìi]|mercoled[ìi]|gioved[ìi]|venerd[ìi]|sabato|domenica|""" +
+            """gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre|""" +
+            """settimana|mese|weekend|fine settimana|prossim\w+|""" +
+            """(tra|fra)\s+\w+\s+(giorn\w+|settiman\w+|mes\w+|or[ae]|minut\w+)|""" +
+            """\bil\s+\d{1,2}\b|\bentro\b|\balle\s+\d{1,2}\b)""",
+    )
 
     private val CALC_RE = Regex("""\b(?:calcola|quanto fa|quant'?e)\s+(.+)$""")
 

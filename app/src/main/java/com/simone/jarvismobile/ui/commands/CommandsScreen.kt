@@ -54,6 +54,7 @@ private val HINTS = mapOf(
     "set_alarm" to Hint(Icons.Filled.Alarm, "Sveglia", "«Sveglia alle 7:30»"),
     "flashlight" to Hint(Icons.Filled.FlashlightOn, "Torcia", "«Accendi la torcia»"),
     "remember" to Hint(Icons.Filled.EditNote, "Ricorda", "«Ricorda che domani ho la revisione»"),
+    "list_memories" to Hint(Icons.Filled.EditNote, "Cosa devo fare", "«Che impegni ho?»"),
     "calculate" to Hint(Icons.Filled.Calculate, "Calcolo", "«Quanto fa 12 * 8?»"),
 )
 
