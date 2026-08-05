@@ -23,11 +23,8 @@ interface LlmEngine {
     /** Frees the model and its memory. */
     fun unload()
 
-    /**
-     * Generates a reply for [prompt] with no memory (stateless). Null on failure.
-     * [maxTokens] caps the output, which keeps short classification calls fast.
-     */
-    suspend fun generate(prompt: String, maxTokens: Int? = null): String?
+    /** Generates a full reply for [prompt] with no memory (stateless). Null on failure. */
+    suspend fun generate(prompt: String): String?
 
     /**
      * Multi-turn chat: sends [userText] within a conversation that persists across

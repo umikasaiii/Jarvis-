@@ -34,14 +34,14 @@ class LlmIntentClassifier @Inject constructor(
     /**
      * Returns a tool call the model recognised, or null to fall through.
      * Every utterance is analysed (not just keyword matches), so JARVIS
-     * understands commands however they're phrased. Output is capped to a
-     * handful of tokens to keep the extra call quick.
+     * understands commands however they're phrased. The few-shot prompt keeps
+     * the answer to a single short line, so the extra call stays quick.
      */
     suspend fun classify(utterance: String): ToolCall? {
         if (llm.loadState.value != LlmLoadState.LOADED) return null
         if (utterance.isBlank()) return null
 
-        val reply = runCatching { llm.generate(prompt(utterance), maxTokens = MAX_TOKENS) }.getOrNull()
+        val reply = runCatching { llm.generate(prompt(utterance)) }.getOrNull()
             ?.trim()?.lineSequence()?.firstOrNull { it.isNotBlank() }?.trim()
             ?: return null
 
@@ -140,8 +140,5 @@ class LlmIntentClassifier @Inject constructor(
 
     private companion object {
         const val TAG = "JarvisIntent"
-
-        /** One short line is all we need; capping keeps classification fast. */
-        const val MAX_TOKENS = 24
     }
 }
