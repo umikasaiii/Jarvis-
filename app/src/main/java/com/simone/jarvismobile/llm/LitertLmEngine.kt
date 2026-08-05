@@ -99,11 +99,16 @@ class LitertLmEngine @Inject constructor(
         _loadedModelName.value = null
     }
 
-    override suspend fun generate(prompt: String): String? = withContext(Dispatchers.Default) {
+    override suspend fun generate(prompt: String, maxTokens: Int?): String? = withContext(Dispatchers.Default) {
         val e = engine ?: return@withContext null
         try {
             // A fresh conversation per call keeps generation stateless (no memory).
-            e.createConversation().use { conv ->
+            val config = if (maxTokens != null) {
+                ConversationConfig(maxOutputToken = maxTokens)
+            } else {
+                ConversationConfig()
+            }
+            e.createConversation(config).use { conv ->
                 // sendMessage returns a Message; Message.toString() concatenates its
                 // text Contents into the plain reply string (Content.Text.toString()
                 // is the raw text). Blocking call — we are on Dispatchers.Default.

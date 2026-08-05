@@ -281,9 +281,27 @@ class SessionCoordinator @Inject constructor(
             // utterance as a fresh request rather than guessing.
         }
 
-        // Phase 6: deterministic command → tool. Runs before the model, so
-        // "che ore sono", "timer 10 minuti", "ricorda che …" work instantly and
-        // reliably even with a small model (and even with no model loaded).
+        // Phase 6 — understanding, in two stages.
+        //
+        // 1) The local AI analyses the request against the tool list, so a
+        //    command is understood however it is phrased. It can only name a
+        //    tool that already exists in the registry, and every argument is
+        //    re-validated, so understanding grows but privileges don't.
+        runCatching { intentClassifier.classify(transcript) }.getOrNull()?.let { inferred ->
+            _diagnostic.value = "tool (ai): ${inferred.name}"
+            return when (val outcome = tools.run(inferred)) {
+                is ToolOutcome.Done -> outcome.spoken
+                is ToolOutcome.Failed -> outcome.spoken
+                is ToolOutcome.NeedsConfirmation -> {
+                    pendingConfirmation = outcome.call
+                    outcome.prompt
+                }
+            }
+        }
+
+        // 2) Explicit patterns as the safety net: they catch what the model
+        //    missed, fill in a missing detail by asking, and keep commands
+        //    working when no model is loaded at all.
         when (val match = CommandMatcher.match(transcript)) {
             is Match.Ask -> {
                 // Remember what we were doing so the next reply completes it.
@@ -302,22 +320,7 @@ class SessionCoordinator @Inject constructor(
                     }
                 }
             }
-            null -> {
-                // Second stage: let the local model understand phrasings the
-                // explicit patterns don't cover ("avvisami fra dieci minuti").
-                val inferred = runCatching { intentClassifier.classify(transcript) }.getOrNull()
-                if (inferred != null) {
-                    _diagnostic.value = "tool (ai): ${inferred.name}"
-                    return when (val outcome = tools.run(inferred)) {
-                        is ToolOutcome.Done -> outcome.spoken
-                        is ToolOutcome.Failed -> outcome.spoken
-                        is ToolOutcome.NeedsConfirmation -> {
-                            pendingConfirmation = outcome.call
-                            outcome.prompt
-                        }
-                    }
-                }
-            }
+            null -> Unit // not a command → normal conversation below
         }
         if (llm.loadState.value != LlmLoadState.LOADED) {
             return "Ho capito: $transcript. Carica un modello nella schermata Modelli per risposte vere."

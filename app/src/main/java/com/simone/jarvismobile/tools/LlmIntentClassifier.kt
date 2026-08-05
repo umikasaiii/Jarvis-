@@ -31,24 +31,23 @@ class LlmIntentClassifier @Inject constructor(
     private val llm: LlmEngine,
 ) {
 
-    /** Returns a tool call the model recognised, or null to fall through to chat. */
+    /**
+     * Returns a tool call the model recognised, or null to fall through.
+     * Every utterance is analysed (not just keyword matches), so JARVIS
+     * understands commands however they're phrased. Output is capped to a
+     * handful of tokens to keep the extra call quick.
+     */
     suspend fun classify(utterance: String): ToolCall? {
         if (llm.loadState.value != LlmLoadState.LOADED) return null
-        if (!looksLikeAction(utterance)) return null
+        if (utterance.isBlank()) return null
 
-        val reply = runCatching { llm.generate(prompt(utterance)) }.getOrNull()
+        val reply = runCatching { llm.generate(prompt(utterance), maxTokens = MAX_TOKENS) }.getOrNull()
             ?.trim()?.lineSequence()?.firstOrNull { it.isNotBlank() }?.trim()
             ?: return null
 
         return parse(reply).also {
             Log.i(TAG, "intent_classified=${it?.name ?: "none"}")
         }
-    }
-
-    /** Cheap pre-filter: does the sentence contain any action-ish word at all? */
-    private fun looksLikeAction(text: String): Boolean {
-        val t = text.lowercase()
-        return ACTION_HINTS.any { t.contains(it) }
     }
 
     private fun prompt(utterance: String): String = """
@@ -62,10 +61,13 @@ class LlmIntentClassifier @Inject constructor(
         flashlight on
         flashlight off
         remember <testo da ricordare>
+        list_memories
         calculate <espressione aritmetica>
         none
 
         Usa "none" se non è una richiesta di azione ma solo conversazione.
+        Se manca un dettaglio (durata, orario) scrivi comunque il comando senza numeri:
+        verrà chiesto all'utente.
 
         Esempi:
         Richiesta: che ore fanno adesso?
@@ -78,6 +80,10 @@ class LlmIntentClassifier @Inject constructor(
         Risposta: flashlight on
         Richiesta: destami alle sette e mezza
         Risposta: set_alarm 7 30
+        Richiesta: cosa devo fare questa settimana?
+        Risposta: list_memories
+        Richiesta: metti un timer
+        Risposta: set_timer
         Richiesta: come stai oggi?
         Risposta: none
 
@@ -93,7 +99,7 @@ class LlmIntentClassifier @Inject constructor(
         val rest = cleaned.substringAfter(' ', "").trim()
 
         return when (name) {
-            "get_time", "battery_status" -> call(name)
+            "get_time", "battery_status", "list_memories" -> call(name)
 
             "set_timer" -> rest.takeWhile { it.isDigit() }.toIntOrNull()
                 ?.takeIf { it in 1..86_400 }
@@ -135,15 +141,7 @@ class LlmIntentClassifier @Inject constructor(
     private companion object {
         const val TAG = "JarvisIntent"
 
-        /**
-         * Words that suggest the user wants something DONE. Keeps plain chat off
-         * the classifier path (and therefore fast).
-         */
-        val ACTION_HINTS = listOf(
-            "timer", "sveglia", "svegli", "avvis", "ricord", "nota", "annota", "segna",
-            "torcia", "flash", "luce", "batteria", "ora", "ore", "orario", "giorno", "data",
-            "calcol", "quanto fa", "accend", "spegn", "attiv", "disattiv", "imposta",
-            "metti", "avvia", "fai partire", "promemoria", "conta", "minut", "second",
-        )
+        /** One short line is all we need; capping keeps classification fast. */
+        const val MAX_TOKENS = 24
     }
 }
