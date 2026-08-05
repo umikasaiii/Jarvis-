@@ -104,18 +104,48 @@ object CommandMatcher {
         }
 
         // --- Calculator ---------------------------------------------------
-        CALC_RE.find(t)?.let { m ->
-            val expr = m.groupValues[1].trim()
-                .replace(" per ", "*").replace(" x ", "*")
-                .replace(" diviso ", "/").replace(" piu ", "+").replace(" meno ", "-")
-                .replace("per", "*").replace("diviso", "/")
-            if (expr.any { it.isDigit() } && expr.all { it.isDigit() || it in "+-*/(). \t" }) {
-                return call("calculate", "expression" to expr)
-            }
-        }
+        arithmetic(raw)?.let { return call("calculate", "expression" to it) }
 
         return null
     }
+
+    /**
+     * Extracts an arithmetic expression from the user's OWN words.
+     *
+     * This is deliberately never delegated to the model: asked to echo "5 * 2"
+     * a small model may write "7 * 2", silently changing the question. Digits
+     * must come from the user, so the answer is to the sum actually asked.
+     * Returns null when there is nothing safely computable.
+     */
+    fun arithmetic(raw: String): String? {
+        var t = raw.lowercase()
+            .replace('à', 'a').replace('è', 'e').replace('é', 'e')
+            .replace('ì', 'i').replace('ò', 'o').replace('ù', 'u')
+            .trim().trim('?', '!', '.', ' ')
+
+        // Drop a leading "quanto fa" / "calcola" if present.
+        t = t.replace(Regex("""^(calcola|quanto fa|quant'?e|fammi il calcolo di)\s+"""), "")
+
+        // Spoken operators → symbols (word boundaries only, so "percento" is safe).
+        t = t
+            .replace(Regex("""\bper\b"""), "*")
+            .replace(Regex("""\bx\b"""), "*")
+            .replace(Regex("""\bdiviso\b"""), "/")
+            .replace(Regex("""\bpiu\b"""), "+")
+            .replace(Regex("""\bmeno\b"""), "-")
+            .replace("×", "*").replace("÷", "/").replace(",", ".")
+
+        // Keep only characters that belong in an expression.
+        val expr = t.filter { it.isDigit() || it in "+-*/(). " }.trim()
+
+        // Must contain a real operation between numbers, not just a stray digit.
+        if (!Regex("""\d\s*[+\-*/]\s*\(?\s*\d""").containsMatchIn(expr)) return null
+        if (!expr.all { it.isDigit() || it in "+-*/(). " }) return null
+        return expr
+    }
+
+    /** Public so callers can reuse the reminder-body extraction. */
+    fun rememberBody(raw: String): String? = rememberContent(raw)
 
     /**
      * Strips accents and polite wrappers so one pattern covers many phrasings.

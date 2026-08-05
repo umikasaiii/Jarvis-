@@ -93,11 +93,15 @@ object ItalianNumbers {
 
         // With an explicit unit, an unstated quantity means one ("un'ora", "tra un minuto").
         val value = firstNumber(t) ?: 1
-        val seconds = when {
-            unit.startsWith("or") -> value * 3600
-            unit.startsWith("min") -> value * 60
-            else -> value
+        val unitSeconds = when {
+            unit.startsWith("or") -> 3600
+            unit.startsWith("min") -> 60
+            else -> 1
         }
+        var seconds = value * unitSeconds
+        // "un minuto e mezzo" = 90s, "un'ora e mezza" = 5400s, "e un quarto" = +15m.
+        if (Regex("""\be\s+mezz[oa]\b""").containsMatchIn(t)) seconds += unitSeconds / 2
+        if (Regex("""\be\s+un quarto\b""").containsMatchIn(t)) seconds += unitSeconds / 4
         return seconds.takeIf { it in 1..86_400 }
     }
 

@@ -287,16 +287,24 @@ class SessionCoordinator @Inject constructor(
         //    command is understood however it is phrased. It can only name a
         //    tool that already exists in the registry, and every argument is
         //    re-validated, so understanding grows but privileges don't.
-        runCatching { intentClassifier.classify(transcript) }.getOrNull()?.let { inferred ->
-            _diagnostic.value = "tool (ai): ${inferred.name}"
-            return when (val outcome = tools.run(inferred)) {
-                is ToolOutcome.Done -> outcome.spoken
-                is ToolOutcome.Failed -> outcome.spoken
-                is ToolOutcome.NeedsConfirmation -> {
-                    pendingConfirmation = outcome.call
-                    outcome.prompt
+        when (val aiMatch = runCatching { intentClassifier.classify(transcript) }.getOrNull()) {
+            is Match.Ask -> {
+                pendingSlot = Pending(aiMatch.tool, aiMatch.missing, aiMatch.partial)
+                _diagnostic.value = "chiedo (ai): ${aiMatch.missing}"
+                return aiMatch.question
+            }
+            is Match.Run -> {
+                _diagnostic.value = "tool (ai): ${aiMatch.call.name}"
+                return when (val outcome = tools.run(aiMatch.call)) {
+                    is ToolOutcome.Done -> outcome.spoken
+                    is ToolOutcome.Failed -> outcome.spoken
+                    is ToolOutcome.NeedsConfirmation -> {
+                        pendingConfirmation = outcome.call
+                        outcome.prompt
+                    }
                 }
             }
+            null -> Unit
         }
 
         // 2) Explicit patterns as the safety net: they catch what the model

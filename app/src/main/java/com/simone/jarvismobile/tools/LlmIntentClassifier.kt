@@ -11,20 +11,21 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Second-stage intent understanding: when [CommandMatcher]'s explicit patterns
- * don't fire, the local model is asked to classify the utterance into one of the
- * registered tools.
+ * Primary intent understanding: the local model reads the request and decides
+ * which registered tool (if any) it means, so a command works however it is
+ * phrased instead of only in the shapes a regex anticipated.
  *
- * Two deliberate design choices make this workable on a small on-device model:
- *  - the model must answer with ONE short line (`set_timer 600`), not JSON —
- *    strict JSON is where small models fail;
- *  - the answer is parsed and re-validated here, and can only ever name a tool
- *    that already exists in the registry. The model still cannot invent
- *    capabilities or arguments that bypass validation (docs/SECURITY.md §15).
+ * Three design choices make this workable on a small on-device model:
+ *  - it answers with ONE short line (`set_timer`), not JSON — strict JSON is
+ *    where small models fail;
+ *  - only the tool NAME is taken from the model. Every argument is extracted
+ *    from the user's own words, because a small model asked to echo "5 * 2"
+ *    may write "7 * 2" and silently answer a different question;
+ *  - the name is matched against the registry, so the model gains
+ *    understanding, never new capabilities (docs/SECURITY.md §15).
  *
  * It runs on a stateless [LlmEngine.generate] call, so classification never
- * pollutes the multi-turn conversation, and only for utterances that look like
- * an action — ordinary chat pays no latency cost.
+ * pollutes the multi-turn conversation.
  */
 @Singleton
 class LlmIntentClassifier @Inject constructor(
@@ -32,12 +33,17 @@ class LlmIntentClassifier @Inject constructor(
 ) {
 
     /**
-     * Returns a tool call the model recognised, or null to fall through.
-     * Every utterance is analysed (not just keyword matches), so JARVIS
-     * understands commands however they're phrased. The few-shot prompt keeps
-     * the answer to a single short line, so the extra call stays quick.
+     * Understands what the user wants, using the local model.
+     *
+     * The model decides only WHICH action is meant. Every argument is then
+     * extracted from the user's own words, never from the model's echo: asked
+     * to repeat "5 * 2" a small model may write "7 * 2" and silently answer a
+     * different question. Intent from the AI, data from the user.
+     *
+     * Returns a [Match] (run it, or ask for the missing detail), or null when
+     * this isn't a command.
      */
-    suspend fun classify(utterance: String): ToolCall? {
+    suspend fun classify(utterance: String): Match? {
         if (llm.loadState.value != LlmLoadState.LOADED) return null
         if (utterance.isBlank()) return null
 
@@ -45,8 +51,42 @@ class LlmIntentClassifier @Inject constructor(
             ?.trim()?.lineSequence()?.firstOrNull { it.isNotBlank() }?.trim()
             ?: return null
 
-        return parse(reply).also {
-            Log.i(TAG, "intent_classified=${it?.name ?: "none"}")
+        val name = reply.removePrefix("Risposta:").trim().trim('`', '"', '.', ' ')
+            .substringBefore(' ').lowercase()
+        Log.i(TAG, "intent=$name")
+
+        return when (name) {
+            "get_time", "battery_status", "list_memories" -> Match.Run(call(name))
+
+            "set_timer" -> ItalianNumbers.duration(utterance)
+                ?.let { Match.Run(call("set_timer", "seconds" to it.toString())) }
+                ?: Match.Ask("Per quanto tempo?", "set_timer", "seconds")
+
+            "set_alarm" -> ItalianNumbers.clockTime(utterance)
+                ?.let { (h, m) -> Match.Run(call("set_alarm", "hour" to h.toString(), "minute" to m.toString())) }
+                ?: Match.Ask("A che ora?", "set_alarm", "time")
+
+            "flashlight" -> {
+                val off = Regex("""\b(spegn\w*|disattiv\w*)\b""").containsMatchIn(utterance.lowercase())
+                Match.Run(call("flashlight", "on" to (!off).toString()))
+            }
+
+            "remember" -> {
+                val note = CommandMatcher.rememberBody(utterance) ?: utterance.trim()
+                if (note.length < 3) {
+                    Match.Ask("Cosa vuoi che ricordi?", "remember", "text")
+                } else if (CommandMatcher.hasTimeReference(note)) {
+                    Match.Run(call("remember", "text" to note))
+                } else {
+                    Match.Ask("Quando?", "remember", "when", mapOf("text" to note))
+                }
+            }
+
+            // Digits must come from the user, never from the model.
+            "calculate" -> CommandMatcher.arithmetic(utterance)
+                ?.let { Match.Run(call("calculate", "expression" to it)) }
+
+            else -> null // "none" and anything unexpected → normal conversation
         }
     }
 
@@ -65,7 +105,10 @@ class LlmIntentClassifier @Inject constructor(
         calculate <espressione aritmetica>
         none
 
-        Usa "none" se non è una richiesta di azione ma solo conversazione.
+        Usa "none" se non è una richiesta di azione ma solo conversazione, oppure se
+        la domanda richiede di ragionare, confrontare o dare un parere sugli appunti
+        (in quel caso risponderai tu a parole, non con un comando).
+        Usa "list_memories" SOLO per elencare gli appunti così come sono.
         Se manca un dettaglio (durata, orario) scrivi comunque il comando senza numeri:
         verrà chiesto all'utente.
 
@@ -84,51 +127,14 @@ class LlmIntentClassifier @Inject constructor(
         Risposta: list_memories
         Richiesta: metti un timer
         Risposta: set_timer
+        Richiesta: quale impegno è più urgente secondo te?
+        Risposta: none
         Richiesta: come stai oggi?
         Risposta: none
 
         Richiesta: $utterance
         Risposta:
     """.trimIndent()
-
-    /** Strictly parses one line into a validated [ToolCall], or null. */
-    private fun parse(line: String): ToolCall? {
-        val cleaned = line.removePrefix("Risposta:").trim().trim('`', '"', '.', ' ')
-        if (cleaned.isEmpty()) return null
-        val name = cleaned.substringBefore(' ').lowercase()
-        val rest = cleaned.substringAfter(' ', "").trim()
-
-        return when (name) {
-            "get_time", "battery_status", "list_memories" -> call(name)
-
-            "set_timer" -> rest.takeWhile { it.isDigit() }.toIntOrNull()
-                ?.takeIf { it in 1..86_400 }
-                ?.let { call("set_timer", "seconds" to it.toString()) }
-
-            "set_alarm" -> {
-                val nums = Regex("""\d{1,2}""").findAll(rest).map { it.value.toInt() }.toList()
-                val h = nums.getOrNull(0)
-                val m = nums.getOrNull(1) ?: 0
-                if (h != null && h in 0..23 && m in 0..59) {
-                    call("set_alarm", "hour" to h.toString(), "minute" to m.toString())
-                } else null
-            }
-
-            "flashlight" -> when {
-                rest.startsWith("on") || rest.startsWith("true") -> call("flashlight", "on" to "true")
-                rest.startsWith("off") || rest.startsWith("false") -> call("flashlight", "on" to "false")
-                else -> null
-            }
-
-            "remember" -> rest.takeIf { it.length >= 3 }?.let { call("remember", "text" to it) }
-
-            "calculate" -> rest.takeIf { r ->
-                r.any { it.isDigit() } && r.all { it.isDigit() || it in "+-*/(). \t" }
-            }?.let { call("calculate", "expression" to it) }
-
-            else -> null // includes "none" and anything unexpected
-        }
-    }
 
     private fun call(name: String, vararg args: Pair<String, String>): ToolCall =
         ToolCall(
