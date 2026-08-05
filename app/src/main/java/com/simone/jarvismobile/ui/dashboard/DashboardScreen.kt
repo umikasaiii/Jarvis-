@@ -275,8 +275,8 @@ fun DashboardScreen(
 
             // --- Row: Panoramica + Agenda (2 columns) ---------------------
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                GlassCard(Modifier.weight(1f)) {
-                    CardHeader(Icons.Filled.Dashboard, "PANORAMICA", trailing = { DemoBadge() })
+                GlassCard(Modifier.weight(1f), badge = { DemoBadge() }) {
+                    CardHeader(Icons.Filled.Dashboard, "PANORAMICA")
                     Text(todayLabel(), color = Muted, fontSize = 11.sp)
                     Spacer(Modifier.height(4.dp))
                     StatLine("3", "Eventi", Cyan)
@@ -285,8 +285,8 @@ fun DashboardScreen(
                     Spacer(Modifier.height(8.dp))
                     DonutRing(percent = 78, label = "Produttività", modifier = Modifier.size(96.dp).align(Alignment.CenterHorizontally))
                 }
-                GlassCard(Modifier.weight(1f)) {
-                    CardHeader(Icons.Filled.CalendarMonth, "AGENDA", trailing = { DemoBadge() })
+                GlassCard(Modifier.weight(1f), badge = { DemoBadge() }) {
+                    CardHeader(Icons.Filled.CalendarMonth, "AGENDA")
                     AgendaRow("10:00", "Riunione team", "Sala Orion", Cyan)
                     AgendaRow("14:30", "Call Alpha", "Online", Green)
                     AgendaRow("18:00", "Allenamento", "Palestra", Violet, last = true)
@@ -295,14 +295,14 @@ fun DashboardScreen(
 
             // --- Row: Casa + Sistema (2 columns) --------------------------
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                GlassCard(Modifier.weight(1f)) {
-                    CardHeader(Icons.Filled.Home, "CASA", trailing = { DemoBadge("F7") })
+                GlassCard(Modifier.weight(1f), badge = { DemoBadge("F7") }) {
+                    CardHeader(Icons.Filled.Home, "CASA")
                     ToggleRow(Icons.Filled.Lightbulb, "Luci", "Soggiorno", on = true)
                     ToggleRow(Icons.Filled.AcUnit, "Clima", "22°C", on = false)
                     ToggleRow(Icons.Filled.Security, "Sicurezza", "Inserito", on = true)
                 }
                 GlassCard(Modifier.weight(1f)) {
-                    CardHeader(Icons.Filled.Memory, "SISTEMA")
+                    CardHeader(Icons.Filled.Memory, "SISTEMA", reserveEnd = false)
                     val aiOnline = loadState == LlmLoadState.LOADED
                     SystemRow(
                         Icons.Filled.SmartToy, "AI",
@@ -324,10 +324,8 @@ fun DashboardScreen(
             }
 
             // --- Obsidian --------------------------------------------------
-            GlassCard {
-                CardHeader(Icons.Filled.Book, "OBSIDIAN / NOTE", trailing = {
-                    if (!memory.configured) DemoBadge("NO VAULT")
-                })
+            GlassCard(badge = { if (!memory.configured) DemoBadge("NO VAULT") }) {
+                CardHeader(Icons.Filled.Book, "OBSIDIAN / NOTE")
                 NoteRow(Icons.Filled.FolderOpen, "Knowledge Base",
                     if (memory.configured) "${memory.noteCount} note" else "Collega un vault", onOpenMemory)
                 NoteRow(Icons.Filled.Description, "Frammenti indicizzati",
@@ -336,8 +334,8 @@ fun DashboardScreen(
             }
 
             // --- Automazioni -----------------------------------------------
-            GlassCard {
-                CardHeader(Icons.Filled.Bolt, "AUTOMAZIONI", trailing = { DemoBadge() })
+            GlassCard(badge = { DemoBadge() }) {
+                CardHeader(Icons.Filled.Bolt, "AUTOMAZIONI")
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -349,8 +347,8 @@ fun DashboardScreen(
             }
 
             // --- Calendario settimana --------------------------------------
-            GlassCard {
-                CardHeader(Icons.Filled.CalendarMonth, "CALENDARIO", trailing = { DemoBadge("EVENTI") })
+            GlassCard(badge = { DemoBadge("EVENTI") }) {
+                CardHeader(Icons.Filled.CalendarMonth, "CALENDARIO")
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -422,6 +420,7 @@ private fun ChatFab(unread: Int, onClick: () -> Unit, modifier: Modifier = Modif
 @Composable
 private fun GlassCard(
     modifier: Modifier = Modifier.fillMaxWidth(),
+    badge: (@Composable () -> Unit)? = null,
     content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
 ) {
     Box(modifier) {
@@ -432,10 +431,13 @@ private fun GlassCard(
             contentScale = ContentScale.FillBounds,
         )
         Column(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 18.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
             content = content,
         )
+        if (badge != null) {
+            Box(Modifier.align(Alignment.TopEnd).padding(top = 14.dp, end = 14.dp)) { badge() }
+        }
     }
 }
 
@@ -457,29 +459,22 @@ private fun MiniCard(modifier: Modifier = Modifier, content: @Composable android
 }
 
 @Composable
-private fun CardHeader(icon: ImageVector, title: String, trailing: @Composable (() -> Unit)? = null) {
+private fun CardHeader(icon: ImageVector, title: String, reserveEnd: Boolean = true) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().padding(end = if (reserveEnd) 44.dp else 0.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, null, tint = Cyan, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(8.dp))
-            Text(
-                title,
-                color = Ink,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
-                letterSpacing = 0.5.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        if (trailing != null) {
-            Spacer(Modifier.width(6.dp))
-            trailing()
-        }
+        Icon(icon, null, tint = Cyan, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(
+            title,
+            color = Ink,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 0.5.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
