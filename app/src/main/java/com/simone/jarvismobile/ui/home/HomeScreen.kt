@@ -17,9 +17,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -135,12 +135,12 @@ fun HomeScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Brush.verticalGradient(listOf(Color(0xFF05101A), Color(0xFF0A1622), Color(0xFF040B12)))),
+            .background(Brush.verticalGradient(listOf(Color(0xFF0A1826), Color(0xFF0B1927), Color(0xFF060E16)))),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .systemBarsPadding()
+                .navigationBarsPadding() // the chat lives in a panel below the status bar
                 .imePadding()
                 .padding(horizontal = 12.dp, vertical = 6.dp),
         ) {

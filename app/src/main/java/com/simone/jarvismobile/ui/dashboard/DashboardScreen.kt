@@ -212,57 +212,54 @@ fun DashboardScreen(
                 }
             }
 
-            // --- Panoramica -----------------------------------------------
-            GlassCard {
-                CardHeader(Icons.Filled.Dashboard, "PANORAMICA", trailing = { DemoBadge() })
-                Text(todayLabel(), color = Muted, fontSize = 12.sp)
-                Spacer(Modifier.height(6.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        StatLine("3", "Eventi", Cyan)
-                        StatLine("7", "Attività", Blue)
-                        StatLine("2", "Promemoria", Violet)
-                    }
-                    DonutRing(percent = 78, label = "Produttività", modifier = Modifier.size(104.dp))
+            // --- Row: Panoramica + Agenda (2 columns) ---------------------
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                GlassCard(Modifier.weight(1f)) {
+                    CardHeader(Icons.Filled.Dashboard, "PANORAMICA", trailing = { DemoBadge() })
+                    Text(todayLabel(), color = Muted, fontSize = 11.sp)
+                    Spacer(Modifier.height(4.dp))
+                    StatLine("3", "Eventi", Cyan)
+                    StatLine("7", "Attività", Blue)
+                    StatLine("2", "Promemoria", Violet)
+                    Spacer(Modifier.height(8.dp))
+                    DonutRing(percent = 78, label = "Produttività", modifier = Modifier.size(96.dp).align(Alignment.CenterHorizontally))
+                }
+                GlassCard(Modifier.weight(1f)) {
+                    CardHeader(Icons.Filled.CalendarMonth, "AGENDA", trailing = { DemoBadge() })
+                    AgendaRow("10:00", "Riunione team", "Sala Orion", Cyan)
+                    AgendaRow("14:30", "Call Alpha", "Online", Green)
+                    AgendaRow("18:00", "Allenamento", "Palestra", Violet, last = true)
                 }
             }
 
-            // --- Agenda ----------------------------------------------------
-            GlassCard {
-                CardHeader(Icons.Filled.CalendarMonth, "AGENDA", trailing = { DemoBadge() })
-                AgendaRow("10:00", "Riunione con il team", "Sala Orion", Cyan)
-                AgendaRow("14:30", "Call progetto Alpha", "Online", Green)
-                AgendaRow("18:00", "Allenamento", "Palestra", Violet, last = true)
-            }
-
-            // --- Casa ------------------------------------------------------
-            GlassCard {
-                CardHeader(Icons.Filled.Home, "CASA", trailing = { DemoBadge("FASE 7") })
-                ToggleRow(Icons.Filled.Lightbulb, "Luci", "Soggiorno", on = true)
-                ToggleRow(Icons.Filled.AcUnit, "Clima", "22°C", on = false)
-                ToggleRow(Icons.Filled.Security, "Sicurezza", "Inserito", on = true)
-            }
-
-            // --- Sistema ---------------------------------------------------
-            GlassCard {
-                CardHeader(Icons.Filled.Memory, "SISTEMA")
-                val aiOnline = loadState == LlmLoadState.LOADED
-                SystemRow(
-                    Icons.Filled.SmartToy, "AI Locale",
-                    when {
-                        aiOnline -> "Online"
-                        loadState == LlmLoadState.LOADING -> "Carico…"
-                        else -> "Offline"
-                    },
-                    if (aiOnline) Green else Muted,
-                )
-                SystemRow(
-                    Icons.Filled.Memory, "Memoria",
-                    if (memory.configured) "${memory.noteCount} note" else "—",
-                    if (memory.configured) Cyan else Muted,
-                )
-                SystemRow(Icons.Filled.Sync, "Sincronizzazione", "Non attiva", Muted, demo = true)
-                SystemRow(Icons.Filled.CloudUpload, "Backup", "Non attivo", Muted, demo = true)
+            // --- Row: Casa + Sistema (2 columns) --------------------------
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                GlassCard(Modifier.weight(1f)) {
+                    CardHeader(Icons.Filled.Home, "CASA", trailing = { DemoBadge("F7") })
+                    ToggleRow(Icons.Filled.Lightbulb, "Luci", "Soggiorno", on = true)
+                    ToggleRow(Icons.Filled.AcUnit, "Clima", "22°C", on = false)
+                    ToggleRow(Icons.Filled.Security, "Sicurezza", "Inserito", on = true)
+                }
+                GlassCard(Modifier.weight(1f)) {
+                    CardHeader(Icons.Filled.Memory, "SISTEMA")
+                    val aiOnline = loadState == LlmLoadState.LOADED
+                    SystemRow(
+                        Icons.Filled.SmartToy, "AI",
+                        when {
+                            aiOnline -> "Online"
+                            loadState == LlmLoadState.LOADING -> "Carico…"
+                            else -> "Offline"
+                        },
+                        if (aiOnline) Green else Muted,
+                    )
+                    SystemRow(
+                        Icons.Filled.Memory, "Note",
+                        if (memory.configured) "${memory.noteCount}" else "—",
+                        if (memory.configured) Cyan else Muted,
+                    )
+                    SystemRow(Icons.Filled.Sync, "Sync", "Off", Muted, demo = true)
+                    SystemRow(Icons.Filled.CloudUpload, "Backup", "Off", Muted, demo = true)
+                }
             }
 
             // --- Obsidian --------------------------------------------------
@@ -322,13 +319,20 @@ fun DashboardScreen(
 
 @Composable
 private fun ChatFab(unread: Int, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    Box(modifier.size(60.dp), contentAlignment = Alignment.Center) {
+    Box(modifier.size(74.dp), contentAlignment = Alignment.Center) {
+        // Glow halo.
+        Box(
+            Modifier
+                .size(74.dp)
+                .clip(androidx.compose.foundation.shape.CircleShape)
+                .background(Brush.radialGradient(listOf(Cyan.copy(alpha = 0.45f), Color.Transparent))),
+        )
         Box(
             modifier = Modifier
-                .size(60.dp)
+                .size(58.dp)
                 .clip(androidx.compose.foundation.shape.CircleShape)
-                .background(Brush.verticalGradient(listOf(Blue, Color(0xFF1E6FD0))))
-                .border(1.5.dp, Cyan.copy(alpha = 0.6f), androidx.compose.foundation.shape.CircleShape)
+                .background(Brush.verticalGradient(listOf(Color(0xFF49C6F0), Color(0xFF1E6FD0))))
+                .border(1.5.dp, Cyan.copy(alpha = 0.8f), androidx.compose.foundation.shape.CircleShape)
                 .clickable(onClick = onClick),
             contentAlignment = Alignment.Center,
         ) {
@@ -355,14 +359,16 @@ private fun ChatFab(unread: Int, onClick: () -> Unit, modifier: Modifier = Modif
 }
 
 @Composable
-private fun GlassCard(content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
+private fun GlassCard(
+    modifier: Modifier = Modifier.fillMaxWidth(),
+    content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
+) {
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
+        modifier = modifier
             .clip(TechShape)
             .background(Brush.verticalGradient(listOf(CardTop, CardBottom)))
             .border(1.dp, Brush.verticalGradient(listOf(Cyan.copy(alpha = 0.5f), Cyan.copy(alpha = 0.1f))), TechShape)
-            .padding(16.dp),
+            .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
         content = content,
     )
@@ -414,12 +420,12 @@ private fun DemoBadge(text: String = "DEMO") {
 
 @Composable
 private fun StatLine(value: String, label: String, dot: Color) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 3.dp)) {
         Box(Modifier.size(7.dp).clip(RoundedCornerShape(4.dp)).background(dot))
-        Spacer(Modifier.width(10.dp))
-        Text(value, color = Ink, fontSize = 18.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.width(8.dp))
-        Text(label, color = Muted, fontSize = 12.sp)
+        Text(value, color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.width(6.dp))
+        Text(label, color = Muted, fontSize = 11.sp)
     }
 }
 
@@ -471,16 +477,16 @@ private fun DonutRing(percent: Int, label: String, modifier: Modifier = Modifier
 
 @Composable
 private fun AgendaRow(time: String, title: String, place: String, dot: Color, last: Boolean = false) {
-    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-        Text(time, color = Ink, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.width(54.dp))
-        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(top = 2.dp)) {
-            Box(Modifier.size(9.dp).clip(RoundedCornerShape(5.dp)).background(dot))
-            if (!last) Box(Modifier.width(2.dp).height(26.dp).background(Color(0x22FFFFFF)))
+    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(top = 3.dp)) {
+            Box(Modifier.size(8.dp).clip(RoundedCornerShape(5.dp)).background(dot))
+            if (!last) Box(Modifier.width(2.dp).height(28.dp).background(Color(0x22FFFFFF)))
         }
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(10.dp))
         Column {
+            Text(time, color = dot, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             Text(title, color = Ink, fontSize = 13.sp)
-            Text(place, color = Muted, fontSize = 11.sp)
+            Text(place, color = Muted, fontSize = 10.sp)
         }
     }
 }
