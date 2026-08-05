@@ -10,6 +10,7 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -69,6 +70,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -251,6 +253,7 @@ fun DashboardScreen(
                     title = orbTitle(state),
                     subtitle = orbSubtitle(state),
                     active = !state.isRestingLike(),
+                    mode = orbModeFor(state),
                     onClick = {
                         if (state.isRestingLike()) viewModel.onTalkPressed() else viewModel.onCancel()
                     },
@@ -376,23 +379,26 @@ fun DashboardScreen(
 
 @Composable
 private fun ChatFab(unread: Int, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    Box(modifier.size(76.dp), contentAlignment = Alignment.Center) {
-        // Luminous halo.
-        Box(
-            Modifier
-                .size(76.dp)
-                .clip(androidx.compose.foundation.shape.CircleShape)
-                .background(Brush.radialGradient(listOf(Cyan.copy(alpha = 0.5f), Color.Transparent))),
-        )
-        // The user-provided glowing chat button.
+    Box(modifier.size(78.dp), contentAlignment = Alignment.Center) {
+        // Soft outward glow only — no rim/border, the image's own luminous ring
+        // is the edge of the button.
+        Canvas(Modifier.size(78.dp)) {
+            drawCircle(
+                brush = Brush.radialGradient(
+                    listOf(Color.Transparent, Cyan.copy(alpha = 0.30f), Color.Transparent),
+                    center = center,
+                    radius = size.minDimension / 2f,
+                ),
+                radius = size.minDimension / 2f,
+                center = center,
+            )
+        }
+        // The user-provided glowing chat button (cropped exactly to its ring).
         Image(
             painter = painterResource(R.drawable.chat_fab),
             contentDescription = "Chat",
-            modifier = Modifier
-                .size(64.dp)
-                .clip(androidx.compose.foundation.shape.CircleShape)
-                .clickable(onClick = onClick),
-            contentScale = ContentScale.Crop,
+            modifier = Modifier.size(66.dp).clickable(onClick = onClick),
+            contentScale = ContentScale.Fit,
         )
         if (unread > 0) {
             Box(
@@ -428,12 +434,12 @@ private fun GlassCard(
             contentScale = ContentScale.FillBounds,
         )
         Column(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 22.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
             content = content,
         )
         if (badge != null) {
-            Box(Modifier.align(Alignment.TopEnd).padding(top = 14.dp, end = 14.dp)) { badge() }
+            Box(Modifier.align(Alignment.TopEnd).padding(top = 18.dp, end = 20.dp)) { badge() }
         }
     }
 }
@@ -448,7 +454,7 @@ private fun MiniCard(modifier: Modifier = Modifier, content: @Composable android
             contentScale = ContentScale.FillBounds,
         )
         Column(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 18.dp),
             verticalArrangement = Arrangement.spacedBy(3.dp),
             content = content,
         )
@@ -681,43 +687,140 @@ private fun ListenOrb(
     title: String,
     subtitle: String,
     active: Boolean,
+    mode: OrbMode,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val transition = rememberInfiniteTransition(label = "orb")
+    // Breathing halo — faster and stronger while active.
     val glow by transition.animateFloat(
-        initialValue = 0.35f,
-        targetValue = if (active) 0.7f else 0.5f,
-        animationSpec = infiniteRepeatable(tween(1600, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        initialValue = 0.30f,
+        targetValue = if (active) 0.85f else 0.5f,
+        animationSpec = infiniteRepeatable(
+            tween(if (active) 900 else 2200, easing = FastOutSlowInEasing),
+            RepeatMode.Reverse,
+        ),
         label = "glow",
     )
+    // Sweeping arc for the thinking/loading state.
+    val sweep by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(1200, easing = LinearEasing)),
+        label = "sweep",
+    )
+    // Outward ripple while listening.
+    val ripple by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(1800, easing = LinearEasing)),
+        label = "ripple",
+    )
+    // Waveform bars while speaking.
+    val wave by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(700, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "wave",
+    )
+    // Gentle scale pulse while listening.
+    val pulse by transition.animateFloat(
+        initialValue = 1f,
+        targetValue = if (mode == OrbMode.LISTENING) 1.05f else 1f,
+        animationSpec = infiniteRepeatable(tween(700, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "pulse",
+    )
+
     Box(
         modifier = modifier.aspectRatio(1f).clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        // Pulsing luminous halo behind the orb (colored by state).
+        // Luminous halo + state animations, drawn around the circular orb.
         Canvas(Modifier.fillMaxSize()) {
             val c = center
             val r = size.minDimension / 2f
             drawCircle(
-                brush = Brush.radialGradient(listOf(accent.copy(alpha = glow * 0.6f), Color.Transparent), center = c, radius = r),
+                brush = Brush.radialGradient(listOf(accent.copy(alpha = glow * 0.55f), Color.Transparent), center = c, radius = r),
                 radius = r, center = c,
             )
+            when (mode) {
+                OrbMode.LISTENING -> {
+                    // Two expanding, fading rings.
+                    for (i in 0..1) {
+                        val p = ((ripple + i * 0.5f) % 1f)
+                        drawCircle(
+                            color = accent.copy(alpha = (1f - p) * 0.5f),
+                            radius = r * (0.62f + p * 0.36f),
+                            center = c,
+                            style = Stroke(width = r * 0.022f),
+                        )
+                    }
+                }
+                OrbMode.THINKING -> {
+                    // Rotating arc chasing around the orb.
+                    val inset = r * 0.10f
+                    drawArc(
+                        color = accent.copy(alpha = 0.95f),
+                        startAngle = sweep,
+                        sweepAngle = 90f,
+                        useCenter = false,
+                        topLeft = Offset(c.x - r + inset, c.y - r + inset),
+                        size = Size((r - inset) * 2f, (r - inset) * 2f),
+                        style = Stroke(width = r * 0.035f, cap = StrokeCap.Round),
+                    )
+                }
+                else -> Unit
+            }
         }
-        // The orb ring itself (user-provided image, transparent background).
+
+        // The orb image — perfectly circular, never stretched or clipped.
         Image(
             painter = painterResource(R.drawable.orb),
             contentDescription = null,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().scale(pulse),
             contentScale = ContentScale.Fit,
         )
+
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(Icons.Filled.GraphicEq, null, tint = Color.White, modifier = Modifier.size(26.dp))
+            if (mode == OrbMode.SPEAKING) {
+                // Animated waveform bars.
+                Canvas(Modifier.size(34.dp, 20.dp)) {
+                    val bars = 5
+                    val bw = size.width / (bars * 2f)
+                    for (i in 0 until bars) {
+                        val phase = kotlin.math.sin((wave * Math.PI + i).toFloat()).let { kotlin.math.abs(it) }
+                        val hgt = size.height * (0.28f + 0.72f * phase)
+                        val x = bw + i * bw * 2f
+                        drawLine(
+                            color = Color.White,
+                            start = Offset(x, size.height / 2f - hgt / 2f),
+                            end = Offset(x, size.height / 2f + hgt / 2f),
+                            strokeWidth = bw * 0.9f,
+                            cap = StrokeCap.Round,
+                        )
+                    }
+                }
+            } else {
+                Icon(Icons.Filled.GraphicEq, null, tint = Color.White, modifier = Modifier.size(26.dp))
+            }
             Spacer(Modifier.height(2.dp))
             Text(title, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
             Text(subtitle, color = Ink.copy(alpha = 0.85f), fontSize = 8.sp)
         }
     }
+}
+
+/** Which animation the orb should play. */
+private enum class OrbMode { IDLE, LISTENING, THINKING, SPEAKING }
+
+private fun orbModeFor(state: ConversationState): OrbMode = when (state) {
+    ConversationState.Listening, ConversationState.FollowUpWindow -> OrbMode.LISTENING
+    ConversationState.Speaking -> OrbMode.SPEAKING
+    ConversationState.PreparingAudio, ConversationState.FinalizingSpeech, ConversationState.Transcribing,
+    ConversationState.RetrievingMemory, ConversationState.Routing,
+    ConversationState.ThinkingLocal, ConversationState.ThinkingRemote,
+    ConversationState.ExecutingTool -> OrbMode.THINKING
+    else -> OrbMode.IDLE
 }
 
 // --- Battery ---------------------------------------------------------------
