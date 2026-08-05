@@ -5,6 +5,10 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
+import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -32,6 +36,7 @@ import androidx.compose.foundation.shape.CutCornerShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.AcUnit
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Book
@@ -55,6 +60,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -115,7 +121,16 @@ fun DashboardScreen(
     val loadState by viewModel.llmLoadState.collectAsStateWithLifecycle()
     val loadedModel by viewModel.loadedModelName.collectAsStateWithLifecycle()
     val memory by viewModel.memoryStatus.collectAsStateWithLifecycle()
+    val unread by viewModel.unread.collectAsStateWithLifecycle()
     val battery = rememberBatteryStatus()
+    val context = LocalContext.current
+
+    // Buzz once when a new message lands (e.g. a voice reply) while on the dashboard.
+    var prevUnread by remember { mutableStateOf(unread) }
+    LaunchedEffect(unread) {
+        if (unread > prevUnread) runCatching { vibrateOnce(context) }
+        prevUnread = unread
+    }
 
     val accent = accentFor(state)
 
@@ -291,12 +306,53 @@ fun DashboardScreen(
                 }
             }
 
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(72.dp)) // room so the FAB never covers the last card
         }
+
+        // Floating, collapsible written-chat button (bottom-right).
+        ChatFab(
+            unread = unread,
+            modifier = Modifier.align(Alignment.BottomEnd).padding(end = 18.dp, bottom = 18.dp),
+            onClick = { viewModel.markChatSeen(); onOpenChat() },
+        )
     }
 }
 
 // --- Building blocks -------------------------------------------------------
+
+@Composable
+private fun ChatFab(unread: Int, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Box(modifier.size(60.dp), contentAlignment = Alignment.Center) {
+        Box(
+            modifier = Modifier
+                .size(60.dp)
+                .clip(androidx.compose.foundation.shape.CircleShape)
+                .background(Brush.verticalGradient(listOf(Blue, Color(0xFF1E6FD0))))
+                .border(1.5.dp, Cyan.copy(alpha = 0.6f), androidx.compose.foundation.shape.CircleShape)
+                .clickable(onClick = onClick),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = "Chat", tint = Color.White, modifier = Modifier.size(26.dp))
+        }
+        if (unread > 0) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .size(20.dp)
+                    .clip(androidx.compose.foundation.shape.CircleShape)
+                    .background(Color(0xFFE74C3C)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    if (unread > 9) "9+" else "$unread",
+                    color = Color.White,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        }
+    }
+}
 
 @Composable
 private fun GlassCard(content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
@@ -614,6 +670,16 @@ fun rememberBatteryStatus(): BatteryStatus {
         onDispose { runCatching { context.unregisterReceiver(receiver) } }
     }
     return status
+}
+
+private fun vibrateOnce(context: Context) {
+    val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        (context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager)?.defaultVibrator
+    } else {
+        @Suppress("DEPRECATION")
+        context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+    }
+    vibrator?.vibrate(VibrationEffect.createOneShot(45, VibrationEffect.DEFAULT_AMPLITUDE))
 }
 
 // --- State helpers ---------------------------------------------------------

@@ -8,8 +8,11 @@ import com.simone.jarvismobile.data.SettingsRepository
 import com.simone.jarvismobile.llm.LlmLoadState
 import com.simone.jarvismobile.memory.MemoryIndex
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -28,6 +31,18 @@ class DashboardViewModel @Inject constructor(
 
     val assistantName: StateFlow<String> = settings.assistantName
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsRepository.DEFAULT_NAME)
+
+    // Unread badge for the floating chat button: messages that arrived (e.g. from
+    // a voice exchange on the orb) since the chat was last opened.
+    private val messageCount: StateFlow<Int> = coordinator.messages
+        .map { it.size }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), coordinator.messages.value.size)
+    private val lastSeen = MutableStateFlow(coordinator.messages.value.size)
+    val unread: StateFlow<Int> = combine(messageCount, lastSeen) { count, seen ->
+        (count - seen).coerceAtLeast(0)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+
+    fun markChatSeen() { lastSeen.value = coordinator.messages.value.size }
 
     init {
         // Ensure the model auto-loads and the vault index is built even if the
