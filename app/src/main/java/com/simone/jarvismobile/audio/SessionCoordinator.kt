@@ -14,6 +14,7 @@ import com.simone.jarvismobile.llm.LlmEngine
 import com.simone.jarvismobile.llm.LlmLoadState
 import com.simone.jarvismobile.memory.MemoryIndex
 import com.simone.jarvismobile.tools.CommandMatcher
+import com.simone.jarvismobile.tools.LlmIntentClassifier
 import com.simone.jarvismobile.tools.Match
 import com.simone.jarvismobile.tools.ToolOutcome
 import com.simone.jarvismobile.tools.ToolRunner
@@ -56,6 +57,7 @@ class SessionCoordinator @Inject constructor(
     private val settings: SettingsRepository,
     private val memory: MemoryIndex,
     private val tools: ToolRunner,
+    private val intentClassifier: LlmIntentClassifier,
 ) {
 
     private val machine = ConversationStateMachine()
@@ -273,7 +275,22 @@ class SessionCoordinator @Inject constructor(
                     }
                 }
             }
-            null -> Unit
+            null -> {
+                // Second stage: let the local model understand phrasings the
+                // explicit patterns don't cover ("avvisami fra dieci minuti").
+                val inferred = runCatching { intentClassifier.classify(transcript) }.getOrNull()
+                if (inferred != null) {
+                    _diagnostic.value = "tool (ai): ${inferred.name}"
+                    return when (val outcome = tools.run(inferred)) {
+                        is ToolOutcome.Done -> outcome.spoken
+                        is ToolOutcome.Failed -> outcome.spoken
+                        is ToolOutcome.NeedsConfirmation -> {
+                            pendingConfirmation = outcome.call
+                            outcome.prompt
+                        }
+                    }
+                }
+            }
         }
         if (llm.loadState.value != LlmLoadState.LOADED) {
             return "Ho capito: $transcript. Carica un modello nella schermata Modelli per risposte vere."
