@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -305,6 +306,25 @@ class SessionCoordinator @Inject constructor(
 
     /** Builds the vault memory index in the background if a vault is configured. */
     suspend fun ensureMemoryReady() = memory.ensureBuilt()
+
+    /**
+     * Auto-loads the last-used model at startup so the user does not have to press
+     * "Carica" after every app restart. The model can't literally survive process
+     * death (Android reclaims RAM), so "keeping" it means transparently reloading
+     * the persisted model file on launch. No-op if already loaded/loading, if no
+     * model was chosen, or if the file is gone.
+     */
+    suspend fun ensureModelReady() {
+        val current = llm.loadState.value
+        if (current == LlmLoadState.LOADED || current == LlmLoadState.LOADING) return
+        val path = settings.modelPath.first()
+        if (path.isBlank()) return
+        val file = File(path)
+        if (!file.exists()) return
+        val name = settings.modelName.first().ifBlank { file.name }
+        _diagnostic.value = "carico modello…"
+        llm.load(path, name)
+    }
 
     fun newConversation() {
         llm.resetConversation()

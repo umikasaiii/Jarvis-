@@ -85,6 +85,7 @@ fun HomeScreen(
 
     var textInput by remember { mutableStateOf("") }
     val loadedModelName by viewModel.loadedModelName.collectAsStateWithLifecycle()
+    val llmLoadState by viewModel.llmLoadState.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
     var micGranted by remember {
@@ -268,12 +269,23 @@ fun HomeScreen(
                 StatusTile("Modalità", "Offline-first", accent = JarvisAccent, modifier = Modifier.weight(1f))
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                StatusTile(
-                    "Modello",
-                    loadedModelName ?: "Non caricato",
-                    accent = if (loadedModelName != null) JarvisGreen else Color(0xFF6B7A83),
-                    modifier = Modifier.weight(1f),
-                )
+                run {
+                    val loading = llmLoadState == com.simone.jarvismobile.llm.LlmLoadState.LOADING
+                    val errored = llmLoadState == com.simone.jarvismobile.llm.LlmLoadState.ERROR
+                    val value = when {
+                        loading -> "Caricamento…"
+                        loadedModelName != null -> loadedModelName!!
+                        errored -> "Errore"
+                        else -> "Non caricato"
+                    }
+                    val tint = when {
+                        loading -> JarvisAmber
+                        loadedModelName != null -> JarvisGreen
+                        errored -> JarvisRed
+                        else -> Color(0xFF6B7A83)
+                    }
+                    StatusTile("Modello", value, accent = tint, modifier = Modifier.weight(1f))
+                }
                 run {
                     val exchanges = messages.count { it.fromUser }
                     StatusTile(

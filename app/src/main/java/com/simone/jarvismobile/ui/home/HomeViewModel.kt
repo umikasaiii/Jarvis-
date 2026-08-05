@@ -47,8 +47,10 @@ class HomeViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsRepository.DEFAULT_NAME)
 
     init {
-        // Build the vault memory index in the background so retrieval is ready by
-        // the time the user talks (no-op if no vault is configured).
+        // Auto-load the last-used model so it's ready after an app restart without
+        // pressing "Carica" again, and build the vault memory index — both in the
+        // background (no-ops if nothing is configured).
+        viewModelScope.launch { coordinator.ensureModelReady() }
         viewModelScope.launch { coordinator.ensureMemoryReady() }
     }
 
