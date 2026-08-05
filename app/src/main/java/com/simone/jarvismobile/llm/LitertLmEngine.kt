@@ -50,6 +50,9 @@ class LitertLmEngine @Inject constructor(
     // (KV cache / history). Created lazily on the first chat() after a load/reset.
     @Volatile private var conversation: Conversation? = null
 
+    /** System instruction the live conversation was seeded with. */
+    @Volatile private var seededSystemPrompt: String? = null
+
     // Serializes chat() calls: sendMessage is blocking and a Conversation is not
     // safe to drive from two coroutines at once.
     private val chatMutex = Mutex()
@@ -120,9 +123,18 @@ class LitertLmEngine @Inject constructor(
             val e = engine ?: return@withContext null
             chatMutex.withLock {
                 try {
+                    // Re-seed when the system instruction changes (e.g. the user's
+                    // notes were updated) so the model always sees current context.
+                    if (conversation != null && seededSystemPrompt != systemPrompt) {
+                        runCatching { conversation?.close() }
+                        conversation = null
+                    }
                     val conv = conversation ?: e.createConversation(
                         ConversationConfig(systemInstruction = Contents.of(systemPrompt)),
-                    ).also { conversation = it }
+                    ).also {
+                        conversation = it
+                        seededSystemPrompt = systemPrompt
+                    }
                     // Only the new user message is sent; the conversation keeps the
                     // whole history internally, so the model remembers the context.
                     conv.sendMessage(userText).toString()
@@ -136,6 +148,7 @@ class LitertLmEngine @Inject constructor(
     override fun resetConversation() {
         runCatching { conversation?.close() }
         conversation = null
+        seededSystemPrompt = null
     }
 
     override fun cancel() {

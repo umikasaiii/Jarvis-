@@ -333,25 +333,26 @@ class SessionCoordinator @Inject constructor(
         if (llm.loadState.value != LlmLoadState.LOADED) {
             return "Ho capito: $transcript. Carica un modello nella schermata Modelli per risposte vere."
         }
-        // Retrieve relevant notes from the Obsidian vault (Phase 5) and, if any,
-        // prepend them as grounding context to the question. Non-fatal: on any
-        // failure or empty vault we just ask the model without extra context.
+        // Talk to the model like a chatbot: the user's words go through VERBATIM.
+        // Retrieved notes belong in the system instruction, not wrapped around the
+        // question — a templated "Contesto … Domanda:" block invites a small model
+        // to CONTINUE the template instead of answering it.
         val retrieved = runCatching { memory.retrieve(transcript, MEMORY_TOP_K) }.getOrDefault(emptyList())
-        val userMessage = if (retrieved.isEmpty()) {
-            _diagnostic.value = "thinking (llm ${loadedModelName.value})"
-            transcript
-        } else {
-            _diagnostic.value = "memoria: ${retrieved.size} frammenti · llm ${loadedModelName.value}"
-            buildString {
-                append("Contesto dai miei appunti (usa solo se pertinente; non citarlo se non serve):\n")
+        val system = buildString {
+            append(systemPrompt.trim())
+            if (retrieved.isNotEmpty()) {
+                append("\n\nAPPUNTI DI SIMONE (usali quando sono pertinenti, senza citarli se non serve):\n")
                 retrieved.forEach { r ->
-                    append("- [").append(r.chunk.title).append("] ")
-                    append(r.chunk.text.replace('\n', ' ').trim().take(600)).append('\n')
+                    append("- ").append(r.chunk.text.replace('\n', ' ').trim().take(600)).append('\n')
                 }
-                append("\nDomanda: ").append(transcript)
             }
         }
-        llm.chat(userMessage, systemPrompt.trim())?.trim()?.ifBlank { null }?.let { return it }
+        _diagnostic.value = if (retrieved.isEmpty()) {
+            "thinking (llm ${loadedModelName.value})"
+        } else {
+            "memoria: ${retrieved.size} frammenti · llm ${loadedModelName.value}"
+        }
+        llm.chat(transcript, system)?.trim()?.ifBlank { null }?.let { return it }
 
         // Generation failed. The usual cause is an exhausted/!corrupted KV cache
         // after a long chat, which a fresh conversation clears — so retry once
@@ -359,7 +360,7 @@ class SessionCoordinator @Inject constructor(
         Log.w(TAG, "llm_chat_null_retrying_fresh")
         _diagnostic.value = "riprovo con conversazione nuova"
         llm.resetConversation()
-        llm.chat(userMessage, systemPrompt.trim())?.trim()?.ifBlank { null }?.let { return it }
+        llm.chat(transcript, system)?.trim()?.ifBlank { null }?.let { return it }
 
         return "Il modello non è riuscito a rispondere. Prova «Nuova conversazione», " +
             "o ricarica il modello dalla schermata Modelli."
