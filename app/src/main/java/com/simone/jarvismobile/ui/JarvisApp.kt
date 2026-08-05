@@ -72,23 +72,33 @@ fun JarvisApp(autoStartListening: Boolean = false) {
         Scaffold(
             containerColor = Color(0xFF05101A),
             bottomBar = {
-                NavigationBar(containerColor = Color(0xFF0A1622)) {
-                    Tab.entries.forEach { entry ->
-                        NavigationBarItem(
-                            selected = tab == entry && entry != Tab.CHAT,
-                            onClick = {
-                                if (entry == Tab.CHAT) overlay = Overlay.CHAT else tab = entry
-                            },
-                            icon = { Icon(entry.icon, contentDescription = entry.label) },
-                            label = { Text(entry.label, fontSize = 10.sp) },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = Color(0xFF3FD8F0),
-                                selectedTextColor = Color(0xFF3FD8F0),
-                                indicatorColor = Color(0x263FD8F0),
-                                unselectedIconColor = Color(0xFF7C8B95),
-                                unselectedTextColor = Color(0xFF7C8B95),
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(
+                            androidx.compose.ui.graphics.Brush.verticalGradient(
+                                listOf(Color(0x00000000), Color(0x223FD8F0)),
                             ),
-                        )
+                        ),
+                ) {
+                    NavigationBar(containerColor = Color(0xCC0A1826)) {
+                        Tab.entries.forEach { entry ->
+                            NavigationBarItem(
+                                selected = tab == entry && entry != Tab.CHAT,
+                                onClick = {
+                                    if (entry == Tab.CHAT) overlay = Overlay.CHAT else tab = entry
+                                },
+                                icon = { Icon(entry.icon, contentDescription = entry.label) },
+                                label = { Text(entry.label, fontSize = 10.sp) },
+                                colors = NavigationBarItemDefaults.colors(
+                                    selectedIconColor = Color(0xFF9FEEFF),
+                                    selectedTextColor = Color(0xFF9FEEFF),
+                                    indicatorColor = Color(0x593FD8F0),
+                                    unselectedIconColor = Color(0xFF7C8B95),
+                                    unselectedTextColor = Color(0xFF7C8B95),
+                                ),
+                            )
+                        }
                     }
                 }
             },

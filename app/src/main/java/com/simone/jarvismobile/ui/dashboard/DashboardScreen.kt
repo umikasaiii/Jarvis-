@@ -103,6 +103,57 @@ private val CardBottom = Color(0xCC081521)
 /** Angular "HUD" card shape: chamfered top-left and bottom-right corners. */
 private val TechShape = CutCornerShape(topStart = 18.dp, topEnd = 6.dp, bottomStart = 6.dp, bottomEnd = 18.dp)
 
+/** Fixed starfield so the ambient background is stable across recompositions. */
+private data class Dot(val x: Float, val y: Float, val r: Float, val a: Float)
+private val ambientDots = listOf(
+    Dot(0.12f, 0.10f, 1.4f, 0.5f), Dot(0.30f, 0.06f, 1.0f, 0.35f), Dot(0.55f, 0.09f, 1.6f, 0.5f),
+    Dot(0.78f, 0.05f, 1.1f, 0.4f), Dot(0.90f, 0.12f, 1.3f, 0.45f), Dot(0.20f, 0.18f, 1.0f, 0.3f),
+    Dot(0.68f, 0.16f, 1.2f, 0.4f), Dot(0.05f, 0.24f, 1.5f, 0.5f), Dot(0.42f, 0.22f, 0.9f, 0.3f),
+    Dot(0.85f, 0.26f, 1.4f, 0.45f), Dot(0.15f, 0.34f, 1.1f, 0.35f), Dot(0.60f, 0.32f, 1.6f, 0.5f),
+    Dot(0.95f, 0.38f, 1.0f, 0.3f), Dot(0.33f, 0.42f, 1.3f, 0.4f), Dot(0.72f, 0.46f, 1.1f, 0.35f),
+    Dot(0.08f, 0.52f, 1.5f, 0.45f), Dot(0.50f, 0.55f, 0.9f, 0.3f), Dot(0.88f, 0.58f, 1.4f, 0.4f),
+    Dot(0.22f, 0.64f, 1.2f, 0.35f), Dot(0.65f, 0.68f, 1.0f, 0.3f), Dot(0.40f, 0.74f, 1.5f, 0.4f),
+    Dot(0.92f, 0.78f, 1.1f, 0.35f), Dot(0.14f, 0.82f, 1.3f, 0.4f), Dot(0.58f, 0.86f, 1.0f, 0.3f),
+    Dot(0.80f, 0.90f, 1.4f, 0.4f), Dot(0.28f, 0.92f, 1.1f, 0.35f), Dot(0.48f, 0.96f, 1.2f, 0.35f),
+)
+
+/**
+ * Ambient JARVIS background: a deep blue gradient, a soft glow behind the orb, a
+ * bright light-leak from the bottom edge, cool side glows and a faint starfield —
+ * matching the concept render. Drawn once behind the (glass) cards.
+ */
+@Composable
+private fun JarvisBackground(modifier: Modifier = Modifier) {
+    Canvas(modifier) {
+        val w = size.width
+        val h = size.height
+        drawRect(Brush.verticalGradient(listOf(Color(0xFF050C16), Color(0xFF0A1B2E), Color(0xFF04090F))))
+        // Glow behind the orb (upper third).
+        drawCircle(
+            brush = Brush.radialGradient(listOf(Color(0x333B9EFF), Color.Transparent), center = Offset(w * 0.5f, h * 0.20f), radius = w * 0.75f),
+            radius = w * 0.75f, center = Offset(w * 0.5f, h * 0.20f),
+        )
+        // Bright light-leak from the bottom.
+        drawCircle(
+            brush = Brush.radialGradient(listOf(Color(0x4635D0EA), Color.Transparent), center = Offset(w * 0.5f, h * 1.03f), radius = w * 0.95f),
+            radius = w * 0.95f, center = Offset(w * 0.5f, h * 1.03f),
+        )
+        // Cool side glows.
+        drawCircle(
+            brush = Brush.radialGradient(listOf(Color(0x2635D0EA), Color.Transparent), center = Offset(0f, h * 0.92f), radius = w * 0.55f),
+            radius = w * 0.55f, center = Offset(0f, h * 0.92f),
+        )
+        drawCircle(
+            brush = Brush.radialGradient(listOf(Color(0x2635D0EA), Color.Transparent), center = Offset(w, h * 0.92f), radius = w * 0.55f),
+            radius = w * 0.55f, center = Offset(w, h * 0.92f),
+        )
+        // Starfield.
+        for (d in ambientDots) {
+            drawCircle(Color(0xFFA9E8F5).copy(alpha = d.a), radius = d.r, center = Offset(d.x * w, d.y * h))
+        }
+    }
+}
+
 /**
  * The full JARVIS dashboard (Home tab). Tiles backed by real data — the listen
  * orb, battery, local AI/model, and the indexed Obsidian note counts — are live;
@@ -134,18 +185,8 @@ fun DashboardScreen(
 
     val accent = accentFor(state)
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Brush.verticalGradient(listOf(Color(0xFF05101A), Color(0xFF0A1A28), Color(0xFF040B12)))),
-    ) {
-        // Ambient glow behind the hero.
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(360.dp)
-                .background(Brush.radialGradient(listOf(accent.copy(alpha = 0.10f), Color.Transparent))),
-        )
+    Box(modifier = Modifier.fillMaxSize()) {
+        JarvisBackground(Modifier.matchParentSize())
 
         Column(
             modifier = Modifier
@@ -156,12 +197,19 @@ fun DashboardScreen(
         ) {
             Text(
                 text = name.uppercase(),
-                color = Cyan,
-                fontSize = 26.sp,
+                color = Color(0xFF8FEBFF),
+                fontSize = 28.sp,
                 fontWeight = FontWeight.Light,
-                letterSpacing = 9.sp,
+                letterSpacing = 10.sp,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+                style = androidx.compose.ui.text.TextStyle(
+                    shadow = androidx.compose.ui.graphics.Shadow(
+                        color = Cyan,
+                        offset = Offset.Zero,
+                        blurRadius = 28f,
+                    ),
+                ),
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 2.dp),
             )
 
             // --- Hero: battery · orb · weather ----------------------------
@@ -624,29 +672,36 @@ private fun ListenOrb(
         Canvas(Modifier.fillMaxSize()) {
             val c = center
             val r = size.minDimension / 2f
-            // Outer bloom.
+            // Wide outer bloom.
             drawCircle(
                 brush = Brush.radialGradient(listOf(accent.copy(alpha = glow), Color.Transparent), center = c, radius = r),
                 radius = r, center = c,
             )
-            // Bright outer ring.
-            drawCircle(accent, radius = r * 0.80f, center = c, style = Stroke(width = r * 0.045f))
-            // Faint mid ring.
-            drawCircle(accent.copy(alpha = 0.35f), radius = r * 0.64f, center = c, style = Stroke(width = r * 0.015f))
             // Inner glowing disc.
             drawCircle(
                 brush = Brush.radialGradient(
-                    listOf(accent.copy(alpha = 0.55f), accent.copy(alpha = 0.12f), Color.Transparent),
-                    center = c, radius = r * 0.6f,
+                    listOf(accent.copy(alpha = 0.6f), accent.copy(alpha = 0.14f), Color.Transparent),
+                    center = c, radius = r * 0.64f,
                 ),
-                radius = r * 0.6f, center = c,
+                radius = r * 0.64f, center = c,
             )
+            // Faint inner ring.
+            drawCircle(accent.copy(alpha = 0.35f), radius = r * 0.62f, center = c, style = Stroke(width = r * 0.012f))
+            // Bright outer ring (double: soft halo + crisp line).
+            drawCircle(accent.copy(alpha = 0.4f), radius = r * 0.82f, center = c, style = Stroke(width = r * 0.09f))
+            drawCircle(accent, radius = r * 0.82f, center = c, style = Stroke(width = r * 0.045f))
+            // Sparkles on the ring.
+            val rr = r * 0.82f
+            listOf(
+                Offset(c.x, c.y - rr), Offset(c.x + rr, c.y),
+                Offset(c.x, c.y + rr), Offset(c.x - rr, c.y),
+            ).forEach { drawCircle(Color.White, radius = r * 0.022f, center = it) }
         }
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(Icons.Filled.GraphicEq, null, tint = Color.White, modifier = Modifier.size(28.dp))
-            Spacer(Modifier.height(4.dp))
-            Text(title, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-            Text(subtitle, color = Ink.copy(alpha = 0.8f), fontSize = 9.sp)
+            Icon(Icons.Filled.GraphicEq, null, tint = Color.White, modifier = Modifier.size(30.dp))
+            Spacer(Modifier.height(3.dp))
+            Text(title, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+            Text(subtitle, color = Ink.copy(alpha = 0.85f), fontSize = 9.sp)
         }
     }
 }
