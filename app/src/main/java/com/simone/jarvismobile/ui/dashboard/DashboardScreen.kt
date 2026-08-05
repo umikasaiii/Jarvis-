@@ -5,6 +5,12 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -22,7 +28,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.CutCornerShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -65,6 +71,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -76,22 +83,25 @@ import java.time.format.TextStyle
 import java.util.Locale
 
 // --- Palette ---------------------------------------------------------------
-private val Cyan = Color(0xFF35D0EA)
+private val Cyan = Color(0xFF3FD8F0)
 private val Blue = Color(0xFF3B9EFF)
 private val Green = Color(0xFF2ECC71)
 private val Amber = Color(0xFFF3B23C)
 private val Violet = Color(0xFF9B7BFF)
-private val Ink = Color(0xFFDCE7EE)
+private val Ink = Color(0xFFE3EFF5)
 private val Muted = Color(0xFF7C8B95)
-private val CardBg = Color(0xB30E1A24)
-private val CardBorder = Color(0x2635D0EA)
+
+private val CardTop = Color(0xE6112637)
+private val CardBottom = Color(0xCC081521)
+
+/** Angular "HUD" card shape: chamfered top-left and bottom-right corners. */
+private val TechShape = CutCornerShape(topStart = 18.dp, topEnd = 6.dp, bottomStart = 6.dp, bottomEnd = 18.dp)
 
 /**
  * The full JARVIS dashboard (Home tab). Tiles backed by real data — the listen
- * orb, battery, local AI/model, and the indexed Obsidian note count — are live;
- * tiles for features that don't exist yet (weather, agenda, home automation,
- * automations, sync/backup, productivity) are shown with a clear DEMO badge so
- * nothing fake is presented as real.
+ * orb, battery, local AI/model, and the indexed Obsidian note counts — are live;
+ * the rest show representative sample content with a clear DEMO/FASE badge, so
+ * nothing fake is passed off as real while the look stays faithful to the design.
  */
 @Composable
 fun DashboardScreen(
@@ -112,24 +122,31 @@ fun DashboardScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Brush.verticalGradient(listOf(Color(0xFF061019), Color(0xFF0A1622), Color(0xFF050C12)))),
+            .background(Brush.verticalGradient(listOf(Color(0xFF05101A), Color(0xFF0A1A28), Color(0xFF040B12)))),
     ) {
+        // Ambient glow behind the hero.
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(360.dp)
+                .background(Brush.radialGradient(listOf(accent.copy(alpha = 0.10f), Color.Transparent))),
+        )
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 14.dp, vertical = 8.dp),
+                .padding(horizontal = 14.dp, vertical = 6.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            // Wordmark.
             Text(
                 text = name.uppercase(),
                 color = Cyan,
                 fontSize = 26.sp,
                 fontWeight = FontWeight.Light,
-                letterSpacing = 8.sp,
+                letterSpacing = 9.sp,
+                textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
             )
 
             // --- Hero: battery · orb · weather ----------------------------
@@ -140,7 +157,7 @@ fun DashboardScreen(
             ) {
                 MiniCard(Modifier.weight(1f)) {
                     Text("BATTERIA", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Medium)
-                    Text("${battery.percent}%", color = Ink, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                    Text("${battery.percent}%", color = Ink, fontSize = 24.sp, fontWeight = FontWeight.Bold)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             if (battery.charging) "In carica" else "In uso",
@@ -152,69 +169,76 @@ fun DashboardScreen(
                             Icon(Icons.Filled.Bolt, null, tint = Green, modifier = Modifier.size(14.dp))
                         }
                     }
+                    ProgressBar(fraction = battery.percent / 100f, color = if (battery.charging) Green else Cyan)
                 }
 
                 ListenOrb(
                     accent = accent,
                     title = orbTitle(state),
                     subtitle = orbSubtitle(state),
-                    active = state.isActive(),
-                    onClick = onOpenChat,
-                    modifier = Modifier.weight(1.3f),
+                    active = !state.isRestingLike(),
+                    onClick = {
+                        if (state.isRestingLike()) viewModel.onTalkPressed() else viewModel.onCancel()
+                    },
+                    modifier = Modifier.weight(1.35f),
                 )
 
                 MiniCard(Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Filled.Cloud, null, tint = Cyan, modifier = Modifier.size(18.dp))
+                        Icon(Icons.Filled.Cloud, null, tint = Cyan, modifier = Modifier.size(20.dp))
                         Spacer(Modifier.width(6.dp))
                         Column {
-                            Text("— °", color = Ink, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                            Text("Meteo", color = Muted, fontSize = 10.sp)
+                            Text("18°", color = Ink, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                            Text("Roma", color = Muted, fontSize = 10.sp)
                         }
                     }
+                    Spacer(Modifier.height(4.dp))
                     DemoBadge()
                 }
             }
 
-            // --- Panoramica + Agenda --------------------------------------
+            // --- Panoramica -----------------------------------------------
             GlassCard {
-                CardHeader(Icons.Filled.Dashboard, "PANORAMICA", accent = Cyan, trailing = { DemoBadge() })
+                CardHeader(Icons.Filled.Dashboard, "PANORAMICA", trailing = { DemoBadge() })
                 Text(todayLabel(), color = Muted, fontSize = 12.sp)
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(6.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        StatLine("—", "Eventi")
-                        StatLine("—", "Attività")
-                        StatLine("—", "Promemoria")
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        StatLine("3", "Eventi", Cyan)
+                        StatLine("7", "Attività", Blue)
+                        StatLine("2", "Promemoria", Violet)
                     }
-                    DonutRing(percent = 0, label = "Produttività", accent = Blue, modifier = Modifier.size(96.dp))
+                    DonutRing(percent = 78, label = "Produttività", modifier = Modifier.size(104.dp))
                 }
             }
 
+            // --- Agenda ----------------------------------------------------
             GlassCard {
-                CardHeader(Icons.Filled.CalendarMonth, "AGENDA", accent = Cyan, trailing = { DemoBadge() })
-                Text(
-                    "Nessun calendario collegato. L'agenda comparirà qui quando " +
-                        "collegheremo il calendario del telefono o gli appunti.",
-                    color = Muted,
-                    fontSize = 12.sp,
-                )
+                CardHeader(Icons.Filled.CalendarMonth, "AGENDA", trailing = { DemoBadge() })
+                AgendaRow("10:00", "Riunione con il team", "Sala Orion", Cyan)
+                AgendaRow("14:30", "Call progetto Alpha", "Online", Green)
+                AgendaRow("18:00", "Allenamento", "Palestra", Violet, last = true)
             }
 
-            // --- Casa + Sistema -------------------------------------------
+            // --- Casa ------------------------------------------------------
             GlassCard {
-                CardHeader(Icons.Filled.Home, "CASA", accent = Cyan, trailing = { DemoBadge("FASE 7") })
-                ToggleRow(Icons.Filled.Lightbulb, "Luci", "Soggiorno")
-                ToggleRow(Icons.Filled.AcUnit, "Clima", "22°C")
-                ToggleRow(Icons.Filled.Security, "Sicurezza", "Inserito")
+                CardHeader(Icons.Filled.Home, "CASA", trailing = { DemoBadge("FASE 7") })
+                ToggleRow(Icons.Filled.Lightbulb, "Luci", "Soggiorno", on = true)
+                ToggleRow(Icons.Filled.AcUnit, "Clima", "22°C", on = false)
+                ToggleRow(Icons.Filled.Security, "Sicurezza", "Inserito", on = true)
             }
 
+            // --- Sistema ---------------------------------------------------
             GlassCard {
-                CardHeader(Icons.Filled.Memory, "SISTEMA", accent = Cyan)
+                CardHeader(Icons.Filled.Memory, "SISTEMA")
                 val aiOnline = loadState == LlmLoadState.LOADED
                 SystemRow(
                     Icons.Filled.SmartToy, "AI Locale",
-                    if (aiOnline) "Online" else if (loadState == LlmLoadState.LOADING) "Carico…" else "Offline",
+                    when {
+                        aiOnline -> "Online"
+                        loadState == LlmLoadState.LOADING -> "Carico…"
+                        else -> "Offline"
+                    },
                     if (aiOnline) Green else Muted,
                 )
                 SystemRow(
@@ -226,41 +250,43 @@ fun DashboardScreen(
                 SystemRow(Icons.Filled.CloudUpload, "Backup", "Non attivo", Muted, demo = true)
             }
 
-            // --- Obsidian -------------------------------------------------
+            // --- Obsidian --------------------------------------------------
             GlassCard {
-                CardHeader(Icons.Filled.Book, "OBSIDIAN / NOTE", accent = Cyan, trailing = {
+                CardHeader(Icons.Filled.Book, "OBSIDIAN / NOTE", trailing = {
                     if (!memory.configured) DemoBadge("NO VAULT")
                 })
-                NoteRow(
-                    Icons.Filled.FolderOpen, "Knowledge Base",
-                    if (memory.configured) "${memory.noteCount} note" else "Collega un vault",
-                    onClick = onOpenMemory,
-                )
+                NoteRow(Icons.Filled.FolderOpen, "Knowledge Base",
+                    if (memory.configured) "${memory.noteCount} note" else "Collega un vault", onOpenMemory)
                 NoteRow(Icons.Filled.Description, "Frammenti indicizzati",
-                    if (memory.configured) "${memory.chunkCount}" else "—", onClick = onOpenMemory)
-                NoteRow(Icons.Filled.Star, "Preferiti", "—", onClick = onOpenMemory, demo = true)
+                    if (memory.configured) "${memory.chunkCount}" else "—", onOpenMemory)
+                NoteRow(Icons.Filled.Star, "Preferiti", "—", onOpenMemory, demo = true)
             }
 
-            // --- Automazioni ----------------------------------------------
+            // --- Automazioni -----------------------------------------------
             GlassCard {
-                CardHeader(Icons.Filled.Bolt, "AUTOMAZIONI", accent = Cyan, trailing = { DemoBadge() })
-                Text(
-                    "Modalità Lavoro · Routine Mattutina · Modalità Relax — in arrivo.",
-                    color = Muted,
-                    fontSize = 12.sp,
-                )
+                CardHeader(Icons.Filled.Bolt, "AUTOMAZIONI", trailing = { DemoBadge() })
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    AutoChip("Modalità Lavoro", "Giorni feriali", Modifier.weight(1f))
+                    AutoChip("Routine Mattutina", "07:30", Modifier.weight(1f))
+                    AutoChip("Modalità Relax", "Dopo le 22:00", Modifier.weight(1f))
+                }
             }
 
-            // --- Calendario settimana -------------------------------------
+            // --- Calendario settimana --------------------------------------
             GlassCard {
-                CardHeader(Icons.Filled.CalendarMonth, "CALENDARIO", accent = Cyan, trailing = { DemoBadge("EVENTI") })
+                CardHeader(Icons.Filled.CalendarMonth, "CALENDARIO", trailing = { DemoBadge("EVENTI") })
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     val today = LocalDate.now()
+                    val sample = mapOf(1 to ("Riunione" to Cyan), 3 to ("Palestra" to Violet), 4 to ("Consegna" to Green))
                     for (i in 0 until 7) {
-                        DayCell(today.plusDays(i.toLong()), isToday = i == 0, modifier = Modifier.weight(1f))
+                        val ev = sample[i]
+                        DayCell(today.plusDays(i.toLong()), isToday = i == 0, event = ev?.first, dot = ev?.second, modifier = Modifier.weight(1f))
                     }
                 }
             }
@@ -277,10 +303,10 @@ private fun GlassCard(content: @Composable androidx.compose.foundation.layout.Co
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
-            .background(CardBg)
-            .border(1.dp, CardBorder, RoundedCornerShape(18.dp))
-            .padding(14.dp),
+            .clip(TechShape)
+            .background(Brush.verticalGradient(listOf(CardTop, CardBottom)))
+            .border(1.dp, Brush.verticalGradient(listOf(Cyan.copy(alpha = 0.5f), Cyan.copy(alpha = 0.1f))), TechShape)
+            .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
         content = content,
     )
@@ -290,29 +316,24 @@ private fun GlassCard(content: @Composable androidx.compose.foundation.layout.Co
 private fun MiniCard(modifier: Modifier = Modifier, content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
     Column(
         modifier = modifier
-            .clip(RoundedCornerShape(16.dp))
-            .background(CardBg)
-            .border(1.dp, CardBorder, RoundedCornerShape(16.dp))
+            .clip(TechShape)
+            .background(Brush.verticalGradient(listOf(CardTop, CardBottom)))
+            .border(1.dp, Brush.verticalGradient(listOf(Cyan.copy(alpha = 0.45f), Cyan.copy(alpha = 0.08f))), TechShape)
             .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp),
         content = content,
     )
 }
 
 @Composable
-private fun CardHeader(
-    icon: ImageVector,
-    title: String,
-    accent: Color,
-    trailing: @Composable (() -> Unit)? = null,
-) {
+private fun CardHeader(icon: ImageVector, title: String, trailing: @Composable (() -> Unit)? = null) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, null, tint = accent, modifier = Modifier.size(18.dp))
+            Icon(icon, null, tint = Cyan, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
             Text(title, color = Ink, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.sp)
         }
@@ -330,14 +351,16 @@ private fun DemoBadge(text: String = "DEMO") {
         modifier = Modifier
             .clip(RoundedCornerShape(6.dp))
             .background(Amber.copy(alpha = 0.14f))
-            .border(1.dp, Amber.copy(alpha = 0.4f), RoundedCornerShape(6.dp))
+            .border(1.dp, Amber.copy(alpha = 0.45f), RoundedCornerShape(6.dp))
             .padding(horizontal = 6.dp, vertical = 2.dp),
     )
 }
 
 @Composable
-private fun StatLine(value: String, label: String) {
+private fun StatLine(value: String, label: String, dot: Color) {
     Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(7.dp).clip(RoundedCornerShape(4.dp)).background(dot))
+        Spacer(Modifier.width(10.dp))
         Text(value, color = Ink, fontSize = 18.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.width(8.dp))
         Text(label, color = Muted, fontSize = 12.sp)
@@ -345,39 +368,74 @@ private fun StatLine(value: String, label: String) {
 }
 
 @Composable
-private fun DonutRing(percent: Int, label: String, accent: Color, modifier: Modifier = Modifier) {
+private fun ProgressBar(fraction: Float, color: Color) {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(5.dp)
+            .clip(RoundedCornerShape(3.dp))
+            .background(Color(0x22FFFFFF)),
+    ) {
+        Box(
+            Modifier
+                .fillMaxWidth(fraction.coerceIn(0f, 1f))
+                .height(5.dp)
+                .clip(RoundedCornerShape(3.dp))
+                .background(Brush.horizontalGradient(listOf(color.copy(alpha = 0.7f), color))),
+        )
+    }
+}
+
+@Composable
+private fun DonutRing(percent: Int, label: String, modifier: Modifier = Modifier) {
     Box(modifier, contentAlignment = Alignment.Center) {
         Canvas(Modifier.fillMaxSize()) {
-            val stroke = size.minDimension * 0.12f
+            val stroke = size.minDimension * 0.13f
             val inset = stroke / 2f
             val arcSize = Size(size.width - stroke, size.height - stroke)
             drawArc(
-                color = Color(0x33FFFFFF),
+                color = Color(0x2AFFFFFF),
                 startAngle = -90f, sweepAngle = 360f, useCenter = false,
                 topLeft = Offset(inset, inset), size = arcSize,
                 style = Stroke(width = stroke, cap = StrokeCap.Round),
             )
             drawArc(
-                color = accent,
+                brush = Brush.sweepGradient(listOf(Cyan, Blue, Violet, Cyan)),
                 startAngle = -90f, sweepAngle = 360f * (percent.coerceIn(0, 100) / 100f), useCenter = false,
                 topLeft = Offset(inset, inset), size = arcSize,
                 style = Stroke(width = stroke, cap = StrokeCap.Round),
             )
         }
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("$percent%", color = Ink, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Text("$percent%", color = Ink, fontSize = 20.sp, fontWeight = FontWeight.Bold)
             Text(label, color = Muted, fontSize = 9.sp)
         }
     }
 }
 
 @Composable
-private fun ToggleRow(icon: ImageVector, title: String, subtitle: String) {
+private fun AgendaRow(time: String, title: String, place: String, dot: Color, last: Boolean = false) {
+    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Text(time, color = Ink, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.width(54.dp))
+        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(top = 2.dp)) {
+            Box(Modifier.size(9.dp).clip(RoundedCornerShape(5.dp)).background(dot))
+            if (!last) Box(Modifier.width(2.dp).height(26.dp).background(Color(0x22FFFFFF)))
+        }
+        Spacer(Modifier.width(12.dp))
+        Column {
+            Text(title, color = Ink, fontSize = 13.sp)
+            Text(place, color = Muted, fontSize = 11.sp)
+        }
+    }
+}
+
+@Composable
+private fun ToggleRow(icon: ImageVector, title: String, subtitle: String, on: Boolean) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .background(Color(0x400B141B))
+            .background(Color(0x33081521))
             .padding(horizontal = 10.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -391,9 +449,12 @@ private fun ToggleRow(icon: ImageVector, title: String, subtitle: String) {
             }
         }
         Switch(
-            checked = false,
+            checked = on,
             onCheckedChange = null,
             colors = SwitchDefaults.colors(
+                checkedThumbColor = Color.White,
+                checkedTrackColor = Blue,
+                checkedBorderColor = Blue,
                 uncheckedThumbColor = Muted,
                 uncheckedTrackColor = Color(0x33FFFFFF),
                 uncheckedBorderColor = Color(0x33FFFFFF),
@@ -441,20 +502,40 @@ private fun NoteRow(icon: ImageVector, title: String, value: String, onClick: ()
 }
 
 @Composable
-private fun DayCell(date: LocalDate, isToday: Boolean, modifier: Modifier = Modifier) {
+private fun AutoChip(title: String, subtitle: String, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(Color(0x33081521))
+            .border(1.dp, Cyan.copy(alpha = 0.18f), RoundedCornerShape(12.dp))
+            .padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Icon(Icons.Filled.Bolt, null, tint = Cyan, modifier = Modifier.size(16.dp))
+        Text(title, color = Ink, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+        Text(subtitle, color = Muted, fontSize = 9.sp)
+    }
+}
+
+@Composable
+private fun DayCell(date: LocalDate, isToday: Boolean, event: String?, dot: Color?, modifier: Modifier = Modifier) {
     val dow = date.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.ITALIAN).uppercase().take(3)
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(10.dp))
-            .background(if (isToday) Cyan.copy(alpha = 0.16f) else Color(0x330B141B))
-            .border(1.dp, if (isToday) Cyan.copy(alpha = 0.5f) else Color(0x1AFFFFFF), RoundedCornerShape(10.dp))
-            .padding(vertical = 8.dp),
+            .background(if (isToday) Cyan.copy(alpha = 0.16f) else Color(0x33081521))
+            .border(1.dp, if (isToday) Cyan.copy(alpha = 0.55f) else Color(0x1AFFFFFF), RoundedCornerShape(10.dp))
+            .padding(vertical = 8.dp, horizontal = 2.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         Text(dow, color = Muted, fontSize = 9.sp)
         Text("${date.dayOfMonth}", color = if (isToday) Cyan else Ink, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-        Text(if (isToday) "Oggi" else "·", color = Muted, fontSize = 8.sp)
+        if (event != null && dot != null) {
+            Box(Modifier.size(5.dp).clip(RoundedCornerShape(3.dp)).background(dot))
+        } else {
+            Text(if (isToday) "Oggi" else "·", color = Muted, fontSize = 8.sp)
+        }
     }
 }
 
@@ -467,25 +548,43 @@ private fun ListenOrb(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val transition = rememberInfiniteTransition(label = "orb")
+    val glow by transition.animateFloat(
+        initialValue = 0.35f,
+        targetValue = if (active) 0.7f else 0.5f,
+        animationSpec = infiniteRepeatable(tween(1600, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "glow",
+    )
     Box(
-        modifier = modifier.aspectRatio(1f).clip(CircleShape).clickable(onClick = onClick),
+        modifier = modifier.aspectRatio(1f).clip(androidx.compose.foundation.shape.CircleShape).clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Canvas(Modifier.fillMaxSize()) {
             val c = center
             val r = size.minDimension / 2f
+            // Outer bloom.
             drawCircle(
-                brush = Brush.radialGradient(listOf(accent.copy(alpha = 0.35f), Color.Transparent), center = c, radius = r),
+                brush = Brush.radialGradient(listOf(accent.copy(alpha = glow), Color.Transparent), center = c, radius = r),
                 radius = r, center = c,
             )
-            drawCircle(accent.copy(alpha = 0.85f), radius = r * 0.82f, center = c, style = Stroke(width = r * 0.03f))
-            drawCircle(accent.copy(alpha = 0.30f), radius = r * 0.66f, center = c, style = Stroke(width = r * 0.015f))
+            // Bright outer ring.
+            drawCircle(accent, radius = r * 0.80f, center = c, style = Stroke(width = r * 0.045f))
+            // Faint mid ring.
+            drawCircle(accent.copy(alpha = 0.35f), radius = r * 0.64f, center = c, style = Stroke(width = r * 0.015f))
+            // Inner glowing disc.
+            drawCircle(
+                brush = Brush.radialGradient(
+                    listOf(accent.copy(alpha = 0.55f), accent.copy(alpha = 0.12f), Color.Transparent),
+                    center = c, radius = r * 0.6f,
+                ),
+                radius = r * 0.6f, center = c,
+            )
         }
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(Icons.Filled.GraphicEq, null, tint = Color.White, modifier = Modifier.size(26.dp))
+            Icon(Icons.Filled.GraphicEq, null, tint = Color.White, modifier = Modifier.size(28.dp))
             Spacer(Modifier.height(4.dp))
-            Text(title, color = Ink, fontSize = 15.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-            Text(subtitle, color = Muted, fontSize = 9.sp)
+            Text(title, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+            Text(subtitle, color = Ink.copy(alpha = 0.8f), fontSize = 9.sp)
         }
     }
 }
@@ -527,8 +626,6 @@ private fun ConversationState.isRestingLike(): Boolean = when (this) {
     ConversationState.NetworkUnavailable -> true
     else -> false
 }
-
-private fun ConversationState.isActive(): Boolean = !isRestingLike()
 
 private fun accentFor(state: ConversationState): Color = when {
     state == ConversationState.Listening || state == ConversationState.FollowUpWindow -> Green

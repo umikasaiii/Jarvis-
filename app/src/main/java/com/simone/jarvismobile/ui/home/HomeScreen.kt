@@ -15,7 +15,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -28,7 +28,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -59,27 +61,23 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.simone.jarvismobile.audio.ChatMessage
 import com.simone.jarvismobile.core.state.ConversationState
-import com.simone.jarvismobile.llm.LlmLoadState
-import com.simone.jarvismobile.ui.components.ReactorOrb
 
-// --- Palette ---------------------------------------------------------------
-private val Accent = Color(0xFF4FD1E0)
+private const val MAX_VISIBLE_MESSAGES = 40
+
+private val Accent = Color(0xFF3FD8F0)
 private val Green = Color(0xFF2ECC71)
 private val Blue = Color(0xFF3B9EFF)
-private val Amber = Color(0xFFF39C12)
+private val Amber = Color(0xFFF3B23C)
 private val Red = Color(0xFFE74C3C)
-private val Muted = Color(0xFF6B7A83)
-private val Ink = Color(0xFFE6EDF1)
-private val Surface = Color(0xFF121D25)
-private val SurfaceHi = Color(0xFF16232C)
-
-/** How many recent chat lines to show (full history stays in memory). */
-private const val MAX_VISIBLE_MESSAGES = 12
+private val Muted = Color(0xFF7C8B95)
+private val Ink = Color(0xFFE3EFF5)
+private val Surface = Color(0xFF102030)
 
 /**
- * JARVIS home — a chat-first dashboard: a reactor-orb push-to-talk hero with a
- * live status pill, a scrolling conversation of chat bubbles, a compact status
- * strip, and a pinned message bar for the written-chat alternative.
+ * Chat tab — a classic messaging interface for JARVIS. Messages fill the screen;
+ * the bottom bar has a microphone (voice), a comfortable text field, and a send
+ * button. The big reactor orb lives on the dashboard; here talking is the mic
+ * button so the conversation stays visible, keyboard open or not.
  */
 @Composable
 fun HomeScreen(
@@ -91,15 +89,11 @@ fun HomeScreen(
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    val route by viewModel.routeState.collectAsStateWithLifecycle()
-    val level by viewModel.micLevel.collectAsStateWithLifecycle()
-    val error by viewModel.lastError.collectAsStateWithLifecycle()
     val name by viewModel.assistantName.collectAsStateWithLifecycle()
+    val error by viewModel.lastError.collectAsStateWithLifecycle()
     val partial by viewModel.partial.collectAsStateWithLifecycle()
     val messages by viewModel.messages.collectAsStateWithLifecycle()
     val sending by viewModel.sending.collectAsStateWithLifecycle()
-    val loadedModelName by viewModel.loadedModelName.collectAsStateWithLifecycle()
-    val llmLoadState by viewModel.llmLoadState.collectAsStateWithLifecycle()
 
     var textInput by remember { mutableStateOf("") }
 
@@ -116,14 +110,13 @@ fun HomeScreen(
         micGranted = result[Manifest.permission.RECORD_AUDIO] ?: micGranted
         if (micGranted) viewModel.onTalkPressed()
     }
-
     fun neededPermissions(): Array<String> = buildList {
         add(Manifest.permission.RECORD_AUDIO)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) add(Manifest.permission.POST_NOTIFICATIONS)
         add(Manifest.permission.BLUETOOTH_CONNECT)
     }.toTypedArray()
 
-    fun onOrbTap() {
+    fun onMicTap() {
         if (state.isRestingLike()) {
             if (micGranted) viewModel.onTalkPressed() else permissionLauncher.launch(neededPermissions())
         } else {
@@ -142,35 +135,27 @@ fun HomeScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(listOf(Color(0xFF0A1014), Color(0xFF0C161D), Color(0xFF080E12))),
-            ),
+            .background(Brush.verticalGradient(listOf(Color(0xFF05101A), Color(0xFF0A1622), Color(0xFF040B12)))),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .systemBarsPadding() // draw below status bar, above nav bar (edge-to-edge)
-                .imePadding() // lift the message bar above the keyboard
-                .padding(horizontal = 16.dp, vertical = 6.dp),
+                .systemBarsPadding()
+                .imePadding()
+                .padding(horizontal = 12.dp, vertical = 6.dp),
         ) {
-
-            // --- Header (pinned) ------------------------------------------
+            // Header.
             Row(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Outlined.Bolt, contentDescription = null, tint = Accent)
+                    Icon(Icons.Outlined.Bolt, null, tint = Accent)
                     Spacer(Modifier.size(6.dp))
-                    Text(
-                        text = name.uppercase(),
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = Accent,
-                    )
+                    Text(name.uppercase(), color = Accent, fontSize = 20.sp, fontWeight = FontWeight.Bold)
                 }
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     StatusPill(statusLabel(state), accent)
                     IconButton(onClick = onOpenSettings) {
                         Icon(Icons.Filled.Settings, contentDescription = "Impostazioni", tint = Color(0xFFB8C4CC))
@@ -178,149 +163,142 @@ fun HomeScreen(
                 }
             }
 
-            // --- Orb hero (pinned) ----------------------------------------
-            Box(
-                modifier = Modifier.fillMaxWidth().height(200.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(230.dp)
-                        .background(
-                            Brush.radialGradient(listOf(accent.copy(alpha = 0.16f), Color.Transparent)),
-                            CircleShape,
-                        ),
-                )
-                ReactorOrb(
-                    accent = accent,
-                    active = state.isActiveSpeaking(),
-                    listening = state == ConversationState.Listening,
-                    level = level,
-                    modifier = Modifier.fillMaxWidth(0.5f),
-                    onClick = { onOrbTap() },
-                )
-            }
-
-            Text(
-                text = hintFor(state, micGranted, error),
-                style = MaterialTheme.typography.bodyMedium,
-                color = if (error != null && state.isRestingLike()) Red else Muted,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
-            )
-            if (state == ConversationState.Listening && partial.isNotEmpty()) {
-                Text(
-                    text = "“$partial”",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = Ink,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                )
-            }
-
-            // --- Compact status strip -------------------------------------
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                StatusChip("Audio", audioLabel(route), if (route.usingBluetoothInput) Green else Accent, Modifier.weight(1f))
-                val loading = llmLoadState == LlmLoadState.LOADING
-                StatusChip(
-                    "Modello",
-                    when {
-                        loading -> "Carico…"
-                        loadedModelName != null -> "Pronto"
-                        llmLoadState == LlmLoadState.ERROR -> "Errore"
-                        else -> "—"
-                    },
-                    when {
-                        loading -> Amber
-                        loadedModelName != null -> Green
-                        llmLoadState == LlmLoadState.ERROR -> Red
-                        else -> Muted
-                    },
-                    Modifier.weight(1f),
-                )
-                val exchanges = messages.count { it.fromUser }
-                StatusChip("Memoria", if (exchanges == 0) "—" else "$exchanges", if (exchanges > 0) Green else Muted, Modifier.weight(1f))
-            }
-
-            // --- Conversation (scrolls like a chat, auto-follows new lines) ---
+            // Messages fill the screen.
             val visible = messages.takeLast(MAX_VISIBLE_MESSAGES)
             val listState = rememberLazyListState()
             LaunchedEffect(messages.size) {
-                if (visible.isNotEmpty()) listState.animateScrollToItem(visible.size)
+                if (visible.isNotEmpty()) listState.animateScrollToItem(visible.size - 1)
             }
-            LazyColumn(
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                state = listState,
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                if (visible.isEmpty()) {
-                    item {
-                        Text(
-                            text = "Tocca l'orb e parla, oppure scrivi qui sotto.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = Muted,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
-                        )
-                    }
-                } else {
+            if (visible.isEmpty()) {
+                Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    Text(
+                        "Tocca 🎤 e parla, oppure scrivi qui sotto.",
+                        color = Muted,
+                        textAlign = TextAlign.Center,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    state = listState,
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 6.dp),
+                ) {
                     items(visible) { ChatBubble(it, name) }
-                    item {
-                        TextButton(
-                            onClick = viewModel::onNewConversation,
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Text("Nuova conversazione", color = Amber, fontSize = 13.sp)
-                        }
-                    }
                 }
             }
 
-            // --- Footer links (pinned) ------------------------------------
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center,
-            ) {
-                TextButton(onClick = onOpenModels) { Text("Modelli", color = Accent, fontSize = 13.sp) }
-                TextButton(onClick = onOpenMemory) { Text("Memoria", color = Accent, fontSize = 13.sp) }
-                TextButton(onClick = onOpenDiagnostics) { Text("Diagnostica", color = Accent, fontSize = 13.sp) }
+            // Live partial + quick links.
+            if (state == ConversationState.Listening && partial.isNotEmpty()) {
+                Text(
+                    "“$partial”",
+                    color = Ink,
+                    textAlign = TextAlign.Center,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                )
+            }
+            if (error != null && state.isRestingLike()) {
+                Text(
+                    friendlyError(error!!),
+                    color = Red,
+                    textAlign = TextAlign.Center,
+                    fontSize = 12.sp,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                )
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                if (messages.isNotEmpty()) {
+                    TextButton(onClick = viewModel::onNewConversation) { Text("Nuova", color = Amber, fontSize = 12.sp) }
+                }
+                TextButton(onClick = onOpenModels) { Text("Modelli", color = Accent, fontSize = 12.sp) }
+                TextButton(onClick = onOpenMemory) { Text("Memoria", color = Accent, fontSize = 12.sp) }
+                TextButton(onClick = onOpenDiagnostics) { Text("Diagnostica", color = Accent, fontSize = 12.sp) }
             }
 
-            // --- Message bar (pinned) -------------------------------------
-            MessageBar(
-                value = textInput,
-                onValueChange = { textInput = it },
-                sending = sending,
-                onSend = {
-                    val msg = textInput.trim()
-                    if (msg.isNotEmpty()) {
-                        viewModel.onSendText(msg)
-                        textInput = ""
+            // Input bar: mic · field · send.
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                val talking = !state.isRestingLike()
+                RoundButton(
+                    color = if (talking) Red else Accent,
+                    onClick = { onMicTap() },
+                    enabled = true,
+                ) {
+                    Icon(
+                        if (talking) Icons.Filled.Stop else Icons.Filled.Mic,
+                        contentDescription = if (talking) "Ferma" else "Parla",
+                        tint = Color(0xFF07131A),
+                    )
+                }
+
+                OutlinedTextField(
+                    value = textInput,
+                    onValueChange = { textInput = it },
+                    modifier = Modifier.weight(1f).heightIn(min = 52.dp),
+                    placeholder = { Text("Scrivi un messaggio…", color = Muted) },
+                    enabled = !sending,
+                    maxLines = 4,
+                    shape = RoundedCornerShape(24.dp),
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = Ink, fontSize = 16.sp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Accent.copy(alpha = 0.7f),
+                        unfocusedBorderColor = Color(0xFF27353D),
+                        focusedContainerColor = Surface,
+                        unfocusedContainerColor = Surface,
+                        cursorColor = Accent,
+                        focusedTextColor = Ink,
+                        unfocusedTextColor = Ink,
+                    ),
+                )
+
+                val canSend = textInput.isNotBlank() && !sending
+                RoundButton(
+                    color = if (canSend) Accent else Color(0xFF1E2C34),
+                    onClick = {
+                        val msg = textInput.trim()
+                        if (msg.isNotEmpty()) { viewModel.onSendText(msg); textInput = "" }
+                    },
+                    enabled = canSend,
+                ) {
+                    if (sending) {
+                        CircularProgressIndicator(Modifier.size(22.dp), color = Color.White, strokeWidth = 2.dp)
+                    } else {
+                        Icon(
+                            Icons.AutoMirrored.Filled.Send,
+                            contentDescription = "Invia",
+                            tint = if (canSend) Color(0xFF07131A) else Muted,
+                        )
                     }
-                },
-            )
-            Text(
-                text = "v${com.simone.jarvismobile.BuildConfig.VERSION_NAME} · build ${com.simone.jarvismobile.BuildConfig.BUILD_ID}",
-                style = MaterialTheme.typography.labelSmall,
-                color = Color(0xFF3C4950),
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
-            )
+                }
+            }
         }
     }
 }
 
 @Composable
+private fun RoundButton(color: Color, onClick: () -> Unit, enabled: Boolean, content: @Composable () -> Unit) {
+    Box(
+        modifier = Modifier
+            .size(52.dp)
+            .clip(CircleShape)
+            .background(color)
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) { content() }
+}
+
+@Composable
 private fun ChatBubble(message: ChatMessage, assistantName: String) {
     val isUser = message.fromUser
-    val bubbleColor = if (isUser) Accent.copy(alpha = 0.14f) else SurfaceHi
-    val borderColor = (if (isUser) Accent else Green).copy(alpha = 0.28f)
+    val bubbleColor = if (isUser) Accent.copy(alpha = 0.15f) else Color(0xFF14232E)
+    val borderColor = (if (isUser) Accent else Green).copy(alpha = 0.3f)
     val shape = RoundedCornerShape(
-        topStart = 16.dp,
-        topEnd = 16.dp,
+        topStart = 16.dp, topEnd = 16.dp,
         bottomStart = if (isUser) 16.dp else 4.dp,
         bottomEnd = if (isUser) 4.dp else 16.dp,
     )
@@ -337,13 +315,13 @@ private fun ChatBubble(message: ChatMessage, assistantName: String) {
                 .padding(horizontal = 14.dp, vertical = 10.dp),
         ) {
             Text(
-                text = if (isUser) "TU" else assistantName.uppercase(),
+                if (isUser) "TU" else assistantName.uppercase(),
                 color = if (isUser) Accent else Green,
                 fontSize = 10.sp,
                 fontWeight = FontWeight.Medium,
             )
             Spacer(Modifier.size(3.dp))
-            Text(text = message.text, color = Ink, fontSize = 15.sp)
+            Text(message.text, color = Ink, fontSize = 15.sp)
         }
     }
 }
@@ -354,7 +332,7 @@ private fun StatusPill(text: String, accent: Color) {
         modifier = Modifier
             .clip(CircleShape)
             .background(Surface)
-            .border(1.dp, accent.copy(alpha = 0.3f), CircleShape)
+            .border(1.dp, accent.copy(alpha = 0.35f), CircleShape)
             .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -364,125 +342,33 @@ private fun StatusPill(text: String, accent: Color) {
     }
 }
 
-@Composable
-private fun StatusChip(label: String, value: String, accent: Color, modifier: Modifier = Modifier) {
-    Column(
-        modifier = modifier
-            .clip(RoundedCornerShape(14.dp))
-            .background(Surface)
-            .border(1.dp, accent.copy(alpha = 0.22f), RoundedCornerShape(14.dp))
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-    ) {
-        Text(label.uppercase(), color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Medium)
-        Text(value, color = accent, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-    }
-}
-
-@Composable
-private fun MessageBar(
-    value: String,
-    onValueChange: (String) -> Unit,
-    sending: Boolean,
-    onSend: () -> Unit,
-) {
-    val canSend = value.isNotBlank() && !sending
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 2.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        OutlinedTextField(
-            value = value,
-            onValueChange = onValueChange,
-            modifier = Modifier.weight(1f),
-            placeholder = { Text("Scrivi un messaggio…", color = Muted) },
-            enabled = !sending,
-            singleLine = true,
-            shape = RoundedCornerShape(24.dp),
-            textStyle = MaterialTheme.typography.bodyLarge.copy(color = Ink),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = Accent.copy(alpha = 0.6f),
-                unfocusedBorderColor = Color(0xFF27353D),
-                focusedContainerColor = Surface,
-                unfocusedContainerColor = Surface,
-                cursorColor = Accent,
-            ),
-        )
-        Box(
-            modifier = Modifier
-                .size(52.dp)
-                .clip(CircleShape)
-                .background(if (canSend) Accent else Color(0xFF1E2C34))
-                .clickable(enabled = canSend, onClick = onSend),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (sending) {
-                CircularProgressIndicator(modifier = Modifier.size(22.dp), color = Color.White, strokeWidth = 2.dp)
-            } else {
-                Icon(
-                    Icons.AutoMirrored.Filled.Send,
-                    contentDescription = "Invia",
-                    tint = if (canSend) Color(0xFF07131A) else Muted,
-                )
-            }
-        }
-    }
-}
-
 private fun ConversationState.isRestingLike(): Boolean = when (this) {
-    ConversationState.Idle,
-    ConversationState.Cancelled,
-    is ConversationState.RecoverableError,
-    is ConversationState.FatalError,
-    ConversationState.PermissionRequired,
-    ConversationState.BluetoothUnavailable,
-    ConversationState.ModelUnavailable,
-    ConversationState.VaultUnavailable,
+    ConversationState.Idle, ConversationState.Cancelled,
+    is ConversationState.RecoverableError, is ConversationState.FatalError,
+    ConversationState.PermissionRequired, ConversationState.BluetoothUnavailable,
+    ConversationState.ModelUnavailable, ConversationState.VaultUnavailable,
     ConversationState.NetworkUnavailable -> true
     else -> false
 }
 
-private fun ConversationState.isActiveSpeaking(): Boolean =
-    this == ConversationState.Speaking ||
-        this == ConversationState.PreparingAudio ||
-        this == ConversationState.Listening ||
-        this == ConversationState.FollowUpWindow
-
 private fun accentFor(state: ConversationState): Color = when {
-    state == ConversationState.Listening -> Green
+    state == ConversationState.Listening || state == ConversationState.FollowUpWindow -> Green
     state == ConversationState.Speaking -> Blue
     state is ConversationState.RecoverableError || state is ConversationState.FatalError -> Red
-    state == ConversationState.Idle -> Accent
-    state == ConversationState.Cancelled -> Accent
-    else -> Amber
-}
-
-private fun audioLabel(route: com.simone.jarvismobile.audio.AudioRouteState): String = when {
-    route.airPodsDetected -> "AirPods"
-    route.usingBluetoothInput -> "Bluetooth"
-    else -> "Telefono"
-}
-
-private fun hintFor(state: ConversationState, micGranted: Boolean, error: String?): String = when {
-    error != null && state.isRestingLike() -> friendlyError(error)
-    !micGranted && state == ConversationState.Idle -> "Tocca l'orb: chiederò il permesso microfono"
-    state == ConversationState.Idle -> "Tocca l'orb per parlare"
-    state == ConversationState.FollowUpWindow -> "Puoi continuare a parlare"
-    else -> statusLabel(state)
+    else -> Accent
 }
 
 private fun friendlyError(code: String): String = when (code) {
     "tts_unavailable" -> "Voce italiana offline non disponibile: installala in Impostazioni Android › TTS"
-    "audio_begin_failed" -> "Impossibile avviare l'audio (audio_begin_failed)"
-    "audio_focus_lost" -> "Audio interrotto da un'altra app (audio_focus_lost)"
+    "empty_transcript" -> "Non ho sentito nulla, riprova"
     "record_failed", "permission" -> "Microfono non disponibile ($code) — verifica il permesso"
-    else -> "Errore tecnico: $code"
+    else -> "Errore: $code"
 }
 
 private fun statusLabel(state: ConversationState): String = when (state) {
     ConversationState.Idle -> "Pronto"
-    ConversationState.PreparingAudio -> "Preparazione…"
-    ConversationState.Listening -> "In ascolto"
+    ConversationState.PreparingAudio -> "Preparo…"
+    ConversationState.Listening, ConversationState.FollowUpWindow -> "In ascolto"
     ConversationState.FinalizingSpeech, ConversationState.Transcribing -> "Elaboro"
     ConversationState.RetrievingMemory -> "Memoria…"
     ConversationState.Routing -> "Instrado"
@@ -491,7 +377,6 @@ private fun statusLabel(state: ConversationState): String = when (state) {
     ConversationState.AwaitingConfirmation -> "Confermi?"
     ConversationState.ExecutingTool -> "Eseguo"
     ConversationState.Speaking -> "Rispondo"
-    ConversationState.FollowUpWindow -> "In ascolto"
     ConversationState.BluetoothUnavailable -> "BT assente"
     ConversationState.PermissionRequired -> "Permesso mic"
     ConversationState.ModelUnavailable -> "No modello"
