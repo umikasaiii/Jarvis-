@@ -129,8 +129,15 @@ class LlmIntentClassifier @Inject constructor(
         Risposta: set_timer
         Richiesta: quale impegno è più urgente secondo te?
         Risposta: none
+        Richiesta: la batteria si sta caricando
+        Risposta: none
+        Richiesta: devo fare la revisione, quanto costa?
+        Risposta: none
         Richiesta: come stai oggi?
         Risposta: none
+
+        Attenzione: se l'utente CONSTATA qualcosa invece di chiedere un'azione,
+        rispondi "none" anche se la frase contiene parole come batteria o timer.
 
         Richiesta: $utterance
         Risposta:
