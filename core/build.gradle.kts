@@ -20,7 +20,19 @@ dependencies {
 }
 
 kotlin {
+    // Build with the JDK available locally/in CI, but EMIT Java 17 bytecode:
+    // the Android app compiles against Java 17, and Hilt/KSP generates Java
+    // sources that import these classes — javac rejects newer class files
+    // ("class file has wrong version 65.0, should be 61.0").
     jvmToolchain(21)
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+    }
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
 }
 
 tasks.test {
