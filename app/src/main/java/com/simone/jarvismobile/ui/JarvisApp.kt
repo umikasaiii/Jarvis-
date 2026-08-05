@@ -39,6 +39,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.simone.jarvismobile.ui.commands.CommandsScreen
 import com.simone.jarvismobile.ui.common.PlaceholderScreen
 import com.simone.jarvismobile.ui.dashboard.DashboardScreen
 import com.simone.jarvismobile.ui.diagnostics.DiagnosticsScreen
@@ -111,7 +112,7 @@ fun JarvisApp(autoStartListening: Boolean = false) {
                         onOpenChat = { overlay = Overlay.CHAT },
                     )
                     Tab.CHAT -> Unit
-                    Tab.COMANDI -> PlaceholderScreen("Comandi", "I comandi rapidi arriveranno con la Fase 6.")
+                    Tab.COMANDI -> CommandsScreen()
                     Tab.NOTIFICHE -> PlaceholderScreen("Notifiche", "Il centro notifiche arriverà più avanti.")
                     Tab.IMPOSTAZIONI -> SettingsScreen(
                         onBack = { tab = Tab.HOME },

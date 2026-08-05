@@ -464,15 +464,15 @@ private fun MiniCard(modifier: Modifier = Modifier, content: @Composable android
 @Composable
 private fun CardHeader(icon: ImageVector, title: String, reserveEnd: Boolean = true) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(end = if (reserveEnd) 44.dp else 0.dp),
+        modifier = Modifier.fillMaxWidth().padding(end = if (reserveEnd) 30.dp else 0.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, null, tint = Cyan, modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(8.dp))
+        Icon(icon, null, tint = Cyan, modifier = Modifier.size(16.dp))
+        Spacer(Modifier.width(6.dp))
         Text(
             title,
             color = Ink,
-            fontSize = 12.sp,
+            fontSize = 11.sp,
             fontWeight = FontWeight.SemiBold,
             letterSpacing = 0.5.sp,
             maxLines = 1,

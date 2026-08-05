@@ -13,6 +13,9 @@ import com.simone.jarvismobile.data.SettingsRepository
 import com.simone.jarvismobile.llm.LlmEngine
 import com.simone.jarvismobile.llm.LlmLoadState
 import com.simone.jarvismobile.memory.MemoryIndex
+import com.simone.jarvismobile.tools.CommandMatcher
+import com.simone.jarvismobile.tools.ToolOutcome
+import com.simone.jarvismobile.tools.ToolRunner
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -51,6 +54,7 @@ class SessionCoordinator @Inject constructor(
     private val llm: LlmEngine,
     private val settings: SettingsRepository,
     private val memory: MemoryIndex,
+    private val tools: ToolRunner,
 ) {
 
     private val machine = ConversationStateMachine()
@@ -97,6 +101,9 @@ class SessionCoordinator @Inject constructor(
     val sending: StateFlow<Boolean> = _sending.asStateFlow()
 
     private val sessionMutex = Mutex()
+
+    /** A tool call awaiting the user's spoken/typed confirmation, if any. */
+    @Volatile private var pendingConfirmation: com.simone.jarvismobile.core.protocol.ToolCall? = null
 
     /** Runs one conversation turn. Safe to call repeatedly; ignores overlap. */
     suspend fun runSession() {
@@ -224,16 +231,40 @@ class SessionCoordinator @Inject constructor(
      * points the user to the Models screen.
      */
     private suspend fun generateAnswer(transcript: String): String {
-        // "Ricorda …" → save a note to the vault (works even without a model).
-        extractRememberContent(transcript)?.let { content ->
-            val configured = runCatching { memory.isConfigured() }.getOrDefault(false)
-            val saved = runCatching { memory.remember(content) }.getOrDefault(false)
-            _diagnostic.value = if (saved) "memoria: salvato" else "memoria: salvataggio fallito"
-            return when {
-                saved -> "Ho annotato: $content"
-                !configured -> "Non ho un vault collegato dove salvare. Aprilo in Impostazioni › Memoria."
-                else -> "Non riesco a scrivere nel vault (forse è di sola lettura). " +
-                    "Prova a ricollegarlo da Impostazioni › Memoria."
+        // A pending confirmation is answered by this utterance (yes / no).
+        pendingConfirmation?.let { call ->
+            val answer = transcript.lowercase().trim().trim('.', '!', ',')
+            val firstWord = answer.substringBefore(' ')
+            if (firstWord in CONFIRM_WORDS || CONFIRM_WORDS.any { answer.startsWith(it) }) {
+                pendingConfirmation = null
+                _diagnostic.value = "tool confermato: ${call.name}"
+                return when (val outcome = tools.run(call, confirmed = true)) {
+                    is ToolOutcome.Done -> outcome.spoken
+                    is ToolOutcome.Failed -> outcome.spoken
+                    is ToolOutcome.NeedsConfirmation -> "Non posso eseguirlo senza conferma."
+                }
+            }
+            if (firstWord in DECLINE_WORDS) {
+                pendingConfirmation = null
+                return "Va bene, non lo faccio."
+            }
+            // Neither yes nor no: drop the pending action and treat this as a
+            // brand-new request rather than silently executing something.
+            pendingConfirmation = null
+        }
+
+        // Phase 6: deterministic command → tool. Runs before the model, so
+        // "che ore sono", "timer 10 minuti", "ricorda che …" work instantly and
+        // reliably even with a small model (and even with no model loaded).
+        CommandMatcher.match(transcript)?.let { call ->
+            _diagnostic.value = "tool: ${call.name}"
+            return when (val outcome = tools.run(call)) {
+                is ToolOutcome.Done -> outcome.spoken
+                is ToolOutcome.Failed -> outcome.spoken
+                is ToolOutcome.NeedsConfirmation -> {
+                    pendingConfirmation = outcome.call
+                    outcome.prompt
+                }
             }
         }
         if (llm.loadState.value != LlmLoadState.LOADED) {
@@ -291,19 +322,6 @@ class SessionCoordinator @Inject constructor(
                 _sending.value = false
             }
         }
-    }
-
-    /** Recognizes a "remember this" command and returns the note content, or null. */
-    private fun extractRememberContent(text: String): String? {
-        val trimmed = text.trim()
-        val lower = trimmed.lowercase()
-        for (prefix in REMEMBER_PREFIXES) {
-            if (lower.startsWith(prefix)) {
-                val content = trimmed.substring(prefix.length).trim().trim(':', '-', ' ').trim()
-                if (content.isNotEmpty()) return content
-            }
-        }
-        return null
     }
 
     /** Builds the vault memory index in the background if a vault is configured. */
@@ -396,12 +414,11 @@ class SessionCoordinator @Inject constructor(
         /** How many vault chunks to inject as grounding context per question. */
         const val MEMORY_TOP_K = 4
 
-        /** Command prefixes (longest first) that save the rest as a memory note. */
-        private val REMEMBER_PREFIXES = listOf(
-            "ricorda che ", "ricorda di ", "ricordati che ", "ricordati di ",
-            "prendi nota che ", "prendi nota di ", "prendi nota ",
-            "nota che ", "annota che ", "annota ", "ricorda ", "nota ",
-        )
+        /** Affirmative replies that approve a pending tool confirmation. */
+        private val CONFIRM_WORDS = listOf("sì", "si", "certo", "conferma", "ok", "va bene", "procedi", "yes")
+
+        /** Replies that cancel a pending tool confirmation. */
+        private val DECLINE_WORDS = listOf("no", "annulla", "lascia", "niente", "ferma", "stop")
         private const val TAG = "JarvisSession"
     }
 }

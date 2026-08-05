@@ -26,6 +26,9 @@
     <!-- Short haptic when a voice reply lands while the chat is closed. -->
     <uses-permission android:name="android.permission.VIBRATE" />
 
+    <!-- Phase 6 tools: set timers/alarms in the system clock app without opening its UI. -->
+    <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+
     <!-- Deliberately NOT requested: MANAGE_EXTERNAL_STORAGE, QUERY_ALL_PACKAGES,
          REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, any Accessibility service. See
          docs/PRIVACY.md and docs/SECURITY.md. -->
