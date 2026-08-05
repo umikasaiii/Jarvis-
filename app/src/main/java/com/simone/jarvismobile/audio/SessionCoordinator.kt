@@ -14,6 +14,7 @@ import com.simone.jarvismobile.llm.LlmEngine
 import com.simone.jarvismobile.llm.LlmLoadState
 import com.simone.jarvismobile.memory.MemoryIndex
 import com.simone.jarvismobile.tools.CommandMatcher
+import com.simone.jarvismobile.tools.ItalianNumbers
 import com.simone.jarvismobile.tools.LlmIntentClassifier
 import com.simone.jarvismobile.tools.Match
 import com.simone.jarvismobile.tools.ToolOutcome
@@ -107,6 +108,9 @@ class SessionCoordinator @Inject constructor(
 
     /** A tool call awaiting the user's spoken/typed confirmation, if any. */
     @Volatile private var pendingConfirmation: com.simone.jarvismobile.core.protocol.ToolCall? = null
+
+    /** A tool JARVIS asked a follow-up question about (tool name → missing slot). */
+    @Volatile private var pendingSlot: Pair<String, String>? = null
 
     /** Runs one conversation turn. Safe to call repeatedly; ignores overlap. */
     suspend fun runSession() {
@@ -256,12 +260,32 @@ class SessionCoordinator @Inject constructor(
             pendingConfirmation = null
         }
 
+        // The user is answering a question JARVIS asked ("Per quanto tempo?").
+        pendingSlot?.let { (toolName, missing) ->
+            pendingSlot = null
+            fillSlot(toolName, missing, transcript)?.let { completed ->
+                _diagnostic.value = "tool completato: $toolName"
+                return when (val outcome = tools.run(completed)) {
+                    is ToolOutcome.Done -> outcome.spoken
+                    is ToolOutcome.Failed -> outcome.spoken
+                    is ToolOutcome.NeedsConfirmation -> {
+                        pendingConfirmation = outcome.call
+                        outcome.prompt
+                    }
+                }
+            }
+            // Couldn't read an answer out of it — fall through and treat the
+            // utterance as a fresh request rather than guessing.
+        }
+
         // Phase 6: deterministic command → tool. Runs before the model, so
         // "che ore sono", "timer 10 minuti", "ricorda che …" work instantly and
         // reliably even with a small model (and even with no model loaded).
         when (val match = CommandMatcher.match(transcript)) {
             is Match.Ask -> {
-                _diagnostic.value = "comando incompleto"
+                // Remember what we were doing so the next reply completes it.
+                pendingSlot = match.tool to match.missing
+                _diagnostic.value = "chiedo: ${match.missing}"
                 return match.question
             }
             is Match.Run -> {
@@ -359,6 +383,35 @@ class SessionCoordinator @Inject constructor(
         }
     }
 
+    /**
+     * Completes a tool call from the user's answer to JARVIS's own question
+     * ("Per quanto tempo?" → "dieci minuti"). Returns null when the reply
+     * doesn't contain the missing detail, so we never guess.
+     */
+    private fun fillSlot(
+        toolName: String,
+        missing: String,
+        answer: String,
+    ): com.simone.jarvismobile.core.protocol.ToolCall? {
+        fun build(vararg args: Pair<String, String>) =
+            com.simone.jarvismobile.core.protocol.ToolCall(
+                id = java.util.UUID.randomUUID().toString(),
+                name = toolName,
+                arguments = kotlinx.serialization.json.JsonObject(
+                    args.associate { it.first to kotlinx.serialization.json.JsonPrimitive(it.second) },
+                ),
+                requiresConfirmation = false,
+            )
+
+        return when (toolName) {
+            "set_timer" -> ItalianNumbers.duration(answer)?.let { build("seconds" to it.toString()) }
+            "set_alarm" -> ItalianNumbers.clockTime(answer)
+                ?.let { (h, m) -> build("hour" to h.toString(), "minute" to m.toString()) }
+            "remember" -> answer.trim().takeIf { it.length >= 3 }?.let { build("text" to it) }
+            else -> null
+        }.takeIf { missing.isNotBlank() }
+    }
+
     /** Builds the vault memory index in the background if a vault is configured. */
     suspend fun ensureMemoryReady() = memory.ensureBuilt()
 
@@ -383,6 +436,8 @@ class SessionCoordinator @Inject constructor(
 
     fun newConversation() {
         llm.resetConversation()
+        pendingConfirmation = null
+        pendingSlot = null
         _messages.value = emptyList()
         _transcript.value = ""
         _reply.value = ""

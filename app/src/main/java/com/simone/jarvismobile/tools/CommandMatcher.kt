@@ -10,8 +10,12 @@ sealed interface Match {
     /** A tool to run right away. */
     data class Run(val call: ToolCall) : Match
 
-    /** Recognised the intent but a detail is missing; ask this instead of guessing. */
-    data class Ask(val question: String) : Match
+    /**
+     * Recognised the intent but a detail is missing. JARVIS asks [question] and
+     * remembers [tool] + [missing], so the user's next reply completes the
+     * action instead of starting over.
+     */
+    data class Ask(val question: String, val tool: String, val missing: String) : Match
 }
 
 /**
@@ -61,38 +65,26 @@ object CommandMatcher {
         }
 
         // --- Timer -------------------------------------------------------
-        if (TIMER_WORD_RE.containsMatchIn(t)) {
-            val d = DURATION_RE.find(t)
-            if (d != null) {
-                val value = d.groupValues[1].toIntOrNull()
-                val unit = d.groupValues[2]
-                if (value != null) {
-                    val seconds = when {
-                        unit.startsWith("or") -> value * 3600
-                        unit.startsWith("min") -> value * 60
-                        else -> value
-                    }
-                    if (seconds in 1..86_400) return call("set_timer", "seconds" to seconds.toString())
-                }
+        if (TIMER_WORD_RE.containsMatchIn(t) || COUNTDOWN_RE.containsMatchIn(t)) {
+            ItalianNumbers.duration(t)?.let {
+                return call("set_timer", "seconds" to it.toString())
             }
-            return Match.Ask("Per quanto tempo? Dimmi ad esempio «timer 10 minuti».")
+            return Match.Ask("Per quanto tempo?", "set_timer", "seconds")
         }
 
         // --- Alarm -------------------------------------------------------
         if (ALARM_WORD_RE.containsMatchIn(t)) {
-            val m = CLOCK_RE.find(t)
-            if (m != null) {
-                val h = m.groupValues[1].toIntOrNull()
-                val min = m.groupValues[2].toIntOrNull() ?: 0
-                if (h != null && h in 0..23 && min in 0..59) {
-                    return call("set_alarm", "hour" to h.toString(), "minute" to min.toString())
-                }
+            ItalianNumbers.clockTime(t)?.let { (h, m) ->
+                return call("set_alarm", "hour" to h.toString(), "minute" to m.toString())
             }
-            return Match.Ask("A che ora? Dimmi ad esempio «sveglia alle 7:30».")
+            return Match.Ask("A che ora?", "set_alarm", "time")
         }
 
         // --- Remember (checked before the calculator) ---------------------
         rememberContent(raw)?.let { return call("remember", "text" to it) }
+        if (BARE_REMEMBER_RE.matches(t)) {
+            return Match.Ask("Cosa vuoi che ricordi?", "remember", "text")
+        }
 
         // --- Calculator ---------------------------------------------------
         CALC_RE.find(t)?.let { m ->
@@ -159,10 +151,14 @@ object CommandMatcher {
     private val TORCH_OFF_RE = Regex("""\b(spegn\w*|disattiv\w*)\b""")
 
     private val TIMER_WORD_RE = Regex("""\b(timer|conto alla rovescia)\b""")
-    private val DURATION_RE = Regex("""(\d{1,4})\s*(ore|ora|minuti|minuto|min|secondi|secondo|sec)\b""")
 
-    private val ALARM_WORD_RE = Regex("""\b(sveglia|svegliami|sveglie)\b""")
-    private val CLOCK_RE = Regex("""\b(\d{1,2})(?:[:.](\d{2}))?\b""")
+    /** "avvisami fra 10 minuti", "ricordamelo tra un'ora" — a countdown by any name. */
+    private val COUNTDOWN_RE = Regex("""\b(avvis\w*|chiam\w*|sveglia\w*)\b.{0,15}\b(fra|tra)\b|\b(fra|tra)\b.{0,25}\b(minut\w*|second\w*|or[ae])\b""")
+
+    private val ALARM_WORD_RE = Regex("""\b(sveglia|svegliami|sveglie|destami)\b""")
+
+    /** A bare "ricorda"/"prendi nota" with nothing to store yet. */
+    private val BARE_REMEMBER_RE = Regex("""^(ricorda(mi|ti)?|prendi (una )?nota|annota|segna(ti)?)\s*$""")
 
     private val CALC_RE = Regex("""\b(?:calcola|quanto fa|quant'?e)\s+(.+)$""")
 
