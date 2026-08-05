@@ -226,12 +226,14 @@ class SessionCoordinator @Inject constructor(
     private suspend fun generateAnswer(transcript: String): String {
         // "Ricorda …" → save a note to the vault (works even without a model).
         extractRememberContent(transcript)?.let { content ->
+            val configured = runCatching { memory.isConfigured() }.getOrDefault(false)
             val saved = runCatching { memory.remember(content) }.getOrDefault(false)
-            _diagnostic.value = if (saved) "memoria: salvato" else "memoria: nessun vault"
-            return if (saved) {
-                "Ho annotato: $content"
-            } else {
-                "Non ho un vault collegato dove salvare. Aprilo in Impostazioni › Memoria."
+            _diagnostic.value = if (saved) "memoria: salvato" else "memoria: salvataggio fallito"
+            return when {
+                saved -> "Ho annotato: $content"
+                !configured -> "Non ho un vault collegato dove salvare. Aprilo in Impostazioni › Memoria."
+                else -> "Non riesco a scrivere nel vault (forse è di sola lettura). " +
+                    "Prova a ricollegarlo da Impostazioni › Memoria."
             }
         }
         if (llm.loadState.value != LlmLoadState.LOADED) {
@@ -250,7 +252,7 @@ class SessionCoordinator @Inject constructor(
                 append("Contesto dai miei appunti (usa solo se pertinente; non citarlo se non serve):\n")
                 retrieved.forEach { r ->
                     append("- [").append(r.chunk.title).append("] ")
-                    append(r.chunk.text.replace('\n', ' ').trim().take(400)).append('\n')
+                    append(r.chunk.text.replace('\n', ' ').trim().take(600)).append('\n')
                 }
                 append("\nDomanda: ").append(transcript)
             }

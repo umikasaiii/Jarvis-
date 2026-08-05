@@ -16,13 +16,16 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Settings
@@ -143,7 +146,13 @@ fun HomeScreen(
                 Brush.verticalGradient(listOf(Color(0xFF0A1014), Color(0xFF0C161D), Color(0xFF080E12))),
             ),
     ) {
-        Column(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 10.dp)) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .systemBarsPadding() // draw below status bar, above nav bar (edge-to-edge)
+                .imePadding() // lift the message bar above the keyboard
+                .padding(horizontal = 16.dp, vertical = 6.dp),
+        ) {
 
             // --- Header (pinned) ------------------------------------------
             Row(
@@ -236,44 +245,48 @@ fun HomeScreen(
                 StatusChip("Memoria", if (exchanges == 0) "—" else "$exchanges", if (exchanges > 0) Green else Muted, Modifier.weight(1f))
             }
 
-            // --- Conversation (scrolls) -----------------------------------
-            Column(
-                modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+            // --- Conversation (scrolls like a chat, auto-follows new lines) ---
+            val visible = messages.takeLast(MAX_VISIBLE_MESSAGES)
+            val listState = rememberLazyListState()
+            LaunchedEffect(messages.size) {
+                if (visible.isNotEmpty()) listState.animateScrollToItem(visible.size)
+            }
+            LazyColumn(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                state = listState,
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                if (messages.isEmpty()) {
-                    Text(
-                        text = "Tocca l'orb e parla, oppure scrivi qui sotto.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Muted,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
-                    )
+                if (visible.isEmpty()) {
+                    item {
+                        Text(
+                            text = "Tocca l'orb e parla, oppure scrivi qui sotto.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Muted,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
+                        )
+                    }
                 } else {
-                    messages.takeLast(MAX_VISIBLE_MESSAGES).forEach { ChatBubble(it, name) }
-                    TextButton(
-                        onClick = viewModel::onNewConversation,
-                        modifier = Modifier.align(Alignment.CenterHorizontally),
-                    ) {
-                        Text("Nuova conversazione", color = Amber, fontSize = 13.sp)
+                    items(visible) { ChatBubble(it, name) }
+                    item {
+                        TextButton(
+                            onClick = viewModel::onNewConversation,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text("Nuova conversazione", color = Amber, fontSize = 13.sp)
+                        }
                     }
                 }
+            }
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center,
-                ) {
-                    TextButton(onClick = onOpenModels) { Text("Modelli", color = Accent, fontSize = 13.sp) }
-                    TextButton(onClick = onOpenMemory) { Text("Memoria", color = Accent, fontSize = 13.sp) }
-                    TextButton(onClick = onOpenDiagnostics) { Text("Diagnostica", color = Accent, fontSize = 13.sp) }
-                }
-                Text(
-                    text = "v${com.simone.jarvismobile.BuildConfig.VERSION_NAME} · build ${com.simone.jarvismobile.BuildConfig.BUILD_ID}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xFF44525A),
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
-                )
+            // --- Footer links (pinned) ------------------------------------
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+            ) {
+                TextButton(onClick = onOpenModels) { Text("Modelli", color = Accent, fontSize = 13.sp) }
+                TextButton(onClick = onOpenMemory) { Text("Memoria", color = Accent, fontSize = 13.sp) }
+                TextButton(onClick = onOpenDiagnostics) { Text("Diagnostica", color = Accent, fontSize = 13.sp) }
             }
 
             // --- Message bar (pinned) -------------------------------------
@@ -288,6 +301,13 @@ fun HomeScreen(
                         textInput = ""
                     }
                 },
+            )
+            Text(
+                text = "v${com.simone.jarvismobile.BuildConfig.VERSION_NAME} · build ${com.simone.jarvismobile.BuildConfig.BUILD_ID}",
+                style = MaterialTheme.typography.labelSmall,
+                color = Color(0xFF3C4950),
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
             )
         }
     }

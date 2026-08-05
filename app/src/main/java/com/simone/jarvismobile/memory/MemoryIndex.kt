@@ -98,12 +98,26 @@ class MemoryIndex @Inject constructor(
         _status.value = Status(configured = false)
     }
 
-    /** Returns the top matching chunks for [query], or empty if nothing relevant. */
+    /**
+     * Returns context chunks for [query]. The explicit "ricorda …" memories
+     * (JARVIS/Memoria.md) are ALWAYS included first — lexical ranking alone misses
+     * them when the question shares no words with the saved note (e.g. "che impegni
+     * ho?" vs. "venerdì cambiare pneumatici") — then ranked vault matches fill up.
+     */
     fun retrieve(query: String, limit: Int = 4): List<RankedChunk> {
         val local = chunks
-        if (local.isEmpty() || query.isBlank()) return emptyList()
-        return ranker.rank(query, local, limit)
+        if (local.isEmpty()) return emptyList()
+        val pinned = local.filter { isExplicitMemory(it.notePath) }
+        val rest = local.filterNot { isExplicitMemory(it.notePath) }
+        val ranked = if (query.isBlank()) emptyList() else ranker.rank(query, rest, limit)
+        val combined = ArrayList<RankedChunk>(pinned.size + ranked.size)
+        pinned.forEach { combined += RankedChunk(it, Double.MAX_VALUE) }
+        ranked.forEach { r -> if (combined.none { it.chunk.text == r.chunk.text }) combined += r }
+        return combined.take(limit + pinned.size)
     }
+
+    private fun isExplicitMemory(notePath: String): Boolean =
+        notePath.substringAfterLast('/').equals("Memoria.md", ignoreCase = true)
 
     /**
      * Splits a note into chunks by top-level headings so retrieval can surface the
