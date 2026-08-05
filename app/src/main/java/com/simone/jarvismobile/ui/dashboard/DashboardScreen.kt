@@ -223,9 +223,7 @@ fun DashboardScreen(
             )
 
             // --- Hero: battery · orb · weather ----------------------------
-            // Nudge the hero down so the orb sits on the ring baked into the
-            // background image (tune this if the orb and ring don't line up).
-            Spacer(Modifier.height(18.dp))
+            Spacer(Modifier.height(8.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -378,25 +376,24 @@ fun DashboardScreen(
 
 @Composable
 private fun ChatFab(unread: Int, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    Box(modifier.size(74.dp), contentAlignment = Alignment.Center) {
-        // Glow halo.
+    Box(modifier.size(76.dp), contentAlignment = Alignment.Center) {
+        // Luminous halo.
         Box(
             Modifier
-                .size(74.dp)
+                .size(76.dp)
                 .clip(androidx.compose.foundation.shape.CircleShape)
-                .background(Brush.radialGradient(listOf(Cyan.copy(alpha = 0.45f), Color.Transparent))),
+                .background(Brush.radialGradient(listOf(Cyan.copy(alpha = 0.5f), Color.Transparent))),
         )
-        Box(
+        // The user-provided glowing chat button.
+        Image(
+            painter = painterResource(R.drawable.chat_fab),
+            contentDescription = "Chat",
             modifier = Modifier
-                .size(58.dp)
+                .size(64.dp)
                 .clip(androidx.compose.foundation.shape.CircleShape)
-                .background(Brush.verticalGradient(listOf(Color(0xFF49C6F0), Color(0xFF1E6FD0))))
-                .border(1.5.dp, Cyan.copy(alpha = 0.8f), androidx.compose.foundation.shape.CircleShape)
                 .clickable(onClick = onClick),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = "Chat", tint = Color.White, modifier = Modifier.size(26.dp))
-        }
+            contentScale = ContentScale.Crop,
+        )
         if (unread > 0) {
             Box(
                 modifier = Modifier
@@ -695,25 +692,30 @@ private fun ListenOrb(
         label = "glow",
     )
     Box(
-        modifier = modifier.aspectRatio(1f).clip(androidx.compose.foundation.shape.CircleShape).clickable(onClick = onClick),
+        modifier = modifier.aspectRatio(1f).clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        // The main ring comes from the background image; here we add only a soft,
-        // lightly-pulsing glow circle around the content (as requested).
+        // Pulsing luminous halo behind the orb (colored by state).
         Canvas(Modifier.fillMaxSize()) {
             val c = center
             val r = size.minDimension / 2f
             drawCircle(
-                brush = Brush.radialGradient(listOf(accent.copy(alpha = glow * 0.55f), Color.Transparent), center = c, radius = r),
+                brush = Brush.radialGradient(listOf(accent.copy(alpha = glow * 0.6f), Color.Transparent), center = c, radius = r),
                 radius = r, center = c,
             )
-            drawCircle(accent.copy(alpha = glow), radius = r * 0.74f, center = c, style = Stroke(width = r * 0.02f))
         }
+        // The orb ring itself (user-provided image, transparent background).
+        Image(
+            painter = painterResource(R.drawable.orb),
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Fit,
+        )
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(Icons.Filled.GraphicEq, null, tint = Color.White, modifier = Modifier.size(28.dp))
-            Spacer(Modifier.height(3.dp))
-            Text(title, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-            Text(subtitle, color = Ink.copy(alpha = 0.85f), fontSize = 9.sp)
+            Icon(Icons.Filled.GraphicEq, null, tint = Color.White, modifier = Modifier.size(26.dp))
+            Spacer(Modifier.height(2.dp))
+            Text(title, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+            Text(subtitle, color = Ink.copy(alpha = 0.85f), fontSize = 8.sp)
         }
     }
 }
