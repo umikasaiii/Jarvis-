@@ -78,6 +78,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -97,8 +98,8 @@ private val Violet = Color(0xFF9B7BFF)
 private val Ink = Color(0xFFE3EFF5)
 private val Muted = Color(0xFF7C8B95)
 
-private val CardTop = Color(0xE6112637)
-private val CardBottom = Color(0xCC081521)
+private val CardTop = Color(0xD90A1826)
+private val CardBottom = Color(0xCC040C15)
 
 /** Angular "HUD" card shape: chamfered top-left and bottom-right corners. */
 private val TechShape = CutCornerShape(topStart = 18.dp, topEnd = 6.dp, bottomStart = 6.dp, bottomEnd = 18.dp)
@@ -127,29 +128,29 @@ private fun JarvisBackground(modifier: Modifier = Modifier) {
     Canvas(modifier) {
         val w = size.width
         val h = size.height
-        drawRect(Brush.verticalGradient(listOf(Color(0xFF050C16), Color(0xFF0A1B2E), Color(0xFF04090F))))
+        drawRect(Brush.verticalGradient(listOf(Color(0xFF030810), Color(0xFF061019), Color(0xFF01050A))))
         // Glow behind the orb (upper third).
         drawCircle(
-            brush = Brush.radialGradient(listOf(Color(0x333B9EFF), Color.Transparent), center = Offset(w * 0.5f, h * 0.20f), radius = w * 0.75f),
-            radius = w * 0.75f, center = Offset(w * 0.5f, h * 0.20f),
+            brush = Brush.radialGradient(listOf(Color(0x243B9EFF), Color.Transparent), center = Offset(w * 0.5f, h * 0.20f), radius = w * 0.72f),
+            radius = w * 0.72f, center = Offset(w * 0.5f, h * 0.20f),
         )
-        // Bright light-leak from the bottom.
+        // Light-leak from the bottom.
         drawCircle(
-            brush = Brush.radialGradient(listOf(Color(0x4635D0EA), Color.Transparent), center = Offset(w * 0.5f, h * 1.03f), radius = w * 0.95f),
-            radius = w * 0.95f, center = Offset(w * 0.5f, h * 1.03f),
+            brush = Brush.radialGradient(listOf(Color(0x3335D0EA), Color.Transparent), center = Offset(w * 0.5f, h * 1.04f), radius = w * 0.9f),
+            radius = w * 0.9f, center = Offset(w * 0.5f, h * 1.04f),
         )
         // Cool side glows.
         drawCircle(
-            brush = Brush.radialGradient(listOf(Color(0x2635D0EA), Color.Transparent), center = Offset(0f, h * 0.92f), radius = w * 0.55f),
-            radius = w * 0.55f, center = Offset(0f, h * 0.92f),
+            brush = Brush.radialGradient(listOf(Color(0x1A35D0EA), Color.Transparent), center = Offset(0f, h * 0.93f), radius = w * 0.5f),
+            radius = w * 0.5f, center = Offset(0f, h * 0.93f),
         )
         drawCircle(
-            brush = Brush.radialGradient(listOf(Color(0x2635D0EA), Color.Transparent), center = Offset(w, h * 0.92f), radius = w * 0.55f),
-            radius = w * 0.55f, center = Offset(w, h * 0.92f),
+            brush = Brush.radialGradient(listOf(Color(0x1A35D0EA), Color.Transparent), center = Offset(w, h * 0.93f), radius = w * 0.5f),
+            radius = w * 0.5f, center = Offset(w, h * 0.93f),
         )
         // Starfield.
         for (d in ambientDots) {
-            drawCircle(Color(0xFFA9E8F5).copy(alpha = d.a), radius = d.r, center = Offset(d.x * w, d.y * h))
+            drawCircle(Color(0xFFA9E8F5).copy(alpha = d.a * 0.8f), radius = d.r, center = Offset(d.x * w, d.y * h))
         }
     }
 }
@@ -442,12 +443,23 @@ private fun CardHeader(icon: ImageVector, title: String, trailing: @Composable (
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
             Icon(icon, null, tint = Cyan, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
-            Text(title, color = Ink, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.sp)
+            Text(
+                title,
+                color = Ink,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 0.5.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
-        trailing?.invoke()
+        if (trailing != null) {
+            Spacer(Modifier.width(6.dp))
+            trailing()
+        }
     }
 }
 
@@ -458,6 +470,8 @@ private fun DemoBadge(text: String = "DEMO") {
         color = Amber,
         fontSize = 9.sp,
         fontWeight = FontWeight.Bold,
+        maxLines = 1,
+        softWrap = false,
         modifier = Modifier
             .clip(RoundedCornerShape(6.dp))
             .background(Amber.copy(alpha = 0.14f))
