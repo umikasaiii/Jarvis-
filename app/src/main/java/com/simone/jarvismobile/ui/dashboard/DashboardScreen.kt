@@ -16,6 +16,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -75,7 +76,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -83,6 +86,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.simone.jarvismobile.R
 import com.simone.jarvismobile.core.state.ConversationState
 import com.simone.jarvismobile.llm.LlmLoadState
 import java.time.LocalDate
@@ -186,8 +190,13 @@ fun DashboardScreen(
 
     val accent = accentFor(state)
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        JarvisBackground(Modifier.matchParentSize())
+    Box(modifier = Modifier.fillMaxSize().background(Color(0xFF02060B))) {
+        Image(
+            painter = painterResource(R.drawable.bg_dashboard),
+            contentDescription = null,
+            modifier = Modifier.matchParentSize(),
+            contentScale = ContentScale.Crop,
+        )
 
         Column(
             modifier = Modifier
@@ -214,6 +223,9 @@ fun DashboardScreen(
             )
 
             // --- Hero: battery · orb · weather ----------------------------
+            // Nudge the hero down so the orb sits on the ring baked into the
+            // background image (tune this if the orb and ring don't line up).
+            Spacer(Modifier.height(18.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -412,28 +424,36 @@ private fun GlassCard(
     modifier: Modifier = Modifier.fillMaxWidth(),
     content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
 ) {
-    Column(
-        modifier = modifier
-            .clip(TechShape)
-            .background(Brush.verticalGradient(listOf(CardTop, CardBottom)))
-            .border(1.dp, Brush.verticalGradient(listOf(Cyan.copy(alpha = 0.5f), Cyan.copy(alpha = 0.1f))), TechShape)
-            .padding(14.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-        content = content,
-    )
+    Box(modifier) {
+        Image(
+            painter = painterResource(R.drawable.bg_card),
+            contentDescription = null,
+            modifier = Modifier.matchParentSize(),
+            contentScale = ContentScale.FillBounds,
+        )
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+            content = content,
+        )
+    }
 }
 
 @Composable
 private fun MiniCard(modifier: Modifier = Modifier, content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
-    Column(
-        modifier = modifier
-            .clip(TechShape)
-            .background(Brush.verticalGradient(listOf(CardTop, CardBottom)))
-            .border(1.dp, Brush.verticalGradient(listOf(Cyan.copy(alpha = 0.45f), Cyan.copy(alpha = 0.08f))), TechShape)
-            .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(3.dp),
-        content = content,
-    )
+    Box(modifier) {
+        Image(
+            painter = painterResource(R.drawable.bg_card),
+            contentDescription = null,
+            modifier = Modifier.matchParentSize(),
+            contentScale = ContentScale.FillBounds,
+        )
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp),
+            content = content,
+        )
+    }
 }
 
 @Composable
@@ -683,38 +703,21 @@ private fun ListenOrb(
         modifier = modifier.aspectRatio(1f).clip(androidx.compose.foundation.shape.CircleShape).clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
+        // The main ring comes from the background image; here we add only a soft,
+        // lightly-pulsing glow circle around the content (as requested).
         Canvas(Modifier.fillMaxSize()) {
             val c = center
             val r = size.minDimension / 2f
-            // Wide outer bloom.
             drawCircle(
-                brush = Brush.radialGradient(listOf(accent.copy(alpha = glow), Color.Transparent), center = c, radius = r),
+                brush = Brush.radialGradient(listOf(accent.copy(alpha = glow * 0.55f), Color.Transparent), center = c, radius = r),
                 radius = r, center = c,
             )
-            // Inner glowing disc.
-            drawCircle(
-                brush = Brush.radialGradient(
-                    listOf(accent.copy(alpha = 0.6f), accent.copy(alpha = 0.14f), Color.Transparent),
-                    center = c, radius = r * 0.64f,
-                ),
-                radius = r * 0.64f, center = c,
-            )
-            // Faint inner ring.
-            drawCircle(accent.copy(alpha = 0.35f), radius = r * 0.62f, center = c, style = Stroke(width = r * 0.012f))
-            // Bright outer ring (double: soft halo + crisp line).
-            drawCircle(accent.copy(alpha = 0.4f), radius = r * 0.82f, center = c, style = Stroke(width = r * 0.09f))
-            drawCircle(accent, radius = r * 0.82f, center = c, style = Stroke(width = r * 0.045f))
-            // Sparkles on the ring.
-            val rr = r * 0.82f
-            listOf(
-                Offset(c.x, c.y - rr), Offset(c.x + rr, c.y),
-                Offset(c.x, c.y + rr), Offset(c.x - rr, c.y),
-            ).forEach { drawCircle(Color.White, radius = r * 0.022f, center = it) }
+            drawCircle(accent.copy(alpha = glow), radius = r * 0.74f, center = c, style = Stroke(width = r * 0.02f))
         }
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(Icons.Filled.GraphicEq, null, tint = Color.White, modifier = Modifier.size(30.dp))
+            Icon(Icons.Filled.GraphicEq, null, tint = Color.White, modifier = Modifier.size(28.dp))
             Spacer(Modifier.height(3.dp))
-            Text(title, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+            Text(title, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
             Text(subtitle, color = Ink.copy(alpha = 0.85f), fontSize = 9.sp)
         }
     }
