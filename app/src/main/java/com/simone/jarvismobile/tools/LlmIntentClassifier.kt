@@ -43,6 +43,10 @@ class LlmIntentClassifier @Inject constructor(
      * Returns a [Match] (run it, or ask for the missing detail), or null when
      * this isn't a command.
      */
+    /** Set by the last [classify] call: does answering need the larger model? */
+    @Volatile var lastNeedsReasoning: Boolean = false
+        private set
+
     suspend fun classify(utterance: String): Match? {
         if (llm.loadState.value != LlmLoadState.LOADED) return null
         if (utterance.isBlank()) return null
@@ -53,6 +57,9 @@ class LlmIntentClassifier @Inject constructor(
 
         val name = reply.removePrefix("Risposta:").trim().trim('`', '"', '.', ' ')
             .substringBefore(' ').lowercase()
+        // The fast model also judges whether the answer needs real thinking, so
+        // the big model is only woken for questions that deserve it.
+        lastNeedsReasoning = name == "ragiona"
         Log.i(TAG, "intent=$name")
 
         return when (name) {
@@ -103,11 +110,14 @@ class LlmIntentClassifier @Inject constructor(
         remember <testo da ricordare>
         list_memories
         calculate <espressione aritmetica>
+        ragiona
         none
 
-        Usa "none" se non è una richiesta di azione ma solo conversazione, oppure se
-        la domanda richiede di ragionare, confrontare o dare un parere sugli appunti
-        (in quel caso risponderai tu a parole, non con un comando).
+        Usa "none" per conversazione semplice: saluti, risposte brevi, frasi in cui
+        l'utente ti informa di qualcosa.
+        Usa "ragiona" quando servono spiegazioni, consigli, confronti, opinioni,
+        istruzioni passo-passo o conoscenze del mondo: sono le domande che meritano
+        una risposta ponderata.
         Usa "list_memories" SOLO per elencare gli appunti così come sono.
         Se manca un dettaglio (durata, orario) scrivi comunque il comando senza numeri:
         verrà chiesto all'utente.
@@ -128,12 +138,16 @@ class LlmIntentClassifier @Inject constructor(
         Richiesta: metti un timer
         Risposta: set_timer
         Richiesta: quale impegno è più urgente secondo te?
-        Risposta: none
+        Risposta: ragiona
+        Richiesta: come cambio la ruota della moto?
+        Risposta: ragiona
+        Richiesta: devo fare la revisione, quanto costa?
+        Risposta: ragiona
         Richiesta: la batteria si sta caricando
         Risposta: none
-        Richiesta: devo fare la revisione, quanto costa?
-        Risposta: none
         Richiesta: come stai oggi?
+        Risposta: none
+        Richiesta: sì, va bene
         Risposta: none
 
         Attenzione: se l'utente CONSTATA qualcosa invece di chiedere un'azione,

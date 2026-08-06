@@ -16,7 +16,6 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
-import javax.inject.Singleton
 
 /**
  * On-device LLM backed by LiteRT-LM (Google AI Edge). Runs fully offline on a
@@ -30,7 +29,6 @@ import javax.inject.Singleton
  *
  * Not compiled in the scaffolding container (no Android SDK); built in CI.
  */
-@Singleton
 class LitertLmEngine @Inject constructor(
     @ApplicationContext private val context: Context,
 ) : LlmEngine {

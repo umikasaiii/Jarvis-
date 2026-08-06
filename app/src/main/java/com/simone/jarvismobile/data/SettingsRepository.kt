@@ -30,6 +30,8 @@ class SettingsRepository @Inject constructor(
         val FOLLOW_UP = booleanPreferencesKey("follow_up_enabled")
         val MODEL_PATH = stringPreferencesKey("llm_model_path")
         val MODEL_NAME = stringPreferencesKey("llm_model_name")
+        val ADV_MODEL_PATH = stringPreferencesKey("llm_adv_model_path")
+        val ADV_MODEL_NAME = stringPreferencesKey("llm_adv_model_name")
         val VAULT_URI = stringPreferencesKey("vault_tree_uri")
     }
 
@@ -63,6 +65,31 @@ class SettingsRepository @Inject constructor(
         context.settingsDataStore.edit {
             it.remove(Keys.MODEL_PATH)
             it.remove(Keys.MODEL_NAME)
+        }
+    }
+
+    /**
+     * Optional second, larger model used only for questions that need real
+     * reasoning. Keeping a small model for commands and short replies is what
+     * keeps JARVIS quick (docs/MODELS.md).
+     */
+    val advancedModelPath: Flow<String> =
+        context.settingsDataStore.data.map { it[Keys.ADV_MODEL_PATH] ?: "" }
+
+    val advancedModelName: Flow<String> =
+        context.settingsDataStore.data.map { it[Keys.ADV_MODEL_NAME] ?: "" }
+
+    suspend fun setAdvancedModel(path: String, name: String) {
+        context.settingsDataStore.edit {
+            it[Keys.ADV_MODEL_PATH] = path
+            it[Keys.ADV_MODEL_NAME] = name
+        }
+    }
+
+    suspend fun clearAdvancedModel() {
+        context.settingsDataStore.edit {
+            it.remove(Keys.ADV_MODEL_PATH)
+            it.remove(Keys.ADV_MODEL_NAME)
         }
     }
 

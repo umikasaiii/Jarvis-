@@ -12,6 +12,7 @@ import com.simone.jarvismobile.core.state.RouteTarget
 import com.simone.jarvismobile.data.SettingsRepository
 import com.simone.jarvismobile.llm.LlmEngine
 import com.simone.jarvismobile.llm.LlmLoadState
+import com.simone.jarvismobile.llm.LlmRouter
 import com.simone.jarvismobile.memory.MemoryIndex
 import com.simone.jarvismobile.tools.CommandMatcher
 import com.simone.jarvismobile.tools.ItalianNumbers
@@ -59,6 +60,7 @@ class SessionCoordinator @Inject constructor(
     private val memory: MemoryIndex,
     private val tools: ToolRunner,
     private val intentClassifier: LlmIntentClassifier,
+    private val router: LlmRouter,
 ) {
 
     private val machine = ConversationStateMachine()
@@ -91,7 +93,11 @@ class SessionCoordinator @Inject constructor(
 
     private fun appendMessage(fromUser: Boolean, text: String) {
         if (text.isBlank()) return
-        _messages.value = _messages.value + ChatMessage(fromUser, text.trim())
+        val trimmed = text.trim()
+        // Remember whether JARVIS just asked something, so the next user message
+        // is read as an answer rather than scanned for commands.
+        if (!fromUser) awaitingAnswer = trimmed.endsWith("?")
+        _messages.value = _messages.value + ChatMessage(fromUser, trimmed)
     }
 
     private val _lastError = MutableStateFlow<String?>(null)
@@ -113,6 +119,13 @@ class SessionCoordinator @Inject constructor(
     private data class Pending(val tool: String, val missing: String, val args: Map<String, String>)
 
     @Volatile private var pendingSlot: Pending? = null
+
+    /**
+     * True when JARVIS's own last reply ended with a question. The user's next
+     * message is then an ANSWER in the conversation, so a stray keyword in it
+     * ("agli appuntamenti") must not be hijacked into a command.
+     */
+    @Volatile private var awaitingAnswer = false
 
     /** Runs one conversation turn. Safe to call repeatedly; ignores overlap. */
     suspend fun runSession() {
@@ -287,6 +300,24 @@ class SessionCoordinator @Inject constructor(
         //    command is understood however it is phrased. It can only name a
         //    tool that already exists in the registry, and every argument is
         //    re-validated, so understanding grows but privileges don't.
+        // If JARVIS just asked something, this message answers it. Only an
+        // unmistakable explicit command may interrupt; otherwise keep talking.
+        if (awaitingAnswer) {
+            val explicit = CommandMatcher.match(transcript)
+            if (explicit is Match.Run) {
+                _diagnostic.value = "tool: ${explicit.call.name}"
+                return when (val outcome = tools.run(explicit.call)) {
+                    is ToolOutcome.Done -> outcome.spoken
+                    is ToolOutcome.Failed -> outcome.spoken
+                    is ToolOutcome.NeedsConfirmation -> {
+                        pendingConfirmation = outcome.call
+                        outcome.prompt
+                    }
+                }
+            }
+            return chatReply(transcript)
+        }
+
         when (val aiMatch = runCatching { intentClassifier.classify(transcript) }.getOrNull()) {
             is Match.Ask -> {
                 pendingSlot = Pending(aiMatch.tool, aiMatch.missing, aiMatch.partial)
@@ -330,13 +361,21 @@ class SessionCoordinator @Inject constructor(
             }
             null -> Unit // not a command → normal conversation below
         }
+
         if (llm.loadState.value != LlmLoadState.LOADED) {
             return "Ho capito: $transcript. Carica un modello nella schermata Modelli per risposte vere."
         }
-        // Talk to the model like a chatbot: the user's words go through VERBATIM.
-        // Retrieved notes belong in the system instruction, not wrapped around the
-        // question — a templated "Contesto … Domanda:" block invites a small model
-        // to CONTINUE the template instead of answering it.
+        // The fast model already judged whether this deserves the big brain.
+        return chatReply(transcript, needsReasoning = intentClassifier.lastNeedsReasoning)
+    }
+
+    /**
+     * Ordinary conversation with the model. The user's words go through VERBATIM
+     * and retrieved notes live in the system instruction, not wrapped around the
+     * question — a templated "Contesto … Domanda:" block invites a small model to
+     * CONTINUE the template instead of answering it.
+     */
+    private suspend fun chatReply(transcript: String, needsReasoning: Boolean = false): String {
         val retrieved = runCatching { memory.retrieve(transcript, MEMORY_TOP_K) }.getOrDefault(emptyList())
         val system = buildString {
             append(systemPrompt.trim())
@@ -347,20 +386,22 @@ class SessionCoordinator @Inject constructor(
                 }
             }
         }
+        val useBig = needsReasoning && router.hasAdvanced
+        val brain = if (useBig) "avanzato" else "rapido"
         _diagnostic.value = if (retrieved.isEmpty()) {
-            "thinking (llm ${loadedModelName.value})"
+            "penso ($brain)"
         } else {
-            "memoria: ${retrieved.size} frammenti · llm ${loadedModelName.value}"
+            "memoria: ${retrieved.size} frammenti · $brain"
         }
-        llm.chat(transcript, system)?.trim()?.ifBlank { null }?.let { return it }
+        router.chat(transcript, system, needsReasoning)?.trim()?.ifBlank { null }?.let { return it }
 
-        // Generation failed. The usual cause is an exhausted/!corrupted KV cache
+        // Generation failed. The usual cause is an exhausted/corrupted KV cache
         // after a long chat, which a fresh conversation clears — so retry once
         // (losing the in-session history, not the vault memory) before giving up.
         Log.w(TAG, "llm_chat_null_retrying_fresh")
         _diagnostic.value = "riprovo con conversazione nuova"
-        llm.resetConversation()
-        llm.chat(transcript, system)?.trim()?.ifBlank { null }?.let { return it }
+        router.resetConversation()
+        router.chat(transcript, system, needsReasoning)?.trim()?.ifBlank { null }?.let { return it }
 
         return "Il modello non è riuscito a rispondere. Prova «Nuova conversazione», " +
             "o ricarica il modello dalla schermata Modelli."
@@ -464,12 +505,30 @@ class SessionCoordinator @Inject constructor(
         val name = settings.modelName.first().ifBlank { file.name }
         _diagnostic.value = "carico modello…"
         llm.load(path, name)
+        loadAdvancedIfConfigured()
+    }
+
+    /**
+     * Loads the optional larger model in the background. It is only used for
+     * questions that need reasoning, so the assistant is usable long before this
+     * finishes — and the app works exactly as before when none is configured.
+     */
+    private suspend fun loadAdvancedIfConfigured() {
+        if (router.advancedLoadState.value == LlmLoadState.LOADED) return
+        val path = settings.advancedModelPath.first()
+        if (path.isBlank()) return
+        val file = File(path)
+        if (!file.exists()) return
+        val name = settings.advancedModelName.first().ifBlank { file.name }
+        _diagnostic.value = "carico modello avanzato…"
+        router.advanced.load(path, name)
     }
 
     fun newConversation() {
-        llm.resetConversation()
+        router.resetConversation()
         pendingConfirmation = null
         pendingSlot = null
+        awaitingAnswer = false
         _messages.value = emptyList()
         _transcript.value = ""
         _reply.value = ""

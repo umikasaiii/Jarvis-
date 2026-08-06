@@ -5,9 +5,11 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -38,6 +40,7 @@ fun ModelsScreen(
     val models by viewModel.models.collectAsStateWithLifecycle()
     val loadState by viewModel.loadState.collectAsStateWithLifecycle()
     val loadedName by viewModel.loadedModelName.collectAsStateWithLifecycle()
+    val advancedName by viewModel.advancedModelName.collectAsStateWithLifecycle()
     val status by viewModel.status.collectAsStateWithLifecycle()
     val busy by viewModel.busy.collectAsStateWithLifecycle()
 
@@ -60,7 +63,8 @@ fun ModelsScreen(
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("Stato: ${loadStateLabel(loadState)}", style = MaterialTheme.typography.titleMedium)
-                Text("Modello caricato: ${loadedName ?: "—"}", style = MaterialTheme.typography.bodyMedium)
+                Text("Rapido: ${loadedName ?: "—"}", style = MaterialTheme.typography.bodyMedium)
+                Text("Avanzato: ${advancedName ?: "—"}", style = MaterialTheme.typography.bodyMedium)
                 if (status.isNotEmpty()) {
                     Text(status, style = MaterialTheme.typography.bodyMedium)
                 }
@@ -87,19 +91,37 @@ fun ModelsScreen(
                         Text(model.name, style = MaterialTheme.typography.titleSmall)
                         Text("${model.sizeBytes / (1024 * 1024)} MB", style = MaterialTheme.typography.bodySmall)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(onClick = { viewModel.load(model) }, enabled = !busy) { Text("Carica") }
+                            Button(onClick = { viewModel.load(model) }, enabled = !busy) { Text("Rapido") }
+                            Button(onClick = { viewModel.loadAdvanced(model) }, enabled = !busy) { Text("Avanzato") }
                             OutlinedButton(onClick = { viewModel.delete(model) }, enabled = !busy) { Text("Elimina") }
                         }
                     }
                 }
             }
-            OutlinedButton(onClick = viewModel::unload, modifier = Modifier.fillMaxWidth()) {
-                Text("Scarica dalla memoria")
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = viewModel::unload, modifier = Modifier.weight(1f)) {
+                    Text("Scarica rapido")
+                }
+                OutlinedButton(onClick = viewModel::unloadAdvanced, modifier = Modifier.weight(1f)) {
+                    Text("Scarica avanzato")
+                }
             }
         }
 
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Due modelli: rapido e avanzato", style = MaterialTheme.typography.titleMedium)
+                HorizontalDivider()
+                Text(
+                    "Assegna un modello piccolo (es. Gemma 1B) allo slot «Rapido»: gestisce " +
+                        "comandi e risposte brevi, sempre reattivo. Assegnane uno grande " +
+                        "(es. Gemma 4B) allo slot «Avanzato»: verrà usato solo per le domande " +
+                        "che richiedono ragionamento, spiegazioni o consigli. Se imposti solo " +
+                        "il rapido, funziona tutto come prima. Nota: due modelli caricati " +
+                        "occupano più memoria.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Spacer(Modifier.size(8.dp))
                 Text("Come ottenere un modello", style = MaterialTheme.typography.titleMedium)
                 HorizontalDivider()
                 Text(
