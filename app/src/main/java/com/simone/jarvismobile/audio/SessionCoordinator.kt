@@ -9,7 +9,7 @@ import com.simone.jarvismobile.core.state.ConversationEvent
 import com.simone.jarvismobile.core.state.ConversationState
 import com.simone.jarvismobile.core.state.ConversationStateMachine
 import com.simone.jarvismobile.core.state.RouteTarget
-import com.simone.jarvismobile.core.routing.CompoundRequestSplitter
+import com.simone.jarvismobile.core.routing.TurnPlanner
 import com.simone.jarvismobile.data.ChatStore
 import com.simone.jarvismobile.data.SettingsRepository
 import com.simone.jarvismobile.data.StoredMessage
@@ -318,18 +318,22 @@ class SessionCoordinator @Inject constructor(
         // a 1B model commonly answers only the first part of a multi-question
         // request, and the old command path stopped after the first tool match.
         if (pendingConfirmation == null && pendingSlot == null && !awaitingAnswer) {
-            val parts = CompoundRequestSplitter.split(transcript)
-            if (parts.size > 1) {
-                val answers = ArrayList<String>(parts.size)
+            val plan = TurnPlanner.plan(transcript)
+            if (plan.isCompound) {
+                val answers = ArrayList<String>(plan.requests.size)
                 var sameMessageContext = ""
-                for (part in parts) {
-                    val answer = generateAtomicAnswer(part, sameMessageContext)
+                for (request in plan.requests) {
+                    val answer = generateAtomicAnswer(
+                        transcript = request.text,
+                        sameMessageContext = sameMessageContext,
+                        fallbackNeedsReasoning = request.needsReasoningFallback,
+                    )
                     if (answer.isNotBlank() && answers.none { it.equals(answer, ignoreCase = true) }) {
                         answers += answer
                     }
                     sameMessageContext = buildString {
                         if (sameMessageContext.isNotBlank()) append(sameMessageContext).append('\n')
-                        append("Simone: ").append(part).append('\n')
+                        append("Simone: ").append(request.text).append('\n')
                         append("JARVIS: ").append(answer)
                     }.takeLast(COMPOUND_CONTEXT_CHARS)
                 }
@@ -340,7 +344,11 @@ class SessionCoordinator @Inject constructor(
     }
 
     /** Routes and answers one indivisible request. */
-    private suspend fun generateAtomicAnswer(transcript: String, sameMessageContext: String = ""): String {
+    private suspend fun generateAtomicAnswer(
+        transcript: String,
+        sameMessageContext: String = "",
+        fallbackNeedsReasoning: Boolean = false,
+    ): String {
         val recentContext = recentConversationContext(sameMessageContext)
         // A pending confirmation is answered by this utterance (yes / no).
         pendingConfirmation?.let { call ->
@@ -411,18 +419,17 @@ class SessionCoordinator @Inject constructor(
             )
         }
 
-        when (
-            val aiMatch = runCatching {
-                intentClassifier.classify(transcript, recentContext)
-            }.getOrNull()
-        ) {
+        val understanding = runCatching {
+            intentClassifier.understand(transcript, recentContext)
+        }.getOrNull()
+        when (val aiMatch = understanding?.takeIf { it.mayExecute }?.match) {
             is Match.Ask -> {
                 pendingSlot = Pending(aiMatch.tool, aiMatch.missing, aiMatch.partial)
-                _diagnostic.value = "chiedo (ai): ${aiMatch.missing}"
+                _diagnostic.value = "chiedo (piano): ${aiMatch.missing}"
                 return aiMatch.question
             }
             is Match.Run -> {
-                _diagnostic.value = "tool (ai): ${aiMatch.call.name}"
+                _diagnostic.value = "tool (piano): ${aiMatch.call.name}"
                 return when (val outcome = tools.run(aiMatch.call)) {
                     is ToolOutcome.Done -> outcome.spoken
                     is ToolOutcome.Failed -> outcome.spoken
@@ -465,7 +472,7 @@ class SessionCoordinator @Inject constructor(
         // The fast model already judged whether this deserves the big brain.
         return chatReply(
             transcript,
-            needsReasoning = intentClassifier.lastNeedsReasoning,
+            needsReasoning = fallbackNeedsReasoning || understanding?.needsReasoning == true,
             conversationHint = sameMessageContext,
         )
     }

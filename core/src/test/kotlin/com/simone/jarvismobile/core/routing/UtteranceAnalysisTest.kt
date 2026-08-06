@@ -31,6 +31,37 @@ class UtteranceAnalysisTest {
     }
 
     @Test
+    fun `splits several related questions even when commas and conjunctions are used`() {
+        assertEquals(
+            listOf(
+                "Quanto costa un tagliando moto",
+                "quanto dura",
+                "ogni quanto va fatto",
+                "ne ho uno in programma?",
+            ),
+            CompoundRequestSplitter.split(
+                "Quanto costa un tagliando moto, quanto dura e ogni quanto va fatto, ne ho uno in programma?",
+            ),
+        )
+    }
+
+    @Test
+    fun `splits two explicit actions joined by e`() {
+        assertEquals(
+            listOf("Accendi la torcia", "imposta un timer di cinque minuti"),
+            CompoundRequestSplitter.split("Accendi la torcia e imposta un timer di cinque minuti"),
+        )
+    }
+
+    @Test
+    fun `turn plan marks later clauses as context dependent`() {
+        val plan = TurnPlanner.plan("Quanto costa un tagliando, quanto dura?")
+        assertTrue(plan.isCompound)
+        assertFalse(plan.requests.first().carriesTurnContext)
+        assertTrue(plan.requests.last().carriesTurnContext)
+    }
+
+    @Test
     fun `reasoning fallback recognises instructions and estimates`() {
         assertTrue(ComplexityHeuristic.needsReasoning("Come si taglia l'erba?"))
         assertTrue(ComplexityHeuristic.needsReasoning("Quanto mi richiede indicativamente?"))

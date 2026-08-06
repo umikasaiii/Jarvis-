@@ -11,6 +11,20 @@ import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/** Auditable result of the fast brain's Understanding V2 pass. */
+data class IntentUnderstanding(
+    val intent: String,
+    val match: Match?,
+    val confidence: Double,
+    val needsReasoning: Boolean,
+) {
+    val mayExecute: Boolean get() = match != null && confidence >= MIN_EXECUTION_CONFIDENCE
+
+    companion object {
+        const val MIN_EXECUTION_CONFIDENCE = 0.58
+    }
+}
+
 /**
  * Primary intent understanding: the local model reads the request and decides
  * which registered tool (if any) it means, so a command works however it is
@@ -48,25 +62,42 @@ class LlmIntentClassifier @Inject constructor(
     @Volatile var lastNeedsReasoning: Boolean = false
         private set
 
-    suspend fun classify(utterance: String, recentContext: String = ""): Match? {
+    suspend fun classify(utterance: String, recentContext: String = ""): Match? =
+        understand(utterance, recentContext).match
+
+    /**
+     * Returns intent, confidence and model-routing information together. The
+     * confidence is deliberately only a gate, not authority: tool arguments are
+     * still rebuilt from the user's own words and the registry validates them.
+     */
+    suspend fun understand(utterance: String, recentContext: String = ""): IntentUnderstanding {
         // Reset on every utterance: a failed classifier call must not inherit the
         // previous request's routing decision.
         lastNeedsReasoning = ComplexityHeuristic.needsReasoning(utterance)
-        if (llm.loadState.value != LlmLoadState.LOADED) return null
-        if (utterance.isBlank()) return null
+        if (llm.loadState.value != LlmLoadState.LOADED || utterance.isBlank()) {
+            return IntentUnderstanding("unavailable", null, 0.0, lastNeedsReasoning)
+        }
 
         val reply = runCatching { llm.generate(prompt(utterance, recentContext)) }.getOrNull()
             ?.trim()?.lineSequence()?.firstOrNull { it.isNotBlank() }?.trim()
-            ?: return null
+            ?: return IntentUnderstanding("unreadable", null, 0.0, lastNeedsReasoning)
 
-        val name = reply.removePrefix("Risposta:").trim().trim('`', '"', '.', ' ')
-            .substringBefore(' ').lowercase()
+        val clean = reply.removePrefix("Risposta:").trim().trim('`', '"', '.', ' ')
+        val name = clean.substringBefore('|').substringBefore(' ').lowercase()
+        val reportedConfidence = clean.substringAfter('|', "")
+            .trim().removeSuffix("%").toIntOrNull()?.coerceIn(0, 100)?.div(100.0)
+        val known = name in KNOWN_INTENTS
+        val confidence = when {
+            reportedConfidence != null -> reportedConfidence
+            known -> DEFAULT_MODEL_CONFIDENCE
+            else -> 0.0
+        }
         // The fast model also judges whether the answer needs real thinking, so
         // the big model is only woken for questions that deserve it.
-        lastNeedsReasoning = lastNeedsReasoning || name == "ragiona"
-        Log.i(TAG, "intent=$name")
+        lastNeedsReasoning = lastNeedsReasoning || name == "ragiona" || confidence < LOW_CONFIDENCE
+        Log.i(TAG, "intent=$name confidence=${(confidence * 100).toInt()}")
 
-        return when (name) {
+        val match = when (name) {
             "get_time", "battery_status", "list_memories" -> Match.Run(call(name))
 
             "set_timer" -> ItalianNumbers.duration(utterance)
@@ -102,28 +133,20 @@ class LlmIntentClassifier @Inject constructor(
             "calculate" -> CommandMatcher.arithmetic(utterance)
                 ?.let { Match.Run(call("calculate", "expression" to it)) }
 
-            else -> null // "none" and anything unexpected → normal conversation
+            else -> null // "none", "ragiona" and anything unexpected → conversation
         }
+        return IntentUnderstanding(name, match, confidence, lastNeedsReasoning)
     }
 
     private fun prompt(utterance: String, recentContext: String): String = """
-        Sei un classificatore di comandi. Leggi la richiesta e rispondi con UNA SOLA RIGA,
-        scegliendo esattamente uno di questi formati. Non aggiungere spiegazioni.
+        Sei il pianificatore rapido di JARVIS. Considera anche il contesto recente,
+        leggi la richiesta e rispondi con UNA SOLA RIGA nel formato:
+        intento|fiducia
+        dove fiducia è un numero da 0 a 100. Non aggiungere spiegazioni.
 
-        get_time
-        battery_status
-        set_timer <secondi>
-        set_alarm <ora> <minuti>
-        flashlight on
-        flashlight off
-        add_reminder <cosa fare e quando>
-        list_agenda
-        time_until
-        remember <testo da ricordare>
-        list_memories
-        calculate <espressione aritmetica>
-        ragiona
-        none
+        Intenti ammessi: get_time, battery_status, set_timer, set_alarm,
+        flashlight, add_reminder, list_agenda, time_until, remember,
+        list_memories, calculate, ragiona, none.
 
         Usa "none" per conversazione semplice: saluti, risposte brevi, frasi in cui
         l'utente ti informa di qualcosa.
@@ -141,51 +164,53 @@ class LlmIntentClassifier @Inject constructor(
 
         Esempi:
         Richiesta: che ore fanno adesso?
-        Risposta: get_time
+        Risposta: get_time|99
         Richiesta: avvisami fra dieci minuti
-        Risposta: set_timer 600
+        Risposta: set_timer|98
         Richiesta: buttami giù una nota, devo comprare il latte
-        Risposta: remember devo comprare il latte
+        Risposta: remember|96
         Richiesta: segnami che domani alle tre ho il dentista
-        Risposta: add_reminder domani alle tre dentista
+        Risposta: add_reminder|97
         Richiesta: venerdì devo cambiare le gomme, ricordamelo
-        Risposta: add_reminder venerdì cambiare le gomme
+        Risposta: add_reminder|96
         Richiesta: cosa devo fare oggi pomeriggio?
-        Risposta: list_agenda
+        Risposta: list_agenda|98
         Richiesta: ho appuntamenti domani?
-        Risposta: list_agenda
+        Risposta: list_agenda|98
         Richiesta: quanto manca alle 16?
-        Risposta: time_until
+        Risposta: time_until|98
         Richiesta: fra quanto è mezzogiorno?
-        Risposta: time_until
+        Risposta: time_until|95
         Richiesta: fammi luce
-        Risposta: flashlight on
+        Risposta: flashlight|99
         Richiesta: destami alle sette e mezza
-        Risposta: set_alarm 7 30
+        Risposta: set_alarm|98
         Richiesta: cosa devo fare questa settimana?
-        Risposta: list_agenda
+        Risposta: list_agenda|98
         Richiesta: cosa hai annotato?
-        Risposta: list_memories
+        Risposta: list_memories|95
         Richiesta: metti un timer
-        Risposta: set_timer
+        Risposta: set_timer|90
         Richiesta: quale impegno è più urgente secondo te?
-        Risposta: ragiona
+        Risposta: ragiona|95
         Richiesta: come cambio la ruota della moto?
-        Risposta: ragiona
+        Risposta: ragiona|97
         Richiesta: devo fare la revisione, quanto costa?
-        Risposta: ragiona
+        Risposta: ragiona|94
         Richiesta: la batteria si sta caricando
-        Risposta: none
+        Risposta: none|98
         Contesto recente: Simone: Quanto ho di batteria? | JARVIS: Batteria al 93 per cento.
         Richiesta: È in carica in questo momento?
-        Risposta: battery_status
+        Risposta: battery_status|96
         Richiesta: come stai oggi?
-        Risposta: none
+        Risposta: none|96
         Richiesta: sì, va bene
-        Risposta: none
+        Risposta: none|92
 
         Attenzione: se l'utente CONSTATA qualcosa invece di chiedere un'azione,
-        rispondi "none" anche se la frase contiene parole come batteria o timer.
+        rispondi "none|fiducia" anche se la frase contiene parole come batteria o timer.
+        Se non sei sicuro dell'intento, usa una fiducia sotto 58: JARVIS non
+        eseguirà azioni e userà il modello avanzato per capire meglio.
 
         Contesto recente: ${recentContext.replace('\n', ' ').takeLast(MAX_CONTEXT_CHARS)}
         Richiesta: $utterance
@@ -203,5 +228,12 @@ class LlmIntentClassifier @Inject constructor(
     private companion object {
         const val TAG = "JarvisIntent"
         const val MAX_CONTEXT_CHARS = 900
+        const val DEFAULT_MODEL_CONFIDENCE = 0.72
+        const val LOW_CONFIDENCE = 0.58
+        val KNOWN_INTENTS = setOf(
+            "get_time", "battery_status", "set_timer", "set_alarm", "flashlight",
+            "add_reminder", "list_agenda", "time_until", "remember",
+            "list_memories", "calculate", "ragiona", "none",
+        )
     }
 }
