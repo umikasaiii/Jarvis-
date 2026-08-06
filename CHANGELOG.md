@@ -1,5 +1,11 @@
 # Changelog
 
+## Understanding V2, background answers and reminders
+
+- Added multi-request turn planning with confidence-gated local tool routing and automatic advanced-model escalation.
+- Added a Room + WorkManager response queue, visible progress/cancel/retry, private ready notifications and idempotent chat recovery.
+- Added structured agenda alert rules, dashboard alert selection, configurable morning time and persistent reminder notifications.
+
 All notable changes to this project are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions are pre-1.0.
 

@@ -143,3 +143,26 @@ timeout, and returns a structured success/failure. The model can only ever reach
 registered tools — never arbitrary classes, Intents, shells, files, or URLs. The
 model's `requires_confirmation` hint can only *raise* the requirement, never lower
 the policy-mandated one.
+
+## Understanding V2
+
+`TurnPlanner` first decomposes a message into bounded requests. Each request is
+then classified by the fast model using the compact `intent|confidence` contract.
+A score below the execution threshold cannot trigger a tool; deterministic
+matching may still prove an explicit command, otherwise the request becomes
+conversation and is escalated to the advanced model. Tool arguments always come
+from the user's text. Results from earlier clauses are carried as bounded
+same-turn context so pronouns and shortened follow-ups remain coherent.
+
+## Persistent local work and notifications
+
+Written requests enter `assistant_tasks` in Room and are executed as unique
+WorkManager jobs. The worker exposes phase/progress, promotes long inference to
+a visible foreground notification, restores the local model/memory after process
+death, and writes task-tagged chat lines idempotently. Completion creates a
+private notification that deep-links to the conversation. The UI can cancel or
+retry jobs. This path does not capture audio and grants no new model privileges.
+
+Agenda notifications use a separate reconciliation layer. Stable entry IDs and
+alert rules live in `Agenda.md`; WorkManager jobs are derived, replaceable state.
+Reopening/reloading the agenda cancels stale jobs and recreates future ones.

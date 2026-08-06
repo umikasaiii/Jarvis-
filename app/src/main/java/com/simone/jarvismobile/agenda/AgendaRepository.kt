@@ -5,7 +5,9 @@ import android.util.Log
 import com.simone.jarvismobile.core.agenda.Agenda
 import com.simone.jarvismobile.core.agenda.AgendaEntry
 import com.simone.jarvismobile.core.agenda.DayPeriod
+import com.simone.jarvismobile.core.agenda.ReminderAlert
 import com.simone.jarvismobile.memory.VaultRepository
+import com.simone.jarvismobile.reminders.ReminderScheduler
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -36,6 +38,7 @@ import javax.inject.Singleton
 class AgendaRepository @Inject constructor(
     @ApplicationContext private val context: Context,
     private val vault: VaultRepository,
+    private val reminderScheduler: ReminderScheduler,
 ) {
     private val mutex = Mutex()
 
@@ -47,7 +50,11 @@ class AgendaRepository @Inject constructor(
     private val localFile: File get() = File(context.filesDir, LOCAL_FILE)
 
     /** Reads the agenda from wherever it lives and publishes it. */
-    suspend fun reload(): List<AgendaEntry> = mutex.withLock { loadLocked() }
+    suspend fun reload(): List<AgendaEntry> {
+        val loaded = mutex.withLock { loadLocked() }
+        reminderScheduler.sync(loaded)
+        return loaded
+    }
 
     private suspend fun loadLocked(): List<AgendaEntry> {
         val text = readRaw()
@@ -64,7 +71,10 @@ class AgendaRepository @Inject constructor(
         val current = loadLocked()
         val updated = Agenda.sorted(current + entry)
         val ok = writeRaw(Agenda.renderFile(updated))
-        if (ok) _entries.value = updated
+        if (ok) {
+            _entries.value = updated
+            reminderScheduler.sync(updated)
+        }
         Log.i(TAG, "agenda_add ok=$ok total=${updated.size}")
         ok
     }
@@ -78,6 +88,8 @@ class AgendaRepository @Inject constructor(
         val updated = Agenda.sorted(current - target + target.copy(done = true))
         if (!writeRaw(Agenda.renderFile(updated))) return@withLock null
         _entries.value = updated
+        reminderScheduler.cancelEntry(target.id)
+        reminderScheduler.sync(updated)
         target
     }
 
@@ -90,7 +102,22 @@ class AgendaRepository @Inject constructor(
         val updated = current - target
         if (!writeRaw(Agenda.renderFile(updated))) return@withLock null
         _entries.value = updated
+        reminderScheduler.cancelEntry(target.id)
+        reminderScheduler.sync(updated)
         target
+    }
+
+    /** Replaces all notification rules for one dashboard entry. */
+    suspend fun updateAlerts(id: String, alerts: List<ReminderAlert>): AgendaEntry? = mutex.withLock {
+        val current = loadLocked()
+        val target = current.firstOrNull { it.id == id } ?: return@withLock null
+        val updatedEntry = target.copy(alerts = alerts.distinctBy { it.key })
+        val updated = Agenda.sorted(current.map { if (it.id == id) updatedEntry else it })
+        if (!writeRaw(Agenda.renderFile(updated))) return@withLock null
+        _entries.value = updated
+        reminderScheduler.cancelEntry(id)
+        reminderScheduler.sync(updated)
+        updatedEntry
     }
 
     /** What is on for a given day / part of the day; everything upcoming by default. */

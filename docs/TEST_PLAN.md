@@ -2,7 +2,7 @@
 
 ## Unit tests (`:core`, run anywhere)
 
-`cd core && ./gradlew test` — **58 tests, all green**. Coverage:
+`cd core && ./gradlew test`. Coverage includes:
 
 | Area | Test file | Cases |
 |------|-----------|-------|
@@ -13,11 +13,14 @@
 | Redaction | `LogRedactorTest` | bearer/JWT/email/IP masking, content placeholder, benign text untouched |
 | Markdown | `MarkdownParserTest` | frontmatter/title/tags/links, YAML list tags, heading/filename fallback, alias links, no-frontmatter |
 | Retrieval | `RetrievalRankerTest` | relevance ordering, title/tag over body, irrelevant→empty, empty query, limit, recency tie-break |
+| Understanding V2 | `UtteranceAnalysisTest` | explicit questions, comma/conjunction decomposition, comparison guard, context carry, complexity fallback |
+| Agenda alerts | `AgendaEntryTest`, `ReminderScheduleTest` | legacy parsing, Markdown round trip, multiple alerts, morning/day offsets, untimed guard |
 
-## Planned unit tests (`:app`, JVM)
+## App JVM tests
 
-Confirmations, security policy gating, memory temporary/expiry, action expiry,
-local fallback, model selection, error handling.
+`LlmIntentClassifierTest` verifies high-confidence tool execution, low-confidence
+blocking/escalation and reasoning routing. `CommandMatcherTest` keeps the real
+battery follow-up and statement-vs-request regressions covered.
 
 ## Integration tests (fake engines)
 
@@ -38,3 +41,17 @@ window; diagnostics screen shows the real route.
 
 See `docs/DEVICE_TEST_HONOR_200.md` for the full 20-step HONOR 200 checklist and
 the acceptance scenarios A–F from the product spec.
+
+Additional acceptance checks for this release:
+
+1. Send a long written request, immediately switch app and turn the screen off;
+   observe processing progress and the private “response ready” notification.
+2. Kill the Activity during generation; reopen from the notification and verify
+   one user line plus one answer (no duplicate retry lines).
+3. Cancel and retry from the Attività JARVIS tab.
+4. Ask four tagliando questions in one message and verify four ordered answers;
+   ask battery level then “È in carica in questo momento?”.
+5. Create an agenda item with no alert; verify “Avviso non impostato”, then add
+   morning-of + one-day-before and confirm both survive an app restart.
+6. Change the morning setting, edit/remove an agenda entry, and verify stale
+   notifications are rescheduled/cancelled.
