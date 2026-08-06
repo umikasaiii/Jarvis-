@@ -512,8 +512,16 @@ object CommandMatcher {
     private fun cleanCalendarTitle(raw: String): String = normalize(raw)
         .replace(CALENDAR_TITLE_PREFIX_RE, "")
         .replace(CALENDAR_WORDS_RE, " ")
-        .replace(Regex("""^(?:per\s+)?(?:il|la|lo|l')?\s*"""), "")
+        // Whitespace is collapsed BEFORE the leading-article cleanup, which is
+        // anchored to ^: dropping "calendario" out of the middle of the phrase
+        // leaves spaces at the start, and those made the anchor miss, so
+        // "crea un evento calendario per il dentista" was titled "per il
+        // dentista" instead of "dentista".
         .replace(Regex("""\s+"""), " ")
+        .trim(' ', ':', '-', ',')
+        // "il|la|lo" must be followed by a space, or a title like "iliade" would
+        // be amputated to "iade"; "l'" attaches directly to its noun.
+        .replace(Regex("""^(?:per\s+)?(?:(?:il|la|lo)\s+|l')?"""), "")
         .trim(' ', ':', '-', ',')
 
     private val POLITE_PREFIXES = listOf(
