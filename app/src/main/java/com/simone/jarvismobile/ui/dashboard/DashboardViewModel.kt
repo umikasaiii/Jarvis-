@@ -34,6 +34,9 @@ class DashboardViewModel @Inject constructor(
     val loadedModelName: StateFlow<String?> = coordinator.loadedModelName
     val memoryStatus: StateFlow<MemoryIndex.Status> = memory.status
 
+    /** Last recoverable failure, so the orb can show it instead of idling. */
+    val lastError: StateFlow<String?> = coordinator.lastError
+
     val assistantName: StateFlow<String> = settings.assistantName
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsRepository.DEFAULT_NAME)
 
@@ -73,6 +76,7 @@ class DashboardViewModel @Inject constructor(
             coordinator.ensureModelReady()
         }
         viewModelScope.launch { coordinator.ensureMemoryReady() }
+        viewModelScope.launch { runCatching { coordinator.ensureKnowledgeReady() } }
         viewModelScope.launch { runCatching { agenda.reload() } }
     }
 

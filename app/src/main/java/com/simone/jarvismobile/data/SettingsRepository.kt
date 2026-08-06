@@ -35,6 +35,7 @@ class SettingsRepository @Inject constructor(
         val ADV_MODEL_PATH = stringPreferencesKey("llm_adv_model_path")
         val ADV_MODEL_NAME = stringPreferencesKey("llm_adv_model_name")
         val VAULT_URI = stringPreferencesKey("vault_tree_uri")
+        val KNOWLEDGE_URI = stringPreferencesKey("knowledge_tree_uri")
         val RESPONSE_NOTIFICATIONS = booleanPreferencesKey("response_notifications")
         val SHOW_RESPONSE_PREVIEW = booleanPreferencesKey("show_response_preview")
         val REMINDER_NOTIFICATIONS = booleanPreferencesKey("reminder_notifications")
@@ -45,6 +46,20 @@ class SettingsRepository @Inject constructor(
         val TTS_PAUSE_SCALE = floatPreferencesKey("tts_pause_scale")
         val TTS_EXPRESSIVENESS = floatPreferencesKey("tts_expressiveness")
         val SPEAK_BACKGROUND_RESPONSES = booleanPreferencesKey("speak_background_responses")
+    }
+
+    /**
+     * SAF tree URI of the offline reference library (wiki exports, manuals,
+     * guides). Deliberately separate from the vault: reference knowledge is
+     * evidence, personal notes are memory, and the two must not mix.
+     */
+    val knowledgeUri: Flow<String> =
+        context.settingsDataStore.data.map { it[Keys.KNOWLEDGE_URI] ?: "" }
+
+    suspend fun setKnowledgeUri(value: String) {
+        context.settingsDataStore.edit {
+            if (value.isBlank()) it.remove(Keys.KNOWLEDGE_URI) else it[Keys.KNOWLEDGE_URI] = value
+        }
     }
 
     /** Persisted SAF tree URI of the Obsidian vault, or empty if none chosen. */

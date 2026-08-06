@@ -4,6 +4,7 @@ import android.content.Context
 import com.simone.jarvismobile.core.tools.ToolRegistry
 import com.simone.jarvismobile.core.tools.builtin.CalculateTool
 import com.simone.jarvismobile.agenda.AgendaRepository
+import com.simone.jarvismobile.knowledge.KnowledgeRepository
 import com.simone.jarvismobile.memory.MemoryIndex
 import com.simone.jarvismobile.memory.VaultRepository
 import com.simone.jarvismobile.tools.AddReminderTool
@@ -12,6 +13,7 @@ import com.simone.jarvismobile.tools.BatteryTool
 import com.simone.jarvismobile.tools.FlashlightTool
 import com.simone.jarvismobile.tools.ListAgendaTool
 import com.simone.jarvismobile.tools.ListMemoriesTool
+import com.simone.jarvismobile.tools.SearchKnowledgeTool
 import com.simone.jarvismobile.tools.RememberTool
 import com.simone.jarvismobile.tools.TimeTool
 import com.simone.jarvismobile.tools.TimeUntilTool
@@ -63,6 +65,7 @@ object ToolsModule {
             CompleteAgendaTool(agenda),
             RememberTool(memory),
             ListMemoriesTool(memory),
+            SearchKnowledgeTool(knowledge),
             OpenAppTool(context),
             OpenSettingsTool(context),
             CalendarDraftTool(context),

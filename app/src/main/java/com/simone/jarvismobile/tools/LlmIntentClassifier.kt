@@ -152,6 +152,8 @@ class LlmIntentClassifier @Inject constructor(
                 }
             }
 
+            "search_knowledge" -> Match.Run(call("search_knowledge", "query" to utterance.trim()))
+
             "list_agenda" -> CommandMatcher.agendaCall(utterance)
 
             "complete_agenda" -> CommandMatcher.completeAgendaCall(utterance)
@@ -222,6 +224,9 @@ class LlmIntentClassifier @Inject constructor(
         "cosa devo fare oggi pomeriggio").
         Usa "complete_agenda" per segnare come conclusa un'attività già presente.
         Usa "time_until" per "quanto manca alle …" o "fra quanto".
+        Usa "search_knowledge" per domande di conoscenza a cui rispondono guide,
+        manuali o voci di enciclopedia importati offline: come si fa una cosa,
+        come funziona, cosa significa.
         Usa "list_memories" SOLO per elencare gli appunti liberi, non gli impegni.
         Usa "create_calendar_event" solo se l'utente chiede esplicitamente Google
         Calendar o il calendario del telefono. Il calendario predefinito è quello
@@ -259,7 +264,11 @@ class LlmIntentClassifier @Inject constructor(
         Richiesta: cosa devo fare questa settimana?
         Risposta: list_agenda|98
         Richiesta: cosa hai annotato?
-        Risposta: list_memories|95
+        Risposta: list_memories
+        Richiesta: come si cambia la gomma della moto?
+        Risposta: search_knowledge
+        Richiesta: cosa dice il manuale sulla catena?
+        Risposta: search_knowledge|95
         Richiesta: apri Spotify
         Risposta: open_app|99
         Richiesta: portami a Piazza Navona
@@ -322,7 +331,7 @@ class LlmIntentClassifier @Inject constructor(
         val KNOWN_INTENTS = setOf(
             "get_time", "battery_status", "set_timer", "set_alarm", "flashlight",
             "add_reminder", "list_agenda", "complete_agenda", "time_until", "remember",
-            "list_memories", "calculate", "open_app", "open_settings",
+            "list_memories", "search_knowledge", "calculate", "open_app", "open_settings",
             "create_calendar_event", "prepare_call", "compose_sms", "navigate",
             "play_media", "media_control", "list_notifications", "search_vault",
             "ragiona", "none",

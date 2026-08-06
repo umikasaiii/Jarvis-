@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.BatteryFull
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.FlashlightOn
 import androidx.compose.material.icons.filled.FolderOpen
@@ -73,6 +74,11 @@ private val HINTS = mapOf(
         Icons.Filled.CalendarMonth,
         "Completa attività",
         "«Segna comprare il latte come completato»",
+    ),
+    "search_knowledge" to Hint(
+        Icons.Filled.MenuBook,
+        "Cerca nelle guide",
+        "«Come si cambia la gomma della moto?»",
     ),
     "remember" to Hint(Icons.Filled.EditNote, "Appunto", "«Prendi nota: la moto è una CB500»"),
     "list_memories" to Hint(Icons.Filled.EditNote, "Appunti salvati", "«Cosa hai annotato?»"),

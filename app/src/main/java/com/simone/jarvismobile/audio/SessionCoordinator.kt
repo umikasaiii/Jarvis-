@@ -22,6 +22,8 @@ import com.simone.jarvismobile.llm.LlmGenerationTimeoutException
 import com.simone.jarvismobile.llm.LlmLoadState
 import com.simone.jarvismobile.llm.LlmRouter
 import com.simone.jarvismobile.llm.ModelSlot
+import com.simone.jarvismobile.knowledge.KnowledgeRepository
+import com.simone.jarvismobile.core.knowledge.Evidence
 import com.simone.jarvismobile.memory.MemoryIndex
 import com.simone.jarvismobile.memory.ConversationMemoryStore
 import com.simone.jarvismobile.tools.CommandMatcher
@@ -80,6 +82,7 @@ class SessionCoordinator @Inject constructor(
     private val intentClassifier: LlmIntentClassifier,
     private val router: LlmRouter,
     private val chatStore: ChatStore,
+    private val knowledge: KnowledgeRepository,
     private val conversationMemory: ConversationMemoryStore,
 ) {
 
@@ -646,11 +649,23 @@ class SessionCoordinator @Inject constructor(
         // with this turn instead of restarting the conversation.
         val fresh = notes.filterNot { it in injectedContext }
         injectedContext += fresh
+        // Search the offline library BEFORE generating: the model answers from
+        // passages it was given, not from what it half-remembers. When the
+        // library holds nothing relevant, nothing is injected and the system
+        // prompt's "say you don't know" rule applies unaided.
+        val evidence = runCatching { knowledgeEvidence(transcript) }.getOrNull()
+
         val message = buildString {
             if (conversationHint.isNotBlank()) {
                 append("[Risultati verificati dal sistema da usare nella risposta: ")
                 append(conversationHint.replace('\n', ' ').takeLast(COMPOUND_CONTEXT_CHARS))
                 append("]\n")
+            }
+            if (evidence != null) {
+                append("[Documentazione offline pertinente. Rispondi USANDO SOLO questo, ")
+                append("e cita la fonte fra parentesi. Se non basta, dillo.]\n")
+                append(evidence)
+                append('\n')
             }
             if (fresh.isNotEmpty()) {
                 append("(dai miei appunti: ")
@@ -954,6 +969,26 @@ class SessionCoordinator @Inject constructor(
         }
     }
 
+    /**
+     * Passages from the offline library that support [question], already
+     * formatted with their citation, or null when the library has nothing good
+     * enough. Returning null is a feature: it is what lets JARVIS say it does
+     * not know instead of filling the gap (docs/LOCAL_KNOWLEDGE.md).
+     */
+    private suspend fun knowledgeEvidence(question: String): String? {
+        if (!knowledge.isConfigured()) return null
+        knowledge.ensureBuilt()
+        val found = knowledge.find(question, KNOWLEDGE_TOP_K)
+        if (found !is Evidence.Grounded) return null
+        _diagnostic.value = "documentazione: ${found.passages.size} passaggi"
+        return found.passages.joinToString("\n") { p ->
+            "- [" + p.chunk.citation + "] " + p.chunk.text.replace('\n', ' ').trim().take(KNOWLEDGE_CHARS)
+        }
+    }
+
+    /** Indexes the offline library in the background if one is configured. */
+    suspend fun ensureKnowledgeReady() = knowledge.ensureBuilt()
+
     /** Builds the vault memory index in the background if a vault is configured. */
     suspend fun ensureMemoryReady() = memory.ensureBuilt()
 
@@ -1114,6 +1149,12 @@ class SessionCoordinator @Inject constructor(
 
         /** Safety cap on consecutive hands-free exchanges before requiring a press. */
         const val MAX_FOLLOW_UPS = 8
+
+        /** How many library passages may ground one answer. */
+        const val KNOWLEDGE_TOP_K = 3
+
+        /** Cap per passage, so evidence cannot crowd out the conversation. */
+        const val KNOWLEDGE_CHARS = 700
 
         /** How many vault chunks to inject as grounding context per question. */
         const val MEMORY_TOP_K = 4

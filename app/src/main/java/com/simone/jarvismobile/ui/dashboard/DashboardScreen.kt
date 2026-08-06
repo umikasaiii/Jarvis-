@@ -101,6 +101,9 @@ import com.simone.jarvismobile.core.agenda.AgendaEntry
 import com.simone.jarvismobile.core.agenda.ReminderAlert
 import com.simone.jarvismobile.core.agenda.ReminderAlertType
 import com.simone.jarvismobile.core.state.ConversationState
+import com.simone.jarvismobile.ui.components.HudOverlay
+import com.simone.jarvismobile.ui.components.JarvisOrb
+import com.simone.jarvismobile.ui.components.OrbState
 import com.simone.jarvismobile.llm.LlmLoadState
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -195,6 +198,7 @@ fun DashboardScreen(
     val unread by viewModel.unread.collectAsStateWithLifecycle()
     val upcoming by viewModel.upcoming.collectAsStateWithLifecycle()
     val today by viewModel.today.collectAsStateWithLifecycle()
+    val lastError by viewModel.lastError.collectAsStateWithLifecycle()
     val battery = rememberBatteryStatus()
     val context = LocalContext.current
     var editingAlerts by remember { mutableStateOf<AgendaEntry?>(null) }
@@ -215,6 +219,9 @@ fun DashboardScreen(
             modifier = Modifier.matchParentSize(),
             contentScale = ContentScale.Crop,
         )
+
+        // Fixed frame: above the background, below the content, never scrolls.
+        HudOverlay(Modifier.matchParentSize())
 
         Column(
             modifier = Modifier
@@ -264,12 +271,8 @@ fun DashboardScreen(
                     ProgressBar(fraction = battery.percent / 100f, color = if (battery.charging) Green else Cyan)
                 }
 
-                ListenOrb(
-                    accent = accent,
-                    title = orbTitle(state),
-                    subtitle = orbSubtitle(state),
-                    active = !state.isRestingLike(),
-                    mode = orbModeFor(state),
+                JarvisOrb(
+                    state = orbStateFor(state, lastError != null),
                     onClick = {
                         when {
                             state == ConversationState.Speaking -> viewModel.onInterruptAndTalk()
@@ -278,6 +281,7 @@ fun DashboardScreen(
                         }
                     },
                     modifier = Modifier.weight(1.35f),
+                    size = 150.dp,
                 )
 
                 MiniCard(Modifier.weight(1f)) {
@@ -1004,6 +1008,24 @@ private fun ListenOrb(
 
 /** Which animation the orb should play. */
 private enum class OrbMode { IDLE, LISTENING, THINKING, SPEAKING }
+
+/**
+ * Maps the real conversation state onto the orb's visual state. The orb is the
+ * status indicator, not decoration, so an error must look like an error rather
+ * than like idling.
+ */
+private fun orbStateFor(state: ConversationState, hasError: Boolean): OrbState = when {
+    hasError -> OrbState.ERROR
+    state == ConversationState.Listening || state == ConversationState.FollowUpWindow -> OrbState.LISTENING
+    state == ConversationState.Speaking -> OrbState.SPEAKING
+    state in setOf(
+        ConversationState.PreparingAudio, ConversationState.FinalizingSpeech,
+        ConversationState.Transcribing, ConversationState.RetrievingMemory,
+        ConversationState.Routing, ConversationState.ThinkingLocal,
+        ConversationState.ThinkingRemote, ConversationState.ExecutingTool,
+    ) -> OrbState.THINKING
+    else -> OrbState.IDLE
+}
 
 private fun orbModeFor(state: ConversationState): OrbMode = when (state) {
     ConversationState.Listening, ConversationState.FollowUpWindow -> OrbMode.LISTENING
