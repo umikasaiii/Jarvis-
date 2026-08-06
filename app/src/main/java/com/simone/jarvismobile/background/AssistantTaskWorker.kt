@@ -77,13 +77,6 @@ class AssistantTaskWorker(
         }
     }
 
-    override fun onStopped() {
-        // WorkManager cancellation alone cannot interrupt LiteRT-LM's blocking
-        // JNI call. Forward the stop into the native conversation immediately.
-        dependencies.coordinator().cancelTextGeneration()
-        super.onStopped()
-    }
-
     private suspend fun update(
         dao: AssistantTaskDao,
         id: String,

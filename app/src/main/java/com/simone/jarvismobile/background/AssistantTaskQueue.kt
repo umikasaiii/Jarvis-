@@ -5,6 +5,7 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.workDataOf
+import com.simone.jarvismobile.audio.SessionCoordinator
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import java.util.UUID
@@ -16,6 +17,7 @@ import javax.inject.Singleton
 class AssistantTaskQueue @Inject constructor(
     @ApplicationContext context: Context,
     private val dao: AssistantTaskDao,
+    private val coordinator: SessionCoordinator,
 ) {
     private val workManager = WorkManager.getInstance(context)
 
@@ -36,12 +38,14 @@ class AssistantTaskQueue @Inject constructor(
     }
 
     suspend fun cancel(id: String) {
+        coordinator.cancelTextGeneration()
         workManager.cancelUniqueWork(workName(id))
         dao.update(id, AssistantTaskStatus.CANCELLED.name, progress = 0)
     }
 
     /** Stops every unfinished response. The chat UI currently permits one at a time. */
     suspend fun cancelActive() {
+        coordinator.cancelTextGeneration()
         dao.activeIds().forEach { id ->
             workManager.cancelUniqueWork(workName(id))
             dao.update(id, AssistantTaskStatus.CANCELLED.name, progress = 0)
