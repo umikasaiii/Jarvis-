@@ -271,7 +271,11 @@ fun DashboardScreen(
                     active = !state.isRestingLike(),
                     mode = orbModeFor(state),
                     onClick = {
-                        if (state.isRestingLike()) viewModel.onTalkPressed() else viewModel.onCancel()
+                        when {
+                            state == ConversationState.Speaking -> viewModel.onInterruptAndTalk()
+                            state.isRestingLike() -> viewModel.onTalkPressed()
+                            else -> viewModel.onCancel()
+                        }
                     },
                     modifier = Modifier.weight(1.35f),
                 )
@@ -384,19 +388,28 @@ fun DashboardScreen(
                 }
             }
 
-            // --- Calendario settimana --------------------------------------
-            GlassCard(badge = { DemoBadge("EVENTI") }) {
-                CardHeader(Icons.Filled.CalendarMonth, "CALENDARIO")
+            // --- Calendario personale: next seven days from Agenda.md ------
+            GlassCard {
+                CardHeader(Icons.Filled.CalendarMonth, "CALENDARIO PERSONALE", reserveEnd = false)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    val today = LocalDate.now()
-                    val sample = mapOf(1 to ("Riunione" to Cyan), 3 to ("Palestra" to Violet), 4 to ("Consegna" to Green))
+                    val weekStart = LocalDate.now()
                     for (i in 0 until 7) {
-                        val ev = sample[i]
-                        DayCell(today.plusDays(i.toLong()), isToday = i == 0, event = ev?.first, dot = ev?.second, modifier = Modifier.weight(1f))
+                        val date = weekStart.plusDays(i.toLong())
+                        DayCell(
+                            date = date,
+                            isToday = i == 0,
+                            entries = upcoming.filter { it.date == date },
+                            modifier = Modifier.weight(1f),
+                        )
                     }
+                }
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    CalendarLegend(Cyan, "Appuntamenti")
+                    CalendarLegend(Violet, "Attività")
                 }
             }
 
@@ -812,7 +825,12 @@ private fun AutoChip(title: String, subtitle: String, modifier: Modifier = Modif
 }
 
 @Composable
-private fun DayCell(date: LocalDate, isToday: Boolean, event: String?, dot: Color?, modifier: Modifier = Modifier) {
+private fun DayCell(
+    date: LocalDate,
+    isToday: Boolean,
+    entries: List<AgendaEntry>,
+    modifier: Modifier = Modifier,
+) {
     val dow = date.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.ITALIAN).uppercase().take(3)
     Column(
         modifier = modifier
@@ -825,11 +843,33 @@ private fun DayCell(date: LocalDate, isToday: Boolean, event: String?, dot: Colo
     ) {
         Text(dow, color = Muted, fontSize = 9.sp)
         Text("${date.dayOfMonth}", color = if (isToday) Cyan else Ink, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-        if (event != null && dot != null) {
-            Box(Modifier.size(5.dp).clip(RoundedCornerShape(3.dp)).background(dot))
+        if (entries.isNotEmpty()) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (entries.any { it.time != null }) {
+                    Box(Modifier.size(5.dp).clip(RoundedCornerShape(3.dp)).background(Cyan))
+                }
+                if (entries.any { it.time == null }) {
+                    Box(Modifier.size(5.dp).clip(RoundedCornerShape(3.dp)).background(Violet))
+                }
+                if (entries.size > 1) {
+                    Text(entries.size.toString(), color = Muted, fontSize = 8.sp)
+                }
+            }
         } else {
             Text(if (isToday) "Oggi" else "·", color = Muted, fontSize = 8.sp)
         }
+    }
+}
+
+@Composable
+private fun CalendarLegend(color: Color, label: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(6.dp).clip(RoundedCornerShape(3.dp)).background(color))
+        Spacer(Modifier.width(4.dp))
+        Text(label, color = Muted, fontSize = 9.sp)
     }
 }
 

@@ -13,14 +13,17 @@
 | Redaction | `LogRedactorTest` | bearer/JWT/email/IP masking, content placeholder, benign text untouched |
 | Markdown | `MarkdownParserTest` | frontmatter/title/tags/links, YAML list tags, heading/filename fallback, alias links, no-frontmatter |
 | Retrieval | `RetrievalRankerTest` | relevance ordering, title/tag over body, irrelevant→empty, empty query, limit, recency tie-break |
+| Memory V2 | `MemoryRecordTest` | Markdown round trip, legacy migration/stable IDs, direct Obsidian edits, sensitivity/credential classification, bounded secret-free short recap |
 | Understanding V2/V3 | `UtteranceAnalysisTest` | explicit questions, comma/conjunction decomposition, comparison guard, context carry, complexity fallback, fast classifier gate, role-prefix cleanup |
 | Agenda alerts | `AgendaEntryTest`, `ReminderScheduleTest` | legacy parsing, Markdown round trip, multiple alerts, morning/day offsets, untimed guard |
+| Personal calendar routing | `CommandMatcherTest` | local-by-default event creation, explicit Google export, task completion, no contacts capability |
 
 ## App JVM tests
 
 `LlmIntentClassifierTest` verifies high-confidence tool execution, low-confidence
-blocking/escalation and reasoning routing. `CommandMatcherTest` keeps the real
-battery follow-up and statement-vs-request regressions covered.
+blocking/escalation, reasoning routing and user-sourced call arguments.
+`CommandMatcherTest` covers battery context plus app/settings/calendar/call/SMS,
+notification/vault search and false-positive guards for ordinary conversation.
 
 ## Integration tests (fake engines)
 
@@ -65,3 +68,19 @@ Additional acceptance checks for this release:
    morning-of + one-day-before and confirm both survive an app restart.
 10. Change the morning setting, edit/remove an agenda entry, and verify stale
    notifications are rescheduled/cancelled.
+11. Add one temporary, one permanent and one sensitive memory. Verify temporary
+    data disappears after **Nuova**, vault records can be edited/deleted, a direct
+    Obsidian edit is visible after returning/syncing, and credentials are refused.
+12. Add one timed appointment and one untimed task to JARVIS's calendar; verify
+    both appear in the real seven-day dashboard, then complete the task after
+    exact confirmation. Explicitly export one event to Google/Android Calendar
+    and verify only an editable draft opens. Calls and SMS must require a number;
+    contacts are unavailable. Revoke Notification Access and verify notification reading
+    fails closed; grant it and verify the confirmed read is not added to memory.
+13. Select two installed offline TTS voices, change rate/pitch and run the voice
+    diagnostic. While JARVIS speaks, press the mic and verify speech stops and
+    listening starts. Assign the Android Assistant role and repeat from the
+    MagicOS assistant gesture/button.
+14. With spoken background answers off, verify a queued result stays silent.
+    Turn it on, queue a long answer with the screen off, then cancel during TTS;
+    speech must stop and the task must not produce a late duplicate.

@@ -9,7 +9,9 @@ hidden recording. No always-on background microphone in the default config.
 | Data | Where it lives | Leaves device? |
 |------|----------------|----------------|
 | Microphone audio | RAM during a session; discarded after | Never (by default). |
-| Transcripts | RAM / conversation store (opt-in retention) | Never by default. |
+| Conversation transcript | App-private local chat store | Never. Cleared by “Nuova conversazione”. |
+| Structured short memory | App-private `conversation_memory_v2.json` | Never. Cleared with the conversation. |
+| Personal calendar/tasks | `JARVIS/Agenda.md` in the chosen vault, or app-private fallback | Never, unless the user explicitly exports one event to another calendar app. |
 | LLM prompts/outputs | RAM; local model | Only to a PC endpoint under an opt-in profile, fragments only. |
 | Obsidian notes | User's vault (SAF) | Only fragments, only under opt-in remote profile. |
 | Secrets (tokens) | Android Keystore | Never. |
@@ -32,14 +34,15 @@ target, reason, timeout, and exactly what would be shared, shown before sending.
 
 ## Memory-write classification (§14)
 
-- **Temporary** — e.g. "ho parcheggiato al B2". Short-lived.
-- **Permanent** — e.g. "preferisco 96 GB di RAM". Requires confirmation.
+- **Temporary** — e.g. "ho parcheggiato al B2". App-private and conversation-scoped.
+- **Permanent** — e.g. "preferisco 96 GB di RAM". Exact confirmation, then a stable Markdown record.
 - **Sensitive** — medical data, documents. Requires explicit confirmation; passwords are
   never written to the vault.
 
-Rules: no permanent memory without confirmation; always show the target file and
-the exact proposed change; keep a local audit log; allow undo; prefer append or a
-new note in `99-Inbox/` over destructive edits.
+Rules: no chat/voice memory write without confirmation; the prompt shows the
+exact text and target; passwords, PINs, OTPs, tokens/API keys and seed phrases
+are rejected. The Memory screen supports edit/delete and Obsidian remains the
+source of truth. A separate action audit/export is still planned for hardening.
 
 ## Telemetry (§23)
 
@@ -53,3 +56,5 @@ default: audio, transcripts, full prompts, notes, tokens, private addresses.
 - Change the assistant name and system prompt in-app.
 - Disable all local telemetry.
 - Revoke vault access and any PC/HA token at any time.
+- Choose an installed offline voice, or disable spoken background answers
+  (disabled by default so private content is not read aloud unexpectedly).

@@ -80,7 +80,7 @@ private val Surface = Color(0xFF102030)
  */
 @Composable
 fun HomeScreen(
-    autoStart: Boolean = false,
+    autoStartRequest: Int = 0,
     onOpenDiagnostics: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
     onOpenModels: () -> Unit = {},
@@ -116,15 +116,17 @@ fun HomeScreen(
     }.toTypedArray()
 
     fun onMicTap() {
-        if (state.isRestingLike()) {
-            if (micGranted) viewModel.onTalkPressed() else permissionLauncher.launch(neededPermissions())
-        } else {
-            viewModel.onCancel()
+        when {
+            state == ConversationState.Speaking -> viewModel.onInterruptAndTalk()
+            state.isRestingLike() -> {
+                if (micGranted) viewModel.onTalkPressed() else permissionLauncher.launch(neededPermissions())
+            }
+            else -> viewModel.onCancel()
         }
     }
 
-    if (autoStart) {
-        LaunchedEffect(Unit) {
+    if (autoStartRequest > 0) {
+        LaunchedEffect(autoStartRequest) {
             if (micGranted) viewModel.onTalkPressed() else permissionLauncher.launch(neededPermissions())
         }
     }
@@ -234,7 +236,10 @@ fun HomeScreen(
                 ) {
                     Icon(
                         if (talking) Icons.Filled.Stop else Icons.Filled.Mic,
-                        contentDescription = if (talking) "Ferma" else "Parla",
+                        contentDescription = when (state) {
+                            ConversationState.Speaking -> "Interrompi e parla"
+                            else -> if (talking) "Ferma" else "Parla"
+                        },
                         tint = Color(0xFF07131A),
                     )
                 }

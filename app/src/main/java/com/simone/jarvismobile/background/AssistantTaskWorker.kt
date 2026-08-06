@@ -60,6 +60,26 @@ class AssistantTaskWorker(
             val answer = dependencies.coordinator().processQueuedText(id, task.input)
                 ?: error("empty_answer")
 
+            if (dependencies.settings().speakBackgroundResponses.first()) {
+                setForeground(
+                    processingForeground(
+                        id,
+                        95,
+                        "Riproduzione della risposta",
+                        includeMediaPlayback = true,
+                    ),
+                )
+                // A missing/offline TTS voice must not turn a completed answer
+                // into a failed task; the text and notification remain valid.
+                try {
+                    dependencies.coordinator().speakBackgroundResponse(answer)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    // Text answer is still complete; notification remains valid.
+                }
+            }
+
             dao.update(id, AssistantTaskStatus.COMPLETED.name, 100, output = answer)
             showReadyNotification(id, answer)
             Result.success()
@@ -84,7 +104,12 @@ class AssistantTaskWorker(
         progress: Int,
     ) = dao.update(id, status.name, progress)
 
-    private fun processingForeground(id: String, progress: Int, detail: String): ForegroundInfo {
+    private fun processingForeground(
+        id: String,
+        progress: Int,
+        detail: String,
+        includeMediaPlayback: Boolean = false,
+    ): ForegroundInfo {
         val cancel = PendingIntent.getBroadcast(
             applicationContext,
             id.hashCode(),
@@ -102,10 +127,13 @@ class AssistantTaskWorker(
             .addAction(0, "Annulla", cancel)
             .build()
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val type = ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC or (
+                if (includeMediaPlayback) ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK else 0
+            )
             ForegroundInfo(
                 PROCESSING_NOTIFICATION_BASE + id.hashCode().and(0x0fff),
                 notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
+                type,
             )
         } else {
             ForegroundInfo(PROCESSING_NOTIFICATION_BASE + id.hashCode().and(0x0fff), notification)

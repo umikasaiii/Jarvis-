@@ -3,6 +3,7 @@ package com.simone.jarvismobile.data
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -37,6 +38,10 @@ class SettingsRepository @Inject constructor(
         val SHOW_RESPONSE_PREVIEW = booleanPreferencesKey("show_response_preview")
         val REMINDER_NOTIFICATIONS = booleanPreferencesKey("reminder_notifications")
         val REMINDER_MORNING_HOUR = intPreferencesKey("reminder_morning_hour")
+        val TTS_VOICE_NAME = stringPreferencesKey("tts_voice_name")
+        val TTS_SPEECH_RATE = floatPreferencesKey("tts_speech_rate")
+        val TTS_PITCH = floatPreferencesKey("tts_pitch")
+        val SPEAK_BACKGROUND_RESPONSES = booleanPreferencesKey("speak_background_responses")
     }
 
     /** Persisted SAF tree URI of the Obsidian vault, or empty if none chosen. */
@@ -135,6 +140,24 @@ class SettingsRepository @Inject constructor(
     val reminderMorningHour: Flow<Int> =
         context.settingsDataStore.data.map { (it[Keys.REMINDER_MORNING_HOUR] ?: 8).coerceIn(0, 23) }
 
+    /** Empty means "best installed offline voice". */
+    val ttsVoiceName: Flow<String> =
+        context.settingsDataStore.data.map { it[Keys.TTS_VOICE_NAME] ?: "" }
+
+    val ttsSpeechRate: Flow<Float> =
+        context.settingsDataStore.data.map {
+            (it[Keys.TTS_SPEECH_RATE] ?: DEFAULT_TTS_RATE).coerceIn(MIN_TTS_RATE, MAX_TTS_RATE)
+        }
+
+    val ttsPitch: Flow<Float> =
+        context.settingsDataStore.data.map {
+            (it[Keys.TTS_PITCH] ?: DEFAULT_TTS_PITCH).coerceIn(MIN_TTS_PITCH, MAX_TTS_PITCH)
+        }
+
+    /** Optional and off by default: a finished background task may speak aloud. */
+    val speakBackgroundResponses: Flow<Boolean> =
+        context.settingsDataStore.data.map { it[Keys.SPEAK_BACKGROUND_RESPONSES] ?: false }
+
     suspend fun setAssistantName(value: String) {
         context.settingsDataStore.edit { it[Keys.NAME] = value.trim().ifBlank { DEFAULT_NAME } }
     }
@@ -167,8 +190,38 @@ class SettingsRepository @Inject constructor(
         context.settingsDataStore.edit { it[Keys.REMINDER_MORNING_HOUR] = value.coerceIn(0, 23) }
     }
 
+    suspend fun setTtsVoiceName(value: String) {
+        context.settingsDataStore.edit { prefs ->
+            val name = value.trim()
+            if (name.isBlank()) prefs.remove(Keys.TTS_VOICE_NAME)
+            else prefs[Keys.TTS_VOICE_NAME] = name
+        }
+    }
+
+    suspend fun setTtsSpeechRate(value: Float) {
+        context.settingsDataStore.edit {
+            it[Keys.TTS_SPEECH_RATE] = value.coerceIn(MIN_TTS_RATE, MAX_TTS_RATE)
+        }
+    }
+
+    suspend fun setTtsPitch(value: Float) {
+        context.settingsDataStore.edit {
+            it[Keys.TTS_PITCH] = value.coerceIn(MIN_TTS_PITCH, MAX_TTS_PITCH)
+        }
+    }
+
+    suspend fun setSpeakBackgroundResponses(value: Boolean) {
+        context.settingsDataStore.edit { it[Keys.SPEAK_BACKGROUND_RESPONSES] = value }
+    }
+
     companion object {
         const val DEFAULT_NAME = "JARVIS"
         const val DEFAULT_RECORD_SECONDS = 3
+        const val DEFAULT_TTS_RATE = 0.95f
+        const val DEFAULT_TTS_PITCH = 0.98f
+        const val MIN_TTS_RATE = 0.6f
+        const val MAX_TTS_RATE = 1.4f
+        const val MIN_TTS_PITCH = 0.7f
+        const val MAX_TTS_PITCH = 1.3f
     }
 }

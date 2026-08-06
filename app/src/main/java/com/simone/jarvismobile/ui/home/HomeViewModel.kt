@@ -77,6 +77,10 @@ class HomeViewModel @Inject constructor(
         coordinator.cancel()
     }
 
+    fun onInterruptAndTalk() {
+        coordinator.interruptAndListen()
+    }
+
     /** Stops the active typed response in WorkManager and inside LiteRT-LM. */
     fun onStopResponse() {
         coordinator.cancelTextGeneration()

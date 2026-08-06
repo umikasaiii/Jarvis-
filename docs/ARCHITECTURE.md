@@ -85,8 +85,8 @@ Guarantees (all covered by tests):
 - Illegal `(state,event)` pairs are no-ops (no crashes, no illegal transitions).
 - After any error the machine returns to a usable state.
 
-Phase 1 uses **half-duplex**: listen, then speak. Full barge-in (interrupting TTS
-by speaking) is enabled only after capture/STT/TTS are reliable.
+The loop is half-duplex, but the visible mic/orb supports barge-in: pressing it
+while TTS is speaking stops synthesis and immediately opens the recognizer.
 
 ## Activation (§7)
 
@@ -94,8 +94,10 @@ by speaking) is enabled only after capture/STT/TTS are reliable.
 - **7.2 Quick Settings tile** — `JarvisTileService` opens an explicit session; never records silently.
 - **7.3 Foreground notification** — `ListeningService` shows Parla / Interrompi / Chiudi sessione.
 - **7.4 Deep link** — `jarvis://listen` starts an explicit session (usable from launcher/Tasker).
-- **7.5 Wake word** — **not** in the first release; behind a default-off experimental flag with
-  consent + notification + indicator + kill switch before any always-on mic.
+- **7.5 Native Assistant role** — an `ACTION_ASSIST` Activity lets the configured
+  MagicOS/Android gesture or button open a visible one-shot listening session.
+- **7.6 Wake word** — deliberately not implemented. Any future detector requires
+  explicit consent, persistent notification/indicator and a kill switch.
 
 Long-press-volume via Accessibility is intentionally **not** implemented; the
 device guide explains binding it externally (Tasker → `jarvis://listen`).
@@ -121,14 +123,13 @@ memory sharing defaults to *selected fragments only* and is capped by the user's
 
 ## Memory (§14)
 
-The Obsidian vault (via SAF, persisted URI) is the readable source of truth. Room
-is an index/cache (documents, chunks, hashes, tags, recency, conversations,
-memories, tool calls, queued actions, benchmarks, model configs). Retrieval starts
-as transparent FTS-style ranking (`RetrievalRanker`: title + tags + body TF +
-recency + folder) and can later add an optional local embedding model whose
-vectors are a rebuildable cache. Writes are classified Temporary/Permanent/Sensitive
-and require confirmation (Permanent/Sensitive), prefer append/Inbox over destructive
-edits, keep an audit log, and support undo.
+Memory V2 has two local layers. `ConversationMemoryStore` keeps a bounded,
+deterministic recap in app-private storage and clears it with a new conversation.
+Permanent/sensitive records live in `JARVIS/Memoria.md`: visible Markdown bullets
+plus adjacent stable-ID metadata. Direct Obsidian edits preserve IDs and rebuild
+topics/people/dates. `MemoryIndex` is an in-memory, rebuildable lexical cache;
+only bounded relevant records enter a prompt. Every chat/voice write is
+confirmation-gated, sensitive records are marked, and credentials are rejected.
 
 Downloaded reference material is a separate knowledge layer, not personal
 memory. Wikipedia ZIM files and manuals are searched locally and contribute only
@@ -143,6 +144,16 @@ timeout, and returns a structured success/failure. The model can only ever reach
 registered tools — never arbitrary classes, Intents, shells, files, or URLs. The
 model's `requires_confirmation` hint can only *raise* the requirement, never lower
 the policy-mandated one.
+
+Android implementations use only fixed intents and scoped providers: app/settings
+allowlists, explicit external-calendar/SMS/call drafts, navigation, media,
+confirmed notification reads and selected-vault search. Calls and messages are
+never sent directly, and the address book is not a capability. See ADR 0008.
+
+The default personal calendar is independent of Google: structured timed events
+and untimed dated tasks live in `JARVIS/Agenda.md`, retain completion/alert state,
+and drive the real seven-day dashboard. An external calendar is opened only for
+an explicit export request. See ADR 0010.
 
 ## Understanding V2
 
@@ -162,6 +173,8 @@ a visible foreground notification, restores the local model/memory after process
 death, and writes task-tagged chat lines idempotently. Completion creates a
 private notification that deep-links to the conversation. The UI can cancel or
 retry jobs. This path does not capture audio and grants no new model privileges.
+If the user explicitly enables spoken background answers, the same visible worker
+temporarily declares media playback and uses the selected offline TTS voice.
 
 Agenda notifications use a separate reconciliation layer. Stable entry IDs and
 alert rules live in `Agenda.md`; WorkManager jobs are derived, replaceable state.

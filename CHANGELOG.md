@@ -1,5 +1,20 @@
 # Changelog
 
+## Memory V2, controlled Android tools and definitive voice
+
+- Added a bounded structured conversation recap and stable editable
+  Temporary/Permanent/Sensitive memory records in Obsidian, with credential
+  rejection, CRUD and resynchronization after direct vault edits.
+- Added fixed Android tools for supported apps/settings, calendar/call/SMS
+  drafts, navigation, media, explicitly confirmed active notifications and
+  selected-vault search. No direct calls/messages, arbitrary intents or broad
+  storage/package permissions.
+- Promoted `Agenda.md` to JARVIS's personal offline calendar: timed events and
+  untimed tasks, real seven-day dashboard, confirmed task completion and
+  explicit-only export to Google/Android Calendar. Address-book access removed.
+- Added installed offline voice selection, speech rate/pitch, visible barge-in,
+  native Android Assistant-role activation and opt-in spoken background replies.
+
 ## Understanding V3, faster turns and real stop
 
 - Ordinary and multi-question chat now uses one model answer instead of one classification plus one answer per clause.

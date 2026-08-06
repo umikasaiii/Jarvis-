@@ -16,7 +16,8 @@
 | Over-broad file access | No `MANAGE_EXTERNAL_STORAGE`/`QUERY_ALL_PACKAGES`. Vault access is a single SAF tree URI the user grants; nothing outside it is read. |
 | Unauthorized network egress | Offline path never touches the network. Remote calls happen only under an opt-in `PrivacyProfile`; router records exactly what would be shared before sending. |
 | TLS interception | No trust-all TLS, no certificate bypass. User may install a chosen CA if needed (e.g. self-hosted HA); we never disable verification. |
-| Sensitive action without intent | Policies `HOME_SECURITY`/`DESTRUCTIVE` require confirmation **and** biometrics; security devices are never queued for delayed execution. |
+| Sensitive action without intent | `CONFIRMING_WRITE` and higher policies require confirmation. `HOME_SECURITY`/`DESTRUCTIVE` are blocked until the biometric UI exists. Calls/SMS/calendar are drafts in system apps and cannot be sent/saved silently. |
+| Notification exposure | Android Notification Access must be granted in system settings; each read is explicitly confirmed, bounded, never persisted and hidden from logs. |
 | Shoulder-surfing / lost device | Optional biometric app lock, session timeout, optional screenshot block on sensitive screens. |
 | Tampered models | SHA-256 verification on import; licenses shown before download; models never auto-downloaded. |
 
@@ -39,11 +40,14 @@ Legend: [x] designed/partially implemented, [ ] planned. See `CLAUDE.md` phase s
 |-----------|-----|-------|
 | `RECORD_AUDIO` | Voice capture | Only inside a user-started, FGS-backed session. |
 | `FOREGROUND_SERVICE` + `_MICROPHONE` | Visible mic use | Android 14+ typed FGS. |
-| `POST_NOTIFICATIONS` | Session notification | Android 13+. |
+| `FOREGROUND_SERVICE_DATA_SYNC` | Persistent local LLM work | WorkManager processing notification. |
+| `FOREGROUND_SERVICE_MEDIA_PLAYBACK` | Opt-in spoken background answer | Declared only while the visible worker speaks. |
+| `POST_NOTIFICATIONS` | Session, response and agenda notifications | Android 13+. Private preview is off by default. |
 | `BLUETOOTH_CONNECT` | Route to AirPods, read device name | No location, no scanning. |
 | `INTERNET`, `ACCESS_NETWORK_STATE` | Opt-in PC/HA only | Unused on the offline path. |
 
 Not requested: `MANAGE_EXTERNAL_STORAGE`, `QUERY_ALL_PACKAGES`,
+`CALL_PHONE`, `SEND_SMS`, `READ_CONTACTS`, `READ_CALENDAR`,
 `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`, any Accessibility service. MagicOS
 background-kill guidance lives in `docs/DEVICE_TEST_HONOR_200.md` instead of a
 blanket battery-optimization exemption.

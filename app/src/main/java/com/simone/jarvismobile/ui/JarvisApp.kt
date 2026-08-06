@@ -66,9 +66,9 @@ private enum class Overlay { CHAT, MODELS, MEMORY, DIAGNOSTICS }
  */
 @Composable
 fun JarvisApp(
-    autoStartListening: Boolean = false,
     initiallyOpenChat: Boolean = false,
     openChatRequest: Int = 0,
+    startListeningRequest: Int = 0,
 ) {
     var tab by remember { mutableStateOf(Tab.HOME) }
     var overlay by remember { mutableStateOf(if (initiallyOpenChat) Overlay.CHAT else null) }
@@ -166,7 +166,7 @@ fun JarvisApp(
                             .background(Color(0xFF0A1826)),
                     ) {
                         HomeScreen(
-                            autoStart = autoStartListening,
+                            autoStartRequest = startListeningRequest,
                             onOpenDiagnostics = { overlay = Overlay.DIAGNOSTICS },
                             onOpenSettings = { overlay = null; tab = Tab.IMPOSTAZIONI },
                             onOpenModels = { overlay = Overlay.MODELS },

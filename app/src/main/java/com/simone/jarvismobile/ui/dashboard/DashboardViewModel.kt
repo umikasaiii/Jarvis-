@@ -85,4 +85,5 @@ class DashboardViewModel @Inject constructor(
     fun hasRecordPermission(): Boolean = coordinator.hasRecordPermission()
     fun onTalkPressed() { viewModelScope.launch { coordinator.runSession() } }
     fun onCancel() = coordinator.cancel()
+    fun onInterruptAndTalk() = coordinator.interruptAndListen()
 }
