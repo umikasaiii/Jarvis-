@@ -1,10 +1,14 @@
 package com.simone.jarvismobile.reminders
 
+import android.Manifest
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.simone.jarvismobile.R
@@ -18,6 +22,15 @@ class ReminderWorker(
     override suspend fun doWork(): Result {
         val entryId = inputData.getString(KEY_ENTRY_ID) ?: return Result.failure()
         val title = inputData.getString(KEY_TITLE)?.takeIf { it.isNotBlank() } ?: return Result.failure()
+        if (
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(
+                applicationContext,
+                Manifest.permission.POST_NOTIFICATIONS,
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            return Result.success()
+        }
         val date = inputData.getString(KEY_DATE).orEmpty()
         val time = inputData.getString(KEY_TIME).orEmpty()
         val whenText = listOf(date, time).filter(String::isNotBlank).joinToString(" · ")
@@ -40,9 +53,11 @@ class ReminderWorker(
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .build()
-        runCatching {
+        try {
             NotificationManagerCompat.from(applicationContext)
                 .notify(NOTIFICATION_BASE + entryId.hashCode().and(0x0fff), notification)
+        } catch (_: SecurityException) {
+            // The permission can be revoked between the check and notify().
         }
         return Result.success()
     }

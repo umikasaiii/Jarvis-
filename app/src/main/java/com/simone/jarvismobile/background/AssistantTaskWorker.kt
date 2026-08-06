@@ -1,13 +1,16 @@
 package com.simone.jarvismobile.background
 
+import android.Manifest
 import android.app.Notification
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
@@ -106,6 +109,15 @@ class AssistantTaskWorker(
 
     private suspend fun showReadyNotification(taskId: String, answer: String) {
         if (!dependencies.settings().responseNotifications.first()) return
+        if (
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(
+                applicationContext,
+                Manifest.permission.POST_NOTIFICATIONS,
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            return
+        }
         val showPreview = dependencies.settings().showResponsePreview.first()
         val openChat = PendingIntent.getActivity(
             applicationContext,
@@ -128,9 +140,11 @@ class AssistantTaskWorker(
             .setVisibility(if (showPreview) NotificationCompat.VISIBILITY_PRIVATE else NotificationCompat.VISIBILITY_SECRET)
         if (showPreview) builder.setStyle(NotificationCompat.BigTextStyle().bigText(answer.take(700)))
         val notification: Notification = builder.build()
-        runCatching {
+        try {
             NotificationManagerCompat.from(applicationContext)
                 .notify(RESPONSE_NOTIFICATION_BASE + taskId.hashCode().and(0x0fff), notification)
+        } catch (_: SecurityException) {
+            // The permission can be revoked between the check and notify().
         }
     }
 
