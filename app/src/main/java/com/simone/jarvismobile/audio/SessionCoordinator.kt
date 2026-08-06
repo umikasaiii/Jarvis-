@@ -460,6 +460,12 @@ class SessionCoordinator @Inject constructor(
 
         val reply = answer.trim()
         return when (pending.tool) {
+            // "Quando?" → parse the day out of the answer into a real date field.
+            "add_reminder" -> {
+                val note = pending.args["text"].orEmpty()
+                (CommandMatcher.reminderFromAnswer(note, reply) as? Match.Run)?.call
+            }
+
             // A bare number here can only be a duration, so accept it as minutes.
             "set_timer" -> ItalianNumbers.duration(reply, allowBareNumber = true)
                 ?.let { build("seconds" to it.toString()) }

@@ -3,13 +3,17 @@ package com.simone.jarvismobile.di
 import android.content.Context
 import com.simone.jarvismobile.core.tools.ToolRegistry
 import com.simone.jarvismobile.core.tools.builtin.CalculateTool
+import com.simone.jarvismobile.agenda.AgendaRepository
 import com.simone.jarvismobile.memory.MemoryIndex
+import com.simone.jarvismobile.tools.AddReminderTool
 import com.simone.jarvismobile.tools.AlarmTool
 import com.simone.jarvismobile.tools.BatteryTool
 import com.simone.jarvismobile.tools.FlashlightTool
+import com.simone.jarvismobile.tools.ListAgendaTool
 import com.simone.jarvismobile.tools.ListMemoriesTool
 import com.simone.jarvismobile.tools.RememberTool
 import com.simone.jarvismobile.tools.TimeTool
+import com.simone.jarvismobile.tools.TimeUntilTool
 import com.simone.jarvismobile.tools.TimerTool
 import dagger.Module
 import dagger.Provides
@@ -32,13 +36,17 @@ object ToolsModule {
     fun provideToolRegistry(
         @ApplicationContext context: Context,
         memory: MemoryIndex,
+        agenda: AgendaRepository,
     ): ToolRegistry = ToolRegistry(
         listOf(
             TimeTool(),
+            TimeUntilTool(),
             BatteryTool(context),
             TimerTool(context),
             AlarmTool(context),
             FlashlightTool(context),
+            AddReminderTool(agenda),
+            ListAgendaTool(agenda),
             RememberTool(memory),
             ListMemoriesTool(memory),
             CalculateTool(),

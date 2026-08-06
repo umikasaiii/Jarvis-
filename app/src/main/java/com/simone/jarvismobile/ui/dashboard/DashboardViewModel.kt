@@ -2,7 +2,10 @@ package com.simone.jarvismobile.ui.dashboard
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.simone.jarvismobile.agenda.AgendaRepository
 import com.simone.jarvismobile.audio.SessionCoordinator
+import com.simone.jarvismobile.core.agenda.Agenda
+import com.simone.jarvismobile.core.agenda.AgendaEntry
 import com.simone.jarvismobile.core.state.ConversationState
 import com.simone.jarvismobile.data.SettingsRepository
 import com.simone.jarvismobile.llm.LlmLoadState
@@ -20,6 +23,7 @@ import javax.inject.Inject
 @HiltViewModel
 class DashboardViewModel @Inject constructor(
     private val coordinator: SessionCoordinator,
+    private val agenda: AgendaRepository,
     memory: MemoryIndex,
     settings: SettingsRepository,
 ) : ViewModel() {
@@ -44,12 +48,28 @@ class DashboardViewModel @Inject constructor(
 
     fun markChatSeen() { lastSeen.value = coordinator.messages.value.size }
 
+    /** Everything still ahead, so the Agenda tile shows the real calendar. */
+    val upcoming: StateFlow<List<AgendaEntry>> = agenda.entries
+        .map { Agenda.filter(it, java.time.LocalDate.now()) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Today's slice of the agenda, for the Panoramica counters. */
+    val today: StateFlow<List<AgendaEntry>> = agenda.entries
+        .map { entries ->
+            val d = java.time.LocalDate.now()
+            Agenda.filter(entries, d, day = d)
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     init {
         // Ensure the model auto-loads and the vault index is built even if the
         // user opens the app straight onto the dashboard tab.
         viewModelScope.launch { coordinator.ensureModelReady() }
         viewModelScope.launch { coordinator.ensureMemoryReady() }
+        viewModelScope.launch { runCatching { agenda.reload() } }
     }
+
+    fun refreshAgenda() { viewModelScope.launch { runCatching { agenda.reload() } } }
 
     fun hasRecordPermission(): Boolean = coordinator.hasRecordPermission()
     fun onTalkPressed() { viewModelScope.launch { coordinator.runSession() } }

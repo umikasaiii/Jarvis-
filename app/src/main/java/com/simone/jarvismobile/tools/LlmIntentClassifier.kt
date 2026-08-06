@@ -78,16 +78,21 @@ class LlmIntentClassifier @Inject constructor(
                 Match.Run(call("flashlight", "on" to (!off).toString()))
             }
 
-            "remember" -> {
+            // A reminder is a calendar entry: the day is parsed out of the user's
+            // own words into a real date field, never left inside the description.
+            "remember", "add_reminder" -> {
                 val note = CommandMatcher.rememberBody(utterance) ?: utterance.trim()
                 if (note.length < 3) {
                     Match.Ask("Cosa vuoi che ricordi?", "remember", "text")
-                } else if (CommandMatcher.hasTimeReference(note)) {
-                    Match.Run(call("remember", "text" to note))
                 } else {
-                    Match.Ask("Quando?", "remember", "when", mapOf("text" to note))
+                    CommandMatcher.reminderCall(note)
                 }
             }
+
+            "list_agenda" -> CommandMatcher.agendaCall(utterance)
+
+            // Clock arithmetic is done in code, never by the model.
+            "time_until" -> CommandMatcher.timeUntilCall(utterance)
 
             // Digits must come from the user, never from the model.
             "calculate" -> CommandMatcher.arithmetic(utterance)
@@ -107,6 +112,9 @@ class LlmIntentClassifier @Inject constructor(
         set_alarm <ora> <minuti>
         flashlight on
         flashlight off
+        add_reminder <cosa fare e quando>
+        list_agenda
+        time_until
         remember <testo da ricordare>
         list_memories
         calculate <espressione aritmetica>
@@ -118,7 +126,12 @@ class LlmIntentClassifier @Inject constructor(
         Usa "ragiona" quando servono spiegazioni, consigli, confronti, opinioni,
         istruzioni passo-passo o conoscenze del mondo: sono le domande che meritano
         una risposta ponderata.
-        Usa "list_memories" SOLO per elencare gli appunti così come sono.
+        Usa "add_reminder" quando l'utente vuole fissare un impegno, un appuntamento
+        o un promemoria, anche se non dice il giorno.
+        Usa "list_agenda" per sapere cosa c'è in programma (impegni, appuntamenti,
+        "cosa devo fare oggi pomeriggio").
+        Usa "time_until" per "quanto manca alle …" o "fra quanto".
+        Usa "list_memories" SOLO per elencare gli appunti liberi, non gli impegni.
         Se manca un dettaglio (durata, orario) scrivi comunque il comando senza numeri:
         verrà chiesto all'utente.
 
@@ -129,11 +142,25 @@ class LlmIntentClassifier @Inject constructor(
         Risposta: set_timer 600
         Richiesta: buttami giù una nota, devo comprare il latte
         Risposta: remember devo comprare il latte
+        Richiesta: segnami che domani alle tre ho il dentista
+        Risposta: add_reminder domani alle tre dentista
+        Richiesta: venerdì devo cambiare le gomme, ricordamelo
+        Risposta: add_reminder venerdì cambiare le gomme
+        Richiesta: cosa devo fare oggi pomeriggio?
+        Risposta: list_agenda
+        Richiesta: ho appuntamenti domani?
+        Risposta: list_agenda
+        Richiesta: quanto manca alle 16?
+        Risposta: time_until
+        Richiesta: fra quanto è mezzogiorno?
+        Risposta: time_until
         Richiesta: fammi luce
         Risposta: flashlight on
         Richiesta: destami alle sette e mezza
         Risposta: set_alarm 7 30
         Richiesta: cosa devo fare questa settimana?
+        Risposta: list_agenda
+        Richiesta: cosa hai annotato?
         Risposta: list_memories
         Richiesta: metti un timer
         Risposta: set_timer

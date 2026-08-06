@@ -140,6 +140,46 @@ class VaultRepository @Inject constructor(
         }.getOrDefault(emptyList())
     }
 
+    /**
+     * Reads a single file inside the `JARVIS/` folder of the vault, or null when
+     * there is no vault / the file does not exist yet. Used by the agenda, which
+     * needs the whole file (not just appended lines) to re-sort and rewrite it.
+     */
+    suspend fun readJarvisFile(fileName: String): String? = withContext(Dispatchers.IO) {
+        val tree = tree() ?: return@withContext null
+        runCatching {
+            val folder = tree.findFile(MEMORY_DIR)?.takeIf { it.isDirectory } ?: return@withContext null
+            val file = folder.findFile(fileName) ?: return@withContext null
+            context.contentResolver.openInputStream(file.uri)?.bufferedReader()?.use { it.readText() }
+        }.getOrNull()
+    }
+
+    /**
+     * Writes (creating if needed) a file inside `JARVIS/`, replacing its contents.
+     * Returns false when there is no vault or the provider refuses the write.
+     */
+    suspend fun writeJarvisFile(fileName: String, content: String): Boolean = withContext(Dispatchers.IO) {
+        val tree = tree() ?: return@withContext false
+        runCatching {
+            val folder = tree.findFile(MEMORY_DIR)?.takeIf { it.isDirectory }
+                ?: tree.createDirectory(MEMORY_DIR)
+                ?: return@withContext false
+            val file = folder.findFile(fileName)
+                ?: folder.createFile("text/markdown", fileName)
+                ?: return@withContext false
+            context.contentResolver.openOutputStream(file.uri, "w")?.use {
+                it.write(content.toByteArray(Charsets.UTF_8))
+            } ?: return@withContext false
+            true
+        }.getOrDefault(false)
+    }
+
+    private suspend fun tree(): DocumentFile? {
+        val uriStr = settings.vaultUri.first()
+        if (uriStr.isBlank()) return null
+        return runCatching { DocumentFile.fromTreeUri(context, Uri.parse(uriStr)) }.getOrNull()
+    }
+
     private fun collect(dir: DocumentFile, prefix: String, out: MutableList<RawNote>) {
         for (f in dir.listFiles()) {
             val name = f.name ?: continue

@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.BatteryFull
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Calculate
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.FlashlightOn
 import androidx.compose.material.icons.filled.HourglassTop
@@ -53,8 +54,15 @@ private val HINTS = mapOf(
     "set_timer" to Hint(Icons.Filled.HourglassTop, "Timer", "«Timer 10 minuti»"),
     "set_alarm" to Hint(Icons.Filled.Alarm, "Sveglia", "«Sveglia alle 7:30»"),
     "flashlight" to Hint(Icons.Filled.FlashlightOn, "Torcia", "«Accendi la torcia»"),
-    "remember" to Hint(Icons.Filled.EditNote, "Ricorda", "«Ricorda che domani ho la revisione»"),
-    "list_memories" to Hint(Icons.Filled.EditNote, "Cosa devo fare", "«Che impegni ho?»"),
+    "time_until" to Hint(Icons.Filled.HourglassTop, "Quanto manca", "«Quanto manca alle 16?»"),
+    "add_reminder" to Hint(
+        Icons.Filled.CalendarMonth,
+        "Metti in agenda",
+        "«Ricordami la revisione domani alle 15»",
+    ),
+    "list_agenda" to Hint(Icons.Filled.CalendarMonth, "Agenda", "«Cosa devo fare oggi pomeriggio?»"),
+    "remember" to Hint(Icons.Filled.EditNote, "Appunto", "«Prendi nota: la moto è una CB500»"),
+    "list_memories" to Hint(Icons.Filled.EditNote, "Appunti salvati", "«Cosa hai annotato?»"),
     "calculate" to Hint(Icons.Filled.Calculate, "Calcolo", "«Quanto fa 12 * 8?»"),
 )
 

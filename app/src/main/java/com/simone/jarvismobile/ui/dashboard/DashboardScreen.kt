@@ -89,6 +89,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.simone.jarvismobile.R
+import com.simone.jarvismobile.core.agenda.Agenda
 import com.simone.jarvismobile.core.state.ConversationState
 import com.simone.jarvismobile.llm.LlmLoadState
 import java.time.LocalDate
@@ -163,9 +164,10 @@ private fun JarvisBackground(modifier: Modifier = Modifier) {
 
 /**
  * The full JARVIS dashboard (Home tab). Tiles backed by real data — the listen
- * orb, battery, local AI/model, and the indexed Obsidian note counts — are live;
- * the rest show representative sample content with a clear DEMO/FASE badge, so
- * nothing fake is passed off as real while the look stays faithful to the design.
+ * orb, battery, local AI/model, the agenda, and the indexed Obsidian note counts
+ * — are live; the rest show representative sample content with a clear DEMO/FASE
+ * badge, so nothing fake is passed off as real while the look stays faithful to
+ * the design.
  */
 @Composable
 fun DashboardScreen(
@@ -180,6 +182,8 @@ fun DashboardScreen(
     val loadedModel by viewModel.loadedModelName.collectAsStateWithLifecycle()
     val memory by viewModel.memoryStatus.collectAsStateWithLifecycle()
     val unread by viewModel.unread.collectAsStateWithLifecycle()
+    val upcoming by viewModel.upcoming.collectAsStateWithLifecycle()
+    val today by viewModel.today.collectAsStateWithLifecycle()
     val battery = rememberBatteryStatus()
     val context = LocalContext.current
 
@@ -275,22 +279,41 @@ fun DashboardScreen(
             }
 
             // --- Row: Panoramica + Agenda (2 columns) ---------------------
+            // Both are backed by the real agenda file and the real note index.
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                GlassCard(Modifier.weight(1f), badge = { DemoBadge() }) {
-                    CardHeader(Icons.Filled.Dashboard, "PANORAMICA")
+                GlassCard(Modifier.weight(1f)) {
+                    CardHeader(Icons.Filled.Dashboard, "PANORAMICA", reserveEnd = false)
                     Text(todayLabel(), color = Muted, fontSize = 11.sp)
                     Spacer(Modifier.height(4.dp))
-                    StatLine("3", "Eventi", Cyan)
-                    StatLine("7", "Attività", Blue)
-                    StatLine("2", "Promemoria", Violet)
+                    StatLine(today.count { it.time != null }.toString(), "Eventi oggi", Cyan)
+                    StatLine(today.count { it.time == null }.toString(), "Attività oggi", Blue)
+                    StatLine(upcoming.size.toString(), "In programma", Violet)
                     Spacer(Modifier.height(8.dp))
-                    DonutRing(percent = 78, label = "Produttività", modifier = Modifier.size(96.dp).align(Alignment.CenterHorizontally))
+                    val doneToday = today.count { it.done }
+                    val pct = if (today.isEmpty()) 0 else doneToday * 100 / today.size
+                    DonutRing(percent = pct, label = "Completato", modifier = Modifier.size(96.dp).align(Alignment.CenterHorizontally))
                 }
-                GlassCard(Modifier.weight(1f), badge = { DemoBadge() }) {
-                    CardHeader(Icons.Filled.CalendarMonth, "AGENDA")
-                    AgendaRow("10:00", "Riunione team", "Sala Orion", Cyan)
-                    AgendaRow("14:30", "Call Alpha", "Online", Green)
-                    AgendaRow("18:00", "Allenamento", "Palestra", Violet, last = true)
+                GlassCard(Modifier.weight(1f)) {
+                    CardHeader(Icons.Filled.CalendarMonth, "AGENDA", reserveEnd = false)
+                    if (upcoming.isEmpty()) {
+                        Text(
+                            "Nessun impegno.\nDì «ricordami di … domani alle 15».",
+                            color = Muted,
+                            fontSize = 11.sp,
+                            lineHeight = 15.sp,
+                        )
+                    } else {
+                        val shown = upcoming.take(3)
+                        shown.forEachIndexed { i, e ->
+                            AgendaRow(
+                                time = e.time?.let { Agenda.humanTime(it) } ?: "—",
+                                title = e.text,
+                                place = Agenda.humanDate(e.date, java.time.LocalDate.now()),
+                                dot = when (i) { 0 -> Cyan; 1 -> Green; else -> Violet },
+                                last = i == shown.lastIndex,
+                            )
+                        }
+                    }
                 }
             }
 
