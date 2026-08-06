@@ -60,7 +60,11 @@ class BatteryTool(private val context: Context) : Tool {
             ?: return ToolResult.Failure("no_battery_service")
         val pct = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
         val charging = bm.isCharging
-        val spoken = if (charging) "Batteria al $pct per cento, in carica." else "Batteria al $pct per cento."
+        val spoken = if (charging) {
+            "Batteria al $pct per cento, in carica."
+        } else {
+            "Batteria al $pct per cento, non è in carica."
+        }
         return ok("percent" to pct.toString(), "charging" to charging.toString(), "spoken" to spoken)
     }
 }

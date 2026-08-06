@@ -130,6 +130,11 @@ vectors are a rebuildable cache. Writes are classified Temporary/Permanent/Sensi
 and require confirmation (Permanent/Sensitive), prefer append/Inbox over destructive
 edits, keep an audit log, and support undo.
 
+Downloaded reference material is a separate knowledge layer, not personal
+memory. Wikipedia ZIM files and manuals are searched locally and contribute only
+bounded, source-labelled passages to generation; they are never copied into
+`JARVIS/Memoria.md`. See [`LOCAL_KNOWLEDGE.md`](LOCAL_KNOWLEDGE.md).
+
 ## Tools (§15)
 
 Typed `ToolRegistry`. Each `Tool` declares a schema, validates arguments, declares

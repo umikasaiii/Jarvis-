@@ -102,21 +102,27 @@ class MemoryIndex @Inject constructor(
     }
 
     /**
-     * Returns context chunks for [query]. The explicit "ricorda …" memories
-     * (JARVIS/Memoria.md) are ALWAYS included first — lexical ranking alone misses
-     * them when the question shares no words with the saved note (e.g. "che impegni
-     * ho?" vs. "venerdì cambiare pneumatici") — then ranked vault matches fill up.
+     * Returns a bounded set of context chunks for [query]. Explicit memories are
+     * indexed one entry at a time (rather than injecting the whole Memoria.md on
+     * every turn); lexical matches rank normally and the two newest memories are
+     * a small fallback only for explicit personal-recall questions, until
+     * semantic embeddings are available.
      */
     fun retrieve(query: String, limit: Int = 4): List<RankedChunk> {
         val local = chunks
         if (local.isEmpty()) return emptyList()
-        val pinned = local.filter { isExplicitMemory(it.notePath) }
-        val rest = local.filterNot { isExplicitMemory(it.notePath) }
-        val ranked = if (query.isBlank()) emptyList() else ranker.rank(query, rest, limit)
-        val combined = ArrayList<RankedChunk>(pinned.size + ranked.size)
-        pinned.forEach { combined += RankedChunk(it, Double.MAX_VALUE) }
-        ranked.forEach { r -> if (combined.none { it.chunk.text == r.chunk.text }) combined += r }
-        return combined.take(limit + pinned.size)
+        val ranked = if (query.isBlank()) emptyList() else ranker.rank(query, local, limit)
+        val recentMemories = if (PERSONAL_RECALL_RE.containsMatchIn(query.lowercase())) {
+            local.asReversed()
+                .filter { isExplicitMemory(it.notePath) }
+                .take(RECENT_MEMORY_FALLBACK)
+                .map { RankedChunk(it, 0.0) }
+        } else {
+            emptyList()
+        }
+        return (ranked + recentMemories)
+            .distinctBy { it.chunk.notePath to it.chunk.text }
+            .take(limit)
     }
 
     private fun isExplicitMemory(notePath: String): Boolean =
@@ -130,7 +136,12 @@ class MemoryIndex @Inject constructor(
      */
     private fun chunkNote(note: MarkdownNote): List<MemoryChunk> {
         val folder = note.path.substringBeforeLast('/', "")
-        val sections = splitByHeadings(note.body)
+        val sections = if (isExplicitMemory(note.path)) {
+            splitMemoryEntries(note.body)
+        } else {
+            splitByHeadings(note.body)
+        }
+        if (isExplicitMemory(note.path) && sections.isEmpty()) return emptyList()
         val chunks = sections
             .map { it.trim() }
             .filter { it.isNotEmpty() }
@@ -170,8 +181,21 @@ class MemoryIndex @Inject constructor(
         return out
     }
 
+    /** Each appended `- [timestamp] fact` is an independently retrievable memory. */
+    private fun splitMemoryEntries(body: String): List<String> =
+        body.lineSequence()
+            .map { it.trim() }
+            .filter { it.startsWith("- ") }
+            .map { it.removePrefix("- ").trim() }
+            .filter { it.isNotEmpty() }
+            .toList()
+
     private companion object {
         const val TAG = "JarvisMemory"
         const val MAX_CHUNK_CHARS = 1200
+        const val RECENT_MEMORY_FALLBACK = 2
+        val PERSONAL_RECALL_RE = Regex(
+            """\b(di me|su di me|mio|mia|miei|mie|preferit\w*|ricord\w*|sai di me|come mi chiamo)\b""",
+        )
     }
 }

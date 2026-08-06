@@ -40,14 +40,30 @@ class LlmRouter @Inject constructor(
         ModelSlot.ADVANCED -> if (hasAdvanced) advanced else fast
     }
 
+    /** Resolves the actual slot once, so the coordinator can keep its context in sync. */
+    fun selectSlot(needsReasoning: Boolean): ModelSlot =
+        if (needsReasoning && hasAdvanced) ModelSlot.ADVANCED else ModelSlot.FAST
+
+    fun conversationEpoch(slot: ModelSlot): Long = engineFor(slot).conversationEpoch
+
     /**
      * Answers [userText]. [needsReasoning] routes to the larger model when one is
      * loaded; simple exchanges stay on the fast one.
      */
     suspend fun chat(userText: String, systemPrompt: String, needsReasoning: Boolean): String? {
-        val slot = if (needsReasoning && hasAdvanced) ModelSlot.ADVANCED else ModelSlot.FAST
-        Log.i(TAG, "chat_slot=$slot reasoning=$needsReasoning")
+        val slot = selectSlot(needsReasoning)
+        return chat(userText, systemPrompt, slot)
+    }
+
+    /** Chats with an already resolved [slot]. */
+    suspend fun chat(userText: String, systemPrompt: String, slot: ModelSlot): String? {
+        Log.i(TAG, "chat_slot=$slot")
         return engineFor(slot).chat(userText, systemPrompt)
+    }
+
+    /** Clears one brain without discarding the other brain's warm conversation. */
+    fun resetConversation(slot: ModelSlot) {
+        engineFor(slot).resetConversation()
     }
 
     /** Clears the running conversation on both brains. */

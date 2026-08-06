@@ -53,8 +53,17 @@ object CommandMatcher {
             ),
         )
 
-    /** Returns a [Match] for [utterance], or null when it isn't a command. */
-    fun match(utterance: String, now: LocalDateTime = LocalDateTime.now()): Match? {
+    /**
+     * Returns a [Match] for [utterance], or null when it isn't a command.
+     * [recentContext] is used only to resolve narrow follow-ups such as
+     * "È in carica adesso?" after a battery answer; it never supplies arguments
+     * for write actions.
+     */
+    fun match(
+        utterance: String,
+        now: LocalDateTime = LocalDateTime.now(),
+        recentContext: String? = null,
+    ): Match? {
         val raw = utterance.trim()
         val t = normalize(raw)
 
@@ -69,7 +78,23 @@ object CommandMatcher {
         if (TIME_RE.containsMatchIn(t)) return call("get_time")
 
         // --- Battery -----------------------------------------------------
-        if (BATTERY_RE.containsMatchIn(t)) return call("battery_status")
+        // Do not trigger on every mention of "batteria": "la batteria si sta
+        // caricando" is a statement, not a request. A subject-less follow-up is
+        // accepted only when the recent conversation was explicitly about the
+        // phone battery.
+        val batteryContext = recentContext?.let(::normalize)?.let {
+            BATTERY_CONTEXT_RE.containsMatchIn(it)
+        } == true
+        if (
+            BATTERY_REQUEST_RE.containsMatchIn(t) ||
+            (
+                (batteryContext || BATTERY_CONTEXT_RE.containsMatchIn(t)) &&
+                    CHARGING_FOLLOW_UP_RE.containsMatchIn(t) &&
+                    (raw.trimEnd().endsWith('?') || FOLLOW_UP_REQUEST_RE.containsMatchIn(t))
+                )
+        ) {
+            return call("battery_status")
+        }
 
         // --- Flashlight --------------------------------------------------
         if (TORCH_RE.containsMatchIn(t)) {
@@ -276,7 +301,18 @@ object CommandMatcher {
     )
 
     private val TIME_RE = Regex("""\b(che ore sono|che ora (e|e')|ora esatta|che giorno (e|e')|che data (e|e')|dimmi l'ora|dimmi che ore)\b""")
-    private val BATTERY_RE = Regex("""\bbatteri[ae]\b""")
+    private val BATTERY_REQUEST_RE = Regex(
+            """\b(quanta|quanto)\b.{0,24}\bbatteri[ae]\b|""" +
+            """\b(livello|percentuale|stato)\b.{0,24}\bbatteri[ae]\b|""" +
+            """\bbatteri[ae]\b.{0,28}\b(quanta|quanto|livello|percentuale)\b|""" +
+            """\b(dimmi|controlla|verifica|sai)\b.{0,28}\bbatteri[ae]\b""",
+    )
+    private val BATTERY_CONTEXT_RE = Regex("""\b(batteri[ae]|percento.*carica|telefono.*carica)\b""")
+    private val CHARGING_FOLLOW_UP_RE = Regex(
+        """\b(e|sta|si trova)\b.{0,18}\b(in carica|caricando|scarica)\b|""" +
+            """\b(in carica|caricando|scarica)\b.{0,18}\b(adesso|ora|momento)\b""",
+    )
+    private val FOLLOW_UP_REQUEST_RE = Regex("""\b(dimmi|controlla|verifica|sai)\b""")
 
     // Any torch verb + the word torcia/flash, in either order.
     private val TORCH_RE = Regex("""\b(accend\w*|attiv\w*|spegn\w*|disattiv\w*)\b.{0,20}\b(torcia|flash)\b|\b(torcia|flash)\b.{0,20}\b(accend\w*|attiv\w*|spegn\w*|disattiv\w*)\b""")

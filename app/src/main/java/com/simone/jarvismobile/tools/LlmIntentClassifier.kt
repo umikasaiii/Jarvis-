@@ -2,6 +2,7 @@ package com.simone.jarvismobile.tools
 
 import android.util.Log
 import com.simone.jarvismobile.core.protocol.ToolCall
+import com.simone.jarvismobile.core.routing.ComplexityHeuristic
 import com.simone.jarvismobile.llm.LlmEngine
 import com.simone.jarvismobile.llm.LlmLoadState
 import kotlinx.serialization.json.JsonObject
@@ -47,11 +48,14 @@ class LlmIntentClassifier @Inject constructor(
     @Volatile var lastNeedsReasoning: Boolean = false
         private set
 
-    suspend fun classify(utterance: String): Match? {
+    suspend fun classify(utterance: String, recentContext: String = ""): Match? {
+        // Reset on every utterance: a failed classifier call must not inherit the
+        // previous request's routing decision.
+        lastNeedsReasoning = ComplexityHeuristic.needsReasoning(utterance)
         if (llm.loadState.value != LlmLoadState.LOADED) return null
         if (utterance.isBlank()) return null
 
-        val reply = runCatching { llm.generate(prompt(utterance)) }.getOrNull()
+        val reply = runCatching { llm.generate(prompt(utterance, recentContext)) }.getOrNull()
             ?.trim()?.lineSequence()?.firstOrNull { it.isNotBlank() }?.trim()
             ?: return null
 
@@ -59,7 +63,7 @@ class LlmIntentClassifier @Inject constructor(
             .substringBefore(' ').lowercase()
         // The fast model also judges whether the answer needs real thinking, so
         // the big model is only woken for questions that deserve it.
-        lastNeedsReasoning = name == "ragiona"
+        lastNeedsReasoning = lastNeedsReasoning || name == "ragiona"
         Log.i(TAG, "intent=$name")
 
         return when (name) {
@@ -102,7 +106,7 @@ class LlmIntentClassifier @Inject constructor(
         }
     }
 
-    private fun prompt(utterance: String): String = """
+    private fun prompt(utterance: String, recentContext: String): String = """
         Sei un classificatore di comandi. Leggi la richiesta e rispondi con UNA SOLA RIGA,
         scegliendo esattamente uno di questi formati. Non aggiungere spiegazioni.
 
@@ -172,6 +176,9 @@ class LlmIntentClassifier @Inject constructor(
         Risposta: ragiona
         Richiesta: la batteria si sta caricando
         Risposta: none
+        Contesto recente: Simone: Quanto ho di batteria? | JARVIS: Batteria al 93 per cento.
+        Richiesta: È in carica in questo momento?
+        Risposta: battery_status
         Richiesta: come stai oggi?
         Risposta: none
         Richiesta: sì, va bene
@@ -180,6 +187,7 @@ class LlmIntentClassifier @Inject constructor(
         Attenzione: se l'utente CONSTATA qualcosa invece di chiedere un'azione,
         rispondi "none" anche se la frase contiene parole come batteria o timer.
 
+        Contesto recente: ${recentContext.replace('\n', ' ').takeLast(MAX_CONTEXT_CHARS)}
         Richiesta: $utterance
         Risposta:
     """.trimIndent()
@@ -194,5 +202,6 @@ class LlmIntentClassifier @Inject constructor(
 
     private companion object {
         const val TAG = "JarvisIntent"
+        const val MAX_CONTEXT_CHARS = 900
     }
 }

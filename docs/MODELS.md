@@ -18,6 +18,11 @@ verified sources: the **Google AI Edge Gallery** app or the **LiteRT community o
 Hugging Face**. The `LlmEngine` seam keeps a llama.cpp/GGUF engine (below) a
 drop-in alternative for later.
 
+For the current two-brain phone setup, use **Gemma 3 1B Instruct** as the fast
+slot and a mobile LiteRT-LM **Gemma 4 E4B** build as the advanced slot. "E4B" is
+the official effective-parameter name; it is not a dense desktop 4B package.
+Both files must be instruction-tuned, mobile-compatible `.litertlm` artifacts.
+
 ## LLM (llama.cpp, GGUF)
 
 Profiles (§11):

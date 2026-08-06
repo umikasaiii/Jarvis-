@@ -9,12 +9,14 @@ import com.simone.jarvismobile.core.state.ConversationEvent
 import com.simone.jarvismobile.core.state.ConversationState
 import com.simone.jarvismobile.core.state.ConversationStateMachine
 import com.simone.jarvismobile.core.state.RouteTarget
+import com.simone.jarvismobile.core.routing.CompoundRequestSplitter
 import com.simone.jarvismobile.data.ChatStore
 import com.simone.jarvismobile.data.SettingsRepository
 import com.simone.jarvismobile.data.StoredMessage
 import com.simone.jarvismobile.llm.LlmEngine
 import com.simone.jarvismobile.llm.LlmLoadState
 import com.simone.jarvismobile.llm.LlmRouter
+import com.simone.jarvismobile.llm.ModelSlot
 import com.simone.jarvismobile.memory.MemoryIndex
 import com.simone.jarvismobile.tools.CommandMatcher
 import com.simone.jarvismobile.tools.ItalianNumbers
@@ -93,10 +95,18 @@ class SessionCoordinator @Inject constructor(
      * STABLE: changing it forces the engine to rebuild the conversation, which
      * throws away everything said so far. Rebuilt only by [newConversation].
      */
-    @Volatile private var activeSystem: String? = null
+    private val activeSystems = mutableMapOf<ModelSlot, String>()
+    private val activeEpochs = mutableMapOf<ModelSlot, Long>()
 
-    /** Note chunks already given to the model in this conversation. */
-    private val injectedContext = LinkedHashSet<String>()
+    /** Note chunks already given to each model in this conversation. */
+    private val injectedContexts = mutableMapOf<ModelSlot, LinkedHashSet<String>>()
+
+    /**
+     * The two local models have separate KV caches. When routing changes, the
+     * destination brain is reseeded from the shared transcript so "rapido" and
+     * "avanzato" still behave like one assistant with one short-term memory.
+     */
+    @Volatile private var lastConversationSlot: ModelSlot? = null
 
     /** True once the saved transcript has been read back from disk. */
     @Volatile private var chatRestored = false
@@ -303,6 +313,35 @@ class SessionCoordinator @Inject constructor(
      * points the user to the Models screen.
      */
     private suspend fun generateAnswer(transcript: String): String {
+        // Pending yes/no or slot answers must remain a single conversational
+        // turn. Otherwise route every explicitly punctuated question on its own:
+        // a 1B model commonly answers only the first part of a multi-question
+        // request, and the old command path stopped after the first tool match.
+        if (pendingConfirmation == null && pendingSlot == null && !awaitingAnswer) {
+            val parts = CompoundRequestSplitter.split(transcript)
+            if (parts.size > 1) {
+                val answers = ArrayList<String>(parts.size)
+                var sameMessageContext = ""
+                for (part in parts) {
+                    val answer = generateAtomicAnswer(part, sameMessageContext)
+                    if (answer.isNotBlank() && answers.none { it.equals(answer, ignoreCase = true) }) {
+                        answers += answer
+                    }
+                    sameMessageContext = buildString {
+                        if (sameMessageContext.isNotBlank()) append(sameMessageContext).append('\n')
+                        append("Simone: ").append(part).append('\n')
+                        append("JARVIS: ").append(answer)
+                    }.takeLast(COMPOUND_CONTEXT_CHARS)
+                }
+                if (answers.isNotEmpty()) return answers.joinToString("\n")
+            }
+        }
+        return generateAtomicAnswer(transcript)
+    }
+
+    /** Routes and answers one indivisible request. */
+    private suspend fun generateAtomicAnswer(transcript: String, sameMessageContext: String = ""): String {
+        val recentContext = recentConversationContext(sameMessageContext)
         // A pending confirmation is answered by this utterance (yes / no).
         pendingConfirmation?.let { call ->
             val answer = transcript.lowercase().trim().trim('.', '!', ',')
@@ -353,7 +392,7 @@ class SessionCoordinator @Inject constructor(
         // If JARVIS just asked something, this message answers it. Only an
         // unmistakable explicit command may interrupt; otherwise keep talking.
         if (awaitingAnswer) {
-            val explicit = CommandMatcher.match(transcript)
+            val explicit = CommandMatcher.match(transcript, recentContext = recentContext)
             if (explicit is Match.Run) {
                 _diagnostic.value = "tool: ${explicit.call.name}"
                 return when (val outcome = tools.run(explicit.call)) {
@@ -365,10 +404,18 @@ class SessionCoordinator @Inject constructor(
                     }
                 }
             }
-            return chatReply(transcript)
+            return chatReply(
+                transcript,
+                needsReasoning = lastConversationSlot == ModelSlot.ADVANCED,
+                conversationHint = sameMessageContext,
+            )
         }
 
-        when (val aiMatch = runCatching { intentClassifier.classify(transcript) }.getOrNull()) {
+        when (
+            val aiMatch = runCatching {
+                intentClassifier.classify(transcript, recentContext)
+            }.getOrNull()
+        ) {
             is Match.Ask -> {
                 pendingSlot = Pending(aiMatch.tool, aiMatch.missing, aiMatch.partial)
                 _diagnostic.value = "chiedo (ai): ${aiMatch.missing}"
@@ -391,7 +438,7 @@ class SessionCoordinator @Inject constructor(
         // 2) Explicit patterns as the safety net: they catch what the model
         //    missed, fill in a missing detail by asking, and keep commands
         //    working when no model is loaded at all.
-        when (val match = CommandMatcher.match(transcript)) {
+        when (val match = CommandMatcher.match(transcript, recentContext = recentContext)) {
             is Match.Ask -> {
                 // Remember what we were doing so the next reply completes it.
                 pendingSlot = Pending(match.tool, match.missing, match.partial)
@@ -416,7 +463,26 @@ class SessionCoordinator @Inject constructor(
             return "Ho capito: $transcript. Carica un modello nella schermata Modelli per risposte vere."
         }
         // The fast model already judged whether this deserves the big brain.
-        return chatReply(transcript, needsReasoning = intentClassifier.lastNeedsReasoning)
+        return chatReply(
+            transcript,
+            needsReasoning = intentClassifier.lastNeedsReasoning,
+            conversationHint = sameMessageContext,
+        )
+    }
+
+    /** Previous turns for resolving pronouns without exposing the whole chat to the classifier. */
+    private fun recentConversationContext(extra: String = ""): String {
+        val messages = _messages.value.let { all ->
+            if (all.lastOrNull()?.fromUser == true) all.dropLast(1) else all
+        }
+        return buildString {
+            messages.takeLast(CONTEXT_MESSAGES).forEach { message ->
+                append(if (message.fromUser) "Simone: " else "JARVIS: ")
+                append(message.text.replace('\n', ' ').take(CONTEXT_LINE_CHARS))
+                append('\n')
+            }
+            if (extra.isNotBlank()) append(extra)
+        }.takeLast(CLASSIFIER_CONTEXT_CHARS)
     }
 
     /**
@@ -424,17 +490,46 @@ class SessionCoordinator @Inject constructor(
      * context is never wrapped into a "Contesto … Domanda:" template, because that
      * invites a small model to CONTINUE the template instead of answering it.
      */
-    private suspend fun chatReply(transcript: String, needsReasoning: Boolean = false): String {
+    private suspend fun chatReply(
+        transcript: String,
+        needsReasoning: Boolean = false,
+        conversationHint: String = "",
+    ): String {
         val retrieved = runCatching { memory.retrieve(transcript, MEMORY_TOP_K) }.getOrDefault(emptyList())
         val notes = retrieved.map { it.chunk.text.replace('\n', ' ').trim().take(600) }
+
+        val slot = router.selectSlot(needsReasoning)
+
+        // Loading/unloading a model also drops its native Conversation. Detect
+        // that even when it happened from the Models screen, and rebuild the
+        // system recap instead of silently starting with an old seed prompt.
+        val engineEpoch = router.conversationEpoch(slot)
+        if (activeEpochs[slot]?.let { it != engineEpoch } == true) {
+            activeSystems.remove(slot)
+            activeEpochs.remove(slot)
+            injectedContexts.remove(slot)
+        }
+
+        // A persistent Conversation belongs to exactly one model. If routing
+        // comes back to a model after the other brain answered, rebuild that
+        // target from the app-level transcript; otherwise its private KV cache
+        // would continue from an older, divergent conversation.
+        if (lastConversationSlot != null && lastConversationSlot != slot && activeSystems.containsKey(slot)) {
+            router.resetConversation(slot)
+            activeSystems.remove(slot)
+            activeEpochs.remove(slot)
+            injectedContexts.remove(slot)
+        }
+        val injectedContext = injectedContexts.getOrPut(slot) { LinkedHashSet() }
 
         // The system instruction is built ONCE per conversation and then reused
         // verbatim. Rebuilding it every turn (it used to carry the retrieved
         // notes, which change with every question) forced the engine to recreate
         // the conversation, wiping the chat memory — the reason JARVIS could not
         // remember even the previous message.
-        val system = activeSystem ?: buildSystem(notes).also {
-            activeSystem = it
+        val system = activeSystems[slot] ?: buildSystem(notes).also {
+            activeSystems[slot] = it
+            activeEpochs[slot] = router.conversationEpoch(slot)
             injectedContext += notes
         }
 
@@ -442,31 +537,45 @@ class SessionCoordinator @Inject constructor(
         // with this turn instead of restarting the conversation.
         val fresh = notes.filterNot { it in injectedContext }
         injectedContext += fresh
-        val message = if (fresh.isEmpty()) {
-            transcript
-        } else {
-            "(dai miei appunti: " + fresh.joinToString(" · ") + ")\n" + transcript
+        val message = buildString {
+            if (conversationHint.isNotBlank()) {
+                append("(contesto delle altre domande nello stesso messaggio: ")
+                append(conversationHint.replace('\n', ' ').takeLast(COMPOUND_CONTEXT_CHARS))
+                append(")\n")
+            }
+            if (fresh.isNotEmpty()) {
+                append("(dai miei appunti: ")
+                append(fresh.joinToString(" · "))
+                append(")\n")
+            }
+            append(transcript)
         }
 
-        val useBig = needsReasoning && router.hasAdvanced
-        val brain = if (useBig) "avanzato" else "rapido"
+        val brain = if (slot == ModelSlot.ADVANCED) "avanzato" else "rapido"
         _diagnostic.value = if (retrieved.isEmpty()) {
             "penso ($brain)"
         } else {
             "memoria: ${retrieved.size} frammenti · $brain"
         }
-        router.chat(message, system, needsReasoning)?.trim()?.ifBlank { null }?.let { return it }
+        lastConversationSlot = slot
+        router.chat(message, system, slot)?.trim()?.ifBlank { null }?.let { return it }
 
         // Generation failed. The usual cause is an exhausted/corrupted KV cache
         // after a long chat, which a fresh conversation clears — so retry once
         // (losing the in-session history, not the vault memory) before giving up.
         Log.w(TAG, "llm_chat_null_retrying_fresh")
         _diagnostic.value = "riprovo con conversazione nuova"
-        router.resetConversation()
-        activeSystem = null
-        injectedContext.clear()
-        val retrySystem = buildSystem(notes).also { activeSystem = it; injectedContext += notes }
-        router.chat(transcript, retrySystem, needsReasoning)?.trim()?.ifBlank { null }?.let { return it }
+        router.resetConversation(slot)
+        activeSystems.remove(slot)
+        activeEpochs.remove(slot)
+        injectedContexts.remove(slot)
+        val retryContext = LinkedHashSet<String>().also { it += notes }
+        injectedContexts[slot] = retryContext
+        val retrySystem = buildSystem(notes).also {
+            activeSystems[slot] = it
+            activeEpochs[slot] = router.conversationEpoch(slot)
+        }
+        router.chat(message, retrySystem, slot)?.trim()?.ifBlank { null }?.let { return it }
 
         return "Il modello non è riuscito a rispondere. Prova «Nuova conversazione», " +
             "o ricarica il modello dalla schermata Modelli."
@@ -634,8 +743,10 @@ class SessionCoordinator @Inject constructor(
         pendingConfirmation = null
         pendingSlot = null
         awaitingAnswer = false
-        activeSystem = null
-        injectedContext.clear()
+        activeSystems.clear()
+        activeEpochs.clear()
+        injectedContexts.clear()
+        lastConversationSlot = null
         _messages.value = emptyList()
         _transcript.value = ""
         _reply.value = ""
@@ -708,6 +819,14 @@ class SessionCoordinator @Inject constructor(
 
         /** Cap per recapped line, so a long answer can't eat the context window. */
         const val RECAP_CHARS = 320
+
+        /** Small context window used only for intent/coreference classification. */
+        const val CONTEXT_MESSAGES = 6
+        const val CONTEXT_LINE_CHARS = 240
+        const val CLASSIFIER_CONTEXT_CHARS = 1_200
+
+        /** Bound context shared among independently routed parts of one message. */
+        const val COMPOUND_CONTEXT_CHARS = 1_200
 
         /** Affirmative replies that approve a pending tool confirmation. */
         private val CONFIRM_WORDS = listOf("sì", "si", "certo", "conferma", "ok", "va bene", "procedi", "yes")

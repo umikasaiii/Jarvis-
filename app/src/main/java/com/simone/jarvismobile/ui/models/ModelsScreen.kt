@@ -115,7 +115,7 @@ fun ModelsScreen(
                 Text(
                     "Assegna un modello piccolo (es. Gemma 1B) allo slot «Rapido»: gestisce " +
                         "comandi e risposte brevi, sempre reattivo. Assegnane uno grande " +
-                        "(es. Gemma 4B) allo slot «Avanzato»: verrà usato solo per le domande " +
+                        "(es. Gemma 4 E4B) allo slot «Avanzato»: verrà usato solo per le domande " +
                         "che richiedono ragionamento, spiegazioni o consigli. Se imposti solo " +
                         "il rapido, funziona tutto come prima. Nota: due modelli caricati " +
                         "occupano più memoria.",

@@ -51,6 +51,10 @@ class LitertLmEngine @Inject constructor(
     /** System instruction the live conversation was seeded with. */
     @Volatile private var seededSystemPrompt: String? = null
 
+    /** Changes whenever the live KV-cache conversation is discarded. */
+    @Volatile var conversationEpoch: Long = 0L
+        private set
+
     // Serializes chat() calls: sendMessage is blocking and a Conversation is not
     // safe to drive from two coroutines at once.
     private val chatMutex = Mutex()
@@ -148,6 +152,7 @@ class LitertLmEngine @Inject constructor(
         runCatching { conversation?.close() }
         conversation = null
         seededSystemPrompt = null
+        conversationEpoch++
     }
 
     override fun cancel() {
