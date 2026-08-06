@@ -52,6 +52,7 @@ object ToolsModule {
         memory: MemoryIndex,
         vault: VaultRepository,
         agenda: AgendaRepository,
+        knowledge: KnowledgeRepository,
     ): ToolRegistry = ToolRegistry(
         listOf(
             TimeTool(),
