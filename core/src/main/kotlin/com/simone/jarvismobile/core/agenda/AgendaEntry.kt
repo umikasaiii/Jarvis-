@@ -56,7 +56,8 @@ enum class DayPeriod(val from: LocalTime, val to: LocalTime) {
 }
 
 /**
- * One dated item in JARVIS's agenda.
+ * One dated item in JARVIS's personal calendar. A non-null [time] makes it an
+ * appointment; a null [time] makes it a dated activity/task.
  *
  * Reminders are stored as structured entries — a real date and an optional time —
  * rather than free text with "domani" buried in the description. That is what

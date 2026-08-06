@@ -20,7 +20,8 @@ Two failures observed on the HONOR 200:
 **Dates and times are data, not prose, and the arithmetic over them is code.**
 
 - `:core` gains an `agenda` package:
-  - `AgendaEntry(date, time?, text, done)` — one dated commitment, serialised as
+  - `AgendaEntry(date, time?, text, done)` — one dated item. A time means an
+    appointment/event; no time means an activity/task. It is serialised as
     an Obsidian task line `- [ ] 2026-08-07 15:00 — revisione auto`.
   - `ItalianDateTimeParser` — turns Italian date/time expressions into
     `LocalDate`/`LocalTime`, and reports whether the user actually *named* a day
@@ -30,8 +31,8 @@ Two failures observed on the HONOR 200:
   All of it is pure Kotlin and unit-tested, so the answers are verifiable in CI
   rather than trusted.
 
-- The app gains `AgendaRepository` and three tools — `add_reminder`,
-  `list_agenda`, `time_until` — registered in the same `ToolRegistry` as
+- The app gains `AgendaRepository` and four tools — `add_reminder`,
+  `list_agenda`, `complete_agenda`, `time_until` — registered in the same `ToolRegistry` as
   everything else, so the model gains understanding but never new privileges.
 
 ## Consequences
@@ -42,6 +43,12 @@ Two failures observed on the HONOR 200:
   Markdown is written to app-private storage and folded into the vault the first
   time one is picked — a reminder is never silently dropped just because the user
   has not connected Obsidian yet.
+- **Personal calendar first.** “Aggiungi al calendario” writes to this local
+  source of truth. Google Calendar/the Android calendar is not required and is
+  reached only by an explicit export request, which opens an editable system
+  draft. JARVIS never silently duplicates an item in two calendars.
+- **No address book.** Calendar and task management do not require contacts;
+  contact access is outside the registered capabilities.
 - **Asking beats guessing.** A reminder with no day cannot be filed, so JARVIS
   asks "Quando?" and parses the answer the same way. "Nessuna data" is accepted
   and falls back to a plain note.

@@ -112,6 +112,36 @@ class ListAgendaTool(private val agenda: AgendaRepository) : Tool {
     }
 }
 
+/** Completes an existing task only after showing the exact target to the user. */
+class CompleteAgendaTool(private val agenda: AgendaRepository) : Tool {
+    override val name = "complete_agenda"
+    override val description = "Segna come completata un'attività del calendario personale."
+    override val policy = ToolPolicy.CONFIRMING_WRITE
+    override val sensitivity = SensitivityLevel.PERSONAL
+    override val requiresNetwork = false
+    override val timeoutMs = 5_000L
+
+    override fun validate(arguments: JsonObject): String? {
+        val text = arguments.text("text") ?: return "manca il campo 'text'"
+        if (text.length < 2) return "testo troppo corto"
+        return null
+    }
+
+    override fun confirmationPrompt(arguments: JsonObject): String? = arguments.text("text")
+        ?.take(160)
+        ?.let { "Confermi di segnare come completata l'attività “$it”?" }
+
+    override suspend fun execute(arguments: JsonObject): ToolResult {
+        val text = arguments.text("text") ?: return ToolResult.Failure("missing_text")
+        val completed = runCatching { agenda.markDone(text) }.getOrNull()
+            ?: return ToolResult.Failure("agenda_item_not_found")
+        return okJson(
+            "id" to completed.id,
+            "spoken" to "Completata: ${completed.text}.",
+        )
+    }
+}
+
 /**
  * Answers "quanto manca alle 16?" by subtracting clock times, not by asking the
  * model. A 3B model once answered "2 ore e 45 minuti" for the gap between 08:03

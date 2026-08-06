@@ -6,6 +6,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -39,6 +40,20 @@ class LlmIntentClassifierTest {
 
         assertNull(understanding.match)
         assertTrue(understanding.needsReasoning)
+    }
+
+    @Test
+    fun phoneDraftUsesOnlyTheNumberFromTheUser() = runTest {
+        val understanding = LlmIntentClassifier(FakeLlm("prepare_call|97"))
+            .understand("Potresti telefonare al +39 333 123 4567?")
+
+        assertTrue(understanding.mayExecute)
+        val match = understanding.match as Match.Run
+        assertEquals("prepare_call", match.call.name)
+        assertEquals(
+            "+393331234567",
+            match.call.arguments["number"]?.jsonPrimitive?.content,
+        )
     }
 
     @Test

@@ -3,6 +3,8 @@ package com.simone.jarvismobile.tools
 import com.simone.jarvismobile.core.agenda.ItalianDateTimeParser
 import com.simone.jarvismobile.core.agenda.WhenParsed
 import com.simone.jarvismobile.core.protocol.ToolCall
+import com.simone.jarvismobile.core.memory.MemoryKind
+import com.simone.jarvismobile.core.memory.MemoryStructure
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import java.time.LocalDateTime
@@ -67,6 +69,21 @@ object CommandMatcher {
         val raw = utterance.trim()
         val t = normalize(raw)
 
+        // --- Controlled Android surfaces and drafts ---------------------
+        // These are checked before conversational intents. Arguments always
+        // come from the user's own words; missing details become a follow-up
+        // question instead of an inferred phone number, destination or title.
+        settingsCall(raw)?.let { return it }
+        calendarEventCall(raw, now)?.let { return it }
+        smsDraftCall(raw)?.let { return it }
+        dialDraftCall(raw)?.let { return it }
+        mediaControlCall(raw)?.let { return it }
+        notificationCall(raw)?.let { return it }
+        searchVaultCall(raw)?.let { return it }
+        navigationCall(raw)?.let { return it }
+        playMediaCall(raw)?.let { return it }
+        appCall(raw)?.let { return it }
+
         // --- "quanto manca alle 16?" --------------------------------------
         // Before get_time: this is clock arithmetic, and arithmetic on time is
         // exactly what a small model gets wrong.
@@ -121,6 +138,9 @@ object CommandMatcher {
             return Match.Ask("A che ora?", "set_alarm", "time")
         }
 
+        // --- Finish a personal-calendar task ----------------------------
+        completeAgendaCall(raw)?.let { return it }
+
         // --- What's on the calendar ---------------------------------------
         if (AGENDA_RE.containsMatchIn(t)) return agendaCall(raw, now)
 
@@ -129,7 +149,13 @@ object CommandMatcher {
 
         // --- Remember (checked before the calculator) ---------------------
         rememberContent(raw)?.let { note ->
-            return reminderCall(note, now)
+            val kind = MemoryStructure.classify(note)
+            val memoryOnly = MEMORY_ONLY_RE.containsMatchIn(t) || kind == MemoryKind.TEMPORARY
+            return if (!hasTimeReference(note) && memoryOnly) {
+                call("remember", "text" to note, "kind" to kind.name)
+            } else {
+                reminderCall(note, now)
+            }
         }
         if (BARE_REMEMBER_RE.matches(t)) {
             return Match.Ask("Cosa vuoi che ricordi?", "remember", "text")
@@ -174,6 +200,167 @@ object CommandMatcher {
         if (!Regex("""\d\s*[+\-*/]\s*\(?\s*\d""").containsMatchIn(expr)) return null
         if (!expr.all { it.isDigit() || it in "+-*/(). " }) return null
         return expr
+    }
+
+    /** "apri Spotify" / "apri il calendario". Only fixed aliases are accepted. */
+    fun appCall(raw: String): Match? {
+        val t = normalize(raw)
+        val found = OPEN_APP_RE.matchEntire(t)?.groupValues?.getOrNull(1)
+            ?.trim()?.removePrefix("l'")?.removePrefix("il ")?.removePrefix("la ")
+            ?: return null
+        val app = normalizeApp(found)
+        return if (app in SUPPORTED_APPS) call("open_app", "app" to app) else null
+    }
+
+    /** "apri le impostazioni Bluetooth". The tool itself also enforces the allowlist. */
+    fun settingsCall(raw: String): Match? {
+        val t = normalize(raw)
+        if (!SETTINGS_REQUEST_RE.containsMatchIn(t)) return null
+        val area = SETTINGS_AREAS.entries.firstOrNull { (_, aliases) ->
+            aliases.any { alias -> Regex("""\b${Regex.escape(alias)}\b""").containsMatchIn(t) }
+        }?.key ?: "generali"
+        return call("open_settings", "area" to area)
+    }
+
+    /**
+     * Files events in JARVIS's personal calendar. Only an explicit request for
+     * Google/the phone calendar opens an external editable draft.
+     */
+    fun calendarEventCall(raw: String, now: LocalDateTime = LocalDateTime.now()): Match? {
+        val t = normalize(raw)
+        if (!CALENDAR_WRITE_RE.containsMatchIn(t)) return null
+        val parsed = ItalianDateTimeParser.parse(raw, now)
+        val title = cleanCalendarTitle(parsed.remainder)
+        val external = CALENDAR_EXPORT_RE.containsMatchIn(t)
+        val tool = if (external) "create_calendar_event" else "add_reminder"
+        val titleField = if (external) "title" else "text"
+        val partial = buildMap {
+            if (title.isNotBlank()) put(titleField, title)
+            parsed.date?.let { put("date", it.toString()) }
+            parsed.time?.let { put("time", "%02d:%02d".format(it.hour, it.minute)) }
+        }
+        if (title.isBlank()) {
+            return Match.Ask("Qual è il titolo?", tool, titleField, partial)
+        }
+        if (parsed.date == null || !parsed.dateExplicit) {
+            return Match.Ask(
+                "Per quale giorno devo segnare “$title”?",
+                tool,
+                "when",
+                partial,
+            )
+        }
+        return call(tool, *partial.entries.map { it.key to it.value }.toTypedArray())
+    }
+
+    /** Marks one open activity as done, using its own words as the lookup key. */
+    fun completeAgendaCall(raw: String): Match? {
+        val t = normalize(raw)
+        if (COMPLETE_AGENDA_BARE_RE.matches(t)) {
+            return Match.Ask("Quale attività devo segnare come completata?", "complete_agenda", "text")
+        }
+        val match = COMPLETE_AGENDA_RE.matchEntire(t) ?: return null
+        val target = match.groupValues.drop(1).firstOrNull(String::isNotBlank)
+            .orEmpty()
+            .replace(AGENDA_TARGET_PREFIX_RE, "")
+            .trim(' ', '.', '?', '!', ':')
+        return if (target.length >= 2) {
+            call("complete_agenda", "text" to target)
+        } else {
+            Match.Ask("Quale attività devo segnare come completata?", "complete_agenda", "text")
+        }
+    }
+
+    /** "chiama 333..." opens only ACTION_DIAL; contact-name guessing is forbidden. */
+    fun dialDraftCall(raw: String): Match? {
+        val t = normalize(raw)
+        if (!DIAL_REQUEST_RE.containsMatchIn(t)) return null
+        if (Regex("""\b(?:tra|fra)\b""").containsMatchIn(t) && ItalianNumbers.duration(t) != null) {
+            return null // "chiamami tra 10 minuti" is a countdown, not a phone call.
+        }
+        val number = extractPhone(raw)
+        return if (number != null) {
+            call("prepare_call", "number" to number)
+        } else {
+            Match.Ask("Quale numero devo preparare nel dialer?", "prepare_call", "number")
+        }
+    }
+
+    /** "prepara un SMS al 333...: arrivo" creates an editable draft only. */
+    fun smsDraftCall(raw: String): Match? {
+        val t = normalize(raw)
+        if (!SMS_REQUEST_RE.containsMatchIn(t)) return null
+        val number = extractPhone(raw)
+        val body = extractSmsBody(raw, number)
+        val partial = buildMap {
+            number?.let { put("number", it) }
+            body?.let { put("body", it) }
+        }
+        return when {
+            number == null -> Match.Ask("A quale numero preparo l'SMS?", "compose_sms", "number", partial)
+            body.isNullOrBlank() -> Match.Ask("Quale testo devo inserire nell'SMS?", "compose_sms", "body", partial)
+            else -> call("compose_sms", "number" to number, "body" to body)
+        }
+    }
+
+    /** "portami a Piazza Navona" hands an explicit destination to the map app. */
+    fun navigationCall(raw: String): Match? {
+        val t = normalize(raw)
+        val match = NAVIGATION_RE.find(t) ?: return null
+        val destination = match.groupValues.drop(1).firstOrNull(String::isNotBlank)
+            .orEmpty().trim().trim('.', '?', '!')
+        return if (destination.length >= 2) {
+            call("navigate", "destination" to destination)
+        } else {
+            Match.Ask("Verso quale destinazione?", "navigate", "destination")
+        }
+    }
+
+    /** Play/pause/skip the currently active media session. */
+    fun mediaControlCall(raw: String): Match? {
+        val t = normalize(raw)
+        val action = when {
+            MEDIA_PAUSE_RE.containsMatchIn(t) -> "pause"
+            MEDIA_NEXT_RE.containsMatchIn(t) -> "next"
+            MEDIA_PREVIOUS_RE.containsMatchIn(t) -> "previous"
+            MEDIA_RESUME_RE.containsMatchIn(t) -> "play"
+            else -> return null
+        }
+        return call("media_control", "action" to action)
+    }
+
+    /** Search/play request routed through the platform media-search intent. */
+    fun playMediaCall(raw: String): Match? {
+        val t = normalize(raw)
+        val match = PLAY_MEDIA_RE.find(t) ?: return null
+        val query = match.groupValues.drop(1).firstOrNull(String::isNotBlank)
+            .orEmpty().trim().trim('.', '?', '!')
+        return if (query.length >= 2) {
+            call("play_media", "query" to query)
+        } else {
+            Match.Ask("Cosa vuoi ascoltare?", "play_media", "query")
+        }
+    }
+
+    /** Active notification access always remains confirmation-gated by policy. */
+    fun notificationCall(raw: String): Match? {
+        val t = normalize(raw)
+        if (!NOTIFICATION_READ_RE.containsMatchIn(t)) return null
+        val app = NOTIFICATION_APP_RE.find(t)?.groupValues?.getOrNull(1)
+            ?.trim()?.takeIf { it.length >= 2 }
+        return if (app == null) call("list_notifications") else call("list_notifications", "app" to app)
+    }
+
+    /** Searches only the SAF vault explicitly selected by the user. */
+    fun searchVaultCall(raw: String): Match? {
+        val t = normalize(raw)
+        val match = VAULT_SEARCH_RE.find(t) ?: return null
+        val query = match.groupValues.getOrNull(1).orEmpty().trim().trim('.', '?', '!')
+        return if (query.length >= 2) {
+            call("search_vault", "query" to query)
+        } else {
+            Match.Ask("Cosa devo cercare nel vault?", "search_vault", "query")
+        }
     }
 
     /** Public so callers can reuse the reminder-body extraction. */
@@ -261,7 +448,7 @@ object CommandMatcher {
      * Strips accents and polite wrappers so one pattern covers many phrasings.
      * "Puoi accendere la torcia?" -> "accendere la torcia"
      */
-    private fun normalize(s: String): String {
+    fun normalize(s: String): String {
         var t = s.lowercase()
             .replace('à', 'a').replace('è', 'e').replace('é', 'e')
             .replace('ì', 'i').replace('ò', 'o').replace('ù', 'u')
@@ -295,9 +482,131 @@ object CommandMatcher {
         return null
     }
 
+    private fun normalizeApp(raw: String): String = raw
+        .replace("google maps", "maps")
+        .replace("google chrome", "chrome")
+        .replace("gestore file", "file")
+        .replace("i file", "file")
+        .replace("files", "file")
+        .replace("la fotocamera", "fotocamera")
+        .replace("il calendario", "calendario")
+        .replace("l'orologio", "orologio")
+        .replace("le impostazioni", "impostazioni")
+        .trim()
+
+    private fun extractPhone(raw: String): String? = PHONE_RE.find(raw)?.value
+        ?.trim()?.replace(Regex("""[ ()-]"""), "")
+        ?.takeIf { it.count(Char::isDigit) in 3..15 }
+
+    private fun extractSmsBody(raw: String, number: String?): String? {
+        val marked = SMS_BODY_RE.find(raw)?.groupValues?.getOrNull(1)?.trim()
+        if (!marked.isNullOrBlank()) return marked.take(500)
+        if (number == null) return null
+        val phoneInRaw = PHONE_RE.find(raw) ?: return null
+        return raw.substring(phoneInRaw.range.last + 1)
+            .trim().trimStart(':', ',', '-', ' ')
+            .takeIf { it.length >= 2 }
+            ?.take(500)
+    }
+
+    private fun cleanCalendarTitle(raw: String): String = normalize(raw)
+        .replace(CALENDAR_TITLE_PREFIX_RE, "")
+        .replace(CALENDAR_WORDS_RE, " ")
+        .replace(Regex("""^(?:per\s+)?(?:il|la|lo|l')?\s*"""), "")
+        .replace(Regex("""\s+"""), " ")
+        .trim(' ', ':', '-', ',')
+
     private val POLITE_PREFIXES = listOf(
         "puoi ", "potresti ", "per favore ", "mi ", "ti ", "jarvis ", "ehi ", "hey ",
         "vorrei che ", "voglio che ", "riesci a ", "sai ",
+    )
+
+    private val SUPPORTED_APPS = setOf(
+        "fotocamera", "calendario", "orologio", "file", "impostazioni",
+        "whatsapp", "spotify", "youtube", "gmail", "maps", "chrome", "obsidian",
+    )
+    private val OPEN_APP_RE = Regex("""^(?:apri|avvia|lancia|mostra)\s+(.+)$""")
+
+    private val SETTINGS_REQUEST_RE = Regex(
+        """\b(?:apri|mostra|vai\s+(?:a|alle|nelle)|portami\s+(?:a|alle|nelle))\b.{0,20}\bimpostazion\w*\b|^impostazion\w*(?:\s+.+)?$""",
+    )
+    private val SETTINGS_AREAS = linkedMapOf(
+        "accesso notifiche" to listOf("accesso notifiche", "notification access"),
+        "archiviazione" to listOf("archiviazione", "memoria telefono", "spazio"),
+        "bluetooth" to listOf("bluetooth"),
+        "batteria" to listOf("batteria", "risparmio energetico"),
+        "notifiche" to listOf("notifiche"),
+        "posizione" to listOf("posizione", "localizzazione", "gps"),
+        "privacy" to listOf("privacy"),
+        "schermo" to listOf("schermo", "display"),
+        "audio" to listOf("audio", "suono", "volume"),
+        "voce" to listOf("voce", "sintesi vocale", "tts"),
+        "assistente" to listOf("assistente", "app predefinite"),
+        "wifi" to listOf("wifi", "wi fi"),
+    )
+
+    private val CALENDAR_WRITE_RE = Regex(
+        """\b(?:crea|aggiungi|inserisci|prepara|metti|segna|esporta)\w*\b.{0,45}\b(?:evento|appuntamento|attivita|task|calendario|calendar)\b|""" +
+            """\b(?:evento|appuntamento|attivita|task)\b.{0,30}\b(?:calendario|calendar|crea|aggiungi|inserisci)\w*\b""",
+    )
+    private val CALENDAR_EXPORT_RE = Regex(
+        """\b(?:google\s+calendar|calendario\s+(?:del\s+)?telefono|calendario\s+android)\b|""" +
+            """\b(?:esporta|prepara\w*\s+(?:una\s+)?bozza)\w*\b.{0,30}\bcalendario\b""",
+    )
+    private val CALENDAR_TITLE_PREFIX_RE = Regex(
+        """^(?:crea|aggiungi|inserisci|prepara|metti|segna|esporta)\w*\s+(?:(?:un|una)\s+)?(?:(?:evento|appuntamento|attivita|task)\s+)?(?:chiamat[oa]\s+|per\s+)?""",
+    )
+    private val CALENDAR_WORDS_RE = Regex(
+        """\b(?:(?:su|nel|nello|sul|al|in)\s+)?(?:google\s+calendar|calendario(?:\s+(?:del\s+)?telefono|\s+android)?)\b|""" +
+            """\b(?:un|una)\s+(?:evento|appuntamento|attivita|task)\b""",
+    )
+
+    private val COMPLETE_AGENDA_RE = Regex(
+        """^(?:segna|imposta|considera)\w*\s+(.+?)\s+come\s+(?:fatt[oa]|completat[oa]|conclus[oa])$|""" +
+            """^(?:ho\s+)?(?:completat[oa]|fatto|finito)\s+(.+)$|""" +
+            """^spunta\w*\s+(.+)$""",
+    )
+    private val COMPLETE_AGENDA_BARE_RE = Regex(
+        """^(?:segna|imposta)\w*\s+come\s+(?:fatt[oa]|completat[oa])$|^spunt\w*$""",
+    )
+    private val AGENDA_TARGET_PREFIX_RE = Regex(
+        """^(?:(?:l[' ]?)?attivita|(?:il\s+)?task|(?:l[' ]?)?impegno)\s+""",
+    )
+
+    private val DIAL_REQUEST_RE = Regex(
+        """\b(?:chiama|telefon\w*|prepara\w*\s+(?:una\s+)?chiamat\w*|apri\w*\s+(?:il\s+)?dialer)\b""",
+    )
+    private val SMS_REQUEST_RE = Regex(
+        """\b(?:sms|messaggio\s+sms)\b|\b(?:prepara|scrivi|componi|manda|invia)\w*\b.{0,20}\b(?:messaggio|sms)\b""",
+    )
+    private val PHONE_RE = Regex("""(?<!\w)\+?\d[\d ()-]{1,28}\d(?!\w)""")
+    private val SMS_BODY_RE = Regex(
+        """(?i)(?:dicendo|con\s+scritto|con\s+testo|testo\s*:|messaggio\s*:|:)\s*(.+)$""",
+    )
+
+    private val NAVIGATION_RE = Regex(
+        """^naviga\w*\s+(?:a|al|alla|verso|fino\s+a)?\s*(.+)$|""" +
+            """^(?:portami|guidami)\s+(?:a|al|alla|verso|fino\s+a)\s+(.+)$|""" +
+            """^(?:(?:dammi\s+)?indicazioni\s+(?:per|verso)|apri\s+maps\s+(?:per|verso))\s+(.+)$""",
+    )
+    private val MEDIA_PAUSE_RE = Regex(
+        """\b(?:metti|mettere|vai)?\s*(?:in\s+)?pausa\b.{0,18}\b(?:musica|brano|riproduzione|audio|podcast)\b|""" +
+            """\bferma\w*\b.{0,15}\b(?:musica|brano|riproduzione|audio|podcast)\b""",
+    )
+    private val MEDIA_NEXT_RE = Regex("""\b(?:brano|canzone|traccia)\s+successiv\w*\b|\b(?:salta|passa)\w*\b.{0,15}\b(?:brano|canzone|traccia)\b""")
+    private val MEDIA_PREVIOUS_RE = Regex("""\b(?:brano|canzone|traccia)\s+precedent\w*\b|\btorna\w*\b.{0,15}\b(?:brano|canzone|traccia)\b""")
+    private val MEDIA_RESUME_RE = Regex("""\b(?:riprendi|continua)\w*\b.{0,15}\b(?:musica|brano|riproduzione)\b""")
+    private val PLAY_MEDIA_RE = Regex(
+        """^(?:riproduci|fammi\s+sentire)\s+(.+)$|""" +
+            """^(?:ascolta|metti)\s+(?:la\s+|il\s+|un\s+|una\s+)?(?:musica|canzone|traccia|playlist|album|podcast)\s+(.+)$""",
+    )
+
+    private val NOTIFICATION_READ_RE = Regex(
+        """\b(?:leggi|elenca|dimmi|mostra)\w*\b.{0,24}\bnotifiche?\b|\b(?:che|quali|quante)\s+notifiche?\b""",
+    )
+    private val NOTIFICATION_APP_RE = Regex("""\bnotifiche?\s+(?:di|da)\s+([\p{L}0-9._ -]+)$""")
+    private val VAULT_SEARCH_RE = Regex(
+        """\b(?:cerca|trova)\w*\s+(?:nel|nello|tra\s+i|nei)\s+(?:vault|miei\s+file|miei\s+appunti|note)\s+(.+)$""",
     )
 
     private val TIME_RE = Regex("""\b(che ore sono|che ora (e|e')|ora esatta|che giorno (e|e')|che data (e|e')|dimmi l'ora|dimmi che ore)\b""")
@@ -328,13 +637,17 @@ object CommandMatcher {
     /** A bare "ricorda"/"prendi nota" with nothing to store yet. */
     private val BARE_REMEMBER_RE = Regex("""^(ricorda(mi|ti)?|prendi (una )?nota|annota|segna(ti)?)\s*$""")
 
+    private val MEMORY_ONLY_RE = Regex(
+        """^(?:ricorda(?:ti)? che|prendi (?:una )?nota|annota|nota che)\b|\bsolo per (?:questa|la) conversazione\b""",
+    )
+
     /** "che impegni ho", "cosa devo fare oggi", "cosa ho in agenda" → the calendar. */
     private val AGENDA_RE = Regex(
-        """\b(che|quali|quanti)\s+(impegni|appuntamenti|promemoria)\b|""" +
+        """\b(che|quali|quanti)\s+(impegni|appuntamenti|promemoria|attivita|task)\b|""" +
             """\bcosa\s+(devo|ho da)\s+fare\b|""" +
             """\bcosa\s+ho\s+(in\s+)?(agenda|programma|previsto)\b|""" +
             """\bne\s+ho\s+(uno|una|qualcuno|qualcuna|qualcosa)(\s+in\s+programma)?\b|""" +
-            """\bin\s+agenda\b|\bla mia agenda\b|\bi miei (impegni|appuntamenti|promemoria)\b|""" +
+            """\bin\s+agenda\b|\bla mia agenda\b|\bi miei (impegni|appuntamenti|promemoria|task)\b|""" +
             """\bho\s+(qualcosa|impegni|appuntamenti)\b""",
     )
 

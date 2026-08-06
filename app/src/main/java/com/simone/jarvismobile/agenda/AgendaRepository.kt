@@ -22,8 +22,9 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * JARVIS's calendar: dated, structured commitments — not free text with "domani"
- * buried in the description.
+ * JARVIS's personal offline calendar: entries with an hour are appointments;
+ * entries without an hour are dated activities/tasks. Both are structured data,
+ * not free text with "domani" buried in the description.
  *
  * Storage follows the project's rule that the vault is the human-readable source
  * of truth: entries live in `JARVIS/Agenda.md` as Obsidian task lines
@@ -79,12 +80,16 @@ class AgendaRepository @Inject constructor(
         ok
     }
 
-    /** Marks the first open entry whose text contains [needle] as done. */
+    /**
+     * Marks an open entry only when [needle] identifies exactly one candidate.
+     * Ambiguity fails closed instead of completing the wrong same-named task.
+     */
     suspend fun markDone(needle: String): AgendaEntry? = mutex.withLock {
         val current = loadLocked()
-        val target = current.firstOrNull {
+        val matches = current.filter {
             !it.done && it.text.contains(needle.trim(), ignoreCase = true)
-        } ?: return@withLock null
+        }
+        val target = matches.singleOrNull() ?: return@withLock null
         val updated = Agenda.sorted(current - target + target.copy(done = true))
         if (!writeRaw(Agenda.renderFile(updated))) return@withLock null
         _entries.value = updated

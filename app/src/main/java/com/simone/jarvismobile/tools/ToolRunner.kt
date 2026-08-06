@@ -48,10 +48,17 @@ class ToolRunner @Inject constructor(
             )
 
             is ToolResolution.Approved -> {
+                if (resolution.needsBiometric) {
+                    return ToolOutcome.Failed(
+                        "biometric_required",
+                        "Questa azione resta bloccata finché non è disponibile la conferma biometrica.",
+                    )
+                }
                 if (resolution.needsConfirmation && !confirmed) {
                     return ToolOutcome.NeedsConfirmation(
                         call = call,
-                        prompt = "Confermi: ${resolution.tool.description}?",
+                        prompt = resolution.tool.confirmationPrompt(call.arguments)
+                            ?: "Confermi: ${resolution.tool.description}?",
                     )
                 }
                 val tool = resolution.tool
@@ -106,6 +113,20 @@ class ToolRunner @Inject constructor(
         "no_vault" -> "Non ho un vault collegato dove salvare. Aprilo in Impostazioni › Memoria."
         "no_clock_app" -> "Non trovo l'app Orologio per farlo."
         "no_torch" -> "Questo telefono non espone la torcia."
+        "app_unavailable" -> "Non trovo quell'app sul telefono."
+        "settings_unavailable" -> "Questa schermata delle Impostazioni non è disponibile."
+        "calendar_unavailable" -> "Non trovo un'app Calendario che possa preparare l'evento."
+        "agenda_item_not_found" ->
+            "Non trovo una sola attività aperta con quel nome nel calendario personale. Prova a essere più preciso."
+        "dialer_unavailable" -> "Non trovo un'app Telefono che possa aprire il numero."
+        "messaging_unavailable" -> "Non trovo un'app Messaggi che possa preparare l'SMS."
+        "maps_unavailable" -> "Non trovo un'app di navigazione disponibile."
+        "media_app_unavailable" -> "Non trovo un'app multimediale che possa riprodurlo."
+        "notification_access_required" ->
+            "Serve l'Accesso alle notifiche. Puoi abilitarlo in Impostazioni Android › Accesso notifiche."
+        "notification_listener_unavailable" ->
+            "L'accesso alle notifiche è abilitato ma non ancora pronto. Riapri JARVIS e riprova."
+        "no_active_media" -> "Non c'è una riproduzione multimediale attiva da controllare."
         else -> "Non sono riuscito a completare: $tool."
     }
 

@@ -2,6 +2,7 @@ package com.simone.jarvismobile.tools
 
 import android.util.Log
 import com.simone.jarvismobile.core.protocol.ToolCall
+import com.simone.jarvismobile.core.memory.MemoryStructure
 import com.simone.jarvismobile.core.routing.ComplexityHeuristic
 import com.simone.jarvismobile.llm.LlmEngine
 import com.simone.jarvismobile.llm.LlmGenerationTimeoutException
@@ -127,16 +128,63 @@ class LlmIntentClassifier @Inject constructor(
 
             // A reminder is a calendar entry: the day is parsed out of the user's
             // own words into a real date field, never left inside the description.
-            "remember", "add_reminder" -> {
+            "remember" -> {
                 val note = CommandMatcher.rememberBody(utterance) ?: utterance.trim()
                 if (note.length < 3) {
                     Match.Ask("Cosa vuoi che ricordi?", "remember", "text")
+                } else {
+                    Match.Run(
+                        call(
+                            "remember",
+                            "text" to note,
+                            "kind" to MemoryStructure.classify(note).name,
+                        ),
+                    )
+                }
+            }
+
+            "add_reminder" -> {
+                val note = CommandMatcher.rememberBody(utterance) ?: utterance.trim()
+                if (note.length < 3) {
+                    Match.Ask("Cosa vuoi mettere in agenda?", "add_reminder", "text")
                 } else {
                     CommandMatcher.reminderCall(note)
                 }
             }
 
             "list_agenda" -> CommandMatcher.agendaCall(utterance)
+
+            "complete_agenda" -> CommandMatcher.completeAgendaCall(utterance)
+                ?: Match.Ask("Quale attività devo segnare come completata?", "complete_agenda", "text")
+
+            "open_app" -> CommandMatcher.appCall(utterance)
+                ?: Match.Ask("Quale app supportata devo aprire?", "open_app", "app")
+
+            "open_settings" -> CommandMatcher.settingsCall(utterance)
+                ?: Match.Run(call("open_settings", "area" to "generali"))
+
+            "create_calendar_event" -> CommandMatcher.calendarEventCall(utterance)
+                ?: Match.Ask("Qual è il titolo dell'evento?", "create_calendar_event", "title")
+
+            "prepare_call" -> CommandMatcher.dialDraftCall(utterance)
+                ?: Match.Ask("Quale numero devo preparare nel dialer?", "prepare_call", "number")
+
+            "compose_sms" -> CommandMatcher.smsDraftCall(utterance)
+                ?: Match.Ask("A quale numero preparo l'SMS?", "compose_sms", "number")
+
+            "navigate" -> CommandMatcher.navigationCall(utterance)
+                ?: Match.Ask("Verso quale destinazione?", "navigate", "destination")
+
+            "play_media" -> CommandMatcher.playMediaCall(utterance)
+                ?: Match.Ask("Cosa vuoi ascoltare?", "play_media", "query")
+
+            "media_control" -> CommandMatcher.mediaControlCall(utterance)
+
+            "list_notifications" -> CommandMatcher.notificationCall(utterance)
+                ?: Match.Run(call("list_notifications"))
+
+            "search_vault" -> CommandMatcher.searchVaultCall(utterance)
+                ?: Match.Ask("Cosa devo cercare nel vault?", "search_vault", "query")
 
             // Clock arithmetic is done in code, never by the model.
             "time_until" -> CommandMatcher.timeUntilCall(utterance)
@@ -157,8 +205,11 @@ class LlmIntentClassifier @Inject constructor(
         dove fiducia è un numero da 0 a 100. Non aggiungere spiegazioni.
 
         Intenti ammessi: get_time, battery_status, set_timer, set_alarm,
-        flashlight, add_reminder, list_agenda, time_until, remember,
-        list_memories, calculate, ragiona, none.
+        flashlight, add_reminder, list_agenda, complete_agenda, time_until, remember,
+        list_memories, calculate, open_app, open_settings,
+        create_calendar_event, prepare_call, compose_sms, navigate,
+        play_media, media_control, list_notifications, search_vault,
+        ragiona, none.
 
         Usa "none" per conversazione semplice: saluti, risposte brevi, frasi in cui
         l'utente ti informa di qualcosa.
@@ -169,8 +220,16 @@ class LlmIntentClassifier @Inject constructor(
         o un promemoria, anche se non dice il giorno.
         Usa "list_agenda" per sapere cosa c'è in programma (impegni, appuntamenti,
         "cosa devo fare oggi pomeriggio").
+        Usa "complete_agenda" per segnare come conclusa un'attività già presente.
         Usa "time_until" per "quanto manca alle …" o "fra quanto".
         Usa "list_memories" SOLO per elencare gli appunti liberi, non gli impegni.
+        Usa "create_calendar_event" solo se l'utente chiede esplicitamente Google
+        Calendar o il calendario del telefono. Il calendario predefinito è quello
+        personale e offline di JARVIS, gestito da "add_reminder".
+        Usa "prepare_call" e "compose_sms" per preparare una chiamata o un SMS:
+        JARVIS non deve mai dichiarare di aver già chiamato o inviato.
+        Usa "list_notifications" solo se l'utente chiede esplicitamente di leggere
+        notifiche. Usa "search_vault" solo per una ricerca nei file/appunti del vault.
         Se manca un dettaglio (durata, orario) scrivi comunque il comando senza numeri:
         verrà chiesto all'utente.
 
@@ -201,6 +260,24 @@ class LlmIntentClassifier @Inject constructor(
         Risposta: list_agenda|98
         Richiesta: cosa hai annotato?
         Risposta: list_memories|95
+        Richiesta: apri Spotify
+        Risposta: open_app|99
+        Richiesta: portami a Piazza Navona
+        Risposta: navigate|97
+        Richiesta: aggiungi al calendario dentista domani alle 15
+        Risposta: add_reminder|98
+        Richiesta: esporta su Google Calendar dentista domani alle 15
+        Risposta: create_calendar_event|98
+        Richiesta: segna comprare il latte come completato
+        Risposta: complete_agenda|98
+        Richiesta: prepara un SMS al 3331234567 dicendo arrivo tra poco
+        Risposta: compose_sms|99
+        Richiesta: chiama il 061234567
+        Risposta: prepare_call|98
+        Richiesta: leggi le notifiche di WhatsApp
+        Risposta: list_notifications|98
+        Richiesta: cerca nel vault fattura moto
+        Risposta: search_vault|98
         Richiesta: metti un timer
         Risposta: set_timer|90
         Richiesta: quale impegno è più urgente secondo te?
@@ -244,8 +321,11 @@ class LlmIntentClassifier @Inject constructor(
         const val LOW_CONFIDENCE = 0.58
         val KNOWN_INTENTS = setOf(
             "get_time", "battery_status", "set_timer", "set_alarm", "flashlight",
-            "add_reminder", "list_agenda", "time_until", "remember",
-            "list_memories", "calculate", "ragiona", "none",
+            "add_reminder", "list_agenda", "complete_agenda", "time_until", "remember",
+            "list_memories", "calculate", "open_app", "open_settings",
+            "create_calendar_event", "prepare_call", "compose_sms", "navigate",
+            "play_media", "media_control", "list_notifications", "search_vault",
+            "ragiona", "none",
         )
     }
 }

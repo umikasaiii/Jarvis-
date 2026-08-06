@@ -155,7 +155,9 @@ object ToolIntentGate {
         """(?i)\b(?:avvis\w*|ricord\w*|annot\w*|segn\w*|aggiung\w*|""" +
             """impost\w*|avvi\w*|attiv\w*|disattiv\w*|accend\w*|spegn\w*|""" +
             """svegli\w*|dest\w*|temporizz\w*|timer|sveglia|torcia|agenda|""" +
-            """appuntament\w*|impegn\w*|promemoria|programm\w*|previst\w*|calcol\w*)\b""",
+            """appuntament\w*|impegn\w*|promemoria|programm\w*|previst\w*|calcol\w*|""" +
+            """apri\w*|lancia\w*|chiama\w*|telefon\w*|sms|messagg\w*|navig\w*|""" +
+            """portami|guidami|riproduc\w*|musica|brano|notific\w*|vault|file)\b""",
     )
     private val deviceQuestionSignals = Regex(
         """(?i)\b(?:batteria|caric\w*|percentuale|ora|orario|data)\b""",
