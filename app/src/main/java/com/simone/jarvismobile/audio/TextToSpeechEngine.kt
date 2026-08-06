@@ -1,5 +1,6 @@
 package com.simone.jarvismobile.audio
 
+import com.simone.jarvismobile.core.speech.SpeechStyle
 import kotlinx.coroutines.flow.StateFlow
 
 /** Whether speech is currently being produced. */
@@ -39,6 +40,13 @@ interface TextToSpeechEngine {
 
     /** Applies an installed voice plus safe rate/pitch bounds. Blank = automatic. */
     suspend fun configure(voiceName: String?, speechRate: Float, pitch: Float): Boolean
+
+    /**
+     * Sets the delivery style: pauses and expressiveness, on top of the rate and
+     * pitch given to [configure]. Rhythm is what makes speech sound human, and no
+     * engine setting provides it.
+     */
+    fun setStyle(style: SpeechStyle)
 
     /** Speaks [text]; suspends until playback finishes or is stopped/failed. */
     suspend fun speak(text: String)

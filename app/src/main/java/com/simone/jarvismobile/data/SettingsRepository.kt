@@ -1,5 +1,6 @@
 package com.simone.jarvismobile.data
 
+import com.simone.jarvismobile.core.speech.SpeechStyle
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
@@ -41,6 +42,8 @@ class SettingsRepository @Inject constructor(
         val TTS_VOICE_NAME = stringPreferencesKey("tts_voice_name")
         val TTS_SPEECH_RATE = floatPreferencesKey("tts_speech_rate")
         val TTS_PITCH = floatPreferencesKey("tts_pitch")
+        val TTS_PAUSE_SCALE = floatPreferencesKey("tts_pause_scale")
+        val TTS_EXPRESSIVENESS = floatPreferencesKey("tts_expressiveness")
         val SPEAK_BACKGROUND_RESPONSES = booleanPreferencesKey("speak_background_responses")
     }
 
@@ -154,6 +157,22 @@ class SettingsRepository @Inject constructor(
             (it[Keys.TTS_PITCH] ?: DEFAULT_TTS_PITCH).coerceIn(MIN_TTS_PITCH, MAX_TTS_PITCH)
         }
 
+    /**
+     * How long JARVIS holds a pause. Rate and pitch change the voice; this
+     * changes the *rhythm*, which is what makes speech sound spoken rather than
+     * recited (see core.speech.SpeechShaper).
+     */
+    val ttsPauseScale: Flow<Float> =
+        context.settingsDataStore.data.map {
+            (it[Keys.TTS_PAUSE_SCALE] ?: SpeechStyle.NATURALE.pauseScale).coerceIn(0f, 3f)
+        }
+
+    /** 0 = flat and machine-like, 1 = fully expressive phrasing. */
+    val ttsExpressiveness: Flow<Float> =
+        context.settingsDataStore.data.map {
+            (it[Keys.TTS_EXPRESSIVENESS] ?: SpeechStyle.NATURALE.expressiveness).coerceIn(0f, 1f)
+        }
+
     /** Optional and off by default: a finished background task may speak aloud. */
     val speakBackgroundResponses: Flow<Boolean> =
         context.settingsDataStore.data.map { it[Keys.SPEAK_BACKGROUND_RESPONSES] ?: false }
@@ -207,6 +226,25 @@ class SettingsRepository @Inject constructor(
     suspend fun setTtsPitch(value: Float) {
         context.settingsDataStore.edit {
             it[Keys.TTS_PITCH] = value.coerceIn(MIN_TTS_PITCH, MAX_TTS_PITCH)
+        }
+    }
+
+    suspend fun setTtsPauseScale(value: Float) {
+        context.settingsDataStore.edit { it[Keys.TTS_PAUSE_SCALE] = value.coerceIn(0f, 3f) }
+    }
+
+    suspend fun setTtsExpressiveness(value: Float) {
+        context.settingsDataStore.edit { it[Keys.TTS_EXPRESSIVENESS] = value.coerceIn(0f, 1f) }
+    }
+
+    /** Applies a whole delivery preset in one go (Calmo / Naturale / …). */
+    suspend fun applySpeechPreset(style: SpeechStyle) {
+        val s = style.coerced()
+        context.settingsDataStore.edit {
+            it[Keys.TTS_SPEECH_RATE] = s.rate.coerceIn(MIN_TTS_RATE, MAX_TTS_RATE)
+            it[Keys.TTS_PITCH] = s.pitch.coerceIn(MIN_TTS_PITCH, MAX_TTS_PITCH)
+            it[Keys.TTS_PAUSE_SCALE] = s.pauseScale
+            it[Keys.TTS_EXPRESSIVENESS] = s.expressiveness
         }
     }
 

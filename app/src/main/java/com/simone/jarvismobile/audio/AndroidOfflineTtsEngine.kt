@@ -7,6 +7,8 @@ import android.media.AudioManager
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.speech.tts.Voice
+import com.simone.jarvismobile.core.speech.SpeechShaper
+import com.simone.jarvismobile.core.speech.SpeechStyle
 import com.simone.jarvismobile.data.SettingsRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CompletableDeferred
@@ -99,6 +101,14 @@ class AndroidOfflineTtsEngine @Inject constructor(
         val requested = settings.ttsVoiceName.first()
         val rate = settings.ttsSpeechRate.first()
         val pitch = settings.ttsPitch.first()
+        // Rhythm is stored alongside rate/pitch and applied here, so a style set
+        // in Settings is already in force on the very first reply.
+        style = SpeechStyle(
+            rate = rate,
+            pitch = pitch,
+            pauseScale = settings.ttsPauseScale.first(),
+            expressiveness = settings.ttsExpressiveness.first(),
+        ).coerced()
         ready = setupLanguageAndVoice(engine, requested, rate, pitch)
         if (!ready) _state.value = TtsState.ERROR
         ready
@@ -232,8 +242,13 @@ class AndroidOfflineTtsEngine @Inject constructor(
 
     override suspend fun configure(voiceName: String?, speechRate: Float, pitch: Float): Boolean {
         if (!ensureReady()) return false
+        // Re-read the rhythm too: changing the voice in Settings must not leave
+        // the delivery style behind on whatever it was at startup.
+        val pauseScale = settings.ttsPauseScale.first()
+        val expressiveness = settings.ttsExpressiveness.first()
         return initMutex.withLock {
             val engine = tts ?: return@withLock false
+            style = SpeechStyle(speechRate, pitch, pauseScale, expressiveness).coerced()
             ready = setupLanguageAndVoice(engine, voiceName.orEmpty(), speechRate, pitch)
             ready
         }
@@ -246,16 +261,52 @@ class AndroidOfflineTtsEngine @Inject constructor(
             r == TextToSpeech.LANG_COUNTRY_VAR_AVAILABLE
     }
 
+    /**
+     * Delivery style (pauses + expressiveness). Rate and pitch are applied to the
+     * engine in [configure]; this adds the rhythm on top, which is what actually
+     * makes synthesised speech sound human rather than recited.
+     */
+    @Volatile private var style: SpeechStyle = SpeechStyle.NATURALE
+
+    override fun setStyle(style: SpeechStyle) {
+        this.style = style.coerced()
+    }
+
+    /**
+     * Speaks [text] as shaped segments: Markdown and abbreviations are rewritten
+     * into speakable Italian, and real silences are queued between sentences so
+     * JARVIS breathes instead of running everything together.
+     *
+     * The whole reply is queued in one go — [TextToSpeech.QUEUE_FLUSH] for the
+     * first segment, [TextToSpeech.QUEUE_ADD] for the rest — and we wait only on
+     * the last utterance, so the engine never runs dry between sentences.
+     */
     override suspend fun speak(text: String) {
         val engine = tts ?: return
-        val id = UUID.randomUUID().toString()
+        val segments = SpeechShaper.shape(text, style)
+        if (segments.isEmpty()) return
+
+        val lastId = UUID.randomUUID().toString()
         val done = CompletableDeferred<Unit>()
-        pending[id] = done
+        pending[lastId] = done
         requestAudioFocus()
-        val result = engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, id)
-        if (result != TextToSpeech.SUCCESS) {
+
+        var queued = false
+        segments.forEachIndexed { i, segment ->
+            val last = i == segments.lastIndex
+            val id = if (last) lastId else UUID.randomUUID().toString()
+            val mode = if (i == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
+            if (engine.speak(segment.text, mode, null, id) == TextToSpeech.SUCCESS) {
+                queued = true
+                if (segment.pauseMs > 0) {
+                    engine.playSilentUtterance(segment.pauseMs, TextToSpeech.QUEUE_ADD, null)
+                }
+            }
+        }
+
+        if (!queued) {
             _state.value = TtsState.ERROR
-            pending.remove(id)
+            pending.remove(lastId)
             abandonAudioFocus()
             return
         }
@@ -264,7 +315,7 @@ class AndroidOfflineTtsEngine @Inject constructor(
         } finally {
             if (!done.isCompleted) {
                 engine.stop()
-                pending.remove(id)?.complete(Unit)
+                pending.remove(lastId)?.complete(Unit)
                 _state.value = TtsState.IDLE
             }
             abandonAudioFocus()
