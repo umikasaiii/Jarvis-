@@ -40,6 +40,14 @@ class AssistantTaskQueue @Inject constructor(
         dao.update(id, AssistantTaskStatus.CANCELLED.name, progress = 0)
     }
 
+    /** Stops every unfinished response. The chat UI currently permits one at a time. */
+    suspend fun cancelActive() {
+        dao.activeIds().forEach { id ->
+            workManager.cancelUniqueWork(workName(id))
+            dao.update(id, AssistantTaskStatus.CANCELLED.name, progress = 0)
+        }
+    }
+
     private fun enqueue(id: String, policy: ExistingWorkPolicy) {
         val work = OneTimeWorkRequestBuilder<AssistantTaskWorker>()
             .setInputData(workDataOf(AssistantTaskWorker.KEY_TASK_ID to id))

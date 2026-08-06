@@ -17,11 +17,12 @@ import kotlinx.coroutines.launch
 class CancelTaskReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val taskId = intent.getStringExtra(EXTRA_TASK_ID) ?: return
+        val entry = EntryPointAccessors.fromApplication(context, ReceiverEntryPoint::class.java)
+        entry.coordinator().cancelTextGeneration()
         WorkManager.getInstance(context).cancelUniqueWork(AssistantTaskQueue.workName(taskId))
         val result = goAsync()
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             runCatching {
-                val entry = EntryPointAccessors.fromApplication(context, ReceiverEntryPoint::class.java)
                 entry.taskDao().update(taskId, AssistantTaskStatus.CANCELLED.name, 0)
             }
             result.finish()
@@ -31,6 +32,7 @@ class CancelTaskReceiver : BroadcastReceiver() {
     @EntryPoint
     @InstallIn(SingletonComponent::class)
     interface ReceiverEntryPoint {
+        fun coordinator(): com.simone.jarvismobile.audio.SessionCoordinator
         fun taskDao(): AssistantTaskDao
     }
 

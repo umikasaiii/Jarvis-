@@ -24,6 +24,13 @@ interface AssistantTaskDao {
     fun observeActiveCount(): Flow<Int>
 
     @Query(
+        "SELECT id FROM assistant_tasks " +
+            "WHERE status IN ('QUEUED','LOADING_MODEL','UNDERSTANDING','RETRIEVING_MEMORY','GENERATING') " +
+            "ORDER BY createdAt DESC",
+    )
+    suspend fun activeIds(): List<String>
+
+    @Query(
         "UPDATE assistant_tasks SET status = :status, progress = :progress, " +
             "output = :output, errorCode = :errorCode, updatedAt = :updatedAt WHERE id = :id",
     )

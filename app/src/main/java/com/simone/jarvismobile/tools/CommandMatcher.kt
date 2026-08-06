@@ -333,6 +333,7 @@ object CommandMatcher {
         """\b(che|quali|quanti)\s+(impegni|appuntamenti|promemoria)\b|""" +
             """\bcosa\s+(devo|ho da)\s+fare\b|""" +
             """\bcosa\s+ho\s+(in\s+)?(agenda|programma|previsto)\b|""" +
+            """\bne\s+ho\s+(uno|una|qualcuno|qualcuna|qualcosa)(\s+in\s+programma)?\b|""" +
             """\bin\s+agenda\b|\bla mia agenda\b|\bi miei (impegni|appuntamenti|promemoria)\b|""" +
             """\bho\s+(qualcosa|impegni|appuntamenti)\b""",
     )

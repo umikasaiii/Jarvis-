@@ -67,4 +67,31 @@ class UtteranceAnalysisTest {
         assertTrue(ComplexityHeuristic.needsReasoning("Quanto mi richiede indicativamente?"))
         assertFalse(ComplexityHeuristic.needsReasoning("Che ore sono?"))
     }
+
+    @Test
+    fun `ordinary multi question chat skips the model tool classifier`() {
+        assertFalse(
+            ToolIntentGate.shouldClassify(
+                "Come taglio l'erba? Che attrezzi dovrei usare? Quanto tempo richiede?",
+            ),
+        )
+        assertFalse(ToolIntentGate.shouldClassify("Ho mangiato un panino ieri."))
+    }
+
+    @Test
+    fun `possible natural language operations keep the classifier available`() {
+        assertTrue(ToolIntentGate.shouldClassify("Potresti segnarti che lunedì ho il dentista?"))
+        assertTrue(ToolIntentGate.shouldClassify("È in carica in questo momento?"))
+    }
+
+    @Test
+    fun `reply cleaner removes role prefixes and generated user continuation`() {
+        assertEquals(
+            "Ti serve un tagliaerba.",
+            AssistantReplyCleaner.clean(
+                "Tu: Ti serve un tagliaerba.\nSimone: E quanto tempo?\nTu: Due ore.",
+            ),
+        )
+        assertEquals("La risposta utile.", AssistantReplyCleaner.clean("Risposta: La risposta utile."))
+    }
 }

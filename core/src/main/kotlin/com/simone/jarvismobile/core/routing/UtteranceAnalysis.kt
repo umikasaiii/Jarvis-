@@ -141,3 +141,55 @@ object ComplexityHeuristic {
         .replace('à', 'a').replace('è', 'e').replace('é', 'e')
         .replace('ì', 'i').replace('ò', 'o').replace('ù', 'u')
 }
+
+/**
+ * Cheap gate for the optional LLM tool classifier.
+ *
+ * Ordinary conversation must go straight to the chat model: asking the model
+ * once to classify and once again to answer doubles latency on a phone. The
+ * classifier is reserved for language that plausibly asks JARVIS to operate a
+ * device/tool but was not already proven by the deterministic matcher.
+ */
+object ToolIntentGate {
+    private val actionSignals = Regex(
+        """(?i)\b(?:avvis\w*|ricord\w*|annot\w*|segn\w*|aggiung\w*|""" +
+            """impost\w*|avvi\w*|attiv\w*|disattiv\w*|accend\w*|spegn\w*|""" +
+            """svegli\w*|dest\w*|temporizz\w*|timer|sveglia|torcia|agenda|""" +
+            """appuntament\w*|impegn\w*|promemoria|programm\w*|previst\w*|calcol\w*)\b""",
+    )
+    private val deviceQuestionSignals = Regex(
+        """(?i)\b(?:batteria|caric\w*|percentuale|ora|orario|data)\b""",
+    )
+    private val requestShape = Regex(
+        """(?i)\b(?:puoi|potresti|vorrei|devi|fammi|dimmi|mostrami|""" +
+            """controlla|verifica|quanto|quando|quale|cosa|e\s+in)\b""",
+    )
+
+    fun shouldClassify(text: String): Boolean {
+        val input = text.trim()
+        if (input.isEmpty()) return false
+        if (actionSignals.containsMatchIn(input)) return true
+        val looksLikeQuestion = input.endsWith('?') || requestShape.containsMatchIn(input)
+        return looksLikeQuestion && deviceQuestionSignals.containsMatchIn(input)
+    }
+}
+
+/** Removes the dialogue/template continuation small models sometimes emit. */
+object AssistantReplyCleaner {
+    private val leadingLabel = Regex(
+        """(?i)^\s*(?:risposta|jarvis|assistente|tu)\s*:\s*""",
+    )
+    private val continuedUserTurn = Regex(
+        """(?im)^\s*(?:simone|utente)\s*:\s*""",
+    )
+
+    fun clean(raw: String): String {
+        var reply = raw.trim()
+        repeat(2) { reply = reply.replaceFirst(leadingLabel, "").trimStart() }
+        val continuation = continuedUserTurn.find(reply)
+        if (continuation != null && continuation.range.first > 0) {
+            reply = reply.substring(0, continuation.range.first)
+        }
+        return reply.trim()
+    }
+}

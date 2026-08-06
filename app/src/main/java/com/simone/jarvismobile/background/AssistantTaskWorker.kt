@@ -22,7 +22,10 @@ import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.components.SingletonComponent
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 
 /** Executes one local response independently of any Activity or ViewModel. */
 class AssistantTaskWorker(
@@ -61,8 +64,10 @@ class AssistantTaskWorker(
             showReadyNotification(id, answer)
             Result.success()
         }.getOrElse { error ->
-            if (isStopped) {
-                dao.update(id, AssistantTaskStatus.CANCELLED.name, 0)
+            if (isStopped || error is CancellationException) {
+                withContext(NonCancellable) {
+                    dao.update(id, AssistantTaskStatus.CANCELLED.name, 0)
+                }
                 Result.success()
             } else {
                 val code = error.message?.take(80) ?: error.javaClass.simpleName
@@ -70,6 +75,13 @@ class AssistantTaskWorker(
                 if (runAttemptCount < 1) Result.retry() else Result.failure()
             }
         }
+    }
+
+    override fun onStopped() {
+        // WorkManager cancellation alone cannot interrupt LiteRT-LM's blocking
+        // JNI call. Forward the stop into the native conversation immediately.
+        dependencies.coordinator().cancelTextGeneration()
+        super.onStopped()
     }
 
     private suspend fun update(

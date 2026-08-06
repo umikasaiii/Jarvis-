@@ -1,5 +1,13 @@
 # Changelog
 
+## Understanding V3, faster turns and real stop
+
+- Ordinary and multi-question chat now uses one model answer instead of one classification plus one answer per clause.
+- Deterministic Android tools run before the optional model classifier; small-model role prefixes and generated user continuations are removed.
+- The chat send control becomes a red Stop button while a response is running and forwards cancellation into LiteRT-LM native inference.
+- Every native generation has a 90-second watchdog; cancelled/expired conversations are discarded instead of being retried accidentally.
+- Assigning the same local model to both slots no longer loads a second copy into RAM.
+
 ## Understanding V2, background answers and reminders
 
 - Added multi-request turn planning with confidence-gated local tool routing and automatic advanced-model escalation.

@@ -4,6 +4,9 @@ import kotlinx.coroutines.flow.StateFlow
 
 enum class LlmLoadState { UNLOADED, LOADING, LOADED, ERROR }
 
+/** A native generation exceeded JARVIS's bounded per-call deadline. */
+class LlmGenerationTimeoutException : RuntimeException("generation_timeout")
+
 /**
  * Local, on-device language model (docs/ARCHITECTURE.md §5). Phase 3 ships
  * [LitertLmEngine] (LiteRT-LM, `.litertlm` models); the interface stays swappable
@@ -40,5 +43,6 @@ interface LlmEngine {
     /** Drops the multi-turn history and starts a fresh conversation next [chat]. */
     fun resetConversation()
 
+    /** Requests a real stop of the currently running native inference. */
     fun cancel()
 }

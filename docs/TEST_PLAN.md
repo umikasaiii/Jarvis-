@@ -13,7 +13,7 @@
 | Redaction | `LogRedactorTest` | bearer/JWT/email/IP masking, content placeholder, benign text untouched |
 | Markdown | `MarkdownParserTest` | frontmatter/title/tags/links, YAML list tags, heading/filename fallback, alias links, no-frontmatter |
 | Retrieval | `RetrievalRankerTest` | relevance ordering, title/tag over body, irrelevant→empty, empty query, limit, recency tie-break |
-| Understanding V2 | `UtteranceAnalysisTest` | explicit questions, comma/conjunction decomposition, comparison guard, context carry, complexity fallback |
+| Understanding V2/V3 | `UtteranceAnalysisTest` | explicit questions, comma/conjunction decomposition, comparison guard, context carry, complexity fallback, fast classifier gate, role-prefix cleanup |
 | Agenda alerts | `AgendaEntryTest`, `ReminderScheduleTest` | legacy parsing, Markdown round trip, multiple alerts, morning/day offsets, untimed guard |
 
 ## App JVM tests
@@ -44,14 +44,24 @@ the acceptance scenarios A–F from the product spec.
 
 Additional acceptance checks for this release:
 
-1. Send a long written request, immediately switch app and turn the screen off;
+1. Start a fresh conversation and measure both the first cold answer and the
+   immediately following warm answer.
+2. Send a long written request, immediately switch app and turn the screen off;
    observe processing progress and the private “response ready” notification.
-2. Kill the Activity during generation; reopen from the notification and verify
+3. Kill the Activity during generation; reopen from the notification and verify
    one user line plus one answer (no duplicate retry lines).
-3. Cancel and retry from the Attività JARVIS tab.
-4. Ask four tagliando questions in one message and verify four ordered answers;
+4. During a long answer press the red Stop button in chat. Verify that it changes
+   to Send promptly, no answer appears later, and a new request can be sent.
+5. Cancel and retry from the Attività JARVIS tab and from the foreground
+   processing notification.
+6. Say “Ho mangiato un panino ieri”, then ask “Cosa ho mangiato ieri?”. Start a
+   new conversation and ask again; only the first conversation may answer panino.
+7. Ask four tagliando questions in one message and verify one coherent response
+   covering all four, with no `Tu:`, `Simone:` or invented personal facts;
    ask battery level then “È in carica in questo momento?”.
-5. Create an agenda item with no alert; verify “Avviso non impostato”, then add
+8. Ask “Che ore sono? Quanto fa 5−3? Che impegni ho domani?” and verify all three
+   tool results once, in order.
+9. Create an agenda item with no alert; verify “Avviso non impostato”, then add
    morning-of + one-day-before and confirm both survive an app restart.
-6. Change the morning setting, edit/remove an agenda entry, and verify stale
+10. Change the morning setting, edit/remove an agenda entry, and verify stale
    notifications are rescheduled/cancelled.

@@ -27,4 +27,11 @@ class CommandMatcherTest {
     fun batteryStatementDoesNotRunATool() {
         assertNull(CommandMatcher.match("La batteria si sta caricando"))
     }
+
+    @Test
+    fun shortenedAgendaFollowUpRunsAgendaTool() {
+        val match = CommandMatcher.match("Ne ho uno in programma?")
+        assertTrue(match is Match.Run)
+        assertEquals("list_agenda", (match as Match.Run).call.name)
+    }
 }

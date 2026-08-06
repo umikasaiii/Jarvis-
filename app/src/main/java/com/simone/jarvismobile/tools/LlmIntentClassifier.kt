@@ -4,7 +4,9 @@ import android.util.Log
 import com.simone.jarvismobile.core.protocol.ToolCall
 import com.simone.jarvismobile.core.routing.ComplexityHeuristic
 import com.simone.jarvismobile.llm.LlmEngine
+import com.simone.jarvismobile.llm.LlmGenerationTimeoutException
 import com.simone.jarvismobile.llm.LlmLoadState
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import java.util.UUID
@@ -78,8 +80,18 @@ class LlmIntentClassifier @Inject constructor(
             return IntentUnderstanding("unavailable", null, 0.0, lastNeedsReasoning)
         }
 
-        val reply = runCatching { llm.generate(prompt(utterance, recentContext)) }.getOrNull()
-            ?.trim()?.lineSequence()?.firstOrNull { it.isNotBlank() }?.trim()
+        val generated = try {
+            llm.generate(prompt(utterance, recentContext))
+        } catch (e: CancellationException) {
+            // Never turn a user's Stop into an unreadable classifier result and
+            // then accidentally start a second generation for the answer.
+            throw e
+        } catch (e: LlmGenerationTimeoutException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
+        val reply = generated?.trim()?.lineSequence()?.firstOrNull { it.isNotBlank() }?.trim()
             ?: return IntentUnderstanding("unreadable", null, 0.0, lastNeedsReasoning)
 
         val clean = reply.removePrefix("Risposta:").trim().trim('`', '"', '.', ' ')

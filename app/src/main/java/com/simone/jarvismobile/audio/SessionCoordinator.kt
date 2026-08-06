@@ -9,11 +9,15 @@ import com.simone.jarvismobile.core.state.ConversationEvent
 import com.simone.jarvismobile.core.state.ConversationState
 import com.simone.jarvismobile.core.state.ConversationStateMachine
 import com.simone.jarvismobile.core.state.RouteTarget
+import com.simone.jarvismobile.core.routing.AssistantReplyCleaner
+import com.simone.jarvismobile.core.routing.ComplexityHeuristic
+import com.simone.jarvismobile.core.routing.ToolIntentGate
 import com.simone.jarvismobile.core.routing.TurnPlanner
 import com.simone.jarvismobile.data.ChatStore
 import com.simone.jarvismobile.data.SettingsRepository
 import com.simone.jarvismobile.data.StoredMessage
 import com.simone.jarvismobile.llm.LlmEngine
+import com.simone.jarvismobile.llm.LlmGenerationTimeoutException
 import com.simone.jarvismobile.llm.LlmLoadState
 import com.simone.jarvismobile.llm.LlmRouter
 import com.simone.jarvismobile.llm.ModelSlot
@@ -26,6 +30,7 @@ import com.simone.jarvismobile.tools.ToolOutcome
 import com.simone.jarvismobile.tools.ToolRunner
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -203,6 +208,9 @@ class SessionCoordinator @Inject constructor(
             _diagnostic.value = "start"
             try {
                 runTurn()
+            } catch (_: CancellationException) {
+                _diagnostic.value = "sessione annullata"
+                machine.dispatch(ConversationEvent.CancelRequested)
             } catch (e: Exception) {
                 _lastError.value = "crash_${e.javaClass.simpleName}"
                 _diagnostic.value = "CRASH ${e.javaClass.simpleName}: ${e.message}"
@@ -323,6 +331,59 @@ class SessionCoordinator @Inject constructor(
         if (pendingConfirmation == null && pendingSlot == null && !awaitingAnswer) {
             val plan = TurnPlanner.plan(transcript)
             if (plan.isCompound) {
+                // Knowledge/conversation questions belong to ONE model turn.
+                // Splitting them made a 1B model classify+answer every clause and
+                // fed its own partial replies back as pseudo-dialogue, causing
+                // severe latency and role continuations such as "Tu:".
+                val recentContext = recentConversationContext()
+                val deterministic = plan.requests.map { request ->
+                    CommandMatcher.match(request.text, recentContext = recentContext)
+                }
+                val needsClassifier = plan.requests.indices.any { index ->
+                    deterministic[index] == null && ToolIntentGate.shouldClassify(plan.requests[index].text)
+                }
+                if (deterministic.all { it == null } && !needsClassifier) {
+                    return chatReply(
+                        transcript,
+                        needsReasoning = ComplexityHeuristic.needsReasoning(transcript),
+                    )
+                }
+
+                // Read-only/deterministic results can be grounded into one final
+                // conversational answer. This keeps mixed requests fast, e.g.
+                // three tagliando questions plus "ne ho uno in programma?".
+                val canComposeOnce = !needsClassifier && deterministic.filterNotNull().all { match ->
+                    match is Match.Run && match.call.name in SAFE_COMPOUND_TOOLS
+                }
+                if (canComposeOnce) {
+                    val verified = ArrayList<Pair<String, String>>()
+                    plan.requests.forEachIndexed { index, request ->
+                        val match = deterministic[index] as? Match.Run ?: return@forEachIndexed
+                        val spoken = when (val outcome = tools.run(match.call)) {
+                            is ToolOutcome.Done -> outcome.spoken
+                            is ToolOutcome.Failed -> outcome.spoken
+                            is ToolOutcome.NeedsConfirmation -> {
+                                pendingConfirmation = outcome.call
+                                return outcome.prompt
+                            }
+                        }
+                        verified += request.text to spoken
+                    }
+                    if (verified.size == plan.requests.size) {
+                        return verified.joinToString("\n") { it.second }
+                    }
+                    if (verified.isNotEmpty()) {
+                        val grounding = verified.joinToString("\n") { (request, result) ->
+                            "$request -> $result"
+                        }
+                        return chatReply(
+                            transcript,
+                            needsReasoning = true,
+                            conversationHint = grounding,
+                        )
+                    }
+                }
+
                 val answers = ArrayList<String>(plan.requests.size)
                 var sameMessageContext = ""
                 for (request in plan.requests) {
@@ -394,12 +455,8 @@ class SessionCoordinator @Inject constructor(
             // utterance as a fresh request rather than guessing.
         }
 
-        // Phase 6 — understanding, in two stages.
-        //
-        // 1) The local AI analyses the request against the tool list, so a
-        //    command is understood however it is phrased. It can only name a
-        //    tool that already exists in the registry, and every argument is
-        //    re-validated, so understanding grows but privileges don't.
+        // Phase 6 — deterministic operations first. This path is instant and
+        // avoids wasting a full model generation on explicit commands.
         // If JARVIS just asked something, this message answers it. Only an
         // unmistakable explicit command may interrupt; otherwise keep talking.
         if (awaitingAnswer) {
@@ -422,9 +479,39 @@ class SessionCoordinator @Inject constructor(
             )
         }
 
-        val understanding = runCatching {
-            intentClassifier.understand(transcript, recentContext)
-        }.getOrNull()
+        when (val match = CommandMatcher.match(transcript, recentContext = recentContext)) {
+            is Match.Ask -> {
+                pendingSlot = Pending(match.tool, match.missing, match.partial)
+                _diagnostic.value = "chiedo: ${match.missing}"
+                return match.question
+            }
+            is Match.Run -> {
+                _diagnostic.value = "tool: ${match.call.name}"
+                return when (val outcome = tools.run(match.call)) {
+                    is ToolOutcome.Done -> outcome.spoken
+                    is ToolOutcome.Failed -> outcome.spoken
+                    is ToolOutcome.NeedsConfirmation -> {
+                        pendingConfirmation = outcome.call
+                        outcome.prompt
+                    }
+                }
+            }
+            null -> Unit
+        }
+
+        // Only plausible but unfamiliar operation wording pays for the optional
+        // one-line LLM classifier. Ordinary chat goes directly to one answer.
+        val understanding = if (ToolIntentGate.shouldClassify(transcript)) {
+            try {
+                intentClassifier.understand(transcript, recentContext)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: LlmGenerationTimeoutException) {
+                null
+            }
+        } else {
+            null
+        }
         when (val aiMatch = understanding?.takeIf { it.mayExecute }?.match) {
             is Match.Ask -> {
                 pendingSlot = Pending(aiMatch.tool, aiMatch.missing, aiMatch.partial)
@@ -443,30 +530,6 @@ class SessionCoordinator @Inject constructor(
                 }
             }
             null -> Unit
-        }
-
-        // 2) Explicit patterns as the safety net: they catch what the model
-        //    missed, fill in a missing detail by asking, and keep commands
-        //    working when no model is loaded at all.
-        when (val match = CommandMatcher.match(transcript, recentContext = recentContext)) {
-            is Match.Ask -> {
-                // Remember what we were doing so the next reply completes it.
-                pendingSlot = Pending(match.tool, match.missing, match.partial)
-                _diagnostic.value = "chiedo: ${match.missing}"
-                return match.question
-            }
-            is Match.Run -> {
-                _diagnostic.value = "tool: ${match.call.name}"
-                return when (val outcome = tools.run(match.call)) {
-                    is ToolOutcome.Done -> outcome.spoken
-                    is ToolOutcome.Failed -> outcome.spoken
-                    is ToolOutcome.NeedsConfirmation -> {
-                        pendingConfirmation = outcome.call
-                        outcome.prompt
-                    }
-                }
-            }
-            null -> Unit // not a command → normal conversation below
         }
 
         if (llm.loadState.value != LlmLoadState.LOADED) {
@@ -549,9 +612,9 @@ class SessionCoordinator @Inject constructor(
         injectedContext += fresh
         val message = buildString {
             if (conversationHint.isNotBlank()) {
-                append("(contesto delle altre domande nello stesso messaggio: ")
+                append("[Risultati verificati dal sistema da usare nella risposta: ")
                 append(conversationHint.replace('\n', ' ').takeLast(COMPOUND_CONTEXT_CHARS))
-                append(")\n")
+                append("]\n")
             }
             if (fresh.isNotEmpty()) {
                 append("(dai miei appunti: ")
@@ -568,7 +631,15 @@ class SessionCoordinator @Inject constructor(
             "memoria: ${retrieved.size} frammenti · $brain"
         }
         lastConversationSlot = slot
-        router.chat(message, system, slot)?.trim()?.ifBlank { null }?.let { return it }
+        val firstReply = try {
+            router.chat(message, system, slot)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: LlmGenerationTimeoutException) {
+            _diagnostic.value = "risposta fermata: tempo massimo"
+            return TIMEOUT_REPLY
+        }
+        firstReply?.let(AssistantReplyCleaner::clean)?.ifBlank { null }?.let { return it }
 
         // Generation failed. The usual cause is an exhausted/corrupted KV cache
         // after a long chat, which a fresh conversation clears — so retry once
@@ -585,7 +656,15 @@ class SessionCoordinator @Inject constructor(
             activeSystems[slot] = it
             activeEpochs[slot] = router.conversationEpoch(slot)
         }
-        router.chat(message, retrySystem, slot)?.trim()?.ifBlank { null }?.let { return it }
+        val retryReply = try {
+            router.chat(message, retrySystem, slot)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: LlmGenerationTimeoutException) {
+            _diagnostic.value = "risposta fermata: tempo massimo"
+            return TIMEOUT_REPLY
+        }
+        retryReply?.let(AssistantReplyCleaner::clean)?.ifBlank { null }?.let { return it }
 
         return "Il modello non è riuscito a rispondere. Prova «Nuova conversazione», " +
             "o ricarica il modello dalla schermata Modelli."
@@ -663,6 +742,9 @@ class SessionCoordinator @Inject constructor(
                 _reply.value = answer
                 appendMessage(fromUser = false, text = answer, taskId = taskId)
                 answer
+            } catch (e: CancellationException) {
+                _diagnostic.value = "risposta annullata"
+                throw e
             } catch (e: Exception) {
                 _lastError.value = "text_crash_${e.javaClass.simpleName}"
                 _diagnostic.value = "CRASH ${e.javaClass.simpleName}"
@@ -758,6 +840,15 @@ class SessionCoordinator @Inject constructor(
         if (router.advancedLoadState.value == LlmLoadState.LOADED) return
         val path = settings.advancedModelPath.first()
         if (path.isBlank()) return
+        if (path == settings.modelPath.first()) {
+            // The fast engine already owns this exact model. Loading it again in
+            // the advanced slot doubles RAM and warm-up time without improving
+            // quality; complex turns automatically fall back to the fast slot.
+            router.advanced.unload()
+            settings.clearAdvancedModel()
+            _diagnostic.value = "un solo modello: rapido e complesso coincidono"
+            return
+        }
         val file = File(path)
         if (!file.exists()) return
         val name = settings.advancedModelName.first().ifBlank { file.name }
@@ -793,7 +884,14 @@ class SessionCoordinator @Inject constructor(
         stt.cancel()
         audioCapture.cancel()
         tts.stop()
+        router.cancel()
         machine.dispatch(ConversationEvent.CancelRequested)
+    }
+
+    /** Stops only the active written-answer inference. */
+    fun cancelTextGeneration() {
+        router.cancel()
+        _diagnostic.value = "annullamento risposta…"
     }
 
     // --- Diagnostics helpers --------------------------------------------
@@ -854,6 +952,13 @@ class SessionCoordinator @Inject constructor(
 
         /** Bound context shared among independently routed parts of one message. */
         const val COMPOUND_CONTEXT_CHARS = 1_200
+
+        const val TIMEOUT_REPLY =
+            "La risposta si è bloccata e l'ho fermata automaticamente. Prova a riformulare la richiesta."
+
+        private val SAFE_COMPOUND_TOOLS = setOf(
+            "get_time", "time_until", "battery_status", "list_agenda", "list_memories", "calculate",
+        )
 
         /** Affirmative replies that approve a pending tool confirmation. */
         private val CONFIRM_WORDS = listOf("sì", "si", "certo", "conferma", "ok", "va bene", "procedi", "yes")

@@ -77,6 +77,12 @@ class HomeViewModel @Inject constructor(
         coordinator.cancel()
     }
 
+    /** Stops the active typed response in WorkManager and inside LiteRT-LM. */
+    fun onStopResponse() {
+        coordinator.cancelTextGeneration()
+        viewModelScope.launch { taskQueue.cancelActive() }
+    }
+
     /** Clears the conversation and the model's in-session memory. */
     fun onNewConversation() {
         coordinator.newConversation()

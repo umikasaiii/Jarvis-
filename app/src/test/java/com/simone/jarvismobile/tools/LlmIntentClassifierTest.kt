@@ -2,6 +2,7 @@ package com.simone.jarvismobile.tools
 
 import com.simone.jarvismobile.llm.LlmEngine
 import com.simone.jarvismobile.llm.LlmLoadState
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.test.runTest
@@ -40,13 +41,31 @@ class LlmIntentClassifierTest {
         assertTrue(understanding.needsReasoning)
     }
 
-    private class FakeLlm(private val answer: String) : LlmEngine {
+    @Test
+    fun cancellationIsNeverTurnedIntoAClassifierMiss() = runTest {
+        var propagated = false
+        try {
+            LlmIntentClassifier(FakeLlm("", CancellationException("stop")))
+                .understand("Accendi qualcosa")
+        } catch (_: CancellationException) {
+            propagated = true
+        }
+        assertTrue(propagated)
+    }
+
+    private class FakeLlm(
+        private val answer: String,
+        private val failure: Throwable? = null,
+    ) : LlmEngine {
         override val loadState: StateFlow<LlmLoadState> = MutableStateFlow(LlmLoadState.LOADED)
         override val loadedModelName: StateFlow<String?> = MutableStateFlow("fake")
         override val lastLoadDetail: StateFlow<String> = MutableStateFlow("")
         override suspend fun load(modelPath: String, modelName: String) = true
         override fun unload() = Unit
-        override suspend fun generate(prompt: String): String = answer
+        override suspend fun generate(prompt: String): String {
+            failure?.let { throw it }
+            return answer
+        }
         override suspend fun chat(userText: String, systemPrompt: String): String = answer
         override fun resetConversation() = Unit
         override fun cancel() = Unit
