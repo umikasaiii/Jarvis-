@@ -13,7 +13,12 @@ import javax.inject.Singleton
 
 /** One persisted line of conversation. */
 @Serializable
-data class StoredMessage(val fromUser: Boolean, val text: String, val at: Long = 0L)
+data class StoredMessage(
+    val fromUser: Boolean,
+    val text: String,
+    val at: Long = 0L,
+    val taskId: String? = null,
+)
 
 /**
  * Keeps the conversation across app restarts.

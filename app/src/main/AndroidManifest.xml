@@ -10,6 +10,8 @@
          permission). The service runs ONLY during an explicit session. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <!-- Long local inference promoted by WorkManager while the UI is closed. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
     <!-- Notifications for the foreground service (Android 13+). -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -77,6 +79,17 @@
             android:name=".audio.ListeningService"
             android:exported="false"
             android:foregroundServiceType="microphone" />
+
+        <receiver
+            android:name=".background.CancelTaskReceiver"
+            android:exported="false" />
+
+        <!-- WorkManager promotes long on-device inference to a visible data-sync
+             foreground service when the Activity is no longer visible. -->
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="dataSync"
+            tools:node="merge" />
 
         <!-- Quick Settings tile (Android 7+). Opens an explicit session; it never
              records silently (docs/ARCHITECTURE.md §7.2). -->

@@ -33,6 +33,10 @@ class SettingsRepository @Inject constructor(
         val ADV_MODEL_PATH = stringPreferencesKey("llm_adv_model_path")
         val ADV_MODEL_NAME = stringPreferencesKey("llm_adv_model_name")
         val VAULT_URI = stringPreferencesKey("vault_tree_uri")
+        val RESPONSE_NOTIFICATIONS = booleanPreferencesKey("response_notifications")
+        val SHOW_RESPONSE_PREVIEW = booleanPreferencesKey("show_response_preview")
+        val REMINDER_NOTIFICATIONS = booleanPreferencesKey("reminder_notifications")
+        val REMINDER_MORNING_HOUR = intPreferencesKey("reminder_morning_hour")
     }
 
     /** Persisted SAF tree URI of the Obsidian vault, or empty if none chosen. */
@@ -117,6 +121,20 @@ class SettingsRepository @Inject constructor(
     val followUpEnabled: Flow<Boolean> =
         context.settingsDataStore.data.map { it[Keys.FOLLOW_UP] ?: true }
 
+    /** Notify even when a response finishes after the chat is no longer visible. */
+    val responseNotifications: Flow<Boolean> =
+        context.settingsDataStore.data.map { it[Keys.RESPONSE_NOTIFICATIONS] ?: true }
+
+    /** Off by default so private answers are hidden on the lock screen. */
+    val showResponsePreview: Flow<Boolean> =
+        context.settingsDataStore.data.map { it[Keys.SHOW_RESPONSE_PREVIEW] ?: false }
+
+    val reminderNotifications: Flow<Boolean> =
+        context.settingsDataStore.data.map { it[Keys.REMINDER_NOTIFICATIONS] ?: true }
+
+    val reminderMorningHour: Flow<Int> =
+        context.settingsDataStore.data.map { (it[Keys.REMINDER_MORNING_HOUR] ?: 8).coerceIn(0, 23) }
+
     suspend fun setAssistantName(value: String) {
         context.settingsDataStore.edit { it[Keys.NAME] = value.trim().ifBlank { DEFAULT_NAME } }
     }
@@ -131,6 +149,22 @@ class SettingsRepository @Inject constructor(
 
     suspend fun setFollowUpEnabled(value: Boolean) {
         context.settingsDataStore.edit { it[Keys.FOLLOW_UP] = value }
+    }
+
+    suspend fun setResponseNotifications(value: Boolean) {
+        context.settingsDataStore.edit { it[Keys.RESPONSE_NOTIFICATIONS] = value }
+    }
+
+    suspend fun setShowResponsePreview(value: Boolean) {
+        context.settingsDataStore.edit { it[Keys.SHOW_RESPONSE_PREVIEW] = value }
+    }
+
+    suspend fun setReminderNotifications(value: Boolean) {
+        context.settingsDataStore.edit { it[Keys.REMINDER_NOTIFICATIONS] = value }
+    }
+
+    suspend fun setReminderMorningHour(value: Int) {
+        context.settingsDataStore.edit { it[Keys.REMINDER_MORNING_HOUR] = value.coerceIn(0, 23) }
     }
 
     companion object {

@@ -44,9 +44,14 @@ fun SettingsScreen(
     val seconds by viewModel.recordSeconds.collectAsStateWithLifecycle()
     val useBluetooth by viewModel.useBluetooth.collectAsStateWithLifecycle()
     val followUpEnabled by viewModel.followUpEnabled.collectAsStateWithLifecycle()
+    val responseNotifications by viewModel.responseNotifications.collectAsStateWithLifecycle()
+    val showResponsePreview by viewModel.showResponsePreview.collectAsStateWithLifecycle()
+    val reminderNotifications by viewModel.reminderNotifications.collectAsStateWithLifecycle()
+    val reminderMorningHour by viewModel.reminderMorningHour.collectAsStateWithLifecycle()
 
     var nameField by remember(name) { mutableStateOf(name) }
     var sliderValue by remember(seconds) { mutableStateOf(seconds.toFloat()) }
+    var morningSlider by remember(reminderMorningHour) { mutableStateOf(reminderMorningHour.toFloat()) }
 
     Column(
         modifier = Modifier
@@ -89,6 +94,68 @@ fun SettingsScreen(
                         "Bluetooth: se la Posizione è spenta, JARVIS usa comunque " +
                         "microfono e altoparlante del telefono senza chiederla. " +
                         "Disattiva per restare sempre su telefono.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                ) {
+                    Text("Promemoria agenda", style = MaterialTheme.typography.titleMedium)
+                    Switch(
+                        checked = reminderNotifications,
+                        onCheckedChange = viewModel::setReminderNotifications,
+                    )
+                }
+                Text("Orario «mattina stessa»: %02d:00".format(morningSlider.toInt()))
+                Slider(
+                    value = morningSlider,
+                    onValueChange = { morningSlider = it },
+                    onValueChangeFinished = { viewModel.setReminderMorningHour(morningSlider.toInt()) },
+                    valueRange = 5f..11f,
+                    steps = 5,
+                    enabled = reminderNotifications,
+                )
+                Text(
+                    "Gli avvisi scelti nell'Agenda vengono conservati e ripristinati anche dopo il riavvio.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                ) {
+                    Text("Notifica risposta pronta", style = MaterialTheme.typography.titleMedium)
+                    Switch(
+                        checked = responseNotifications,
+                        onCheckedChange = viewModel::setResponseNotifications,
+                    )
+                }
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                ) {
+                    Text("Mostra anteprima", style = MaterialTheme.typography.bodyMedium)
+                    Switch(
+                        checked = showResponsePreview,
+                        enabled = responseNotifications,
+                        onCheckedChange = viewModel::setShowResponsePreview,
+                    )
+                }
+                Text(
+                    "Le richieste scritte continuano anche cambiando app o spegnendo lo schermo. " +
+                        "L'anteprima è disattivata per proteggere i contenuti nella schermata di blocco.",
                     style = MaterialTheme.typography.bodySmall,
                 )
             }

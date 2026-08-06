@@ -28,6 +28,7 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -40,13 +41,13 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.simone.jarvismobile.ui.commands.CommandsScreen
-import com.simone.jarvismobile.ui.common.PlaceholderScreen
 import com.simone.jarvismobile.ui.dashboard.DashboardScreen
 import com.simone.jarvismobile.ui.diagnostics.DiagnosticsScreen
 import com.simone.jarvismobile.ui.home.HomeScreen
 import com.simone.jarvismobile.ui.memory.MemoryScreen
 import com.simone.jarvismobile.ui.models.ModelsScreen
 import com.simone.jarvismobile.ui.settings.SettingsScreen
+import com.simone.jarvismobile.ui.tasks.TasksScreen
 
 private enum class Tab(val label: String, val icon: ImageVector) {
     HOME("Home", Icons.Filled.Home),
@@ -64,9 +65,17 @@ private enum class Overlay { CHAT, MODELS, MEMORY, DIAGNOSTICS }
  * shows through), while Models/Memory/Diagnostics open full-screen.
  */
 @Composable
-fun JarvisApp(autoStartListening: Boolean = false) {
+fun JarvisApp(
+    autoStartListening: Boolean = false,
+    initiallyOpenChat: Boolean = false,
+    openChatRequest: Int = 0,
+) {
     var tab by remember { mutableStateOf(Tab.HOME) }
-    var overlay by remember { mutableStateOf(if (autoStartListening) Overlay.CHAT else null) }
+    var overlay by remember { mutableStateOf(if (initiallyOpenChat) Overlay.CHAT else null) }
+
+    LaunchedEffect(openChatRequest) {
+        if (openChatRequest > 0) overlay = Overlay.CHAT
+    }
 
     Box(Modifier.fillMaxSize()) {
         // Base: the tab shell with the bottom navigation.
@@ -113,7 +122,7 @@ fun JarvisApp(autoStartListening: Boolean = false) {
                     )
                     Tab.CHAT -> Unit
                     Tab.COMANDI -> CommandsScreen()
-                    Tab.NOTIFICHE -> PlaceholderScreen("Notifiche", "Il centro notifiche arriverà più avanti.")
+                    Tab.NOTIFICHE -> TasksScreen()
                     Tab.IMPOSTAZIONI -> SettingsScreen(
                         onBack = { tab = Tab.HOME },
                         onOpenModels = { overlay = Overlay.MODELS },

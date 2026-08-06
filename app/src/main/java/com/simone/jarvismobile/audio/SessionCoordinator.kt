@@ -43,7 +43,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /** One line of the on-screen conversation log. */
-data class ChatMessage(val fromUser: Boolean, val text: String)
+data class ChatMessage(val fromUser: Boolean, val text: String, val taskId: String? = null)
 
 /**
  * Owns the conversation and is the single source of truth the UI observes:
@@ -127,19 +127,22 @@ class SessionCoordinator @Inject constructor(
     private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
     val messages: StateFlow<List<ChatMessage>> = _messages.asStateFlow()
 
-    private fun appendMessage(fromUser: Boolean, text: String) {
+    private fun appendMessage(fromUser: Boolean, text: String, taskId: String? = null) {
         if (text.isBlank()) return
         val trimmed = text.trim()
+        if (taskId != null && _messages.value.any { it.fromUser == fromUser && it.taskId == taskId }) return
         // Remember whether JARVIS just asked something, so the next user message
         // is read as an answer rather than scanned for commands.
         if (!fromUser) awaitingAnswer = trimmed.endsWith("?")
-        _messages.value = _messages.value + ChatMessage(fromUser, trimmed)
+        _messages.value = _messages.value + ChatMessage(fromUser, trimmed, taskId)
         persistChat()
     }
 
     /** Writes the transcript to disk so it survives the app being closed. */
     private fun persistChat() {
-        val snapshot = _messages.value.map { StoredMessage(it.fromUser, it.text, System.currentTimeMillis()) }
+        val snapshot = _messages.value.map {
+            StoredMessage(it.fromUser, it.text, System.currentTimeMillis(), it.taskId)
+        }
         scope.launch { chatStore.save(snapshot) }
     }
 
@@ -153,7 +156,7 @@ class SessionCoordinator @Inject constructor(
         chatRestored = true
         val saved = runCatching { chatStore.load() }.getOrDefault(emptyList())
         if (saved.isEmpty() || _messages.value.isNotEmpty()) return
-        _messages.value = saved.map { ChatMessage(it.fromUser, it.text) }
+        _messages.value = saved.map { ChatMessage(it.fromUser, it.text, it.taskId) }
         _messages.value.lastOrNull()?.let { last ->
             if (!last.fromUser) awaitingAnswer = last.text.trim().endsWith("?")
         }
@@ -632,21 +635,38 @@ class SessionCoordinator @Inject constructor(
      * "ricorda …" command all work — and appends both sides to the on-screen log.
      */
     suspend fun sendText(text: String) {
+        processText(text, taskId = null)
+    }
+
+    /**
+     * Durable-worker entry point. [taskId] makes chat persistence idempotent: if
+     * Android stops the process after saving the user line, a WorkManager retry
+     * resumes without duplicating that message or a reply already completed.
+     */
+    suspend fun processQueuedText(taskId: String, text: String): String? {
+        restoreChat()
+        _messages.value.firstOrNull { !it.fromUser && it.taskId == taskId }?.let { return it.text }
+        return processText(text, taskId)
+    }
+
+    private suspend fun processText(text: String, taskId: String?): String? {
         val message = text.trim()
-        if (message.isBlank() || sessionMutex.isLocked) return
-        sessionMutex.withLock {
+        if (message.isBlank()) return null
+        return sessionMutex.withLock {
             _lastError.value = null
             _sending.value = true
             try {
-                appendMessage(fromUser = true, text = message)
+                appendMessage(fromUser = true, text = message, taskId = taskId)
                 _transcript.value = message
                 _diagnostic.value = "chat scritta"
                 val answer = generateAnswer(message)
                 _reply.value = answer
-                appendMessage(fromUser = false, text = answer)
+                appendMessage(fromUser = false, text = answer, taskId = taskId)
+                answer
             } catch (e: Exception) {
                 _lastError.value = "text_crash_${e.javaClass.simpleName}"
                 _diagnostic.value = "CRASH ${e.javaClass.simpleName}"
+                null
             } finally {
                 _sending.value = false
             }

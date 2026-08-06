@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.Build
 import com.simone.jarvismobile.audio.ListeningService
+import com.simone.jarvismobile.background.JarvisNotifications
 import dagger.hilt.android.HiltAndroidApp
 
 /**
@@ -17,6 +18,7 @@ class JarvisApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         createListeningChannel()
+        JarvisNotifications.createChannels(this)
     }
 
     private fun createListeningChannel() {
