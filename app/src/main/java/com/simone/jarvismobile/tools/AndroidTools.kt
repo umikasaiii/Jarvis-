@@ -9,6 +9,8 @@ import com.simone.jarvismobile.core.tools.SensitivityLevel
 import com.simone.jarvismobile.core.tools.Tool
 import com.simone.jarvismobile.core.tools.ToolPolicy
 import com.simone.jarvismobile.core.tools.ToolResult
+import com.simone.jarvismobile.core.memory.MemoryKind
+import com.simone.jarvismobile.core.memory.MemoryStructure
 import com.simone.jarvismobile.memory.MemoryIndex
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -183,7 +185,7 @@ class FlashlightTool(private val context: Context) : Tool {
 class RememberTool(private val memory: MemoryIndex) : Tool {
     override val name = "remember"
     override val description = "Salva un appunto nella memoria (vault Obsidian)."
-    override val policy = ToolPolicy.LOW_RISK_WRITE
+    override val policy = ToolPolicy.CONFIRMING_WRITE
     override val sensitivity = SensitivityLevel.PERSONAL
     override val requiresNetwork = false
     override val timeoutMs = 8_000L
@@ -191,14 +193,35 @@ class RememberTool(private val memory: MemoryIndex) : Tool {
     override fun validate(arguments: JsonObject): String? {
         val text = arguments.str("text") ?: return "manca il campo 'text'"
         if (text.isBlank()) return "testo vuoto"
+        if (MemoryStructure.containsCredential(text)) return "password, PIN, OTP e token non possono essere salvati"
+        arguments.str("kind")?.let { raw ->
+            if (MemoryKind.entries.none { it.name.equals(raw, ignoreCase = true) }) return "tipo di memoria non valido"
+        }
         return null
+    }
+
+    override fun confirmationPrompt(arguments: JsonObject): String? {
+        val text = arguments.str("text")?.take(180) ?: return null
+        val kind = arguments.str("kind")?.let { raw ->
+            MemoryKind.entries.firstOrNull { it.name.equals(raw, ignoreCase = true) }
+        } ?: MemoryStructure.classify(text)
+        val target = when (kind) {
+            MemoryKind.TEMPORARY -> "nella memoria breve di questa conversazione"
+            MemoryKind.PERMANENT -> "in JARVIS/Memoria.md nel vault Obsidian"
+            MemoryKind.SENSITIVE -> "come dato sensibile in JARVIS/Memoria.md"
+        }
+        return "Confermi di salvare “$text” $target?"
     }
 
     override suspend fun execute(arguments: JsonObject): ToolResult {
         val text = arguments.str("text") ?: return ToolResult.Failure("missing_text")
-        val saved = runCatching { memory.remember(text) }.getOrDefault(false)
-        return if (saved) {
-            ok("text" to text, "spoken" to "Ho annotato: $text")
+        val kind = arguments.str("kind")?.let { raw ->
+            MemoryKind.entries.firstOrNull { it.name.equals(raw, ignoreCase = true) }
+        } ?: MemoryStructure.classify(text)
+        val saved = runCatching { memory.remember(text, kind) }.getOrNull()
+        return if (saved != null) {
+            val where = if (kind == MemoryKind.TEMPORARY) "per questa conversazione" else "nel vault"
+            ok("text" to text, "kind" to kind.name, "spoken" to "Ho annotato $where: $text")
         } else {
             ToolResult.Failure("no_vault")
         }
