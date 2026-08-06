@@ -111,7 +111,14 @@ class OpenSettingsTool(private val context: Context) : Tool {
         val area = arguments.systemText("area")?.let(::normalizeArea)
             ?: return ToolResult.Failure("missing_area")
         val action = ACTIONS[area] ?: return ToolResult.Failure("unsupported_settings")
-        return if (context.launchFixed(Intent(action))) {
+        val intent = Intent(action).apply {
+            // The app-notification screen is the one public entry point Android
+            // offers for "notifiche"; it only opens if told whose notifications.
+            if (action == Settings.ACTION_APP_NOTIFICATION_SETTINGS) {
+                putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+            }
+        }
+        return if (context.launchFixed(intent)) {
             systemOk("area" to area, "spoken" to "Apro le impostazioni $area.")
         } else {
             ToolResult.Failure("settings_unavailable")
@@ -129,7 +136,10 @@ class OpenSettingsTool(private val context: Context) : Tool {
             "posizione" to Settings.ACTION_LOCATION_SOURCE_SETTINGS,
             "privacy" to Settings.ACTION_PRIVACY_SETTINGS,
             "archiviazione" to Settings.ACTION_INTERNAL_STORAGE_SETTINGS,
-            "notifiche" to Settings.ACTION_NOTIFICATION_SETTINGS,
+            // There is no public "all notifications" action; ACTION_NOTIFICATION_SETTINGS
+            // is not part of the SDK. The supported one is the app's own screen,
+            // which is also the relevant one here (JARVIS's reminders and replies).
+            "notifiche" to Settings.ACTION_APP_NOTIFICATION_SETTINGS,
             "accesso notifiche" to Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS,
             "voce" to Settings.ACTION_VOICE_INPUT_SETTINGS,
             "assistente" to Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS,

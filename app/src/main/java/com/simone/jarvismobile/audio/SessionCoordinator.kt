@@ -896,7 +896,7 @@ class SessionCoordinator @Inject constructor(
                         }
                     }
                     "when" -> {
-                        val parsed = ItalianDateTimeParser.parse(reply)
+                        val parsed = ItalianDateTimeParser.parse(reply, LocalDateTime.now())
                         val date = parsed.date ?: return null
                         partial["date"] = date.toString()
                         parsed.time?.let {
