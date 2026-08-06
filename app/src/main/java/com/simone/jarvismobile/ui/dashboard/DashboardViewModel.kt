@@ -64,7 +64,13 @@ class DashboardViewModel @Inject constructor(
     init {
         // Ensure the model auto-loads and the vault index is built even if the
         // user opens the app straight onto the dashboard tab.
-        viewModelScope.launch { coordinator.ensureModelReady() }
+        viewModelScope.launch {
+            // Bring back the saved conversation first, then treat it as already
+            // seen — resuming a chat is not a new notification.
+            coordinator.restoreChat()
+            lastSeen.value = coordinator.messages.value.size
+            coordinator.ensureModelReady()
+        }
         viewModelScope.launch { coordinator.ensureMemoryReady() }
         viewModelScope.launch { runCatching { agenda.reload() } }
     }

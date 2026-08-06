@@ -121,12 +121,13 @@ class LitertLmEngine @Inject constructor(
             val e = engine ?: return@withContext null
             chatMutex.withLock {
                 try {
-                    // Re-seed when the system instruction changes (e.g. the user's
-                    // notes were updated) so the model always sees current context.
-                    if (conversation != null && seededSystemPrompt != systemPrompt) {
-                        runCatching { conversation?.close() }
-                        conversation = null
-                    }
+                    // The conversation is NOT re-created when [systemPrompt] differs
+                    // from the seeded one. It used to be, and that quietly destroyed
+                    // the chat memory: the caller rebuilds the system instruction
+                    // every turn (it carries retrieved notes, which change with the
+                    // question), so almost every message threw away the KV cache and
+                    // the model could not even remember the previous line. The
+                    // instruction is seeded once; use [resetConversation] to change it.
                     val conv = conversation ?: e.createConversation(
                         ConversationConfig(systemInstruction = Contents.of(systemPrompt)),
                     ).also {

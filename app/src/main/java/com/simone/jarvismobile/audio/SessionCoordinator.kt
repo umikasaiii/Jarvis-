@@ -9,7 +9,9 @@ import com.simone.jarvismobile.core.state.ConversationEvent
 import com.simone.jarvismobile.core.state.ConversationState
 import com.simone.jarvismobile.core.state.ConversationStateMachine
 import com.simone.jarvismobile.core.state.RouteTarget
+import com.simone.jarvismobile.data.ChatStore
 import com.simone.jarvismobile.data.SettingsRepository
+import com.simone.jarvismobile.data.StoredMessage
 import com.simone.jarvismobile.llm.LlmEngine
 import com.simone.jarvismobile.llm.LlmLoadState
 import com.simone.jarvismobile.llm.LlmRouter
@@ -21,13 +23,20 @@ import com.simone.jarvismobile.tools.Match
 import com.simone.jarvismobile.tools.ToolOutcome
 import com.simone.jarvismobile.tools.ToolRunner
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.File
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -61,7 +70,11 @@ class SessionCoordinator @Inject constructor(
     private val tools: ToolRunner,
     private val intentClassifier: LlmIntentClassifier,
     private val router: LlmRouter,
+    private val chatStore: ChatStore,
 ) {
+
+    /** Long-lived scope for fire-and-forget persistence; lives as long as the app. */
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val machine = ConversationStateMachine()
     val state: StateFlow<ConversationState> = machine.state
@@ -74,6 +87,19 @@ class SessionCoordinator @Inject constructor(
             context.assets.open("prompts/jarvis_system_it.md").bufferedReader().use { it.readText() }
         }.getOrDefault("Sei JARVIS, un assistente personale offline. Rispondi in italiano, breve e naturale.")
     }
+
+    /**
+     * The system instruction the live conversation was seeded with. It must stay
+     * STABLE: changing it forces the engine to rebuild the conversation, which
+     * throws away everything said so far. Rebuilt only by [newConversation].
+     */
+    @Volatile private var activeSystem: String? = null
+
+    /** Note chunks already given to the model in this conversation. */
+    private val injectedContext = LinkedHashSet<String>()
+
+    /** True once the saved transcript has been read back from disk. */
+    @Volatile private var chatRestored = false
 
     val micLevel: StateFlow<Float> = audioCapture.micLevel
     val routeState: StateFlow<AudioRouteState> = audioRouteManager.routeState
@@ -98,6 +124,30 @@ class SessionCoordinator @Inject constructor(
         // is read as an answer rather than scanned for commands.
         if (!fromUser) awaitingAnswer = trimmed.endsWith("?")
         _messages.value = _messages.value + ChatMessage(fromUser, trimmed)
+        persistChat()
+    }
+
+    /** Writes the transcript to disk so it survives the app being closed. */
+    private fun persistChat() {
+        val snapshot = _messages.value.map { StoredMessage(it.fromUser, it.text, System.currentTimeMillis()) }
+        scope.launch { chatStore.save(snapshot) }
+    }
+
+    /**
+     * Brings the previous conversation back after a restart: the transcript is
+     * shown again, and (in [buildSystem]) recapped to the model, because the
+     * engine's own KV cache dies with the process and cannot be restored.
+     */
+    suspend fun restoreChat() {
+        if (chatRestored) return
+        chatRestored = true
+        val saved = runCatching { chatStore.load() }.getOrDefault(emptyList())
+        if (saved.isEmpty() || _messages.value.isNotEmpty()) return
+        _messages.value = saved.map { ChatMessage(it.fromUser, it.text) }
+        _messages.value.lastOrNull()?.let { last ->
+            if (!last.fromUser) awaitingAnswer = last.text.trim().endsWith("?")
+        }
+        Log.i(TAG, "chat_restored lines=${saved.size}")
     }
 
     private val _lastError = MutableStateFlow<String?>(null)
@@ -370,22 +420,34 @@ class SessionCoordinator @Inject constructor(
     }
 
     /**
-     * Ordinary conversation with the model. The user's words go through VERBATIM
-     * and retrieved notes live in the system instruction, not wrapped around the
-     * question — a templated "Contesto … Domanda:" block invites a small model to
-     * CONTINUE the template instead of answering it.
+     * Ordinary conversation with the model. The user's words go through VERBATIM;
+     * context is never wrapped into a "Contesto … Domanda:" template, because that
+     * invites a small model to CONTINUE the template instead of answering it.
      */
     private suspend fun chatReply(transcript: String, needsReasoning: Boolean = false): String {
         val retrieved = runCatching { memory.retrieve(transcript, MEMORY_TOP_K) }.getOrDefault(emptyList())
-        val system = buildString {
-            append(systemPrompt.trim())
-            if (retrieved.isNotEmpty()) {
-                append("\n\nAPPUNTI DI SIMONE (usali quando sono pertinenti, senza citarli se non serve):\n")
-                retrieved.forEach { r ->
-                    append("- ").append(r.chunk.text.replace('\n', ' ').trim().take(600)).append('\n')
-                }
-            }
+        val notes = retrieved.map { it.chunk.text.replace('\n', ' ').trim().take(600) }
+
+        // The system instruction is built ONCE per conversation and then reused
+        // verbatim. Rebuilding it every turn (it used to carry the retrieved
+        // notes, which change with every question) forced the engine to recreate
+        // the conversation, wiping the chat memory — the reason JARVIS could not
+        // remember even the previous message.
+        val system = activeSystem ?: buildSystem(notes).also {
+            activeSystem = it
+            injectedContext += notes
         }
+
+        // Anything relevant that the model has not been shown yet rides along
+        // with this turn instead of restarting the conversation.
+        val fresh = notes.filterNot { it in injectedContext }
+        injectedContext += fresh
+        val message = if (fresh.isEmpty()) {
+            transcript
+        } else {
+            "(dai miei appunti: " + fresh.joinToString(" · ") + ")\n" + transcript
+        }
+
         val useBig = needsReasoning && router.hasAdvanced
         val brain = if (useBig) "avanzato" else "rapido"
         _diagnostic.value = if (retrieved.isEmpty()) {
@@ -393,7 +455,7 @@ class SessionCoordinator @Inject constructor(
         } else {
             "memoria: ${retrieved.size} frammenti · $brain"
         }
-        router.chat(transcript, system, needsReasoning)?.trim()?.ifBlank { null }?.let { return it }
+        router.chat(message, system, needsReasoning)?.trim()?.ifBlank { null }?.let { return it }
 
         // Generation failed. The usual cause is an exhausted/corrupted KV cache
         // after a long chat, which a fresh conversation clears — so retry once
@@ -401,10 +463,46 @@ class SessionCoordinator @Inject constructor(
         Log.w(TAG, "llm_chat_null_retrying_fresh")
         _diagnostic.value = "riprovo con conversazione nuova"
         router.resetConversation()
-        router.chat(transcript, system, needsReasoning)?.trim()?.ifBlank { null }?.let { return it }
+        activeSystem = null
+        injectedContext.clear()
+        val retrySystem = buildSystem(notes).also { activeSystem = it; injectedContext += notes }
+        router.chat(transcript, retrySystem, needsReasoning)?.trim()?.ifBlank { null }?.let { return it }
 
         return "Il modello non è riuscito a rispondere. Prova «Nuova conversazione», " +
             "o ricarica il modello dalla schermata Modelli."
+    }
+
+    /**
+     * Seeds a conversation: who JARVIS is, what day it is, the notes known now,
+     * and — crucially — a recap of what was being said before the app was closed.
+     * The engine's multi-turn memory is a KV cache that dies with the process, so
+     * this recap is the only way the conversation can continue an hour later.
+     */
+    private fun buildSystem(notes: List<String>): String = buildString {
+        append(systemPrompt.trim())
+
+        val now = LocalDateTime.now()
+        append("\n\nAdesso è ")
+        append(now.format(DateTimeFormatter.ofPattern("EEEE d MMMM yyyy, HH:mm", Locale.ITALIAN)))
+        append(".")
+
+        if (notes.isNotEmpty()) {
+            append("\n\nAPPUNTI DI SIMONE (usali quando sono pertinenti, senza citarli se non serve):\n")
+            notes.forEach { append("- ").append(it).append('\n') }
+        }
+
+        // The message being answered right now is sent as the user turn, so it
+        // must not also appear in the recap or the model reads it as already dealt with.
+        val history = _messages.value.dropLastWhile { it.fromUser }
+        if (history.isNotEmpty()) {
+            append("\n\nCONVERSAZIONE IN CORSO CON SIMONE (le battute precedenti, ")
+            append("continuala senza ripeterla e senza salutare di nuovo):\n")
+            history.takeLast(RECAP_MESSAGES).forEach { m ->
+                append(if (m.fromUser) "Simone: " else "Tu: ")
+                append(m.text.replace('\n', ' ').take(RECAP_CHARS))
+                append('\n')
+            }
+        }
     }
 
     /**
@@ -502,6 +600,7 @@ class SessionCoordinator @Inject constructor(
      * model was chosen, or if the file is gone.
      */
     suspend fun ensureModelReady() {
+        restoreChat()
         val current = llm.loadState.value
         if (current == LlmLoadState.LOADED || current == LlmLoadState.LOADING) return
         val path = settings.modelPath.first()
@@ -535,10 +634,13 @@ class SessionCoordinator @Inject constructor(
         pendingConfirmation = null
         pendingSlot = null
         awaitingAnswer = false
+        activeSystem = null
+        injectedContext.clear()
         _messages.value = emptyList()
         _transcript.value = ""
         _reply.value = ""
         _diagnostic.value = "nuova conversazione"
+        scope.launch { chatStore.clear() }
     }
 
     private suspend fun speakOut(text: String) {
@@ -600,6 +702,12 @@ class SessionCoordinator @Inject constructor(
 
         /** How many vault chunks to inject as grounding context per question. */
         const val MEMORY_TOP_K = 4
+
+        /** How many past lines are recapped to the model when a chat resumes. */
+        const val RECAP_MESSAGES = 16
+
+        /** Cap per recapped line, so a long answer can't eat the context window. */
+        const val RECAP_CHARS = 320
 
         /** Affirmative replies that approve a pending tool confirmation. */
         private val CONFIRM_WORDS = listOf("sì", "si", "certo", "conferma", "ok", "va bene", "procedi", "yes")
