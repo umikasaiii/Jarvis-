@@ -38,7 +38,7 @@ docs/     Architecture, plans, security, privacy, models, tests, device guide, d
 
 **Domain core (works anywhere, incl. CI without the Android SDK):**
 ```bash
-cd core && ./gradlew test          # 58 unit tests, all green
+cd core && ./gradlew test          # 101 unit tests, all green
 ```
 
 **Android app (requires the Android SDK + AGP; see "Environment" below):**
@@ -84,7 +84,8 @@ Plugin and all AndroidX/Compose/Material3 artifacts. Consequences:
 | 3 | Local LLM + model manager | **Verified on HONOR 200** (build `045bb77`) — engine is **LiteRT-LM** (`.litertlm`, `com.google.ai.edge.litertlm:litertlm-android`) behind `LlmEngine`; a `.litertlm` Gemma imported via the Models screen loads and generates on-device. Migrated off the MediaPipe LLM `.task` path (maintenance-mode API, corrupt-download "Unable to open zip archive"). The migration also lifted the toolchain: Kotlin 2.2.21, KSP 2.2.21-2.0.4, Hilt 2.57.2. **Multi-turn memory:** `LitertLmEngine` keeps ONE persistent `Conversation` (KV cache) reused across turns/presses so the model remembers the chat; `maxNumTokens=4096` context; `LlmEngine.chat()`/`resetConversation()`; "Nuova conversazione" clears it. |
 | 4 | Full TTS + audio focus + follow-up | **Implemented (pending device check)** — hands-free loop in `SessionCoordinator.runTurn`: after speaking, the mic re-opens for a follow-up window (recognizer silence timeout) and loops until silence / follow-up disabled / `MAX_FOLLOW_UPS`. TTS holds TRANSIENT audio focus only while speaking (music ducks/pauses, stops on focus loss); focus is never held around listening (MagicOS mic fix preserved). Toggle in Settings (`followUpEnabled`, default on). |
 | 5 | Obsidian memory (SAF, retrieval, write) | **Implemented (pending device check)** — read+write vault memory loop. `VaultRepository` (SAF `OpenDocumentTree`, persisted read+write permission) reads `.md` and appends to `JARVIS/Memoria.md`; `MemoryIndex` parses (core `MarkdownParser`), chunks by heading, ranks (core `RetrievalRanker`) in memory; retrieval injected as grounding context in `SessionCoordinator.generateAnswer`. "ricorda … / prendi nota …" (voice or text) saves a note and reindexes. Memory screen picks/reindexes/disconnects the vault. Room/FTS on-disk index still pending (optimization; in-memory index rebuilt at launch is fine for a personal vault). |
-| 6 | Tool system | **Implemented (pending device check)** — Android tools wired to the core registry: `get_time`, `battery_status`, `set_timer`, `set_alarm`, `flashlight`, `remember` (vault), plus core `calculate`. `CommandMatcher` maps Italian phrases → `ToolCall` **deterministically before the LLM** (reliable with a small model, works with no model loaded); `ToolRunner` resolves via `ToolRegistry`, enforcing the tool's own policy/timeout and asking spoken confirmation for anything above LOW_RISK_WRITE. Commands tab lists the real registry with example phrases. |
+| 6 | Tool system | **Implemented (pending device check)** — Android tools wired to the core registry: `get_time`, `time_until`, `battery_status`, `set_timer`, `set_alarm`, `flashlight`, `add_reminder`/`list_agenda` (agenda), `remember`/`list_memories` (vault), plus core `calculate`. Understanding is two-stage: `LlmIntentClassifier` asks the fast model for the tool NAME only, `CommandMatcher` is the deterministic safety net — and **every argument is re-extracted from the user's own words**, never from the model's echo. `ToolRunner` resolves via `ToolRegistry`, enforcing the tool's own policy/timeout and asking spoken confirmation for anything above LOW_RISK_WRITE. Commands tab lists the real registry with example phrases. |
+| 6b | Structured agenda | **Implemented (pending device check)** — `:core` `agenda` package (`AgendaEntry`, `ItalianDateTimeParser`, `Agenda`, 30 unit tests): a reminder is a real `date` + optional `time`, not "domani" inside the description. `AgendaRepository` stores them as Obsidian task lines in `JARVIS/Agenda.md` (app-private fallback with migration when no vault). Clock arithmetic ("quanto manca alle 16") is done in code via `time_until`, after the model answered "2 ore e 45 minuti" for a 7h57m gap. Dashboard Agenda/Panoramica tiles now read the real file. See `docs/DECISIONS/0004-structured-agenda.md`. |
 | 7 | Home Assistant | Not started |
 | 8 | PC companion (`server/`) | Not started |
 | 9 | Hardening / release | Not started |
@@ -96,7 +97,8 @@ lint is clean, docs/decisions updated. Never leave the main branch uncompilable.
 
 - **Real & tested (JVM):** conversation state machine, hybrid router, tool JSON
   protocol + repair, tool registry/policies, calculate tool, log redactor,
-  Markdown/frontmatter parser, retrieval ranker. → `cd core && ./gradlew test`.
+  Markdown/frontmatter parser, retrieval ranker, Italian date/time parser +
+  agenda model/formatting. → `cd core && ./gradlew test` (101 tests).
 - **Compiled + packaged by CI (GitHub Actions, Android SDK):** all of `app/` —
   audio route manager, real AudioRecord capture, offline TTS, listening foreground
   service, QS tile, Compose Home + Diagnostics, permissions, DI wiring. A debug APK
