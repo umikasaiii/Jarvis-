@@ -76,7 +76,11 @@ jobs:
       # downloaded directly on a phone with no login:
       #   https://github.com/<owner>/<repo>/releases/download/latest-debug/app-debug.apk
       - name: Publish APK to the 'latest-debug' release
-        if: success() && github.event_name == 'push'
+        # Manual dispatches publish too: when the push event does not create a
+        # run (GitHub Actions queue incidents), the dispatch is the only way to
+        # get an installable APK, and a green build that publishes nothing is
+        # indistinguishable from no build at all for whoever is testing.
+        if: success() && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
