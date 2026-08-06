@@ -197,24 +197,36 @@ object MemoryStructure {
         .filter { it.length >= 3 && it !in STOPWORDS && it.none(Char::isDigit) }
 
     private val NON_WORD = Regex("""[^\p{L}\p{Nd}]+""")
+
+    /**
+     * Unicode-aware word boundaries. Java's `\b` is defined over `[A-Za-z0-9_]`,
+     * so a trailing accent is NOT a word character and `venerd[ìi]\b` never
+     * matches "venerdì" — the boundary check fails between "ì" and the space.
+     * Italian needs lookaround on letters/digits instead (see
+     * docs/DECISIONS/0004-structured-agenda.md, same bug in the date parser).
+     */
+    private const val NOT_BEFORE = """(?<![\p{L}\p{Nd}])"""
+    private const val NOT_AFTER = """(?![\p{L}\p{Nd}])"""
+
     private val PERSON = Regex(
-        """\b(?:con|da|di|a|persona|amico|amica|collega|partner)\s+([A-ZÀ-ÖØ-Þ][\p{L}'’-]{1,30})""",
+        NOT_BEFORE + """(?:con|da|di|a|persona|amico|amica|collega|partner)\s+([A-ZÀ-ÖØ-Þ][\p{L}'’-]{1,30})""",
     )
     private val DATE = Regex(
-        """\b(?:oggi|domani|dopodomani|stasera|stamattina|stanotte|""" +
+        NOT_BEFORE + """(?:oggi|domani|dopodomani|stasera|stamattina|stanotte|""" +
             """luned[ìi]|marted[ìi]|mercoled[ìi]|gioved[ìi]|venerd[ìi]|sabato|domenica|""" +
-            """\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?|\d{4}-\d{2}-\d{2})\b""",
+            """\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?|\d{4}-\d{2}-\d{2})""" + NOT_AFTER,
         RegexOption.IGNORE_CASE,
     )
     private val CREDENTIAL = Regex(
         """\b(password|passcode|pin|otp|codice\s+di\s+accesso|token|api[ _-]?key|seed phrase|frase seed)\b""",
     )
     private val SENSITIVE = Regex(
-        """\b(malattia|diagnosi|farmaco|terapia|referto|salute|medic[oa]|conto corrente|iban|""" +
-            """carta di credito|documento|codice fiscale|sessual\w*|gravidanza|disabilit[aà])\b""",
+        NOT_BEFORE + """(?:malattia|diagnosi|farmaco|terapia|referto|salute|medic[oa]|conto corrente|iban|""" +
+            """carta di credito|documento|codice fiscale|sessual\w*|gravidanza|disabilit[aà])""" + NOT_AFTER,
     )
     private val TEMPORARY = Regex(
-        """\b(solo per (questa|la) conversazione|temporane[oa]|per adesso|finche non chiudo|non salvare)\b""",
+        NOT_BEFORE + """(?:solo per (?:questa|la) conversazione|temporane[oa]|per adesso|""" +
+            """finch[éeè] non chiudo|non salvare)""" + NOT_AFTER,
     )
     private val STOPWORDS = setOf(
         "che", "con", "del", "della", "delle", "degli", "dei", "per", "una", "uno", "nel", "nella",
