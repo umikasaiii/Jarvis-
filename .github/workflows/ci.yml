@@ -21,7 +21,20 @@ jobs:
     # no-login download link).
     permissions:
       contents: write
+      statuses: write
     steps:
+      - name: Publish CI status (pending)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --method POST \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/${{ github.repository }}/statuses/${{ github.sha }}" \
+            -f state=pending \
+            -f context=jarvis/android-ci \
+            -f description="JARVIS Android CI is running" \
+            -f target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -101,3 +114,18 @@ jobs:
             app/build/outputs/lint-results-*.*
           if-no-files-found: warn
           retention-days: 14
+
+      - name: Publish CI status (final)
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          STATE="${{ job.status }}"
+          if [ "$STATE" = "cancelled" ]; then STATE="error"; fi
+          gh api --method POST \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/${{ github.repository }}/statuses/${{ github.sha }}" \
+            -f state="$STATE" \
+            -f context=jarvis/android-ci \
+            -f description="JARVIS Android CI finished: $STATE" \
+            -f target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
