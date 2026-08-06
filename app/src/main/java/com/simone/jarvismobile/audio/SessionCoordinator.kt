@@ -1122,6 +1122,17 @@ class SessionCoordinator @Inject constructor(
         return result
     }
 
+    /**
+     * Speaks a sample that exercises the shaping rules — a full stop, a comma, a
+     * time and a percentage — so the chosen delivery can be judged by ear right
+     * after moving a slider, instead of on the next real reply.
+     */
+    suspend fun previewVoice(): Boolean {
+        if (!tts.ensureReady()) { _lastError.value = "tts_unavailable"; return false }
+        tts.speak(VOICE_PREVIEW)
+        return true
+    }
+
     /** Diagnostics: speak the fixed phrase to exercise offline TTS routing. */
     suspend fun testVoice(): Boolean {
         if (!tts.ensureReady()) { _lastError.value = "tts_unavailable"; return false }
@@ -1146,6 +1157,11 @@ class SessionCoordinator @Inject constructor(
     companion object {
         const val DEFAULT_RECORD_MS = 3_000L
         const val FIXED_REPLY = "Sistema audio operativo. Sono pronto."
+
+        /** Sample used by the Settings voice preview. */
+        const val VOICE_PREVIEW =
+            "Buonasera Simone. Alle 15:30 hai la revisione dell'auto, " +
+                "e la batteria è al 68%. Vuoi che ti ricordi altro?"
 
         /** Safety cap on consecutive hands-free exchanges before requiring a press. */
         const val MAX_FOLLOW_UPS = 8

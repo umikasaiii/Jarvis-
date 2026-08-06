@@ -1,5 +1,9 @@
 package com.simone.jarvismobile.ui.settings
 
+import com.simone.jarvismobile.core.speech.SpeechStyle
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.material3.TextButton
+import androidx.compose.foundation.layout.PaddingValues
 import android.app.role.RoleManager
 import android.content.Intent
 import android.provider.Settings
@@ -70,6 +74,17 @@ fun SettingsScreen(
     var morningSlider by remember(reminderMorningHour) { mutableStateOf(reminderMorningHour.toFloat()) }
     var rateSlider by remember(ttsRate) { mutableStateOf(ttsRate) }
     var pitchSlider by remember(ttsPitch) { mutableStateOf(ttsPitch) }
+    val ttsPause by viewModel.ttsPauseScale.collectAsStateWithLifecycle()
+    val ttsExpr by viewModel.ttsExpressiveness.collectAsStateWithLifecycle()
+    var pauseSlider by remember(ttsPause) { mutableStateOf(ttsPause) }
+    var exprSlider by remember(ttsExpr) { mutableStateOf(ttsExpr) }
+
+    val knowledgeStatus by viewModel.knowledgeStatus.collectAsStateWithLifecycle()
+    val knowledgeName by viewModel.knowledgeName.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) { viewModel.refreshKnowledgeName() }
+    val knowledgeLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree(),
+    ) { uri -> if (uri != null) viewModel.setKnowledgeFolder(uri) }
     var voiceMenuOpen by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
@@ -159,6 +174,26 @@ fun SettingsScreen(
                         }
                     }
                 }
+                Text("Stile di voce", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    "Un preset muove insieme velocità, tono e ritmo. Il ritmo è ciò che " +
+                        "distingue una voce parlata da una recitata.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    SpeechStyle.PRESETS.forEach { (label, preset) ->
+                        OutlinedButton(
+                            onClick = { viewModel.applySpeechPreset(preset) },
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp),
+                        ) {
+                            Text(label, style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                }
                 Text("Velocità: %.2f×".format(rateSlider))
                 Slider(
                     value = rateSlider,
@@ -173,6 +208,28 @@ fun SettingsScreen(
                     onValueChangeFinished = { viewModel.setTtsPitch(pitchSlider) },
                     valueRange = SettingsRepository.MIN_TTS_PITCH..SettingsRepository.MAX_TTS_PITCH,
                 )
+                Text("Durata delle pause: %.2f×".format(pauseSlider))
+                Slider(
+                    value = pauseSlider,
+                    onValueChange = { pauseSlider = it },
+                    onValueChangeFinished = { viewModel.setTtsPauseScale(pauseSlider) },
+                    valueRange = 0f..2f,
+                )
+                Text("Espressività: %d%%".format((exprSlider * 100).toInt()))
+                Slider(
+                    value = exprSlider,
+                    onValueChange = { exprSlider = it },
+                    onValueChangeFinished = { viewModel.setTtsExpressiveness(exprSlider) },
+                    valueRange = 0f..1f,
+                )
+                Text(
+                    "A zero JARVIS legge di seguito, come una macchina. Al massimo respira " +
+                        "fra le frasi e stacca sugli elenchi.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                OutlinedButton(onClick = viewModel::previewVoice, modifier = Modifier.fillMaxWidth()) {
+                    Text("Ascolta un esempio")
+                }
                 Row(
                     Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -188,6 +245,56 @@ fun SettingsScreen(
                 )
                 OutlinedButton(onClick = viewModel::refreshVoices, modifier = Modifier.fillMaxWidth()) {
                     Text("Aggiorna voci installate")
+                }
+            }
+        }
+
+        // --- Offline library ------------------------------------------------
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Conoscenza offline", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Una cartella con guide, manuali ed esportazioni wiki in .md o .txt. " +
+                        "JARVIS cerca qui PRIMA di rispondere e cita la fonte; se non trova " +
+                        "nulla di pertinente te lo dice, invece di inventare.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Text(
+                    "È separata dal vault: una voce di enciclopedia non è un tuo appunto " +
+                        "e non deve finire nella memoria personale.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Text(
+                    when {
+                        !knowledgeStatus.configured -> "Nessuna cartella collegata."
+                        knowledgeStatus.indexing -> "Indicizzazione in corso…"
+                        knowledgeStatus.lastError != null ->
+                            "Errore di lettura: ${knowledgeStatus.lastError}"
+                        else -> "${knowledgeName ?: "cartella"} · " +
+                            "${knowledgeStatus.documentCount} documenti, " +
+                            "${knowledgeStatus.passageCount} passaggi"
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                OutlinedButton(
+                    onClick = { knowledgeLauncher.launch(null) },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(if (knowledgeStatus.configured) "Cambia cartella" else "Scegli cartella")
+                }
+                if (knowledgeStatus.configured) {
+                    OutlinedButton(
+                        onClick = viewModel::reindexKnowledge,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Reindicizza")
+                    }
+                    TextButton(
+                        onClick = viewModel::clearKnowledgeFolder,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Scollega la libreria")
+                    }
                 }
             }
         }

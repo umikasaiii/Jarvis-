@@ -1,5 +1,8 @@
 package com.simone.jarvismobile.ui.settings
 
+import kotlinx.coroutines.flow.MutableStateFlow
+import com.simone.jarvismobile.knowledge.KnowledgeRepository
+import com.simone.jarvismobile.core.speech.SpeechStyle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.simone.jarvismobile.audio.SessionCoordinator
@@ -18,6 +21,7 @@ class SettingsViewModel @Inject constructor(
     private val settings: SettingsRepository,
     private val coordinator: SessionCoordinator,
     private val agenda: AgendaRepository,
+    private val knowledge: KnowledgeRepository,
 ) : ViewModel() {
 
     val assistantName: StateFlow<String> = settings.assistantName
@@ -98,6 +102,52 @@ class SettingsViewModel @Inject constructor(
         settings.setTtsPitch(value)
         coordinator.configureVoice(ttsVoiceName.value.ifBlank { null }, ttsSpeechRate.value, value)
     }
+    val ttsPauseScale: StateFlow<Float> = settings.ttsPauseScale
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SpeechStyle.NATURALE.pauseScale)
+
+    val ttsExpressiveness: StateFlow<Float> = settings.ttsExpressiveness
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SpeechStyle.NATURALE.expressiveness)
+
+    fun setTtsPauseScale(value: Float) = viewModelScope.launch {
+        settings.setTtsPauseScale(value)
+        coordinator.configureVoice(ttsVoiceName.value.ifBlank { null }, ttsSpeechRate.value, ttsPitch.value)
+    }
+
+    fun setTtsExpressiveness(value: Float) = viewModelScope.launch {
+        settings.setTtsExpressiveness(value)
+        coordinator.configureVoice(ttsVoiceName.value.ifBlank { null }, ttsSpeechRate.value, ttsPitch.value)
+    }
+
+    /** Applies a whole delivery preset: speed, pitch and rhythm move together. */
+    fun applySpeechPreset(style: SpeechStyle) = viewModelScope.launch {
+        settings.applySpeechPreset(style)
+        coordinator.configureVoice(ttsVoiceName.value.ifBlank { null }, style.rate, style.pitch)
+    }
+
+    /** Speaks a sample so the chosen delivery can be judged by ear immediately. */
+    fun previewVoice() = viewModelScope.launch { coordinator.previewVoice() }
+
+    // --- Offline library ---------------------------------------------------
+
+    val knowledgeStatus: StateFlow<KnowledgeRepository.Status> = knowledge.status
+
+    private val _knowledgeName = MutableStateFlow<String?>(null)
+    val knowledgeName: StateFlow<String?> = _knowledgeName
+
+    fun refreshKnowledgeName() = viewModelScope.launch { _knowledgeName.value = knowledge.libraryName() }
+
+    fun setKnowledgeFolder(uri: android.net.Uri) = viewModelScope.launch {
+        knowledge.setLibrary(uri)
+        _knowledgeName.value = knowledge.libraryName()
+    }
+
+    fun clearKnowledgeFolder() = viewModelScope.launch {
+        knowledge.clearLibrary()
+        _knowledgeName.value = null
+    }
+
+    fun reindexKnowledge() = viewModelScope.launch { knowledge.rebuild() }
+
     fun setSpeakBackgroundResponses(value: Boolean) = viewModelScope.launch {
         settings.setSpeakBackgroundResponses(value)
     }
