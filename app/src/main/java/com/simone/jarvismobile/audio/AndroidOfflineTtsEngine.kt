@@ -7,20 +7,25 @@ import android.media.AudioManager
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.speech.tts.Voice
+import com.simone.jarvismobile.data.SettingsRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.util.Locale
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.resume
 
 /**
  * Android offline TTS. Selects an Italian voice that is NOT network-required,
- * routes to the voice-communication stream (so it follows AirPods), and exposes
+ * routes to the media output (so it follows AirPods), and exposes
  * a suspend [speak] that completes when the utterance ends.
  *
  * Not compiled in the scaffolding container (no Android SDK); validated on-device.
@@ -28,6 +33,7 @@ import kotlin.coroutines.resume
 @Singleton
 class AndroidOfflineTtsEngine @Inject constructor(
     @ApplicationContext private val context: Context,
+    private val settings: SettingsRepository,
 ) : TextToSpeechEngine {
 
     private val _state = MutableStateFlow(TtsState.IDLE)
@@ -36,12 +42,16 @@ class AndroidOfflineTtsEngine @Inject constructor(
     private val _selectedVoiceName = MutableStateFlow<String?>(null)
     override val selectedVoiceName = _selectedVoiceName.asStateFlow()
 
+    private val _availableVoices = MutableStateFlow<List<TtsVoiceOption>>(emptyList())
+    override val availableVoices = _availableVoices.asStateFlow()
+
     private val _lastDetail = MutableStateFlow("")
     override val lastDetail = _lastDetail.asStateFlow()
 
     private var tts: TextToSpeech? = null
     private var ready = false
-    private val pending = mutableMapOf<String, CompletableDeferred<Unit>>()
+    private val pending = ConcurrentHashMap<String, CompletableDeferred<Unit>>()
+    private val initMutex = Mutex()
 
     // --- Audio focus (Phase 4) ------------------------------------------------
     // While JARVIS speaks we hold TRANSIENT audio focus so music/podcasts pause
@@ -83,27 +93,33 @@ class AndroidOfflineTtsEngine @Inject constructor(
         focusRequest = null
     }
 
-    override suspend fun ensureReady(): Boolean {
-        if (ready) return true
-        val engine = tts ?: run {
-            val created = suspendCancellableCoroutine { cont ->
-                var ref: TextToSpeech? = null
-                ref = TextToSpeech(context) { status ->
-                    cont.resume(if (status == TextToSpeech.SUCCESS) ref else null)
-                }
-            }
-            if (created == null) {
-                _state.value = TtsState.ERROR
-                _lastDetail.value = "init_failed (no usable TTS engine)"
-                return false
-            }
-            tts = created
-            configureEngine(created)
-            created
-        }
-        ready = setupLanguageAndVoice(engine)
+    override suspend fun ensureReady(): Boolean = initMutex.withLock {
+        if (ready) return@withLock true
+        val engine = tts ?: createEngine() ?: return@withLock false
+        val requested = settings.ttsVoiceName.first()
+        val rate = settings.ttsSpeechRate.first()
+        val pitch = settings.ttsPitch.first()
+        ready = setupLanguageAndVoice(engine, requested, rate, pitch)
         if (!ready) _state.value = TtsState.ERROR
-        return ready
+        ready
+    }
+
+    private suspend fun createEngine(): TextToSpeech? {
+        val created = suspendCancellableCoroutine { cont ->
+            var ref: TextToSpeech? = null
+            ref = TextToSpeech(context) { status ->
+                if (cont.isActive) cont.resume(if (status == TextToSpeech.SUCCESS) ref else null)
+            }
+            cont.invokeOnCancellation { ref?.shutdown() }
+        }
+        if (created == null) {
+            _state.value = TtsState.ERROR
+            _lastDetail.value = "init_failed (no usable TTS engine)"
+            return null
+        }
+        tts = created
+        configureEngine(created)
+        return created
     }
 
     private fun configureEngine(engine: TextToSpeech) {
@@ -116,9 +132,6 @@ class AndroidOfflineTtsEngine @Inject constructor(
                 .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                 .build(),
         )
-        // Slightly slower than default for a calm delivery (docs §16).
-        engine.setSpeechRate(0.95f)
-        engine.setPitch(0.98f)
         engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
             override fun onStart(utteranceId: String) { _state.value = TtsState.SPEAKING }
             override fun onDone(utteranceId: String) {
@@ -129,6 +142,10 @@ class AndroidOfflineTtsEngine @Inject constructor(
             override fun onError(utteranceId: String) = onError(utteranceId, -1)
             override fun onError(utteranceId: String, errorCode: Int) {
                 _state.value = TtsState.ERROR
+                pending.remove(utteranceId)?.complete(Unit)
+            }
+            override fun onStop(utteranceId: String, interrupted: Boolean) {
+                _state.value = TtsState.IDLE
                 pending.remove(utteranceId)?.complete(Unit)
             }
         })
@@ -144,7 +161,12 @@ class AndroidOfflineTtsEngine @Inject constructor(
      * but we do fall back to an installed language rather than failing outright.
      * Returns false only when no offline voice/language is available at all.
      */
-    private fun setupLanguageAndVoice(engine: TextToSpeech): Boolean {
+    private fun setupLanguageAndVoice(
+        engine: TextToSpeech,
+        requestedVoiceName: String,
+        speechRate: Float,
+        pitch: Float,
+    ): Boolean {
         val itAvail = isInstalledOffline(engine, Locale.ITALIAN)
         val defLoc = Locale.getDefault()
         val defAvail = isInstalledOffline(engine, defLoc)
@@ -159,8 +181,15 @@ class AndroidOfflineTtsEngine @Inject constructor(
 
         val voices = runCatching { engine.voices }.getOrNull().orEmpty()
         val offline = voices.filter { !it.isNetworkConnectionRequired }
+        _availableVoices.value = offline
+            .sortedWith(compareByDescending<Voice> { it.locale.language == Locale.ITALIAN.language }.thenBy { it.name })
+            .map { voice ->
+                val localeLabel = voice.locale.getDisplayName(Locale.ITALIAN)
+                TtsVoiceOption(voice.name, "$localeLabel · ${voice.name}", voice.locale.toLanguageTag())
+            }
         val forLocale = offline.filter { chosenLocale != null && it.locale.language == chosenLocale.language }
-        val chosen = forLocale.firstOrNull { it.isMale() }
+        val chosen = offline.firstOrNull { it.name == requestedVoiceName }
+            ?: forLocale.firstOrNull { it.isMale() }
             ?: forLocale.firstOrNull()
             ?: offline.firstOrNull { it.isMale() }
             ?: offline.firstOrNull()
@@ -170,6 +199,8 @@ class AndroidOfflineTtsEngine @Inject constructor(
 
         if (chosen != null) {
             runCatching { engine.voice = chosen }
+            engine.setSpeechRate(speechRate.coerceIn(SettingsRepository.MIN_TTS_RATE, SettingsRepository.MAX_TTS_RATE))
+            engine.setPitch(pitch.coerceIn(SettingsRepository.MIN_TTS_PITCH, SettingsRepository.MAX_TTS_PITCH))
             _selectedVoiceName.value = chosen.name
             _lastDetail.value = "ok voice=${chosen.name} $base"
             return true
@@ -177,6 +208,8 @@ class AndroidOfflineTtsEngine @Inject constructor(
         // No enumerable offline voice, but the engine may still synthesize offline
         // for an installed language (some engines expose few Voice objects).
         if (chosenLocale != null) {
+            engine.setSpeechRate(speechRate.coerceIn(SettingsRepository.MIN_TTS_RATE, SettingsRepository.MAX_TTS_RATE))
+            engine.setPitch(pitch.coerceIn(SettingsRepository.MIN_TTS_PITCH, SettingsRepository.MAX_TTS_PITCH))
             _selectedVoiceName.value = "engine:${chosenLocale.language}"
             _lastDetail.value = "engine_lang=${chosenLocale.language} $base"
             return true
@@ -184,6 +217,26 @@ class AndroidOfflineTtsEngine @Inject constructor(
         _selectedVoiceName.value = null
         _lastDetail.value = "no_offline_voice $base"
         return false
+    }
+
+    override suspend fun refreshVoices(): List<TtsVoiceOption> = initMutex.withLock {
+        val engine = tts ?: createEngine() ?: return@withLock emptyList()
+        ready = setupLanguageAndVoice(
+            engine,
+            settings.ttsVoiceName.first(),
+            settings.ttsSpeechRate.first(),
+            settings.ttsPitch.first(),
+        )
+        availableVoices.value
+    }
+
+    override suspend fun configure(voiceName: String?, speechRate: Float, pitch: Float): Boolean {
+        if (!ensureReady()) return false
+        return initMutex.withLock {
+            val engine = tts ?: return@withLock false
+            ready = setupLanguageAndVoice(engine, voiceName.orEmpty(), speechRate, pitch)
+            ready
+        }
     }
 
     private fun isInstalledOffline(engine: TextToSpeech, locale: Locale): Boolean {
@@ -209,6 +262,11 @@ class AndroidOfflineTtsEngine @Inject constructor(
         try {
             done.await()
         } finally {
+            if (!done.isCompleted) {
+                engine.stop()
+                pending.remove(id)?.complete(Unit)
+                _state.value = TtsState.IDLE
+            }
             abandonAudioFocus()
         }
     }
@@ -226,6 +284,8 @@ class AndroidOfflineTtsEngine @Inject constructor(
         tts?.shutdown()
         tts = null
         ready = false
+        _availableVoices.value = emptyList()
+        _selectedVoiceName.value = null
     }
 
     private fun Voice.isMale(): Boolean {

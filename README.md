@@ -6,10 +6,11 @@ in airplane mode**: press a button or Quick Settings tile, speak, and get a
 spoken answer from a **local** language model — no account, no cloud, no hidden
 recording.
 
-> **Status:** early scaffolding. The **domain core is implemented and unit-tested**
-> (58 passing tests). The **Android app is written but not yet compiled** in this
-> repo's build environment (see *Building* below). This README does not claim a
-> finished app — see [`CLAUDE.md`](CLAUDE.md) for the honest phase-by-phase state.
+> **Status:** active pre-release Android app. CI builds and publishes a debug APK;
+> offline STT, LiteRT-LM chat, structured agenda, persistent background answers,
+> Memory V2, controlled Android tools and configurable offline voice are present.
+> Phone acceptance checks are still required before a signed release. See
+> [`CLAUDE.md`](CLAUDE.md) for the honest phase-by-phase state.
 
 ## Why
 
@@ -17,6 +18,8 @@ recording.
 - **Works without internet.** Voice → transcription → local model → memory → voice.
 - **Your notes are yours.** Memory lives in a readable **Obsidian** vault; indexes
   are rebuildable caches, never the only copy.
+- **Your calendar is local.** Events and dated tasks live in readable
+  `JARVIS/Agenda.md`; Google/Android Calendar is optional export, not a dependency.
 - **Optional power-ups.** A home PC or Home Assistant can be added, but are never required.
 
 ## Architecture at a glance
@@ -76,8 +79,9 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 ## Importing models
 
-No models are bundled. Import GGUF (LLM) and sherpa-onnx (STT/VAD) files on-device
-via the in-app pickers; checksums are verified and licenses shown first. See
+No LLM is bundled. Import a compatible `.litertlm` model on-device via the Models
+screen. Speech recognition uses Android's installed offline recognizer; TTS lists
+only installed non-network voices. See
 [`docs/MODELS.md`](docs/MODELS.md) for recommended models by available RAM.
 
 ## Guides

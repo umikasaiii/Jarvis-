@@ -5,19 +5,25 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.util.Log
 import androidx.core.content.ContextCompat
+import com.simone.jarvismobile.core.agenda.ItalianDateTimeParser
 import com.simone.jarvismobile.core.state.ConversationEvent
 import com.simone.jarvismobile.core.state.ConversationState
 import com.simone.jarvismobile.core.state.ConversationStateMachine
 import com.simone.jarvismobile.core.state.RouteTarget
-import com.simone.jarvismobile.core.routing.CompoundRequestSplitter
+import com.simone.jarvismobile.core.routing.AssistantReplyCleaner
+import com.simone.jarvismobile.core.routing.ComplexityHeuristic
+import com.simone.jarvismobile.core.routing.ToolIntentGate
+import com.simone.jarvismobile.core.routing.TurnPlanner
 import com.simone.jarvismobile.data.ChatStore
 import com.simone.jarvismobile.data.SettingsRepository
 import com.simone.jarvismobile.data.StoredMessage
 import com.simone.jarvismobile.llm.LlmEngine
+import com.simone.jarvismobile.llm.LlmGenerationTimeoutException
 import com.simone.jarvismobile.llm.LlmLoadState
 import com.simone.jarvismobile.llm.LlmRouter
 import com.simone.jarvismobile.llm.ModelSlot
 import com.simone.jarvismobile.memory.MemoryIndex
+import com.simone.jarvismobile.memory.ConversationMemoryStore
 import com.simone.jarvismobile.tools.CommandMatcher
 import com.simone.jarvismobile.tools.ItalianNumbers
 import com.simone.jarvismobile.tools.LlmIntentClassifier
@@ -26,6 +32,7 @@ import com.simone.jarvismobile.tools.ToolOutcome
 import com.simone.jarvismobile.tools.ToolRunner
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -43,7 +50,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /** One line of the on-screen conversation log. */
-data class ChatMessage(val fromUser: Boolean, val text: String)
+data class ChatMessage(val fromUser: Boolean, val text: String, val taskId: String? = null)
 
 /**
  * Owns the conversation and is the single source of truth the UI observes:
@@ -73,6 +80,7 @@ class SessionCoordinator @Inject constructor(
     private val intentClassifier: LlmIntentClassifier,
     private val router: LlmRouter,
     private val chatStore: ChatStore,
+    private val conversationMemory: ConversationMemoryStore,
 ) {
 
     /** Long-lived scope for fire-and-forget persistence; lives as long as the app. */
@@ -115,6 +123,7 @@ class SessionCoordinator @Inject constructor(
     val routeState: StateFlow<AudioRouteState> = audioRouteManager.routeState
     val ttsState: StateFlow<TtsState> = tts.state
     val selectedVoiceName: StateFlow<String?> = tts.selectedVoiceName
+    val availableVoices: StateFlow<List<TtsVoiceOption>> = tts.availableVoices
     val partialTranscript: StateFlow<String> = stt.partial
 
     private val _transcript = MutableStateFlow("")
@@ -126,21 +135,28 @@ class SessionCoordinator @Inject constructor(
     /** On-screen conversation log (mirrors the model's in-session memory). */
     private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
     val messages: StateFlow<List<ChatMessage>> = _messages.asStateFlow()
+    val shortTermMemory = conversationMemory.snapshot
 
-    private fun appendMessage(fromUser: Boolean, text: String) {
+    private fun appendMessage(fromUser: Boolean, text: String, taskId: String? = null) {
         if (text.isBlank()) return
         val trimmed = text.trim()
+        if (taskId != null && _messages.value.any { it.fromUser == fromUser && it.taskId == taskId }) return
         // Remember whether JARVIS just asked something, so the next user message
         // is read as an answer rather than scanned for commands.
         if (!fromUser) awaitingAnswer = trimmed.endsWith("?")
-        _messages.value = _messages.value + ChatMessage(fromUser, trimmed)
+        _messages.value = _messages.value + ChatMessage(fromUser, trimmed, taskId)
         persistChat()
     }
 
     /** Writes the transcript to disk so it survives the app being closed. */
     private fun persistChat() {
-        val snapshot = _messages.value.map { StoredMessage(it.fromUser, it.text, System.currentTimeMillis()) }
-        scope.launch { chatStore.save(snapshot) }
+        val snapshot = _messages.value.map {
+            StoredMessage(it.fromUser, it.text, System.currentTimeMillis(), it.taskId)
+        }
+        scope.launch {
+            chatStore.save(snapshot)
+            conversationMemory.update(snapshot)
+        }
     }
 
     /**
@@ -151,9 +167,10 @@ class SessionCoordinator @Inject constructor(
     suspend fun restoreChat() {
         if (chatRestored) return
         chatRestored = true
+        conversationMemory.ensureLoaded()
         val saved = runCatching { chatStore.load() }.getOrDefault(emptyList())
         if (saved.isEmpty() || _messages.value.isNotEmpty()) return
-        _messages.value = saved.map { ChatMessage(it.fromUser, it.text) }
+        _messages.value = saved.map { ChatMessage(it.fromUser, it.text, it.taskId) }
         _messages.value.lastOrNull()?.let { last ->
             if (!last.fromUser) awaitingAnswer = last.text.trim().endsWith("?")
         }
@@ -187,8 +204,15 @@ class SessionCoordinator @Inject constructor(
      */
     @Volatile private var awaitingAnswer = false
 
+    /** Set by a visible mic press while TTS is speaking (barge-in). */
+    @Volatile private var bargeInRequested = false
+
     /** Runs one conversation turn. Safe to call repeatedly; ignores overlap. */
     suspend fun runSession() {
+        // A visible talk press always wins over optional background speech.
+        if (tts.state.value == TtsState.SPEAKING && state.value != ConversationState.Speaking) {
+            tts.stop()
+        }
         if (sessionMutex.isLocked) {
             Log.i(TAG, "session_skip already_running")
             return
@@ -200,6 +224,9 @@ class SessionCoordinator @Inject constructor(
             _diagnostic.value = "start"
             try {
                 runTurn()
+            } catch (_: CancellationException) {
+                _diagnostic.value = "sessione annullata"
+                machine.dispatch(ConversationEvent.CancelRequested)
             } catch (e: Exception) {
                 _lastError.value = "crash_${e.javaClass.simpleName}"
                 _diagnostic.value = "CRASH ${e.javaClass.simpleName}: ${e.message}"
@@ -230,6 +257,18 @@ class SessionCoordinator @Inject constructor(
         while (true) {
             val spoke = processTurn(stt.transcribe("it-IT"), isFollowUp = turn > 0)
             if (!spoke) return // a terminal/no-speech outcome was handled inside
+
+            // The user pressed the mic while JARVIS was talking. TTS has been
+            // stopped; skip the normal follow-up preference and listen now.
+            if (bargeInRequested) {
+                bargeInRequested = false
+                _diagnostic.value = "interrotto: ti ascolto…"
+                _transcript.value = ""
+                machine.dispatch(ConversationEvent.SpeechStarted)
+                machine.dispatch(ConversationEvent.AudioReady)
+                turn++
+                continue
+            }
 
             // A reply was spoken; the machine is now in FollowUpWindow.
             if (!followUpEnabled || turn + 1 >= MAX_FOLLOW_UPS) {
@@ -318,18 +357,75 @@ class SessionCoordinator @Inject constructor(
         // a 1B model commonly answers only the first part of a multi-question
         // request, and the old command path stopped after the first tool match.
         if (pendingConfirmation == null && pendingSlot == null && !awaitingAnswer) {
-            val parts = CompoundRequestSplitter.split(transcript)
-            if (parts.size > 1) {
-                val answers = ArrayList<String>(parts.size)
+            val plan = TurnPlanner.plan(transcript)
+            if (plan.isCompound) {
+                // Knowledge/conversation questions belong to ONE model turn.
+                // Splitting them made a 1B model classify+answer every clause and
+                // fed its own partial replies back as pseudo-dialogue, causing
+                // severe latency and role continuations such as "Tu:".
+                val recentContext = recentConversationContext()
+                val deterministic = plan.requests.map { request ->
+                    CommandMatcher.match(request.text, recentContext = recentContext)
+                }
+                val needsClassifier = plan.requests.indices.any { index ->
+                    deterministic[index] == null && ToolIntentGate.shouldClassify(plan.requests[index].text)
+                }
+                if (deterministic.all { it == null } && !needsClassifier) {
+                    return chatReply(
+                        transcript,
+                        needsReasoning = ComplexityHeuristic.needsReasoning(transcript),
+                    )
+                }
+
+                // Read-only/deterministic results can be grounded into one final
+                // conversational answer. This keeps mixed requests fast, e.g.
+                // three tagliando questions plus "ne ho uno in programma?".
+                val canComposeOnce = !needsClassifier && deterministic.filterNotNull().all { match ->
+                    match is Match.Run && match.call.name in SAFE_COMPOUND_TOOLS
+                }
+                if (canComposeOnce) {
+                    val verified = ArrayList<Pair<String, String>>()
+                    plan.requests.forEachIndexed { index, request ->
+                        val match = deterministic[index] as? Match.Run ?: return@forEachIndexed
+                        val spoken = when (val outcome = tools.run(match.call)) {
+                            is ToolOutcome.Done -> outcome.spoken
+                            is ToolOutcome.Failed -> outcome.spoken
+                            is ToolOutcome.NeedsConfirmation -> {
+                                pendingConfirmation = outcome.call
+                                return outcome.prompt
+                            }
+                        }
+                        verified += request.text to spoken
+                    }
+                    if (verified.size == plan.requests.size) {
+                        return verified.joinToString("\n") { it.second }
+                    }
+                    if (verified.isNotEmpty()) {
+                        val grounding = verified.joinToString("\n") { (request, result) ->
+                            "$request -> $result"
+                        }
+                        return chatReply(
+                            transcript,
+                            needsReasoning = true,
+                            conversationHint = grounding,
+                        )
+                    }
+                }
+
+                val answers = ArrayList<String>(plan.requests.size)
                 var sameMessageContext = ""
-                for (part in parts) {
-                    val answer = generateAtomicAnswer(part, sameMessageContext)
+                for (request in plan.requests) {
+                    val answer = generateAtomicAnswer(
+                        transcript = request.text,
+                        sameMessageContext = sameMessageContext,
+                        fallbackNeedsReasoning = request.needsReasoningFallback,
+                    )
                     if (answer.isNotBlank() && answers.none { it.equals(answer, ignoreCase = true) }) {
                         answers += answer
                     }
                     sameMessageContext = buildString {
                         if (sameMessageContext.isNotBlank()) append(sameMessageContext).append('\n')
-                        append("Simone: ").append(part).append('\n')
+                        append("Simone: ").append(request.text).append('\n')
                         append("JARVIS: ").append(answer)
                     }.takeLast(COMPOUND_CONTEXT_CHARS)
                 }
@@ -340,7 +436,11 @@ class SessionCoordinator @Inject constructor(
     }
 
     /** Routes and answers one indivisible request. */
-    private suspend fun generateAtomicAnswer(transcript: String, sameMessageContext: String = ""): String {
+    private suspend fun generateAtomicAnswer(
+        transcript: String,
+        sameMessageContext: String = "",
+        fallbackNeedsReasoning: Boolean = false,
+    ): String {
         val recentContext = recentConversationContext(sameMessageContext)
         // A pending confirmation is answered by this utterance (yes / no).
         pendingConfirmation?.let { call ->
@@ -368,27 +468,31 @@ class SessionCoordinator @Inject constructor(
         pendingSlot?.let { pending ->
             val toolName = pending.tool
             pendingSlot = null
-            fillSlot(pending, transcript)?.let { completed ->
-                _diagnostic.value = "tool completato: $toolName"
-                return when (val outcome = tools.run(completed)) {
-                    is ToolOutcome.Done -> outcome.spoken
-                    is ToolOutcome.Failed -> outcome.spoken
-                    is ToolOutcome.NeedsConfirmation -> {
-                        pendingConfirmation = outcome.call
-                        outcome.prompt
+            when (val completed = fillSlot(pending, transcript)) {
+                is Match.Ask -> {
+                    pendingSlot = Pending(completed.tool, completed.missing, completed.partial)
+                    _diagnostic.value = "chiedo: ${completed.missing}"
+                    return completed.question
+                }
+                is Match.Run -> {
+                    _diagnostic.value = "tool completato: $toolName"
+                    return when (val outcome = tools.run(completed.call)) {
+                        is ToolOutcome.Done -> outcome.spoken
+                        is ToolOutcome.Failed -> outcome.spoken
+                        is ToolOutcome.NeedsConfirmation -> {
+                            pendingConfirmation = outcome.call
+                            outcome.prompt
+                        }
                     }
                 }
+                null -> Unit
             }
             // Couldn't read an answer out of it — fall through and treat the
             // utterance as a fresh request rather than guessing.
         }
 
-        // Phase 6 — understanding, in two stages.
-        //
-        // 1) The local AI analyses the request against the tool list, so a
-        //    command is understood however it is phrased. It can only name a
-        //    tool that already exists in the registry, and every argument is
-        //    re-validated, so understanding grows but privileges don't.
+        // Phase 6 — deterministic operations first. This path is instant and
+        // avoids wasting a full model generation on explicit commands.
         // If JARVIS just asked something, this message answers it. Only an
         // unmistakable explicit command may interrupt; otherwise keep talking.
         if (awaitingAnswer) {
@@ -411,36 +515,8 @@ class SessionCoordinator @Inject constructor(
             )
         }
 
-        when (
-            val aiMatch = runCatching {
-                intentClassifier.classify(transcript, recentContext)
-            }.getOrNull()
-        ) {
-            is Match.Ask -> {
-                pendingSlot = Pending(aiMatch.tool, aiMatch.missing, aiMatch.partial)
-                _diagnostic.value = "chiedo (ai): ${aiMatch.missing}"
-                return aiMatch.question
-            }
-            is Match.Run -> {
-                _diagnostic.value = "tool (ai): ${aiMatch.call.name}"
-                return when (val outcome = tools.run(aiMatch.call)) {
-                    is ToolOutcome.Done -> outcome.spoken
-                    is ToolOutcome.Failed -> outcome.spoken
-                    is ToolOutcome.NeedsConfirmation -> {
-                        pendingConfirmation = outcome.call
-                        outcome.prompt
-                    }
-                }
-            }
-            null -> Unit
-        }
-
-        // 2) Explicit patterns as the safety net: they catch what the model
-        //    missed, fill in a missing detail by asking, and keep commands
-        //    working when no model is loaded at all.
         when (val match = CommandMatcher.match(transcript, recentContext = recentContext)) {
             is Match.Ask -> {
-                // Remember what we were doing so the next reply completes it.
                 pendingSlot = Pending(match.tool, match.missing, match.partial)
                 _diagnostic.value = "chiedo: ${match.missing}"
                 return match.question
@@ -456,7 +532,40 @@ class SessionCoordinator @Inject constructor(
                     }
                 }
             }
-            null -> Unit // not a command → normal conversation below
+            null -> Unit
+        }
+
+        // Only plausible but unfamiliar operation wording pays for the optional
+        // one-line LLM classifier. Ordinary chat goes directly to one answer.
+        val understanding = if (ToolIntentGate.shouldClassify(transcript)) {
+            try {
+                intentClassifier.understand(transcript, recentContext)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: LlmGenerationTimeoutException) {
+                null
+            }
+        } else {
+            null
+        }
+        when (val aiMatch = understanding?.takeIf { it.mayExecute }?.match) {
+            is Match.Ask -> {
+                pendingSlot = Pending(aiMatch.tool, aiMatch.missing, aiMatch.partial)
+                _diagnostic.value = "chiedo (piano): ${aiMatch.missing}"
+                return aiMatch.question
+            }
+            is Match.Run -> {
+                _diagnostic.value = "tool (piano): ${aiMatch.call.name}"
+                return when (val outcome = tools.run(aiMatch.call)) {
+                    is ToolOutcome.Done -> outcome.spoken
+                    is ToolOutcome.Failed -> outcome.spoken
+                    is ToolOutcome.NeedsConfirmation -> {
+                        pendingConfirmation = outcome.call
+                        outcome.prompt
+                    }
+                }
+            }
+            null -> Unit
         }
 
         if (llm.loadState.value != LlmLoadState.LOADED) {
@@ -465,7 +574,7 @@ class SessionCoordinator @Inject constructor(
         // The fast model already judged whether this deserves the big brain.
         return chatReply(
             transcript,
-            needsReasoning = intentClassifier.lastNeedsReasoning,
+            needsReasoning = fallbackNeedsReasoning || understanding?.needsReasoning == true,
             conversationHint = sameMessageContext,
         )
     }
@@ -539,9 +648,9 @@ class SessionCoordinator @Inject constructor(
         injectedContext += fresh
         val message = buildString {
             if (conversationHint.isNotBlank()) {
-                append("(contesto delle altre domande nello stesso messaggio: ")
+                append("[Risultati verificati dal sistema da usare nella risposta: ")
                 append(conversationHint.replace('\n', ' ').takeLast(COMPOUND_CONTEXT_CHARS))
-                append(")\n")
+                append("]\n")
             }
             if (fresh.isNotEmpty()) {
                 append("(dai miei appunti: ")
@@ -558,7 +667,15 @@ class SessionCoordinator @Inject constructor(
             "memoria: ${retrieved.size} frammenti · $brain"
         }
         lastConversationSlot = slot
-        router.chat(message, system, slot)?.trim()?.ifBlank { null }?.let { return it }
+        val firstReply = try {
+            router.chat(message, system, slot)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: LlmGenerationTimeoutException) {
+            _diagnostic.value = "risposta fermata: tempo massimo"
+            return TIMEOUT_REPLY
+        }
+        firstReply?.let(AssistantReplyCleaner::clean)?.ifBlank { null }?.let { return it }
 
         // Generation failed. The usual cause is an exhausted/corrupted KV cache
         // after a long chat, which a fresh conversation clears — so retry once
@@ -575,7 +692,15 @@ class SessionCoordinator @Inject constructor(
             activeSystems[slot] = it
             activeEpochs[slot] = router.conversationEpoch(slot)
         }
-        router.chat(message, retrySystem, slot)?.trim()?.ifBlank { null }?.let { return it }
+        val retryReply = try {
+            router.chat(message, retrySystem, slot)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: LlmGenerationTimeoutException) {
+            _diagnostic.value = "risposta fermata: tempo massimo"
+            return TIMEOUT_REPLY
+        }
+        retryReply?.let(AssistantReplyCleaner::clean)?.ifBlank { null }?.let { return it }
 
         return "Il modello non è riuscito a rispondere. Prova «Nuova conversazione», " +
             "o ricarica il modello dalla schermata Modelli."
@@ -598,6 +723,14 @@ class SessionCoordinator @Inject constructor(
         if (notes.isNotEmpty()) {
             append("\n\nAPPUNTI DI SIMONE (usali quando sono pertinenti, senza citarli se non serve):\n")
             notes.forEach { append("- ").append(it).append('\n') }
+        }
+
+        val summary = conversationMemory.snapshot.value
+        if (!summary.isEmpty) {
+            append("\n\nMEMORIA BREVE STRUTTURATA DELLA CONVERSAZIONE ")
+            append("(temporanea, non è nel vault):\n")
+            append(summary.forPrompt())
+            append('\n')
         }
 
         // The message being answered right now is sent as the user turn, so it
@@ -625,21 +758,41 @@ class SessionCoordinator @Inject constructor(
      * "ricorda …" command all work — and appends both sides to the on-screen log.
      */
     suspend fun sendText(text: String) {
+        processText(text, taskId = null)
+    }
+
+    /**
+     * Durable-worker entry point. [taskId] makes chat persistence idempotent: if
+     * Android stops the process after saving the user line, a WorkManager retry
+     * resumes without duplicating that message or a reply already completed.
+     */
+    suspend fun processQueuedText(taskId: String, text: String): String? {
+        restoreChat()
+        _messages.value.firstOrNull { !it.fromUser && it.taskId == taskId }?.let { return it.text }
+        return processText(text, taskId)
+    }
+
+    private suspend fun processText(text: String, taskId: String?): String? {
         val message = text.trim()
-        if (message.isBlank() || sessionMutex.isLocked) return
-        sessionMutex.withLock {
+        if (message.isBlank()) return null
+        return sessionMutex.withLock {
             _lastError.value = null
             _sending.value = true
             try {
-                appendMessage(fromUser = true, text = message)
+                appendMessage(fromUser = true, text = message, taskId = taskId)
                 _transcript.value = message
                 _diagnostic.value = "chat scritta"
                 val answer = generateAnswer(message)
                 _reply.value = answer
-                appendMessage(fromUser = false, text = answer)
+                appendMessage(fromUser = false, text = answer, taskId = taskId)
+                answer
+            } catch (e: CancellationException) {
+                _diagnostic.value = "risposta annullata"
+                throw e
             } catch (e: Exception) {
                 _lastError.value = "text_crash_${e.javaClass.simpleName}"
                 _diagnostic.value = "CRASH ${e.javaClass.simpleName}"
+                null
             } finally {
                 _sending.value = false
             }
@@ -654,24 +807,47 @@ class SessionCoordinator @Inject constructor(
     private fun fillSlot(
         pending: Pending,
         answer: String,
-    ): com.simone.jarvismobile.core.protocol.ToolCall? {
+    ): Match? {
         fun build(vararg args: Pair<String, String>) =
-            com.simone.jarvismobile.core.protocol.ToolCall(
-                id = java.util.UUID.randomUUID().toString(),
-                name = pending.tool,
-                arguments = kotlinx.serialization.json.JsonObject(
-                    args.associate { it.first to kotlinx.serialization.json.JsonPrimitive(it.second) },
+            Match.Run(
+                com.simone.jarvismobile.core.protocol.ToolCall(
+                    id = java.util.UUID.randomUUID().toString(),
+                    name = pending.tool,
+                    arguments = kotlinx.serialization.json.JsonObject(
+                        args.associate { it.first to kotlinx.serialization.json.JsonPrimitive(it.second) },
+                    ),
+                    requiresConfirmation = false,
                 ),
-                requiresConfirmation = false,
             )
 
         val reply = answer.trim()
         return when (pending.tool) {
-            // "Quando?" → parse the day out of the answer into a real date field.
-            "add_reminder" -> {
-                val note = pending.args["text"].orEmpty()
-                (CommandMatcher.reminderFromAnswer(note, reply) as? Match.Run)?.call
+            // Complete either "Cosa?" or "Quando?" without losing fields that
+            // were already extracted from the original calendar request.
+            "add_reminder" -> when (pending.missing) {
+                "text" -> {
+                    if (reply.length < 2) return null
+                    val partial = pending.args.toMutableMap().apply { put("text", reply.take(240)) }
+                    if (partial["date"].isNullOrBlank()) {
+                        Match.Ask(
+                            "Per quale giorno devo segnare “${partial["text"]}”?",
+                            "add_reminder",
+                            "when",
+                            partial,
+                        )
+                    } else {
+                        build(*partial.entries.map { it.key to it.value }.toTypedArray())
+                    }
+                }
+                "when" -> {
+                    val note = pending.args["text"].orEmpty()
+                    CommandMatcher.reminderFromAnswer(note, reply)
+                }
+                else -> null
             }
+
+            "complete_agenda" -> reply.takeIf { it.length >= 2 }
+                ?.let { build("text" to it.take(200)) }
 
             // A bare number here can only be a duration, so accept it as minutes.
             "set_timer" -> ItalianNumbers.duration(reply, allowBareNumber = true)
@@ -687,12 +863,92 @@ class SessionCoordinator @Inject constructor(
                     if (note.isBlank() || reply.length < 2) {
                         null
                     } else {
-                        build("text" to "$note — $reply")
+                        build(
+                            "text" to "$note — $reply",
+                            "kind" to pending.args["kind"].orEmpty().ifBlank { "PERMANENT" },
+                        )
                     }
                 }
                 // We asked WHAT: the whole reply is the note.
-                else -> reply.takeIf { it.length >= 3 }?.let { build("text" to it) }
+                else -> reply.takeIf { it.length >= 3 }?.let {
+                    build(
+                        "text" to it,
+                        "kind" to com.simone.jarvismobile.core.memory.MemoryStructure.classify(it).name,
+                    )
+                }
             }
+
+            "create_calendar_event" -> {
+                val partial = pending.args.toMutableMap()
+                when (pending.missing) {
+                    "title" -> {
+                        if (reply.length < 2) return null
+                        partial["title"] = reply.take(140)
+                        if (partial["date"].isNullOrBlank()) {
+                            Match.Ask(
+                                "Per quale giorno devo preparare l'evento “${partial["title"]}”?",
+                                "create_calendar_event",
+                                "when",
+                                partial,
+                            )
+                        } else {
+                            build(*partial.entries.map { it.key to it.value }.toTypedArray())
+                        }
+                    }
+                    "when" -> {
+                        val parsed = ItalianDateTimeParser.parse(reply)
+                        val date = parsed.date ?: return null
+                        partial["date"] = date.toString()
+                        parsed.time?.let {
+                            partial["time"] = "%02d:%02d".format(it.hour, it.minute)
+                        }
+                        if (partial["title"].isNullOrBlank()) {
+                            Match.Ask(
+                                "Qual è il titolo dell'evento?",
+                                "create_calendar_event",
+                                "title",
+                                partial,
+                            )
+                        } else {
+                            build(*partial.entries.map { it.key to it.value }.toTypedArray())
+                        }
+                    }
+                    else -> null
+                }
+            }
+
+            "prepare_call" -> CommandMatcher.dialDraftCall("chiama $reply")
+
+            "compose_sms" -> when (pending.missing) {
+                "number" -> {
+                    val body = pending.args["body"]
+                    val rebuilt = if (body.isNullOrBlank()) {
+                        "prepara un SMS al $reply"
+                    } else {
+                        "prepara un SMS al $reply: $body"
+                    }
+                    CommandMatcher.smsDraftCall(rebuilt)
+                }
+                "body" -> {
+                    val number = pending.args["number"].orEmpty()
+                    if (number.isBlank() || reply.length < 2) null
+                    else CommandMatcher.smsDraftCall("prepara un SMS al $number: $reply")
+                }
+                else -> null
+            }
+
+            "navigate" -> reply.takeIf { it.length >= 2 }
+                ?.let { build("destination" to it.take(240)) }
+
+            "play_media" -> reply.takeIf { it.length >= 2 }
+                ?.let { build("query" to it.take(240)) }
+
+            "search_vault" -> reply.takeIf { it.length >= 2 }
+                ?.let { build("query" to it.take(200)) }
+
+            "open_app" -> CommandMatcher.appCall("apri $reply")
+
+            "open_settings" -> CommandMatcher.settingsCall("apri le impostazioni $reply")
 
             else -> null
         }
@@ -731,6 +987,15 @@ class SessionCoordinator @Inject constructor(
         if (router.advancedLoadState.value == LlmLoadState.LOADED) return
         val path = settings.advancedModelPath.first()
         if (path.isBlank()) return
+        if (path == settings.modelPath.first()) {
+            // The fast engine already owns this exact model. Loading it again in
+            // the advanced slot doubles RAM and warm-up time without improving
+            // quality; complex turns automatically fall back to the fast slot.
+            router.advanced.unload()
+            settings.clearAdvancedModel()
+            _diagnostic.value = "un solo modello: rapido e complesso coincidono"
+            return
+        }
         val file = File(path)
         if (!file.exists()) return
         val name = settings.advancedModelName.first().ifBlank { file.name }
@@ -747,11 +1012,15 @@ class SessionCoordinator @Inject constructor(
         activeEpochs.clear()
         injectedContexts.clear()
         lastConversationSlot = null
+        bargeInRequested = false
         _messages.value = emptyList()
         _transcript.value = ""
         _reply.value = ""
         _diagnostic.value = "nuova conversazione"
-        scope.launch { chatStore.clear() }
+        scope.launch {
+            chatStore.clear()
+            conversationMemory.clear()
+        }
     }
 
     private suspend fun speakOut(text: String) {
@@ -762,11 +1031,46 @@ class SessionCoordinator @Inject constructor(
         }
     }
 
+    /** Speaks a worker result only when the user explicitly enabled the option. */
+    suspend fun speakBackgroundResponse(text: String): Boolean {
+        if (!settings.speakBackgroundResponses.first()) return false
+        // Never flush speech belonging to a live voice conversation or another
+        // worker. The text answer/notification remains the authoritative result.
+        if (state.value != ConversationState.Idle || tts.state.value == TtsState.SPEAKING) return false
+        if (!tts.ensureReady()) return false
+        tts.speak(text.take(MAX_BACKGROUND_SPEECH_CHARS))
+        return true
+    }
+
+    suspend fun refreshVoices(): List<TtsVoiceOption> = tts.refreshVoices()
+
+    suspend fun configureVoice(name: String?, rate: Float, pitch: Float): Boolean =
+        tts.configure(name, rate, pitch)
+
+    /** Stops the current sentence and lets the active visible session listen now. */
+    fun interruptAndListen() {
+        if (state.value == ConversationState.Speaking || tts.state.value == TtsState.SPEAKING) {
+            bargeInRequested = true
+            tts.stop()
+            _diagnostic.value = "interruzione vocale…"
+        } else {
+            cancel()
+        }
+    }
+
     fun cancel() {
+        bargeInRequested = false
         stt.cancel()
         audioCapture.cancel()
         tts.stop()
+        router.cancel()
         machine.dispatch(ConversationEvent.CancelRequested)
+    }
+
+    /** Stops only the active written-answer inference. */
+    fun cancelTextGeneration() {
+        router.cancel()
+        _diagnostic.value = "annullamento risposta…"
     }
 
     // --- Diagnostics helpers --------------------------------------------
@@ -827,6 +1131,15 @@ class SessionCoordinator @Inject constructor(
 
         /** Bound context shared among independently routed parts of one message. */
         const val COMPOUND_CONTEXT_CHARS = 1_200
+
+        const val TIMEOUT_REPLY =
+            "La risposta si è bloccata e l'ho fermata automaticamente. Prova a riformulare la richiesta."
+
+        const val MAX_BACKGROUND_SPEECH_CHARS = 1_500
+
+        private val SAFE_COMPOUND_TOOLS = setOf(
+            "get_time", "time_until", "battery_status", "list_agenda", "list_memories", "calculate",
+        )
 
         /** Affirmative replies that approve a pending tool confirmation. */
         private val CONFIRM_WORDS = listOf("sì", "si", "certo", "conferma", "ok", "va bene", "procedi", "yes")

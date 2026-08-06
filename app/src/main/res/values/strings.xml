@@ -11,6 +11,13 @@
     <string name="listening_title">JARVIS è in ascolto</string>
     <string name="listening_text">Sessione avviata da te. Il microfono è attivo.</string>
 
+    <string name="processing_channel_name">Elaborazione JARVIS</string>
+    <string name="processing_channel_desc">Avanzamento delle risposte locali che continuano in background.</string>
+    <string name="responses_channel_name">Risposte JARVIS</string>
+    <string name="responses_channel_desc">Avvisa quando una risposta richiesta è pronta.</string>
+    <string name="reminders_channel_name">Promemoria JARVIS</string>
+    <string name="reminders_channel_desc">Avvisi programmati per gli impegni della tua agenda.</string>
+
     <string name="action_talk">Parla</string>
     <string name="action_interrupt">Interrompi</string>
     <string name="action_close">Chiudi sessione</string>

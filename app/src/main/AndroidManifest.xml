@@ -10,6 +10,9 @@
          permission). The service runs ONLY during an explicit session. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <!-- Long local inference promoted by WorkManager while the UI is closed. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
 
     <!-- Notifications for the foreground service (Android 13+). -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -39,6 +42,29 @@
         <intent>
             <action android:name="android.speech.RecognitionService" />
         </intent>
+        <intent>
+            <action android:name="android.intent.action.DIAL" />
+            <data android:scheme="tel" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SENDTO" />
+            <data android:scheme="smsto" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.INSERT" />
+            <data android:mimeType="vnd.android.cursor.dir/event" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="geo" />
+        </intent>
+        <package android:name="com.whatsapp" />
+        <package android:name="com.spotify.music" />
+        <package android:name="com.google.android.youtube" />
+        <package android:name="com.google.android.gm" />
+        <package android:name="com.google.android.apps.maps" />
+        <package android:name="com.android.chrome" />
+        <package android:name="md.obsidian" />
     </queries>
 
     <application
@@ -62,6 +88,14 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- Qualifies the visible Activity for Android's Assistant role.
+                 The system gesture/button opens JARVIS and starts one explicit
+                 listening session; there is no always-on microphone. -->
+            <intent-filter>
+                <action android:name="android.intent.action.ASSIST" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+
             <!-- Safe deep link to start an explicit listening session:
                  jarvis://listen  (docs/ARCHITECTURE.md §7.4). -->
             <intent-filter android:autoVerify="false">
@@ -77,6 +111,27 @@
             android:name=".audio.ListeningService"
             android:exported="false"
             android:foregroundServiceType="microphone" />
+
+        <receiver
+            android:name=".background.CancelTaskReceiver"
+            android:exported="false" />
+
+        <service
+            android:name=".tools.JarvisNotificationListener"
+            android:exported="true"
+            android:label="JARVIS — accesso notifiche"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
+        <!-- WorkManager promotes long on-device inference to a visible data-sync
+             foreground service when the Activity is no longer visible. -->
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="dataSync|mediaPlayback"
+            tools:node="merge" />
 
         <!-- Quick Settings tile (Android 7+). Opens an explicit session; it never
              records silently (docs/ARCHITECTURE.md §7.2). -->

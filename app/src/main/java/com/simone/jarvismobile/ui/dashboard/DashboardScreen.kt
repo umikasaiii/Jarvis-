@@ -41,6 +41,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.AcUnit
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Cloud
@@ -57,6 +59,11 @@ import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -90,9 +97,13 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.simone.jarvismobile.R
 import com.simone.jarvismobile.core.agenda.Agenda
+import com.simone.jarvismobile.core.agenda.AgendaEntry
+import com.simone.jarvismobile.core.agenda.ReminderAlert
+import com.simone.jarvismobile.core.agenda.ReminderAlertType
 import com.simone.jarvismobile.core.state.ConversationState
 import com.simone.jarvismobile.llm.LlmLoadState
 import java.time.LocalDate
+import java.time.LocalDateTime
 import java.time.format.TextStyle
 import java.util.Locale
 
@@ -186,6 +197,7 @@ fun DashboardScreen(
     val today by viewModel.today.collectAsStateWithLifecycle()
     val battery = rememberBatteryStatus()
     val context = LocalContext.current
+    var editingAlerts by remember { mutableStateOf<AgendaEntry?>(null) }
 
     // Buzz once when a new message lands (e.g. a voice reply) while on the dashboard.
     var prevUnread by remember { mutableStateOf(unread) }
@@ -259,7 +271,11 @@ fun DashboardScreen(
                     active = !state.isRestingLike(),
                     mode = orbModeFor(state),
                     onClick = {
-                        if (state.isRestingLike()) viewModel.onTalkPressed() else viewModel.onCancel()
+                        when {
+                            state == ConversationState.Speaking -> viewModel.onInterruptAndTalk()
+                            state.isRestingLike() -> viewModel.onTalkPressed()
+                            else -> viewModel.onCancel()
+                        }
                     },
                     modifier = Modifier.weight(1.35f),
                 )
@@ -309,6 +325,8 @@ fun DashboardScreen(
                                 time = e.time?.let { Agenda.humanTime(it) } ?: "—",
                                 title = e.text,
                                 place = Agenda.humanDate(e.date, java.time.LocalDate.now()),
+                                alerts = e.alerts,
+                                onAlerts = { editingAlerts = e },
                                 dot = when (i) { 0 -> Cyan; 1 -> Green; else -> Violet },
                                 last = i == shown.lastIndex,
                             )
@@ -370,19 +388,28 @@ fun DashboardScreen(
                 }
             }
 
-            // --- Calendario settimana --------------------------------------
-            GlassCard(badge = { DemoBadge("EVENTI") }) {
-                CardHeader(Icons.Filled.CalendarMonth, "CALENDARIO")
+            // --- Calendario personale: next seven days from Agenda.md ------
+            GlassCard {
+                CardHeader(Icons.Filled.CalendarMonth, "CALENDARIO PERSONALE", reserveEnd = false)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    val today = LocalDate.now()
-                    val sample = mapOf(1 to ("Riunione" to Cyan), 3 to ("Palestra" to Violet), 4 to ("Consegna" to Green))
+                    val weekStart = LocalDate.now()
                     for (i in 0 until 7) {
-                        val ev = sample[i]
-                        DayCell(today.plusDays(i.toLong()), isToday = i == 0, event = ev?.first, dot = ev?.second, modifier = Modifier.weight(1f))
+                        val date = weekStart.plusDays(i.toLong())
+                        DayCell(
+                            date = date,
+                            isToday = i == 0,
+                            entries = upcoming.filter { it.date == date },
+                            modifier = Modifier.weight(1f),
+                        )
                     }
+                }
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    CalendarLegend(Cyan, "Appuntamenti")
+                    CalendarLegend(Violet, "Attività")
                 }
             }
 
@@ -394,6 +421,17 @@ fun DashboardScreen(
             unread = unread,
             modifier = Modifier.align(Alignment.BottomEnd).padding(end = 18.dp, bottom = 18.dp),
             onClick = { viewModel.markChatSeen(); onOpenChat() },
+        )
+    }
+
+    editingAlerts?.let { entry ->
+        ReminderAlertDialog(
+            entry = entry,
+            onDismiss = { editingAlerts = null },
+            onSave = { alerts ->
+                viewModel.updateAlerts(entry.id, alerts)
+                editingAlerts = null
+            },
         )
     }
 }
@@ -579,19 +617,123 @@ private fun DonutRing(percent: Int, label: String, modifier: Modifier = Modifier
 }
 
 @Composable
-private fun AgendaRow(time: String, title: String, place: String, dot: Color, last: Boolean = false) {
+private fun AgendaRow(
+    time: String,
+    title: String,
+    place: String,
+    alerts: List<ReminderAlert>,
+    onAlerts: () -> Unit,
+    dot: Color,
+    last: Boolean = false,
+) {
     Row(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(top = 3.dp)) {
             Box(Modifier.size(8.dp).clip(RoundedCornerShape(5.dp)).background(dot))
             if (!last) Box(Modifier.width(2.dp).height(28.dp).background(Color(0x22FFFFFF)))
         }
         Spacer(Modifier.width(10.dp))
-        Column {
+        Column(Modifier.weight(1f)) {
             Text(time, color = dot, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             Text(title, color = Ink, fontSize = 13.sp)
             Text(place, color = Muted, fontSize = 10.sp)
+            Text(
+                if (alerts.isEmpty()) "Avviso non impostato" else "${alerts.size} avvis${if (alerts.size == 1) "o" else "i"}",
+                color = if (alerts.isEmpty()) Amber else Green,
+                fontSize = 9.sp,
+            )
+        }
+        IconButton(onClick = onAlerts, modifier = Modifier.size(32.dp)) {
+            Icon(
+                if (alerts.isEmpty()) Icons.Filled.NotificationsOff else Icons.Filled.Notifications,
+                contentDescription = "Imposta avvisi",
+                tint = if (alerts.isEmpty()) Amber else Green,
+                modifier = Modifier.size(18.dp),
+            )
         }
     }
+}
+
+@Composable
+private fun ReminderAlertDialog(
+    entry: AgendaEntry,
+    onDismiss: () -> Unit,
+    onSave: (List<ReminderAlert>) -> Unit,
+) {
+    var selected by remember(entry.id, entry.alerts) {
+        mutableStateOf(entry.alerts.filter { it.type != ReminderAlertType.CUSTOM }.map { it.type }.toSet())
+    }
+    var custom by remember(entry.id, entry.alerts) {
+        mutableStateOf(
+            entry.alerts.firstOrNull { it.type == ReminderAlertType.CUSTOM }
+                ?.customAt?.toString().orEmpty(),
+        )
+    }
+    var customError by remember(entry.id) { mutableStateOf(false) }
+    val options = listOfNotNull(
+        ReminderAlertType.AT_TIME.takeIf { entry.time != null }?.let { it to "All'ora dell'impegno" },
+        ReminderAlertType.MORNING_OF to "La mattina stessa",
+        ReminderAlertType.ONE_DAY_BEFORE to "1 giorno prima",
+        ReminderAlertType.TWO_DAYS_BEFORE to "2 giorni prima",
+        ReminderAlertType.THREE_DAYS_BEFORE to "3 giorni prima",
+        ReminderAlertType.ONE_WEEK_BEFORE to "1 settimana prima",
+    )
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Avvisi · ${entry.text}") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                options.forEach { (type, label) ->
+                    Row(
+                        Modifier.fillMaxWidth().clickable {
+                            selected = if (type in selected) selected - type else selected + type
+                        },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Checkbox(
+                            checked = type in selected,
+                            onCheckedChange = { checked ->
+                                selected = if (checked) selected + type else selected - type
+                            },
+                        )
+                        Text(label)
+                    }
+                }
+                OutlinedTextField(
+                    value = custom,
+                    onValueChange = { custom = it; customError = false },
+                    label = { Text("Personalizzato (AAAA-MM-GG HH:MM)") },
+                    supportingText = if (customError) {
+                        { Text("Data o ora non valida") }
+                    } else {
+                        null
+                    },
+                    isError = customError,
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = { onSave(emptyList()) }) { Text("Nessun avviso") }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val customAt = custom.trim().takeIf(String::isNotEmpty)?.let {
+                        runCatching { LocalDateTime.parse(it.replace(' ', 'T')) }.getOrNull()
+                    }
+                    if (custom.isNotBlank() && customAt == null) {
+                        customError = true
+                    } else {
+                        val alerts = selected.map { ReminderAlert(it) }.toMutableList()
+                        customAt?.let { alerts += ReminderAlert(ReminderAlertType.CUSTOM, it) }
+                        onSave(alerts)
+                    }
+                },
+            ) { Text("Salva") }
+        },
+    )
 }
 
 @Composable
@@ -683,7 +825,12 @@ private fun AutoChip(title: String, subtitle: String, modifier: Modifier = Modif
 }
 
 @Composable
-private fun DayCell(date: LocalDate, isToday: Boolean, event: String?, dot: Color?, modifier: Modifier = Modifier) {
+private fun DayCell(
+    date: LocalDate,
+    isToday: Boolean,
+    entries: List<AgendaEntry>,
+    modifier: Modifier = Modifier,
+) {
     val dow = date.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.ITALIAN).uppercase().take(3)
     Column(
         modifier = modifier
@@ -696,11 +843,33 @@ private fun DayCell(date: LocalDate, isToday: Boolean, event: String?, dot: Colo
     ) {
         Text(dow, color = Muted, fontSize = 9.sp)
         Text("${date.dayOfMonth}", color = if (isToday) Cyan else Ink, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-        if (event != null && dot != null) {
-            Box(Modifier.size(5.dp).clip(RoundedCornerShape(3.dp)).background(dot))
+        if (entries.isNotEmpty()) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (entries.any { it.time != null }) {
+                    Box(Modifier.size(5.dp).clip(RoundedCornerShape(3.dp)).background(Cyan))
+                }
+                if (entries.any { it.time == null }) {
+                    Box(Modifier.size(5.dp).clip(RoundedCornerShape(3.dp)).background(Violet))
+                }
+                if (entries.size > 1) {
+                    Text(entries.size.toString(), color = Muted, fontSize = 8.sp)
+                }
+            }
         } else {
             Text(if (isToday) "Oggi" else "·", color = Muted, fontSize = 8.sp)
         }
+    }
+}
+
+@Composable
+private fun CalendarLegend(color: Color, label: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(6.dp).clip(RoundedCornerShape(3.dp)).background(color))
+        Spacer(Modifier.width(4.dp))
+        Text(label, color = Muted, fontSize = 9.sp)
     }
 }
 

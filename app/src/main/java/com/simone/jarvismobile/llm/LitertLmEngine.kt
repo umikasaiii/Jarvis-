@@ -15,6 +15,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import java.util.concurrent.CancellationException
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 import javax.inject.Inject
 
 /**
@@ -58,6 +62,16 @@ class LitertLmEngine @Inject constructor(
     // Serializes chat() calls: sendMessage is blocking and a Conversation is not
     // safe to drive from two coroutines at once.
     private val chatMutex = Mutex()
+
+    /**
+     * LiteRT-LM 0.14 exposes a native [Conversation.cancelProcess] operation.
+     * Keep the precise in-flight conversation so UI/WorkManager cancellation
+     * stops inference itself, not only the surrounding coroutine.
+     */
+    private val activeGeneration = AtomicReference<ActiveGeneration?>(null)
+    private val watchdog = Executors.newSingleThreadScheduledExecutor { runnable ->
+        Thread(runnable, "jarvis-llm-watchdog").apply { isDaemon = true }
+    }
 
     override suspend fun load(modelPath: String, modelName: String): Boolean =
         withContext(Dispatchers.Default) {
@@ -112,8 +126,12 @@ class LitertLmEngine @Inject constructor(
                 // sendMessage returns a Message; Message.toString() concatenates its
                 // text Contents into the plain reply string (Content.Text.toString()
                 // is the raw text). Blocking call — we are on Dispatchers.Default.
-                conv.sendMessage(prompt).toString()
+                runGeneration(conv, prompt)
             }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: LlmGenerationTimeoutException) {
+            throw e
         } catch (t: Throwable) {
             Log.w(TAG, "llm_generate_failed ${t.javaClass.simpleName}")
             null
@@ -140,7 +158,13 @@ class LitertLmEngine @Inject constructor(
                     }
                     // Only the new user message is sent; the conversation keeps the
                     // whole history internally, so the model remembers the context.
-                    conv.sendMessage(userText).toString()
+                    runGeneration(conv, userText)
+                } catch (e: CancellationException) {
+                    discardConversation(conversation)
+                    throw e
+                } catch (e: LlmGenerationTimeoutException) {
+                    discardConversation(conversation)
+                    throw e
                 } catch (t: Throwable) {
                     Log.w(TAG, "llm_chat_failed ${t.javaClass.simpleName}")
                     null
@@ -156,8 +180,63 @@ class LitertLmEngine @Inject constructor(
     }
 
     override fun cancel() {
-        // sendMessage is synchronous and not interruptible mid-call; cancellation
-        // applies to the surrounding coroutine. No-op here.
+        activeGeneration.get()?.request(StopReason.USER)
+    }
+
+    /**
+     * Runs the synchronous native API with an independent watchdog. A coroutine
+     * timeout alone cannot interrupt a JNI call; cancelProcess() can. The mutex
+     * remains held until native code acknowledges the stop, preventing a second
+     * request from entering the same Conversation concurrently.
+     */
+    private fun runGeneration(conv: Conversation, text: String): String {
+        val active = ActiveGeneration(conv)
+        check(activeGeneration.compareAndSet(null, active)) { "generation_already_running" }
+        val timeout = watchdog.schedule(
+            { active.request(StopReason.TIMEOUT) },
+            GENERATION_TIMEOUT_SECONDS,
+            TimeUnit.SECONDS,
+        )
+        try {
+            val answer = conv.sendMessage(text).toString()
+            active.throwIfStopped()
+            return answer
+        } catch (t: Throwable) {
+            active.throwIfStopped()
+            if (t is CancellationException) throw t
+            throw t
+        } finally {
+            timeout.cancel(false)
+            activeGeneration.compareAndSet(active, null)
+        }
+    }
+
+    private fun discardConversation(expected: Conversation?) {
+        if (expected == null || conversation !== expected) return
+        conversation = null
+        seededSystemPrompt = null
+        conversationEpoch++
+        runCatching { expected.close() }
+    }
+
+    private enum class StopReason { USER, TIMEOUT }
+
+    private class ActiveGeneration(private val conversation: Conversation) {
+        private val reason = AtomicReference<StopReason?>(null)
+
+        fun request(stopReason: StopReason) {
+            if (reason.compareAndSet(null, stopReason)) {
+                runCatching { conversation.cancelProcess() }
+            }
+        }
+
+        fun throwIfStopped() {
+            when (reason.get()) {
+                StopReason.USER -> throw CancellationException("generation_cancelled")
+                StopReason.TIMEOUT -> throw LlmGenerationTimeoutException()
+                null -> Unit
+            }
+        }
     }
 
     private companion object {
@@ -165,5 +244,8 @@ class LitertLmEngine @Inject constructor(
 
         /** Context window (input+output tokens) — how much conversation fits in memory. */
         const val MAX_CONTEXT_TOKENS = 4096
+
+        /** Prevents a damaged native turn from spinning forever in background. */
+        const val GENERATION_TIMEOUT_SECONDS = 90L
     }
 }

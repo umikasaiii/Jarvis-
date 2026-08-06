@@ -7,11 +7,13 @@ import com.simone.jarvismobile.audio.AudioRouteState
 import com.simone.jarvismobile.audio.ChatMessage
 import com.simone.jarvismobile.audio.SessionCoordinator
 import com.simone.jarvismobile.audio.TtsState
+import com.simone.jarvismobile.background.AssistantTaskQueue
 import com.simone.jarvismobile.core.state.ConversationState
 import com.simone.jarvismobile.data.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -26,6 +28,7 @@ import javax.inject.Inject
 class HomeViewModel @Inject constructor(
     application: Application,
     private val coordinator: SessionCoordinator,
+    private val taskQueue: AssistantTaskQueue,
     settings: SettingsRepository,
 ) : AndroidViewModel(application) {
 
@@ -39,7 +42,9 @@ class HomeViewModel @Inject constructor(
     val reply: StateFlow<String> = coordinator.reply
     val partial: StateFlow<String> = coordinator.partialTranscript
     val messages: StateFlow<List<ChatMessage>> = coordinator.messages
-    val sending: StateFlow<Boolean> = coordinator.sending
+    val sending: StateFlow<Boolean> = combine(coordinator.sending, taskQueue.activeCount) { direct, queued ->
+        direct || queued > 0
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
     val llmLoadState: StateFlow<com.simone.jarvismobile.llm.LlmLoadState> = coordinator.llmLoadState
     val loadedModelName: StateFlow<String?> = coordinator.loadedModelName
 
@@ -72,6 +77,16 @@ class HomeViewModel @Inject constructor(
         coordinator.cancel()
     }
 
+    fun onInterruptAndTalk() {
+        coordinator.interruptAndListen()
+    }
+
+    /** Stops the active typed response in WorkManager and inside LiteRT-LM. */
+    fun onStopResponse() {
+        coordinator.cancelTextGeneration()
+        viewModelScope.launch { taskQueue.cancelActive() }
+    }
+
     /** Clears the conversation and the model's in-session memory. */
     fun onNewConversation() {
         coordinator.newConversation()
@@ -79,6 +94,6 @@ class HomeViewModel @Inject constructor(
 
     /** Sends a typed message (written-chat alternative to voice). */
     fun onSendText(text: String) {
-        viewModelScope.launch { coordinator.sendText(text) }
+        viewModelScope.launch { taskQueue.enqueueResponse(text) }
     }
 }

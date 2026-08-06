@@ -37,6 +37,9 @@ interface Tool {
      */
     fun validate(arguments: JsonObject): String?
 
+    /** Optional exact, user-facing confirmation. Null uses the registry default. */
+    fun confirmationPrompt(arguments: JsonObject): String? = null
+
     /** Executes the tool. Implementations must honor [timeoutMs] via the caller. */
     suspend fun execute(arguments: JsonObject): ToolResult
 }

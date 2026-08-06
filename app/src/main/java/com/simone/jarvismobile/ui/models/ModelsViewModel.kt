@@ -14,6 +14,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -87,6 +88,14 @@ class ModelsViewModel @Inject constructor(
         _busy.value = true
         _status.value = "Caricamento del modello avanzato… (può richiedere più tempo)"
         viewModelScope.launch {
+            if (model.path == settings.modelPath.first()) {
+                router.advanced.unload()
+                settings.clearAdvancedModel()
+                _status.value = "È già il modello rapido: JARVIS userà una sola copia " +
+                    "anche per le richieste complesse, risparmiando RAM e tempo."
+                _busy.value = false
+                return@launch
+            }
             val ok = router.advanced.load(model.path, model.name)
             if (ok) settings.setAdvancedModel(model.path, model.name)
             _status.value = if (ok) {

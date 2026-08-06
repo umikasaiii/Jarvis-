@@ -58,6 +58,16 @@ class ToolRegistryTest {
     }
 
     @Test
+    fun `local memory writes also require explicit confirmation`() {
+        val reg = ToolRegistry(listOf(FakeTool("remember", ToolPolicy.CONFIRMING_WRITE)))
+        val res = reg.resolve(call("remember", requiresConfirmation = false), online = false)
+
+        assertTrue(res is ToolResolution.Approved)
+        assertTrue((res as ToolResolution.Approved).needsConfirmation)
+        assertEquals(false, res.needsBiometric)
+    }
+
+    @Test
     fun `home security requires biometric`() {
         val reg = ToolRegistry(listOf(FakeTool("unlock", ToolPolicy.HOME_SECURITY)))
         val res = reg.resolve(call("unlock"), online = true) as ToolResolution.Approved

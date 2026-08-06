@@ -5,6 +5,7 @@ import com.simone.jarvismobile.core.tools.ToolRegistry
 import com.simone.jarvismobile.core.tools.builtin.CalculateTool
 import com.simone.jarvismobile.agenda.AgendaRepository
 import com.simone.jarvismobile.memory.MemoryIndex
+import com.simone.jarvismobile.memory.VaultRepository
 import com.simone.jarvismobile.tools.AddReminderTool
 import com.simone.jarvismobile.tools.AlarmTool
 import com.simone.jarvismobile.tools.BatteryTool
@@ -15,6 +16,17 @@ import com.simone.jarvismobile.tools.RememberTool
 import com.simone.jarvismobile.tools.TimeTool
 import com.simone.jarvismobile.tools.TimeUntilTool
 import com.simone.jarvismobile.tools.TimerTool
+import com.simone.jarvismobile.tools.CalendarDraftTool
+import com.simone.jarvismobile.tools.CompleteAgendaTool
+import com.simone.jarvismobile.tools.DialDraftTool
+import com.simone.jarvismobile.tools.ListNotificationsTool
+import com.simone.jarvismobile.tools.MediaControlTool
+import com.simone.jarvismobile.tools.NavigationTool
+import com.simone.jarvismobile.tools.OpenAppTool
+import com.simone.jarvismobile.tools.OpenSettingsTool
+import com.simone.jarvismobile.tools.PlayMediaTool
+import com.simone.jarvismobile.tools.SearchVaultTool
+import com.simone.jarvismobile.tools.SmsDraftTool
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -36,6 +48,7 @@ object ToolsModule {
     fun provideToolRegistry(
         @ApplicationContext context: Context,
         memory: MemoryIndex,
+        vault: VaultRepository,
         agenda: AgendaRepository,
     ): ToolRegistry = ToolRegistry(
         listOf(
@@ -47,8 +60,19 @@ object ToolsModule {
             FlashlightTool(context),
             AddReminderTool(agenda),
             ListAgendaTool(agenda),
+            CompleteAgendaTool(agenda),
             RememberTool(memory),
             ListMemoriesTool(memory),
+            OpenAppTool(context),
+            OpenSettingsTool(context),
+            CalendarDraftTool(context),
+            DialDraftTool(context),
+            SmsDraftTool(context),
+            NavigationTool(context),
+            PlayMediaTool(context),
+            MediaControlTool(context),
+            ListNotificationsTool(context),
+            SearchVaultTool(vault),
             CalculateTool(),
         ),
     )

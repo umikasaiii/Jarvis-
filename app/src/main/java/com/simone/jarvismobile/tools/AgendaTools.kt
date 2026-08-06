@@ -63,7 +63,7 @@ class AddReminderTool(private val agenda: AgendaRepository) : Tool {
             "date" to date.toString(),
             "time" to (time?.toString() ?: ""),
             "text" to text,
-            "spoken" to "Segnato: $text, $whenSaid.",
+            "spoken" to "Segnato: $text, $whenSaid. L'avviso non è ancora impostato: puoi sceglierlo nell'Agenda.",
         )
     }
 }
@@ -109,6 +109,36 @@ class ListAgendaTool(private val agenda: AgendaRepository) : Tool {
                 items.joinToString("; ") { Agenda.speak(it, today) } + "."
         }
         return okJson("count" to items.size.toString(), "spoken" to spoken)
+    }
+}
+
+/** Completes an existing task only after showing the exact target to the user. */
+class CompleteAgendaTool(private val agenda: AgendaRepository) : Tool {
+    override val name = "complete_agenda"
+    override val description = "Segna come completata un'attività del calendario personale."
+    override val policy = ToolPolicy.CONFIRMING_WRITE
+    override val sensitivity = SensitivityLevel.PERSONAL
+    override val requiresNetwork = false
+    override val timeoutMs = 5_000L
+
+    override fun validate(arguments: JsonObject): String? {
+        val text = arguments.text("text") ?: return "manca il campo 'text'"
+        if (text.length < 2) return "testo troppo corto"
+        return null
+    }
+
+    override fun confirmationPrompt(arguments: JsonObject): String? = arguments.text("text")
+        ?.take(160)
+        ?.let { "Confermi di segnare come completata l'attività “$it”?" }
+
+    override suspend fun execute(arguments: JsonObject): ToolResult {
+        val text = arguments.text("text") ?: return ToolResult.Failure("missing_text")
+        val completed = runCatching { agenda.markDone(text) }.getOrNull()
+            ?: return ToolResult.Failure("agenda_item_not_found")
+        return okJson(
+            "id" to completed.id,
+            "spoken" to "Completata: ${completed.text}.",
+        )
     }
 }
 

@@ -6,6 +6,7 @@ import com.simone.jarvismobile.agenda.AgendaRepository
 import com.simone.jarvismobile.audio.SessionCoordinator
 import com.simone.jarvismobile.core.agenda.Agenda
 import com.simone.jarvismobile.core.agenda.AgendaEntry
+import com.simone.jarvismobile.core.agenda.ReminderAlert
 import com.simone.jarvismobile.core.state.ConversationState
 import com.simone.jarvismobile.data.SettingsRepository
 import com.simone.jarvismobile.llm.LlmLoadState
@@ -77,7 +78,12 @@ class DashboardViewModel @Inject constructor(
 
     fun refreshAgenda() { viewModelScope.launch { runCatching { agenda.reload() } } }
 
+    fun updateAlerts(entryId: String, alerts: List<ReminderAlert>) {
+        viewModelScope.launch { runCatching { agenda.updateAlerts(entryId, alerts) } }
+    }
+
     fun hasRecordPermission(): Boolean = coordinator.hasRecordPermission()
     fun onTalkPressed() { viewModelScope.launch { coordinator.runSession() } }
     fun onCancel() = coordinator.cancel()
+    fun onInterruptAndTalk() = coordinator.interruptAndListen()
 }

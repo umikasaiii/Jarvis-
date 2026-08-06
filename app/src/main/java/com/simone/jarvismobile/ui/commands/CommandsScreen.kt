@@ -22,8 +22,16 @@ import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.FlashlightOn
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.HourglassTop
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Navigation
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.Sms
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -61,9 +69,28 @@ private val HINTS = mapOf(
         "«Ricordami la revisione domani alle 15»",
     ),
     "list_agenda" to Hint(Icons.Filled.CalendarMonth, "Agenda", "«Cosa devo fare oggi pomeriggio?»"),
+    "complete_agenda" to Hint(
+        Icons.Filled.CalendarMonth,
+        "Completa attività",
+        "«Segna comprare il latte come completato»",
+    ),
     "remember" to Hint(Icons.Filled.EditNote, "Appunto", "«Prendi nota: la moto è una CB500»"),
     "list_memories" to Hint(Icons.Filled.EditNote, "Appunti salvati", "«Cosa hai annotato?»"),
     "calculate" to Hint(Icons.Filled.Calculate, "Calcolo", "«Quanto fa 12 * 8?»"),
+    "open_app" to Hint(Icons.Filled.Bolt, "Apri app", "«Apri Spotify»"),
+    "open_settings" to Hint(Icons.Filled.Settings, "Impostazioni", "«Apri le impostazioni Bluetooth»"),
+    "create_calendar_event" to Hint(
+        Icons.Filled.CalendarMonth,
+        "Esporta evento",
+        "«Esporta su Google Calendar dentista domani alle 15»",
+    ),
+    "prepare_call" to Hint(Icons.Filled.Phone, "Prepara chiamata", "«Chiama il 061234567»"),
+    "compose_sms" to Hint(Icons.Filled.Sms, "Prepara SMS", "«Prepara un SMS al 333…: arrivo»"),
+    "navigate" to Hint(Icons.Filled.Navigation, "Navigazione", "«Portami a Piazza Navona»"),
+    "play_media" to Hint(Icons.Filled.MusicNote, "Riproduci", "«Riproduci Kind of Blue»"),
+    "media_control" to Hint(Icons.Filled.SkipNext, "Controlli media", "«Brano successivo»"),
+    "list_notifications" to Hint(Icons.Filled.Notifications, "Notifiche", "«Leggi le notifiche di WhatsApp»"),
+    "search_vault" to Hint(Icons.Filled.FolderOpen, "Cerca nel vault", "«Cerca nel vault fattura moto»"),
 )
 
 /**
@@ -121,7 +148,8 @@ fun CommandsScreen(viewModel: CommandsViewModel = hiltViewModel()) {
         }
 
         Text(
-            "Le azioni delicate chiedono conferma prima di essere eseguite.",
+            "Le azioni delicate chiedono conferma. Eventi, numeri e SMS si aprono come bozze: " +
+                "devi ancora premere Salva, Chiama o Invia nell'app di sistema.",
             color = Muted,
             fontSize = 12.sp,
             modifier = Modifier.padding(top = 4.dp),

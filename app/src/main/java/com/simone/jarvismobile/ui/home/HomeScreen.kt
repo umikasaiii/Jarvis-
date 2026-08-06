@@ -32,7 +32,6 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.outlined.Bolt
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -81,7 +80,7 @@ private val Surface = Color(0xFF102030)
  */
 @Composable
 fun HomeScreen(
-    autoStart: Boolean = false,
+    autoStartRequest: Int = 0,
     onOpenDiagnostics: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
     onOpenModels: () -> Unit = {},
@@ -117,15 +116,17 @@ fun HomeScreen(
     }.toTypedArray()
 
     fun onMicTap() {
-        if (state.isRestingLike()) {
-            if (micGranted) viewModel.onTalkPressed() else permissionLauncher.launch(neededPermissions())
-        } else {
-            viewModel.onCancel()
+        when {
+            state == ConversationState.Speaking -> viewModel.onInterruptAndTalk()
+            state.isRestingLike() -> {
+                if (micGranted) viewModel.onTalkPressed() else permissionLauncher.launch(neededPermissions())
+            }
+            else -> viewModel.onCancel()
         }
     }
 
-    if (autoStart) {
-        LaunchedEffect(Unit) {
+    if (autoStartRequest > 0) {
+        LaunchedEffect(autoStartRequest) {
             if (micGranted) viewModel.onTalkPressed() else permissionLauncher.launch(neededPermissions())
         }
     }
@@ -210,9 +211,13 @@ fun HomeScreen(
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
                 if (messages.isNotEmpty()) {
-                    TextButton(onClick = viewModel::onNewConversation) { Text("Nuova", color = Amber, fontSize = 12.sp) }
+                    TextButton(onClick = viewModel::onNewConversation, enabled = !sending) {
+                        Text("Nuova", color = if (sending) Muted else Amber, fontSize = 12.sp)
+                    }
                 }
-                TextButton(onClick = onOpenModels) { Text("Modelli", color = Accent, fontSize = 12.sp) }
+                TextButton(onClick = onOpenModels, enabled = !sending) {
+                    Text("Modelli", color = if (sending) Muted else Accent, fontSize = 12.sp)
+                }
                 TextButton(onClick = onOpenMemory) { Text("Memoria", color = Accent, fontSize = 12.sp) }
                 TextButton(onClick = onOpenDiagnostics) { Text("Diagnostica", color = Accent, fontSize = 12.sp) }
             }
@@ -227,11 +232,14 @@ fun HomeScreen(
                 RoundButton(
                     color = if (talking) Red else Accent,
                     onClick = { onMicTap() },
-                    enabled = true,
+                    enabled = !sending,
                 ) {
                     Icon(
                         if (talking) Icons.Filled.Stop else Icons.Filled.Mic,
-                        contentDescription = if (talking) "Ferma" else "Parla",
+                        contentDescription = when (state) {
+                            ConversationState.Speaking -> "Interrompi e parla"
+                            else -> if (talking) "Ferma" else "Parla"
+                        },
                         tint = Color(0xFF07131A),
                     )
                 }
@@ -258,15 +266,27 @@ fun HomeScreen(
 
                 val canSend = textInput.isNotBlank() && !sending
                 RoundButton(
-                    color = if (canSend) Accent else Color(0xFF1E2C34),
-                    onClick = {
-                        val msg = textInput.trim()
-                        if (msg.isNotEmpty()) { viewModel.onSendText(msg); textInput = "" }
+                    color = when {
+                        sending -> Red
+                        canSend -> Accent
+                        else -> Color(0xFF1E2C34)
                     },
-                    enabled = canSend,
+                    onClick = {
+                        if (sending) {
+                            viewModel.onStopResponse()
+                        } else {
+                            val msg = textInput.trim()
+                            if (msg.isNotEmpty()) { viewModel.onSendText(msg); textInput = "" }
+                        }
+                    },
+                    enabled = sending || canSend,
                 ) {
                     if (sending) {
-                        CircularProgressIndicator(Modifier.size(22.dp), color = Color.White, strokeWidth = 2.dp)
+                        Icon(
+                            Icons.Filled.Stop,
+                            contentDescription = "Ferma risposta",
+                            tint = Color.White,
+                        )
                     } else {
                         Icon(
                             Icons.AutoMirrored.Filled.Send,

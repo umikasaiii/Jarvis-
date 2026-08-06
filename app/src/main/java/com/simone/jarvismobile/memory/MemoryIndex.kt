@@ -3,7 +3,10 @@ package com.simone.jarvismobile.memory
 import android.util.Log
 import com.simone.jarvismobile.core.memory.MarkdownNote
 import com.simone.jarvismobile.core.memory.MarkdownParser
+import com.simone.jarvismobile.core.memory.MemoryKind
 import com.simone.jarvismobile.core.memory.MemoryChunk
+import com.simone.jarvismobile.core.memory.MemoryRecord
+import com.simone.jarvismobile.core.memory.MemoryRecordCodec
 import com.simone.jarvismobile.core.memory.RankedChunk
 import com.simone.jarvismobile.core.memory.RetrievalRanker
 import kotlinx.coroutines.Dispatchers
@@ -28,6 +31,7 @@ import javax.inject.Singleton
 @Singleton
 class MemoryIndex @Inject constructor(
     private val vault: VaultRepository,
+    private val conversationMemory: ConversationMemoryStore,
 ) {
     /** Honest, observable state of the index for the UI. */
     data class Status(
@@ -35,6 +39,7 @@ class MemoryIndex @Inject constructor(
         val building: Boolean = false,
         val noteCount: Int = 0,
         val chunkCount: Int = 0,
+        val memoryCount: Int = 0,
         val lastError: String? = null,
     )
 
@@ -42,17 +47,19 @@ class MemoryIndex @Inject constructor(
     val status = _status.asStateFlow()
 
     @Volatile private var chunks: List<MemoryChunk> = emptyList()
+    @Volatile private var lastBuiltAt: Long = 0L
     private val ranker = RetrievalRanker()
     private val buildMutex = Mutex()
 
     /** Builds the index only if a vault is set and it has not been built yet. */
     suspend fun ensureBuilt() {
-        if (chunks.isNotEmpty() || _status.value.building) return
+        conversationMemory.ensureLoaded()
+        if (_status.value.building) return
         if (!vault.isConfigured()) {
             _status.value = _status.value.copy(configured = false)
             return
         }
-        rebuild()
+        if (lastBuiltAt == 0L || System.currentTimeMillis() - lastBuiltAt >= STALE_AFTER_MS) rebuild()
     }
 
     /** (Re)reads the whole vault and rebuilds the index. */
@@ -65,11 +72,15 @@ class MemoryIndex @Inject constructor(
                     chunkNote(MarkdownParser.parse(note.path, note.content))
                 }
                 chunks = built
+                lastBuiltAt = System.currentTimeMillis()
                 _status.value = Status(
                     configured = true,
                     building = false,
                     noteCount = notes.size,
                     chunkCount = built.size,
+                    memoryCount = notes.firstOrNull {
+                        isExplicitMemory(it.path)
+                    }?.let { MemoryRecordCodec.parse(it.content).size } ?: 0,
                 )
                 Log.i(TAG, "memory_indexed notes=${notes.size} chunks=${built.size}")
             } catch (t: Throwable) {
@@ -85,19 +96,47 @@ class MemoryIndex @Inject constructor(
     /** Saved reminders, newest first, read straight from the vault file. */
     suspend fun listMemories(limit: Int = 10): List<String> = vault.listMemories(limit)
 
+    suspend fun listRecords(): List<MemoryRecord> = vault.readMemoryRecords()
+
     /**
      * Saves a user "remember this" note into the vault and refreshes the index so
      * it is retrievable straight away. Returns false if there is no writable vault.
      */
-    suspend fun remember(text: String): Boolean {
-        val ok = vault.appendMemory(text)
-        if (ok) rebuild()
-        return ok
+    suspend fun remember(text: String, kind: MemoryKind? = null): MemoryRecord? {
+        val resolved = kind ?: com.simone.jarvismobile.core.memory.MemoryStructure.classify(text)
+        if (resolved == MemoryKind.TEMPORARY) {
+            val ok = conversationMemory.addTemporary(text)
+            if (!ok) return null
+            val now = System.currentTimeMillis()
+            return MemoryRecord("temporary-$now", text.trim(), MemoryKind.TEMPORARY, now)
+        }
+        val saved = vault.addMemory(text, resolved)
+        if (saved != null) rebuild()
+        return saved
+    }
+
+    suspend fun update(recordId: String, text: String, kind: MemoryKind): MemoryRecord? {
+        if (kind == MemoryKind.TEMPORARY) {
+            if (!conversationMemory.addTemporary(text)) return null
+            val removed = vault.deleteMemory(recordId) ?: return null
+            rebuild()
+            return removed.copy(text = text.trim(), kind = MemoryKind.TEMPORARY)
+        }
+        val updated = vault.updateMemory(recordId, text, kind)
+        if (updated != null) rebuild()
+        return updated
+    }
+
+    suspend fun delete(recordId: String): MemoryRecord? {
+        val removed = vault.deleteMemory(recordId)
+        if (removed != null) rebuild()
+        return removed
     }
 
     /** Drops the index (e.g. after the vault is disconnected). */
     fun clear() {
         chunks = emptyList()
+        lastBuiltAt = 0L
         _status.value = Status(configured = false)
     }
 
@@ -109,12 +148,23 @@ class MemoryIndex @Inject constructor(
      * semantic embeddings are available.
      */
     fun retrieve(query: String, limit: Int = 4): List<RankedChunk> {
-        val local = chunks
+        val temporary = conversationMemory.snapshot.value.facts.mapIndexed { index, fact ->
+            MemoryChunk(
+                notePath = "private://conversation/$index",
+                title = "Memoria breve",
+                text = fact,
+                tags = conversationMemory.snapshot.value.topics,
+                folder = "conversation",
+            )
+        }
+        val local = chunks + temporary
         if (local.isEmpty()) return emptyList()
         val ranked = if (query.isBlank()) emptyList() else ranker.rank(query, local, limit)
         val recentMemories = if (PERSONAL_RECALL_RE.containsMatchIn(query.lowercase())) {
             local.asReversed()
-                .filter { isExplicitMemory(it.notePath) }
+                .filter {
+                    isExplicitMemory(it.notePath) || it.notePath.startsWith("private://conversation/")
+                }
                 .take(RECENT_MEMORY_FALLBACK)
                 .map { RankedChunk(it, 0.0) }
         } else {
@@ -183,17 +233,13 @@ class MemoryIndex @Inject constructor(
 
     /** Each appended `- [timestamp] fact` is an independently retrievable memory. */
     private fun splitMemoryEntries(body: String): List<String> =
-        body.lineSequence()
-            .map { it.trim() }
-            .filter { it.startsWith("- ") }
-            .map { it.removePrefix("- ").trim() }
-            .filter { it.isNotEmpty() }
-            .toList()
+        MemoryRecordCodec.parse(body).map { it.text }
 
     private companion object {
         const val TAG = "JarvisMemory"
         const val MAX_CHUNK_CHARS = 1200
         const val RECENT_MEMORY_FALLBACK = 2
+        const val STALE_AFTER_MS = 15_000L
         val PERSONAL_RECALL_RE = Regex(
             """\b(di me|su di me|mio|mia|miei|mie|preferit\w*|ricord\w*|sai di me|come mi chiamo)\b""",
         )
