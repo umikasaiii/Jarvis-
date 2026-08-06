@@ -1,5 +1,7 @@
 name: CI
 
+# Retry trigger after GitHub Actions incident (2026-08-06).
+
 on:
   push:
     branches: [ main, "claude/**", "codex/**" ]
