@@ -1071,6 +1071,24 @@ class SessionCoordinator @Inject constructor(
         return null
     }
 
+    /**
+     * Dismisses any "risposta pronta" notification still in the shade.
+     *
+     * setAutoCancel only fires when the notification itself is tapped, so opening
+     * the chat from inside the app left the entry sitting there for a message the
+     * user was already reading. Only the response range is touched, never the
+     * foreground-service notification.
+     */
+    fun clearResponseNotifications() {
+        runCatching {
+            val nm = context.getSystemService(android.app.NotificationManager::class.java) ?: return
+            nm.activeNotifications
+                .map { it.id }
+                .filter { it in RESPONSE_NOTIFICATION_MIN..RESPONSE_NOTIFICATION_MAX }
+                .forEach { nm.cancel(it) }
+        }
+    }
+
     /** Builds the vault memory index in the background if a vault is configured. */
     suspend fun ensureMemoryReady() = memory.ensureBuilt()
 
@@ -1239,6 +1257,10 @@ class SessionCoordinator @Inject constructor(
     companion object {
         const val DEFAULT_RECORD_MS = 3_000L
         const val FIXED_REPLY = "Sistema audio operativo. Sono pronto."
+
+        /** Id range used by AssistantTaskWorker for "response ready" notifications. */
+        private const val RESPONSE_NOTIFICATION_MIN = 3_000
+        private const val RESPONSE_NOTIFICATION_MAX = 3_000 + 0x0fff
 
         /** Tail of the reminder reply that offers to set an alert. */
         const val ALERT_OFFER = "Vuoi che ti avvisi?"

@@ -56,7 +56,12 @@ class DashboardViewModel @Inject constructor(
      * messages that arrived while the chat was in front of the user, which then
      * needed a pointless open/close to dismiss.
      */
-    fun markChatSeen() { lastSeen.value = coordinator.messages.value.size }
+    fun markChatSeen() {
+        lastSeen.value = coordinator.messages.value.size
+        // Reading the chat also clears the shade: a "risposta pronta" entry for a
+        // message the user is looking at is just noise.
+        coordinator.clearResponseNotifications()
+    }
 
     /** Everything still ahead, so the Agenda tile shows the real calendar. */
     val upcoming: StateFlow<List<AgendaEntry>> = agenda.entries
