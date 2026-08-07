@@ -111,7 +111,16 @@ class LlmIntentClassifier @Inject constructor(
         Log.i(TAG, "intent=$name confidence=${(confidence * 100).toInt()}")
 
         val match = when (name) {
-            "get_time", "battery_status", "list_memories" -> Match.Run(call(name))
+            "get_time", "list_memories" -> Match.Run(call(name))
+
+            // The charging state is only spoken when the user asked for it.
+            "battery_status" -> Match.Run(
+                call(
+                    "battery_status",
+                    "charging_asked" to Regex("""(?i)\b(caric\w*|ricaric\w*|aliment\w*|spina|collegat\w*)\b""")
+                        .containsMatchIn(utterance).toString(),
+                ),
+            )
 
             "set_timer" -> ItalianNumbers.duration(utterance)
                 ?.let { Match.Run(call("set_timer", "seconds" to it.toString())) }

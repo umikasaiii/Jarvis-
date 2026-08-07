@@ -466,19 +466,29 @@ private fun ChatFab(unread: Int, onClick: () -> Unit, modifier: Modifier = Modif
             contentScale = ContentScale.Fit,
         )
         if (unread > 0) {
+            // A glass ring with a neon numeral, not a red dot: red is an alarm
+            // colour and reads as an error next to a cyan HUD.
             Box(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .size(20.dp)
+                    .size(22.dp)
                     .clip(androidx.compose.foundation.shape.CircleShape)
-                    .background(Color(0xFFE74C3C)),
+                    .background(Color(0x33081521))
+                    .border(1.dp, Cyan.copy(alpha = 0.75f), androidx.compose.foundation.shape.CircleShape),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     if (unread > 9) "9+" else "$unread",
-                    color = Color.White,
-                    fontSize = 10.sp,
+                    color = Cyan,
+                    fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
+                    style = androidx.compose.ui.text.TextStyle(
+                        shadow = androidx.compose.ui.graphics.Shadow(
+                            color = Cyan,
+                            offset = Offset.Zero,
+                            blurRadius = 14f,
+                        ),
+                    ),
                 )
             }
         }

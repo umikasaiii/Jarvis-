@@ -62,10 +62,14 @@ class BatteryTool(private val context: Context) : Tool {
             ?: return ToolResult.Failure("no_battery_service")
         val pct = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
         val charging = bm.isCharging
-        val spoken = if (charging) {
-            "Batteria al $pct per cento, in carica."
-        } else {
-            "Batteria al $pct per cento, non è in carica."
+        // "Quanta batteria ho?" wants a number, not a status report. The charging
+        // state is extra information the user did not ask for, so it is only
+        // spoken when the question actually mentioned charging.
+        val wantsCharging = arguments.str("charging_asked")?.toBooleanStrictOrNull() == true
+        val spoken = when {
+            !wantsCharging -> "Batteria al $pct per cento."
+            charging -> "Batteria al $pct per cento, in carica."
+            else -> "Batteria al $pct per cento, non è in carica."
         }
         return ok("percent" to pct.toString(), "charging" to charging.toString(), "spoken" to spoken)
     }

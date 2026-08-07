@@ -1,5 +1,6 @@
 package com.simone.jarvismobile.ui
 
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -72,6 +73,12 @@ fun JarvisApp(
 ) {
     var tab by remember { mutableStateOf(Tab.HOME) }
     var overlay by remember { mutableStateOf(if (initiallyOpenChat) Overlay.CHAT else null) }
+    // Reading the chat marks it read: the badge must clear when the sheet closes,
+    // not only when it opens, or messages seen while it was open stay counted.
+    val dashboardViewModel: com.simone.jarvismobile.ui.dashboard.DashboardViewModel = hiltViewModel()
+    LaunchedEffect(overlay) {
+        if (overlay != Overlay.CHAT) dashboardViewModel.markChatSeen()
+    }
 
     LaunchedEffect(openChatRequest) {
         if (openChatRequest > 0) overlay = Overlay.CHAT

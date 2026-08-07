@@ -50,6 +50,12 @@ class DashboardViewModel @Inject constructor(
         (count - seen).coerceAtLeast(0)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
+    /**
+     * Marks everything currently in the transcript as seen. Called both when the
+     * chat opens and when it closes: clearing only on open left the badge showing
+     * messages that arrived while the chat was in front of the user, which then
+     * needed a pointless open/close to dismiss.
+     */
     fun markChatSeen() { lastSeen.value = coordinator.messages.value.size }
 
     /** Everything still ahead, so the Agenda tile shows the real calendar. */

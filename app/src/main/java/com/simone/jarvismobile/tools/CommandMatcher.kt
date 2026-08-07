@@ -110,7 +110,13 @@ object CommandMatcher {
                     (raw.trimEnd().endsWith('?') || FOLLOW_UP_REQUEST_RE.containsMatchIn(t))
                 )
         ) {
-            return call("battery_status")
+            // "Quanta batteria ho?" wants a number. The charging state is extra
+            // information, so it is only reported when the words asked for it —
+            // either directly or as a follow-up like "e in carica?".
+            return call(
+                "battery_status",
+                "charging_asked" to CHARGING_FOLLOW_UP_RE.containsMatchIn(t).toString(),
+            )
         }
 
         // --- Flashlight --------------------------------------------------

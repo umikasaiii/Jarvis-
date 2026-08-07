@@ -119,6 +119,14 @@ class SessionCoordinator @Inject constructor(
      */
     @Volatile private var lastConversationSlot: ModelSlot? = null
 
+    /**
+     * The assistant's configurable name. It was never given to the model, which
+     * is why "come ti chiami?" answered "sono un assistente personale di Simone"
+     * instead of "JARVIS". Cached because the system prompt is built off the
+     * main thread without suspending.
+     */
+    @Volatile private var assistantName: String = SettingsRepository.DEFAULT_NAME
+
     /** True once the saved transcript has been read back from disk. */
     @Volatile private var chatRestored = false
 
@@ -168,6 +176,9 @@ class SessionCoordinator @Inject constructor(
      * engine's own KV cache dies with the process and cannot be restored.
      */
     suspend fun restoreChat() {
+        assistantName = runCatching { settings.assistantName.first() }
+            .getOrDefault(SettingsRepository.DEFAULT_NAME)
+            .ifBlank { SettingsRepository.DEFAULT_NAME }
         if (chatRestored) return
         chatRestored = true
         conversationMemory.ensureLoaded()
@@ -729,6 +740,8 @@ class SessionCoordinator @Inject constructor(
      */
     private fun buildSystem(notes: List<String>): String = buildString {
         append(systemPrompt.trim())
+        append("\n\nTi chiami ").append(assistantName)
+        append(". Se Simone ti chiede il tuo nome, rispondi con questo.")
 
         val now = LocalDateTime.now()
         append("\n\nAdesso è ")
