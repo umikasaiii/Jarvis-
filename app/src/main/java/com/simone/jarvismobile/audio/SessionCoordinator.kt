@@ -1212,6 +1212,14 @@ class SessionCoordinator @Inject constructor(
         }
     }
 
+    /**
+     * Silences the current utterance without cancelling the turn. Used when the
+     * user switches spoken replies off while JARVIS is mid-sentence.
+     */
+    fun stopSpeaking() {
+        tts.stop()
+    }
+
     fun cancel() {
         bargeInRequested = false
         stt.cancel()

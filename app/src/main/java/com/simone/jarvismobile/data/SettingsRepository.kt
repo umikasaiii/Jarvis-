@@ -46,6 +46,16 @@ class SettingsRepository @Inject constructor(
         val TTS_PAUSE_SCALE = floatPreferencesKey("tts_pause_scale")
         val TTS_EXPRESSIVENESS = floatPreferencesKey("tts_expressiveness")
         val SPEAK_BACKGROUND_RESPONSES = booleanPreferencesKey("speak_background_responses")
+
+        // --- external neural voice (Phase 4b) ---------------------------
+        val TTS_ENGINE_ID = stringPreferencesKey("tts_engine_id")
+        val TTS_MODEL_PATH = stringPreferencesKey("tts_model_path")
+        val TTS_VOICES_PATH = stringPreferencesKey("tts_voices_path")
+        val TTS_VOCABULARY_PATH = stringPreferencesKey("tts_vocabulary_path")
+        val TTS_NEURAL_VOICE = stringPreferencesKey("tts_neural_voice")
+        val TTS_VOLUME = floatPreferencesKey("tts_volume")
+        val TTS_SPEECH_ENABLED = booleanPreferencesKey("tts_speech_enabled")
+        val TTS_STREAMING = booleanPreferencesKey("tts_streaming")
     }
 
     /**
@@ -248,6 +258,71 @@ class SettingsRepository @Inject constructor(
         context.settingsDataStore.edit { it[Keys.TTS_PAUSE_SCALE] = value.coerceIn(0f, 3f) }
     }
 
+    // --- external neural voice ------------------------------------------
+    // Paths point at files copied into app-private storage by TtsAssetStore, so
+    // they stay valid across restarts without holding a SAF grant. Empty means
+    // "not chosen"; an empty engine id means the Android voice is in charge.
+
+    val ttsEngineId: Flow<String> =
+        context.settingsDataStore.data.map { it[Keys.TTS_ENGINE_ID] ?: "" }
+
+    val ttsModelPath: Flow<String> =
+        context.settingsDataStore.data.map { it[Keys.TTS_MODEL_PATH] ?: "" }
+
+    val ttsVoicesPath: Flow<String> =
+        context.settingsDataStore.data.map { it[Keys.TTS_VOICES_PATH] ?: "" }
+
+    val ttsVocabularyPath: Flow<String> =
+        context.settingsDataStore.data.map { it[Keys.TTS_VOCABULARY_PATH] ?: "" }
+
+    val ttsNeuralVoice: Flow<String> =
+        context.settingsDataStore.data.map { it[Keys.TTS_NEURAL_VOICE] ?: "" }
+
+    val ttsVolume: Flow<Float> =
+        context.settingsDataStore.data.map {
+            (it[Keys.TTS_VOLUME] ?: DEFAULT_TTS_VOLUME).coerceIn(0f, 1f)
+        }
+
+    /** Whether JARVIS answers out loud at all. */
+    val ttsSpeechEnabled: Flow<Boolean> =
+        context.settingsDataStore.data.map { it[Keys.TTS_SPEECH_ENABLED] ?: true }
+
+    /** Sentence-by-sentence synthesis; off means one take for the whole reply. */
+    val ttsStreamingEnabled: Flow<Boolean> =
+        context.settingsDataStore.data.map { it[Keys.TTS_STREAMING] ?: true }
+
+    suspend fun setTtsEngineId(value: String) {
+        context.settingsDataStore.edit { it[Keys.TTS_ENGINE_ID] = value.trim() }
+    }
+
+    suspend fun setTtsModelPath(value: String) {
+        context.settingsDataStore.edit { it[Keys.TTS_MODEL_PATH] = value }
+    }
+
+    suspend fun setTtsVoicesPath(value: String) {
+        context.settingsDataStore.edit { it[Keys.TTS_VOICES_PATH] = value }
+    }
+
+    suspend fun setTtsVocabularyPath(value: String) {
+        context.settingsDataStore.edit { it[Keys.TTS_VOCABULARY_PATH] = value }
+    }
+
+    suspend fun setTtsNeuralVoice(value: String) {
+        context.settingsDataStore.edit { it[Keys.TTS_NEURAL_VOICE] = value }
+    }
+
+    suspend fun setTtsVolume(value: Float) {
+        context.settingsDataStore.edit { it[Keys.TTS_VOLUME] = value.coerceIn(0f, 1f) }
+    }
+
+    suspend fun setTtsSpeechEnabled(value: Boolean) {
+        context.settingsDataStore.edit { it[Keys.TTS_SPEECH_ENABLED] = value }
+    }
+
+    suspend fun setTtsStreamingEnabled(value: Boolean) {
+        context.settingsDataStore.edit { it[Keys.TTS_STREAMING] = value }
+    }
+
     suspend fun setTtsExpressiveness(value: Float) {
         context.settingsDataStore.edit { it[Keys.TTS_EXPRESSIVENESS] = value.coerceIn(0f, 1f) }
     }
@@ -270,6 +345,7 @@ class SettingsRepository @Inject constructor(
     companion object {
         const val DEFAULT_NAME = "JARVIS"
         const val DEFAULT_RECORD_SECONDS = 3
+        const val DEFAULT_TTS_VOLUME = 1.0f
         const val DEFAULT_TTS_RATE = 0.95f
         const val DEFAULT_TTS_PITCH = 0.98f
         const val MIN_TTS_RATE = 0.6f

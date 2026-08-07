@@ -130,6 +130,7 @@ dependencies {
     // On-device LLM (Phase 3, LiteRT-LM) + SAF document access for model import.
     implementation(libs.litertlm.android)
     implementation(libs.androidx.documentfile)
+    implementation(libs.onnxruntime.android)
 
     // Unit tests.
     testImplementation(libs.junit)

@@ -249,6 +249,9 @@ fun SettingsScreen(
             }
         }
 
+        // --- Voce JARVIS (external neural TTS) --------------------------------
+        VoiceSection(viewModel)
+
         // --- Offline library ------------------------------------------------
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {

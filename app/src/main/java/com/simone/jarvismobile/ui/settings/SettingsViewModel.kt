@@ -9,6 +9,12 @@ import com.simone.jarvismobile.audio.SessionCoordinator
 import com.simone.jarvismobile.audio.TtsVoiceOption
 import com.simone.jarvismobile.agenda.AgendaRepository
 import com.simone.jarvismobile.data.SettingsRepository
+import com.simone.jarvismobile.tts.NeuralTtsEngine
+import com.simone.jarvismobile.tts.NeuralTtsRepository
+import com.simone.jarvismobile.tts.NeuralTtsState
+import com.simone.jarvismobile.tts.TtsAsset
+import com.simone.jarvismobile.tts.TtsAssetKind
+import com.simone.jarvismobile.tts.TtsImportResult
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -22,6 +28,7 @@ class SettingsViewModel @Inject constructor(
     private val coordinator: SessionCoordinator,
     private val agenda: AgendaRepository,
     private val knowledge: KnowledgeRepository,
+    private val neural: NeuralTtsRepository,
 ) : ViewModel() {
 
     val assistantName: StateFlow<String> = settings.assistantName
@@ -153,4 +160,90 @@ class SettingsViewModel @Inject constructor(
     }
     fun resetAudio() = coordinator.resetAudio()
     fun newConversation() = coordinator.newConversation()
+
+    // --- Voce JARVIS (external neural TTS) ---------------------------------
+    //
+    // Import, selection and parameters only. Nothing here touches the recogniser
+    // or the transcription path; the engine swap happens behind
+    // TextToSpeechEngine, so the rest of the app is unaware.
+
+    val neuralTts: StateFlow<NeuralTtsState> = neural.state
+
+    val ttsSpeechEnabled: StateFlow<Boolean> = settings.ttsSpeechEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
+
+    val ttsStreaming: StateFlow<Boolean> = settings.ttsStreamingEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
+
+    val ttsVolume: StateFlow<Float> = settings.ttsVolume
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsRepository.DEFAULT_TTS_VOLUME)
+
+    private val _importedTtsAssets = MutableStateFlow<List<TtsAsset>>(emptyList())
+    val importedTtsAssets: StateFlow<List<TtsAsset>> = _importedTtsAssets
+
+    private val _ttsBusy = MutableStateFlow(false)
+    val ttsBusy: StateFlow<Boolean> = _ttsBusy
+
+    private val _ttsMessage = MutableStateFlow("")
+    val ttsMessage: StateFlow<String> = _ttsMessage
+
+    /** id to label, for the engine dropdown. */
+    fun availableTtsEngines(): List<Pair<String, String>> =
+        neural.engines().map { e: NeuralTtsEngine -> e.id to e.label }
+
+    fun refreshNeuralTts() = viewModelScope.launch {
+        neural.refresh()
+        _importedTtsAssets.value = neural.importedAssets()
+    }
+
+    fun setTtsEngine(id: String) = viewModelScope.launch {
+        neural.setEngine(id)
+        _ttsMessage.value = ""
+    }
+
+    fun importTtsAsset(uri: android.net.Uri, kind: TtsAssetKind) = viewModelScope.launch {
+        _ttsBusy.value = true
+        _ttsMessage.value = "Copia in corso…"
+        when (val result = neural.importAsset(uri, kind)) {
+            is TtsImportResult.Ok ->
+                _ttsMessage.value = "Importato: ${result.asset.name} (${result.asset.sizeLabel})"
+            is TtsImportResult.Incomplete ->
+                _ttsMessage.value = "Copia incompleta (${result.copiedBytes}/${result.expectedBytes} byte). " +
+                    "Riprova con il file completo."
+            is TtsImportResult.Failed ->
+                _ttsMessage.value = "Importazione fallita: ${result.reason}"
+        }
+        _importedTtsAssets.value = neural.importedAssets()
+        _ttsBusy.value = false
+    }
+
+    fun selectTtsAsset(path: String, kind: TtsAssetKind) = viewModelScope.launch {
+        neural.selectAsset(path, kind)
+        _ttsMessage.value = ""
+    }
+
+    fun clearTtsAsset(kind: TtsAssetKind, deleteFile: Boolean) = viewModelScope.launch {
+        neural.clearAsset(kind, deleteFile)
+        _importedTtsAssets.value = neural.importedAssets()
+    }
+
+    fun setNeuralVoice(voice: String) = viewModelScope.launch { neural.setVoice(voice) }
+
+    fun setTtsVolume(value: Float) = viewModelScope.launch { settings.setTtsVolume(value) }
+
+    fun setTtsSpeechEnabled(value: Boolean) = viewModelScope.launch {
+        settings.setTtsSpeechEnabled(value)
+        if (!value) coordinator.stopSpeaking()
+    }
+
+    fun setTtsStreaming(value: Boolean) = viewModelScope.launch { settings.setTtsStreamingEnabled(value) }
+
+    /** Drops the session so the next reply rebuilds it from the current files. */
+    fun reloadNeuralTts() = viewModelScope.launch {
+        _ttsBusy.value = true
+        neural.unload()
+        _ttsMessage.value = if (neural.ensureLoaded() != null) "Modello caricato." else "Caricamento fallito."
+        neural.refresh()
+        _ttsBusy.value = false
+    }
 }
