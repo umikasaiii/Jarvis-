@@ -1,5 +1,6 @@
 package com.simone.jarvismobile.ui
 
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -56,13 +57,14 @@ import com.simone.jarvismobile.ui.home.HomeScreen
 import com.simone.jarvismobile.ui.memory.MemoryScreen
 import com.simone.jarvismobile.ui.models.ModelsScreen
 import com.simone.jarvismobile.ui.settings.SettingsScreen
+import com.simone.jarvismobile.ui.agenda.AgendaScreen
 import com.simone.jarvismobile.ui.tasks.TasksScreen
 
 private enum class Tab(val label: String, val icon: ImageVector) {
     HOME("Home", Icons.Filled.Home),
     CHAT("Chat", Icons.AutoMirrored.Filled.Chat),
     COMANDI("Comandi", Icons.Filled.Apps),
-    NOTIFICHE("Notifiche", Icons.Filled.Notifications),
+    NOTIFICHE("Attività", Icons.Filled.CheckCircle),
     IMPOSTAZIONI("Impostazioni", Icons.Filled.Settings),
 }
 
@@ -183,7 +185,7 @@ fun JarvisApp(
                     )
                     Tab.CHAT -> Unit
                     Tab.COMANDI -> CommandsScreen()
-                    Tab.NOTIFICHE -> TasksScreen()
+                    Tab.NOTIFICHE -> AgendaScreen()
                     Tab.IMPOSTAZIONI -> SettingsScreen(
                         onBack = { tab = Tab.HOME },
                         onOpenModels = { overlay = Overlay.MODELS },

@@ -128,6 +128,9 @@ class SessionCoordinator @Inject constructor(
      */
     @Volatile private var assistantName: String = SettingsRepository.DEFAULT_NAME
 
+    /** The last slot question asked, so it is never repeated verbatim. */
+    @Volatile private var lastAskedSlot: String? = null
+
     /** An agenda entry JARVIS offered to tick off, awaiting a yes/no. */
     @Volatile private var pendingCompletion: com.simone.jarvismobile.core.agenda.AgendaEntry? = null
 
@@ -594,6 +597,16 @@ class SessionCoordinator @Inject constructor(
         }
         when (val aiMatch = understanding?.takeIf { it.mayExecute }?.match) {
             is Match.Ask -> {
+                val key = aiMatch.tool + "/" + aiMatch.missing
+                if (lastAskedSlot == key) {
+                    // Already asked this and the reply did not fit. Asking again
+                    // is how the assistant ends up repeating one question for
+                    // ever; answer conversationally instead.
+                    lastAskedSlot = null
+                    pendingSlot = null
+                    return chatReply(transcript, needsReasoning = intentClassifier.lastNeedsReasoning)
+                }
+                lastAskedSlot = key
                 pendingSlot = Pending(aiMatch.tool, aiMatch.missing, aiMatch.partial)
                 _diagnostic.value = "chiedo (piano): ${aiMatch.missing}"
                 return aiMatch.question
@@ -625,9 +638,14 @@ class SessionCoordinator @Inject constructor(
 
     /** Previous turns for resolving pronouns without exposing the whole chat to the classifier. */
     private fun recentConversationContext(extra: String = ""): String {
-        val messages = _messages.value.let { all ->
-            if (all.lastOrNull()?.fromUser == true) all.dropLast(1) else all
-        }
+        val messages = _messages.value
+            .let { all -> if (all.lastOrNull()?.fromUser == true) all.dropLast(1) else all }
+            // JARVIS's own questions must never enter the classifier's context.
+            // Once it asked "Quale numero devo preparare nel dialer?", that line
+            // stayed in context and the classifier kept reading "dialer" and
+            // re-picking prepare_call for every following message — including
+            // "Ciao". The assistant was answering its own prompt in a loop.
+            .filterNot { !it.fromUser && it.text.trimEnd().endsWith("?") }
         return buildString {
             messages.takeLast(CONTEXT_MESSAGES).forEach { message ->
                 append(if (message.fromUser) "Simone: " else "JARVIS: ")
@@ -648,6 +666,7 @@ class SessionCoordinator @Inject constructor(
         needsReasoning: Boolean = false,
         conversationHint: String = "",
     ): String {
+        lastAskedSlot = null
         val retrieved = runCatching { memory.retrieve(transcript, MEMORY_TOP_K) }.getOrDefault(emptyList())
         val notes = retrieved.map { it.chunk.text.replace('\n', ' ').trim().take(600) }
 

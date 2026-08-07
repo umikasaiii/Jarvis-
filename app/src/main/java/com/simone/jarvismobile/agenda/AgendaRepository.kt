@@ -98,6 +98,24 @@ class AgendaRepository @Inject constructor(
         target
     }
 
+    /**
+     * Sets the done flag on one entry by id. The chat path has to identify an
+     * item by its words; the dashboard already knows exactly which one was
+     * tapped, so it must never go through text matching.
+     */
+    suspend fun setDone(id: String, done: Boolean): AgendaEntry? = mutex.withLock {
+        val current = loadLocked()
+        val target = current.firstOrNull { it.id == id } ?: return@withLock null
+        val updatedEntry = target.copy(done = done)
+        val updated = Agenda.sorted(current.map { if (it.id == id) updatedEntry else it })
+        if (!writeRaw(Agenda.renderFile(updated))) return@withLock null
+        _entries.value = updated
+        reminderScheduler.cancelEntry(id)
+        // A re-opened item gets its alerts scheduled again; a completed one does not.
+        reminderScheduler.sync(updated)
+        updatedEntry
+    }
+
     /** Removes the first entry whose text contains [needle]. */
     suspend fun remove(needle: String): AgendaEntry? = mutex.withLock {
         val current = loadLocked()
