@@ -83,6 +83,7 @@ class SessionCoordinator @Inject constructor(
     private val router: LlmRouter,
     private val chatStore: ChatStore,
     private val knowledge: KnowledgeRepository,
+    private val agenda: com.simone.jarvismobile.agenda.AgendaRepository,
     private val conversationMemory: ConversationMemoryStore,
 ) {
 
@@ -127,6 +128,12 @@ class SessionCoordinator @Inject constructor(
      */
     @Volatile private var assistantName: String = SettingsRepository.DEFAULT_NAME
 
+    /** An agenda entry JARVIS offered to tick off, awaiting a yes/no. */
+    @Volatile private var pendingCompletion: com.simone.jarvismobile.core.agenda.AgendaEntry? = null
+
+    /** An agenda entry just created, for which an alert was offered. */
+    @Volatile private var pendingAlertFor: String? = null
+
     /** True once the saved transcript has been read back from disk. */
     @Volatile private var chatRestored = false
 
@@ -154,7 +161,14 @@ class SessionCoordinator @Inject constructor(
         if (taskId != null && _messages.value.any { it.fromUser == fromUser && it.taskId == taskId }) return
         // Remember whether JARVIS just asked something, so the next user message
         // is read as an answer rather than scanned for commands.
-        if (!fromUser) awaitingAnswer = trimmed.endsWith("?")
+        if (!fromUser) {
+            awaitingAnswer = trimmed.endsWith("?")
+            if (trimmed.endsWith(ALERT_OFFER)) {
+                // The entry just filed is the newest one still without alerts.
+                pendingAlertFor = agenda.entries.value
+                    .lastOrNull { it.alerts.isEmpty() && !it.done }?.id
+            }
+        }
         _messages.value = _messages.value + ChatMessage(fromUser, trimmed, taskId)
         persistChat()
     }
@@ -366,6 +380,22 @@ class SessionCoordinator @Inject constructor(
      * points the user to the Models screen.
      */
     private suspend fun generateAnswer(transcript: String): String {
+        // An offer JARVIS made on the previous turn takes precedence: the user is
+        // answering it, not starting something new.
+        answerPendingOffer(transcript)?.let { return it }
+
+        // "Sono andato dal dentista" is a statement, but if the dentist is an open
+        // item the useful move is to offer to tick it off rather than leave a
+        // reminder to fire for something that already happened. Only an offer —
+        // misreading a sentence must never silently rewrite the calendar.
+        if (pendingConfirmation == null && pendingSlot == null && !awaitingAnswer) {
+            val open = runCatching { agenda.entries.value }.getOrDefault(emptyList())
+            com.simone.jarvismobile.core.agenda.CompletionHint.detect(transcript, open)?.let { hit ->
+                pendingCompletion = hit
+                return "Hai completato “${hit.text}”? Se vuoi lo segno come fatto."
+            }
+        }
+
         // Pending yes/no or slot answers must remain a single conversational
         // turn. Otherwise route every explicitly punctuated question on its own:
         // a 1B model commonly answers only the first part of a multi-question
@@ -1002,6 +1032,45 @@ class SessionCoordinator @Inject constructor(
     /** Indexes the offline library in the background if one is configured. */
     suspend fun ensureKnowledgeReady() = knowledge.ensureBuilt()
 
+    /**
+     * Resolves a yes/no to an offer JARVIS made itself (tick an item off, set an
+     * alert). Returns the reply when the utterance answered one, else null so the
+     * turn continues normally.
+     */
+    private suspend fun answerPendingOffer(transcript: String): String? {
+        val answer = transcript.lowercase().trim().trim('.', '!', ',')
+        val firstWord = answer.substringBefore(' ')
+        val yes = firstWord in CONFIRM_WORDS || CONFIRM_WORDS.any { answer.startsWith(it) }
+        val no = firstWord in DECLINE_WORDS
+
+        pendingCompletion?.let { entry ->
+            pendingCompletion = null
+            if (yes) {
+                val done = runCatching { agenda.markDone(entry.text) }.getOrNull()
+                return if (done != null) "Fatto, ho segnato “${done.text}” come completata." 
+                else "Non sono riuscito a segnarla: controlla in Agenda."
+            }
+            if (no) return "Va bene, la lascio aperta."
+            // Neither: drop the offer and treat this as a fresh request.
+        }
+
+        pendingAlertFor?.let { id ->
+            pendingAlertFor = null
+            if (yes) {
+                val alerts = listOf(
+                    com.simone.jarvismobile.core.agenda.ReminderAlert(
+                        com.simone.jarvismobile.core.agenda.ReminderAlertType.AT_TIME,
+                    ),
+                )
+                val updated = runCatching { agenda.updateAlerts(id, alerts) }.getOrNull()
+                return if (updated != null) "Ti avviso all'ora dell'impegno. Puoi cambiare l'anticipo in Agenda."
+                else "Non sono riuscito a impostare l'avviso: puoi farlo dall'Agenda."
+            }
+            if (no) return "Va bene, nessun avviso."
+        }
+        return null
+    }
+
     /** Builds the vault memory index in the background if a vault is configured. */
     suspend fun ensureMemoryReady() = memory.ensureBuilt()
 
@@ -1170,6 +1239,9 @@ class SessionCoordinator @Inject constructor(
     companion object {
         const val DEFAULT_RECORD_MS = 3_000L
         const val FIXED_REPLY = "Sistema audio operativo. Sono pronto."
+
+        /** Tail of the reminder reply that offers to set an alert. */
+        const val ALERT_OFFER = "Vuoi che ti avvisi?"
 
         /** Sample used by the Settings voice preview. */
         const val VOICE_PREVIEW =

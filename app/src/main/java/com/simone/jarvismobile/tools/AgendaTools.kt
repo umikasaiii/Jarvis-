@@ -63,7 +63,7 @@ class AddReminderTool(private val agenda: AgendaRepository) : Tool {
             "date" to date.toString(),
             "time" to (time?.toString() ?: ""),
             "text" to text,
-            "spoken" to "Segnato: $text, $whenSaid. L'avviso non è ancora impostato: puoi sceglierlo nell'Agenda.",
+            "spoken" to "Segnato: $text, $whenSaid. Vuoi che ti avvisi?",
         )
     }
 }
