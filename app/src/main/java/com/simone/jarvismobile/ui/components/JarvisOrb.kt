@@ -45,14 +45,16 @@ private data class OrbLook(
     val glowHigh: Float,
     /** Breathing period. Shorter = more urgent. */
     val breathMs: Int,
+    /** How far the artwork itself swells. Barely there at rest, clear while listening. */
+    val breathAmount: Float,
 )
 
 private fun lookFor(state: OrbState): OrbLook = when (state) {
-    OrbState.IDLE -> OrbLook(Color(0xFF12D9FF), 0.28f, 0.55f, 2600)
-    OrbState.LISTENING -> OrbLook(Color(0xFF12D9FF), 0.60f, 1.00f, 900)
-    OrbState.THINKING -> OrbLook(Color(0xFF2DAEFF), 0.45f, 0.85f, 1300)
-    OrbState.SPEAKING -> OrbLook(Color(0xFF7FE9FF), 0.50f, 0.90f, 1100)
-    OrbState.ERROR -> OrbLook(Color(0xFFFF6B5B), 0.25f, 0.60f, 2200)
+    OrbState.IDLE -> OrbLook(Color(0xFF12D9FF), 0.28f, 0.55f, 3000, 0.012f)
+    OrbState.LISTENING -> OrbLook(Color(0xFF12D9FF), 0.55f, 1.00f, 780, 0.055f)
+    OrbState.THINKING -> OrbLook(Color(0xFF2DAEFF), 0.45f, 0.85f, 1100, 0.030f)
+    OrbState.SPEAKING -> OrbLook(Color(0xFF7FE9FF), 0.50f, 0.90f, 1000, 0.038f)
+    OrbState.ERROR -> OrbLook(Color(0xFFFF6B5B), 0.25f, 0.60f, 2200, 0.015f)
 }
 
 /**
@@ -89,8 +91,8 @@ fun JarvisOrb(
     // still and only the halo moved, which read as a static picture with a light
     // behind it rather than as something running.
     val breath by transition.animateFloat(
-        initialValue = 0.985f,
-        targetValue = 1.015f,
+        initialValue = 1f - look.breathAmount,
+        targetValue = 1f + look.breathAmount,
         animationSpec = infiniteRepeatable(
             tween(look.breathMs, easing = FastOutSlowInEasing),
             RepeatMode.Reverse,

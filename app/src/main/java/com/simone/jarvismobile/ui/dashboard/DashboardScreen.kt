@@ -245,7 +245,7 @@ fun DashboardScreen(
                         blurRadius = 28f,
                     ),
                 ),
-                modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 2.dp),
+                modifier = Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 2.dp),
             )
 
             // --- Hero: battery · orb · weather ----------------------------
@@ -517,7 +517,7 @@ private fun GlassCard(
 
 @Composable
 private fun MiniCard(modifier: Modifier = Modifier, content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
-    JarvisCard(modifier = modifier, radius = 14.dp, contentPadding = 14.dp) {
+    JarvisCard(modifier = modifier, contentPadding = 14.dp) {
         Column(
             modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(3.dp),
