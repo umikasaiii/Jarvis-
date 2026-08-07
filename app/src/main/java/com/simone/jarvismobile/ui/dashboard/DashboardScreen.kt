@@ -236,15 +236,15 @@ fun DashboardScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Box(
-                modifier = Modifier.fillMaxWidth().height(88.dp),
+                modifier = Modifier.fillMaxWidth().height(64.dp),
                 contentAlignment = Alignment.Center,
             ) {
             Text(
                 text = name.uppercase(),
-                color = Color(0xFF8FEBFF),
-                fontSize = 28.sp,
+                color = Color.White,
+                fontSize = 30.sp,
                 fontWeight = FontWeight.Light,
-                letterSpacing = 10.sp,
+                letterSpacing = 12.sp,
                 textAlign = TextAlign.Center,
                 style = androidx.compose.ui.text.TextStyle(
                     shadow = androidx.compose.ui.graphics.Shadow(
@@ -264,7 +264,7 @@ fun DashboardScreen(
             // The hero is now the orb and what JARVIS is doing, nothing else.
             val status = statusFor(state, lastError != null)
             Row(
-                modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+                modifier = Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 18.dp),
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -298,7 +298,7 @@ fun DashboardScreen(
                             else -> viewModel.onCancel()
                         }
                     },
-                    size = 230.dp,
+                    size = 205.dp,
                 )
             }
 
@@ -497,37 +497,23 @@ fun DashboardScreen(
 @Composable
 private fun ChatFab(unread: Int, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Box(modifier.size(78.dp), contentAlignment = Alignment.Center) {
-        // A crisp HUD ring, not a halo. The soft radial gradient that used to
-        // sit here bled over the card underneath; this is a drawn outline with
-        // four bright arcs at the cardinal points and short ticks between them,
-        // so the structure is legible instead of glowing mush.
-        Canvas(Modifier.size(78.dp)) {
+        // A light HUD ring. The previous one was thick and full-circle, and its
+        // top-right arc ran straight through the unread badge; this is thin,
+        // dimmer, and leaves that quadrant clear so the number stays readable.
+        Canvas(Modifier.size(70.dp)) {
             val r = size.minDimension / 2f - 1.dp.toPx()
             val c = center
-            drawCircle(Cyan.copy(alpha = 0.35f), radius = r, center = c, style = Stroke(1.dp.toPx()))
-            // Four lit arcs, offset so the gaps read as deliberate.
-            listOf(-80f, 10f, 100f, 190f).forEach { start ->
+            drawCircle(Cyan.copy(alpha = 0.18f), radius = r, center = c, style = Stroke(0.8.dp.toPx()))
+            // Arcs on the left and bottom only; the badge owns the top-right.
+            listOf(110f, 175f, 245f).forEach { start ->
                 drawArc(
-                    color = Cyan,
+                    color = Cyan.copy(alpha = 0.5f),
                     startAngle = start,
-                    sweepAngle = 52f,
+                    sweepAngle = 38f,
                     useCenter = false,
                     topLeft = Offset(c.x - r, c.y - r),
                     size = Size(r * 2, r * 2),
-                    style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round),
-                )
-            }
-            // Short ticks in the gaps.
-            listOf(0f, 90f, 180f, 270f).forEach { deg ->
-                val rad = Math.toRadians(deg.toDouble())
-                val dx = kotlin.math.cos(rad).toFloat()
-                val dy = kotlin.math.sin(rad).toFloat()
-                drawLine(
-                    color = Cyan.copy(alpha = 0.8f),
-                    start = Offset(c.x + dx * (r - 5.dp.toPx()), c.y + dy * (r - 5.dp.toPx())),
-                    end = Offset(c.x + dx * r, c.y + dy * r),
-                    strokeWidth = 1.5.dp.toPx(),
-                    cap = StrokeCap.Round,
+                    style = Stroke(width = 1.2.dp.toPx(), cap = StrokeCap.Round),
                 )
             }
         }
@@ -604,12 +590,12 @@ private fun StatTile(
 ) {
     JarvisCard(modifier = modifier.clickable(onClick = onClick), contentPadding = 10.dp) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, null, tint = accent, modifier = Modifier.size(15.dp))
-            Spacer(Modifier.width(5.dp))
+            Icon(icon, null, tint = accent, modifier = Modifier.size(13.dp))
+            Spacer(Modifier.width(4.dp))
             Text(
                 label,
                 color = Ink,
-                fontSize = 11.sp,
+                fontSize = 9.5.sp,
                 fontWeight = FontWeight.Medium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
