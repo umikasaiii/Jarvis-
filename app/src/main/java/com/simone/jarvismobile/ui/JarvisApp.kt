@@ -53,7 +53,7 @@ import androidx.compose.ui.unit.sp
 import com.simone.jarvismobile.ui.commands.CommandsScreen
 import com.simone.jarvismobile.ui.dashboard.DashboardScreen
 import com.simone.jarvismobile.ui.diagnostics.DiagnosticsScreen
-import com.simone.jarvismobile.ui.home.HomeScreen
+import com.simone.jarvismobile.ui.home.JarvisChatWindow
 import com.simone.jarvismobile.ui.memory.MemoryScreen
 import com.simone.jarvismobile.ui.models.ModelsScreen
 import com.simone.jarvismobile.ui.settings.SettingsScreen
@@ -228,7 +228,7 @@ fun JarvisApp(
                             .clip(RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp))
                             .background(Color(0xFF0A1826)),
                     ) {
-                        HomeScreen(
+                        JarvisChatWindow(
                             autoStartRequest = startListeningRequest,
                             onOpenDiagnostics = { overlay = Overlay.DIAGNOSTICS },
                             onOpenSettings = { overlay = null; tab = Tab.IMPOSTAZIONI },
