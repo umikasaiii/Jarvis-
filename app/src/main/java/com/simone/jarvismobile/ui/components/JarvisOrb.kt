@@ -45,21 +45,24 @@ private data class OrbLook(
     val glowHigh: Float,
     /** Breathing period. Shorter = more urgent. */
     val breathMs: Int,
-    /** How far the artwork itself swells. Barely there at rest, clear while listening. */
-    val breathAmount: Float,
 )
 
 private fun lookFor(state: OrbState): OrbLook = when (state) {
-    OrbState.IDLE -> OrbLook(Color(0xFF12D9FF), 0.28f, 0.55f, 3000, 0.012f)
-    OrbState.LISTENING -> OrbLook(Color(0xFF12D9FF), 0.55f, 1.00f, 780, 0.055f)
-    OrbState.THINKING -> OrbLook(Color(0xFF2DAEFF), 0.45f, 0.85f, 1100, 0.030f)
-    OrbState.SPEAKING -> OrbLook(Color(0xFF7FE9FF), 0.50f, 0.90f, 1000, 0.038f)
-    OrbState.ERROR -> OrbLook(Color(0xFFFF6B5B), 0.25f, 0.60f, 2200, 0.015f)
+    OrbState.IDLE -> OrbLook(Color(0xFF12D9FF), 0.22f, 0.48f, 3000)
+    OrbState.LISTENING -> OrbLook(Color(0xFF12D9FF), 0.35f, 1.00f, 780)
+    OrbState.THINKING -> OrbLook(Color(0xFF2DAEFF), 0.40f, 0.85f, 1100)
+    OrbState.SPEAKING -> OrbLook(Color(0xFF7FE9FF), 0.45f, 0.92f, 1000)
+    OrbState.ERROR -> OrbLook(Color(0xFFFF6B5B), 0.20f, 0.60f, 2200)
 }
 
 /**
  * The listen control: the orb artwork, a breathing glow behind it, and an
- * elastic press.
+ * elastic press on touch.
+ *
+ * The artwork itself never moves. Scaling it made the whole image pump, which
+ * looked wrong against its own fixed rings — the breath is light only. Its depth
+ * and speed come from the state, so at rest the glow barely stirs and while
+ * listening it swings the full range, quickly.
  *
  * Nothing is drawn ON the artwork. Earlier versions added rotating rings and a
  * tap wave in code, but the image already has concentric rings of its own, so
@@ -85,19 +88,6 @@ fun JarvisOrb(
             RepeatMode.Reverse,
         ),
         label = "glow",
-    )
-
-    // A slow size breath on the artwork itself. Without it the orb sat perfectly
-    // still and only the halo moved, which read as a static picture with a light
-    // behind it rather than as something running.
-    val breath by transition.animateFloat(
-        initialValue = 1f - look.breathAmount,
-        targetValue = 1f + look.breathAmount,
-        animationSpec = infiniteRepeatable(
-            tween(look.breathMs, easing = FastOutSlowInEasing),
-            RepeatMode.Reverse,
-        ),
-        label = "breath",
     )
 
     // Press feedback: shrink, then overshoot back — the elastic return is what
@@ -155,7 +145,7 @@ fun JarvisOrb(
             contentScale = ContentScale.Fit,
             modifier = Modifier
                 .fillMaxSize()
-                .scale(press.value * breath)
+                .scale(press.value)
                 .clickableNoRipple(interaction, onClick),
         )
     }

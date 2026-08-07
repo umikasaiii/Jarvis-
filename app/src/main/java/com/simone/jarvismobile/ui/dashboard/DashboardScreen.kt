@@ -231,6 +231,10 @@ fun DashboardScreen(
                 .padding(horizontal = 14.dp, vertical = 6.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            Box(
+                modifier = Modifier.fillMaxWidth().height(88.dp),
+                contentAlignment = Alignment.Center,
+            ) {
             Text(
                 text = name.uppercase(),
                 color = Color(0xFF8FEBFF),
@@ -245,11 +249,11 @@ fun DashboardScreen(
                         blurRadius = 28f,
                     ),
                 ),
-                modifier = Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 2.dp),
+                modifier = Modifier.fillMaxWidth(),
             )
+            }
 
             // --- Hero: battery · orb · weather ----------------------------
-            Spacer(Modifier.height(8.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -446,20 +450,9 @@ fun DashboardScreen(
 @Composable
 private fun ChatFab(unread: Int, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Box(modifier.size(78.dp), contentAlignment = Alignment.Center) {
-        // Soft outward glow only — no rim/border, the image's own luminous ring
-        // is the edge of the button.
-        Canvas(Modifier.size(78.dp)) {
-            drawCircle(
-                brush = Brush.radialGradient(
-                    listOf(Color.Transparent, Cyan.copy(alpha = 0.30f), Color.Transparent),
-                    center = center,
-                    radius = size.minDimension / 2f,
-                ),
-                radius = size.minDimension / 2f,
-                center = center,
-            )
-        }
-        // The user-provided glowing chat button (cropped exactly to its ring).
+        // No drawn halo. A radial glow used to be painted behind the button and
+        // it bled over the card underneath as a lit patch; the artwork's own
+        // luminous ring is the whole button.
         Image(
             painter = painterResource(R.drawable.chat_fab),
             contentDescription = "Chat",
