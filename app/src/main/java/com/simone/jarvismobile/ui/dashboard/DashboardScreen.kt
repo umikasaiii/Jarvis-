@@ -102,6 +102,7 @@ import com.simone.jarvismobile.core.agenda.ReminderAlert
 import com.simone.jarvismobile.core.agenda.ReminderAlertType
 import com.simone.jarvismobile.core.state.ConversationState
 import com.simone.jarvismobile.ui.components.HudOverlay
+import com.simone.jarvismobile.ui.components.JarvisCard
 import com.simone.jarvismobile.ui.components.JarvisOrb
 import com.simone.jarvismobile.ui.components.OrbState
 import com.simone.jarvismobile.llm.LlmLoadState
@@ -501,35 +502,24 @@ private fun GlassCard(
     badge: (@Composable () -> Unit)? = null,
     content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
 ) {
-    Box(modifier) {
-        Image(
-            painter = painterResource(R.drawable.bg_card),
-            contentDescription = null,
-            modifier = Modifier.matchParentSize(),
-            contentScale = ContentScale.FillBounds,
-        )
+    JarvisCard(
+        modifier = modifier,
+        contentPadding = 20.dp,
+        badge = badge?.let { b -> { b() } },
+    ) {
         Column(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 22.dp),
+            modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(6.dp),
             content = content,
         )
-        if (badge != null) {
-            Box(Modifier.align(Alignment.TopEnd).padding(top = 18.dp, end = 20.dp)) { badge() }
-        }
     }
 }
 
 @Composable
 private fun MiniCard(modifier: Modifier = Modifier, content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
-    Box(modifier) {
-        Image(
-            painter = painterResource(R.drawable.bg_card),
-            contentDescription = null,
-            modifier = Modifier.matchParentSize(),
-            contentScale = ContentScale.FillBounds,
-        )
+    JarvisCard(modifier = modifier, radius = 14.dp, contentPadding = 14.dp) {
         Column(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 18.dp),
+            modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(3.dp),
             content = content,
         )

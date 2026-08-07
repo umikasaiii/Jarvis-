@@ -85,6 +85,19 @@ fun JarvisOrb(
         label = "glow",
     )
 
+    // A slow size breath on the artwork itself. Without it the orb sat perfectly
+    // still and only the halo moved, which read as a static picture with a light
+    // behind it rather than as something running.
+    val breath by transition.animateFloat(
+        initialValue = 0.985f,
+        targetValue = 1.015f,
+        animationSpec = infiniteRepeatable(
+            tween(look.breathMs, easing = FastOutSlowInEasing),
+            RepeatMode.Reverse,
+        ),
+        label = "breath",
+    )
+
     // Press feedback: shrink, then overshoot back — the elastic return is what
     // reads as physical rather than as a colour change.
     val press = remember { Animatable(1f) }
@@ -140,7 +153,7 @@ fun JarvisOrb(
             contentScale = ContentScale.Fit,
             modifier = Modifier
                 .fillMaxSize()
-                .scale(press.value)
+                .scale(press.value * breath)
                 .clickableNoRipple(interaction, onClick),
         )
     }
