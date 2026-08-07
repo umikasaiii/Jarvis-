@@ -257,29 +257,38 @@ fun DashboardScreen(
             )
             }
 
-            // --- Hero: battery · orb · weather ----------------------------
+            // --- Status line + orb, alone --------------------------------
+            // The battery and weather tiles are gone. Battery survives as the
+            // footer of the Sistema tile below, so the reading is not lost with
+            // the block; the weather was a DEMO placeholder and is simply out.
+            // The hero is now the orb and what JARVIS is doing, nothing else.
+            val status = statusFor(state, lastError != null)
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+                horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                MiniCard(Modifier.weight(1f)) {
-                    Text("BATTERIA", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Medium)
-                    Text("${battery.percent}%", color = Ink, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            if (battery.charging) "In carica" else "In uso",
-                            color = if (battery.charging) Green else Muted,
-                            fontSize = 11.sp,
-                        )
-                        if (battery.charging) {
-                            Spacer(Modifier.width(4.dp))
-                            Icon(Icons.Filled.Bolt, null, tint = Green, modifier = Modifier.size(14.dp))
-                        }
-                    }
-                    ProgressBar(fraction = battery.percent / 100f, color = if (battery.charging) Green else Cyan)
-                }
+                Box(Modifier.size(5.dp).clip(RoundedCornerShape(3.dp)).background(status.color))
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    status.label,
+                    color = status.color,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    letterSpacing = 4.sp,
+                    style = androidx.compose.ui.text.TextStyle(
+                        shadow = androidx.compose.ui.graphics.Shadow(
+                            color = status.color,
+                            offset = Offset.Zero,
+                            blurRadius = 20f,
+                        ),
+                    ),
+                )
+                Spacer(Modifier.width(10.dp))
+                Box(Modifier.size(5.dp).clip(RoundedCornerShape(3.dp)).background(status.color))
+            }
 
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                 JarvisOrb(
                     state = orbStateFor(state, lastError != null),
                     onClick = {
@@ -289,22 +298,8 @@ fun DashboardScreen(
                             else -> viewModel.onCancel()
                         }
                     },
-                    modifier = Modifier.weight(1.35f),
-                    size = 150.dp,
+                    size = 230.dp,
                 )
-
-                MiniCard(Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Filled.Cloud, null, tint = Cyan, modifier = Modifier.size(20.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Column {
-                            Text("18°", color = Ink, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                            Text("Roma", color = Muted, fontSize = 10.sp)
-                        }
-                    }
-                    Spacer(Modifier.height(4.dp))
-                    DemoBadge()
-                }
             }
 
             // --- Four stat tiles, as in the reference layout ---------------
@@ -338,7 +333,7 @@ fun DashboardScreen(
                     label = "Sistema",
                     value = if (loadState == LlmLoadState.LOADED) "OK" else "—",
                     unit = if (loadState == LlmLoadState.LOADED) "attivo" else "modello",
-                    footer = loadedModel?.take(14) ?: "Nessun modello",
+                    footer = "Batteria ${battery.percent}%",
                     accent = Green,
                     onClick = onOpenModels,
                     modifier = Modifier.weight(1f),
@@ -502,9 +497,40 @@ fun DashboardScreen(
 @Composable
 private fun ChatFab(unread: Int, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Box(modifier.size(78.dp), contentAlignment = Alignment.Center) {
-        // No drawn halo. A radial glow used to be painted behind the button and
-        // it bled over the card underneath as a lit patch; the artwork's own
-        // luminous ring is the whole button.
+        // A crisp HUD ring, not a halo. The soft radial gradient that used to
+        // sit here bled over the card underneath; this is a drawn outline with
+        // four bright arcs at the cardinal points and short ticks between them,
+        // so the structure is legible instead of glowing mush.
+        Canvas(Modifier.size(78.dp)) {
+            val r = size.minDimension / 2f - 1.dp.toPx()
+            val c = center
+            drawCircle(Cyan.copy(alpha = 0.35f), radius = r, center = c, style = Stroke(1.dp.toPx()))
+            // Four lit arcs, offset so the gaps read as deliberate.
+            listOf(-80f, 10f, 100f, 190f).forEach { start ->
+                drawArc(
+                    color = Cyan,
+                    startAngle = start,
+                    sweepAngle = 52f,
+                    useCenter = false,
+                    topLeft = Offset(c.x - r, c.y - r),
+                    size = Size(r * 2, r * 2),
+                    style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round),
+                )
+            }
+            // Short ticks in the gaps.
+            listOf(0f, 90f, 180f, 270f).forEach { deg ->
+                val rad = Math.toRadians(deg.toDouble())
+                val dx = kotlin.math.cos(rad).toFloat()
+                val dy = kotlin.math.sin(rad).toFloat()
+                drawLine(
+                    color = Cyan.copy(alpha = 0.8f),
+                    start = Offset(c.x + dx * (r - 5.dp.toPx()), c.y + dy * (r - 5.dp.toPx())),
+                    end = Offset(c.x + dx * r, c.y + dy * r),
+                    strokeWidth = 1.5.dp.toPx(),
+                    cap = StrokeCap.Round,
+                )
+            }
+        }
         Image(
             painter = painterResource(R.drawable.chat_fab),
             contentDescription = "Chat",
@@ -1101,6 +1127,24 @@ private fun ListenOrb(
             Text(subtitle, color = Ink.copy(alpha = 0.85f), fontSize = 8.sp)
         }
     }
+}
+
+/** What the status line under the wordmark says, and in which colour. */
+private data class HeroStatus(val label: String, val color: Color)
+
+/** Sky blue at rest, violet while thinking, aqua green while answering. */
+private fun statusFor(state: ConversationState, hasError: Boolean): HeroStatus = when {
+    hasError -> HeroStatus("ERRORE", Color(0xFFFF6B5B))
+    state == ConversationState.Listening || state == ConversationState.FollowUpWindow ->
+        HeroStatus("ASCOLTO", Color(0xFF8FE9FF))
+    state == ConversationState.Speaking -> HeroStatus("RISPOSTA", Color(0xFF4FE3C1))
+    state in setOf(
+        ConversationState.PreparingAudio, ConversationState.FinalizingSpeech,
+        ConversationState.Transcribing, ConversationState.RetrievingMemory,
+        ConversationState.Routing, ConversationState.ThinkingLocal,
+        ConversationState.ThinkingRemote, ConversationState.ExecutingTool,
+    ) -> HeroStatus("PENSANDO", Color(0xFF9B7BFF))
+    else -> HeroStatus("PRONTO", Color(0xFF8FE9FF))
 }
 
 /** Which animation the orb should play. */

@@ -48,10 +48,10 @@ private data class OrbLook(
 )
 
 private fun lookFor(state: OrbState): OrbLook = when (state) {
-    OrbState.IDLE -> OrbLook(Color(0xFF12D9FF), 0.22f, 0.48f, 3000)
+    OrbState.IDLE -> OrbLook(Color(0xFF8FE9FF), 0.22f, 0.48f, 3000)
     OrbState.LISTENING -> OrbLook(Color(0xFF12D9FF), 0.35f, 1.00f, 780)
-    OrbState.THINKING -> OrbLook(Color(0xFF2DAEFF), 0.40f, 0.85f, 1100)
-    OrbState.SPEAKING -> OrbLook(Color(0xFF7FE9FF), 0.45f, 0.92f, 1000)
+    OrbState.THINKING -> OrbLook(Color(0xFF9B7BFF), 0.40f, 0.90f, 1100)
+    OrbState.SPEAKING -> OrbLook(Color(0xFF4FE3C1), 0.45f, 0.92f, 1000)
     OrbState.ERROR -> OrbLook(Color(0xFFFF6B5B), 0.20f, 0.60f, 2200)
 }
 
