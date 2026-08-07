@@ -1,5 +1,7 @@
 package com.simone.jarvismobile.ui.home
 
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.foundation.Canvas
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
@@ -154,7 +156,13 @@ fun HomeScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Outlined.Bolt, null, tint = Accent)
                     Spacer(Modifier.size(6.dp))
-                    Text(name.uppercase(), color = Accent, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        name.uppercase(),
+                        color = Accent,
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 3.sp,
+                    )
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     StatusPill(statusLabel(state), accent)
@@ -254,10 +262,10 @@ fun HomeScreen(
                     shape = RoundedCornerShape(24.dp),
                     textStyle = MaterialTheme.typography.bodyLarge.copy(color = Ink, fontSize = 16.sp),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Accent.copy(alpha = 0.7f),
-                        unfocusedBorderColor = Color(0xFF27353D),
-                        focusedContainerColor = Surface,
-                        unfocusedContainerColor = Surface,
+                        focusedBorderColor = Accent.copy(alpha = 0.85f),
+                        unfocusedBorderColor = Accent.copy(alpha = 0.40f),
+                        focusedContainerColor = Color(0x99061019),
+                        unfocusedContainerColor = Color(0x66040C14),
                         cursorColor = Accent,
                         focusedTextColor = Ink,
                         unfocusedTextColor = Ink,
@@ -265,12 +273,13 @@ fun HomeScreen(
                 )
 
                 val canSend = textInput.isNotBlank() && !sending
-                RoundButton(
-                    color = when {
+                RingButton(
+                    accent = when {
                         sending -> Red
                         canSend -> Accent
-                        else -> Color(0xFF1E2C34)
+                        else -> Muted
                     },
+                    dim = !canSend && !sending,
                     onClick = {
                         if (sending) {
                             viewModel.onStopResponse()
@@ -291,7 +300,7 @@ fun HomeScreen(
                         Icon(
                             Icons.AutoMirrored.Filled.Send,
                             contentDescription = "Invia",
-                            tint = if (canSend) Color(0xFF07131A) else Muted,
+                            tint = if (canSend) Accent else Muted,
                         )
                     }
                 }
@@ -315,35 +324,86 @@ private fun RoundButton(color: Color, onClick: () -> Unit, enabled: Boolean, con
 @Composable
 private fun ChatBubble(message: ChatMessage, assistantName: String) {
     val isUser = message.fromUser
-    val bubbleColor = if (isUser) Accent.copy(alpha = 0.15f) else Color(0xFF14232E)
-    val borderColor = (if (isUser) Accent else Green).copy(alpha = 0.3f)
-    val shape = RoundedCornerShape(
-        topStart = 16.dp, topEnd = 16.dp,
-        bottomStart = if (isUser) 16.dp else 4.dp,
-        bottomEnd = if (isUser) 4.dp else 16.dp,
-    )
+    // One accent for both sides. The old green for replies fought the cyan HUD;
+    // side is already carried by alignment and by the corner marker below.
+    val shape = RoundedCornerShape(14.dp)
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
     ) {
-        Column(
-            modifier = Modifier
-                .widthIn(max = 300.dp)
-                .clip(shape)
-                .background(bubbleColor)
-                .border(1.dp, borderColor, shape)
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-        ) {
-            Text(
-                if (isUser) "TU" else assistantName.uppercase(),
-                color = if (isUser) Accent else Green,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Medium,
-            )
-            Spacer(Modifier.size(3.dp))
-            Text(message.text, color = Ink, fontSize = 15.sp)
+        Box(modifier = Modifier.widthIn(max = 310.dp)) {
+            Column(
+                modifier = Modifier
+                    .clip(shape)
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(
+                                if (isUser) Color(0xCC0B2130) else Color(0xCC08161F),
+                                Color(0xB3040C14),
+                            ),
+                        ),
+                    )
+                    .border(1.dp, Accent.copy(alpha = if (isUser) 0.55f else 0.40f), shape)
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+            ) {
+                Text(
+                    if (isUser) "TU" else assistantName.uppercase(),
+                    color = Accent,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                    letterSpacing = 1.sp,
+                )
+                Spacer(Modifier.size(4.dp))
+                Text(message.text, color = Ink, fontSize = 16.sp, lineHeight = 22.sp)
+            }
+
+            // A short bright stroke on the corner nearest the speaker. It is what
+            // makes the bubbles read as instrument panels rather than as generic
+            // rounded rectangles, and it says who is talking without a colour
+            // change that would break the single-accent palette.
+            Canvas(Modifier.matchParentSize()) {
+                val r = 14.dp.toPx()
+                val len = 26.dp.toPx()
+                val w = 2.dp.toPx()
+                val y = w / 2
+                if (isUser) {
+                    drawLine(Accent, Offset(size.width - r, y), Offset(size.width - r - len, y), w)
+                    drawLine(Accent, Offset(size.width - w / 2, r), Offset(size.width - w / 2, r + len * 0.6f), w)
+                } else {
+                    drawLine(Accent, Offset(r, y), Offset(r + len, y), w)
+                    drawLine(Accent, Offset(w / 2, r), Offset(w / 2, r + len * 0.6f), w)
+                }
+            }
         }
     }
+}
+
+/**
+ * A hollow neon ring with a glow: the send control in the reference design is a
+ * lit outline, not a filled disc, which keeps the composer reading as part of
+ * the HUD rather than as a Material button dropped on top of it.
+ */
+@Composable
+private fun RingButton(
+    accent: Color,
+    dim: Boolean,
+    onClick: () -> Unit,
+    enabled: Boolean,
+    content: @Composable () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .size(52.dp)
+            .clip(CircleShape)
+            .background(
+                Brush.radialGradient(
+                    listOf(accent.copy(alpha = if (dim) 0.05f else 0.18f), Color.Transparent),
+                ),
+            )
+            .border(if (dim) 1.dp else 2.dp, accent.copy(alpha = if (dim) 0.35f else 0.9f), CircleShape)
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) { content() }
 }
 
 @Composable
@@ -351,14 +411,20 @@ private fun StatusPill(text: String, accent: Color) {
     Row(
         modifier = Modifier
             .clip(CircleShape)
-            .background(Surface)
-            .border(1.dp, accent.copy(alpha = 0.35f), CircleShape)
-            .padding(horizontal = 12.dp, vertical = 6.dp),
+            .background(Color(0x66061019))
+            .border(1.dp, accent.copy(alpha = 0.6f), CircleShape)
+            .padding(horizontal = 14.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.size(8.dp).clip(CircleShape).background(accent))
         Spacer(Modifier.size(6.dp))
-        Text(text, color = Ink, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+        Text(
+            text.uppercase(),
+            color = accent,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+            letterSpacing = 1.2.sp,
+        )
     }
 }
 
