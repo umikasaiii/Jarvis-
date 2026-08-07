@@ -55,6 +55,7 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val name by viewModel.assistantName.collectAsStateWithLifecycle()
+    val neuralVoice by viewModel.neuralTts.collectAsStateWithLifecycle()
     val seconds by viewModel.recordSeconds.collectAsStateWithLifecycle()
     val useBluetooth by viewModel.useBluetooth.collectAsStateWithLifecycle()
     val followUpEnabled by viewModel.followUpEnabled.collectAsStateWithLifecycle()
@@ -208,6 +209,16 @@ fun SettingsScreen(
                     onValueChangeFinished = { viewModel.setTtsPitch(pitchSlider) },
                     valueRange = SettingsRepository.MIN_TTS_PITCH..SettingsRepository.MAX_TTS_PITCH,
                 )
+                // The neural graph has no pitch input, so this control would do
+                // nothing there. Saying so beats a slider that quietly lies.
+                if (neuralVoice.engineId.isNotBlank()) {
+                    Text(
+                        "Il tono vale solo per la voce Android: ${neuralVoice.engineLabel} " +
+                            "non ha un parametro di tono. Velocità, pause ed espressività " +
+                            "valgono per entrambe.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
                 Text("Durata delle pause: %.2f×".format(pauseSlider))
                 Slider(
                     value = pauseSlider,

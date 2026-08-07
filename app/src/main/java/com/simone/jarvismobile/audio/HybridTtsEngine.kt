@@ -108,14 +108,13 @@ class HybridTtsEngine @Inject constructor(
         val volume = settings.ttsVolume.first()
         val streaming = settings.ttsStreamingEnabled.first()
 
-        // Streaming off means one synthesis for the whole reply: slower to the
-        // first word, but a single uninterrupted take.
-        val chunks = if (streaming) {
-            SpeechShaper.shape(text, style).map { it.text }.filter { it.isNotBlank() }
-        } else {
-            listOf(SpeechShaper.plain(text)).filter { it.isNotBlank() }
-        }
-        if (chunks.isEmpty()) return
+        // Both modes speak the same segments with the same silences between
+        // them; they differ only in when the audio starts. Streaming plays each
+        // sentence as it comes out of the model, so the first word is quick;
+        // with streaming off everything is generated first and then played as
+        // one take, which starts later but can never run dry mid-answer.
+        val segments = SpeechShaper.shape(text, style).filter { it.text.isNotBlank() }
+        if (segments.isEmpty()) return
 
         requestAudioFocus()
         _state.value = TtsState.SPEAKING
@@ -123,10 +122,23 @@ class HybridTtsEngine @Inject constructor(
         player.start(engine.sampleRate)
         player.setVolume(volume)
         try {
-            for (chunk in chunks) {
-                if (stopped || !currentCoroutineContext().isActive) break
-                val pcm = engine.synthesize(chunk, voice, speed) ?: continue
-                if (!player.write(pcm)) break
+            if (streaming) {
+                for (segment in segments) {
+                    if (stopped || !currentCoroutineContext().isActive) break
+                    val pcm = engine.synthesize(segment.text, voice, speed) ?: continue
+                    if (!player.write(pcm)) break
+                    if (!writePause(segment.pauseMs, engine.sampleRate)) break
+                }
+            } else {
+                val take = ArrayList<FloatArray>(segments.size * 2)
+                for (segment in segments) {
+                    if (stopped || !currentCoroutineContext().isActive) break
+                    engine.synthesize(segment.text, voice, speed)?.let { take += it }
+                    silenceFor(segment.pauseMs, engine.sampleRate)?.let { take += it }
+                }
+                for (piece in take) {
+                    if (stopped || !player.write(piece)) break
+                }
             }
             if (!stopped) player.drain() else player.stop()
             _state.value = TtsState.IDLE
@@ -138,6 +150,24 @@ class HybridTtsEngine @Inject constructor(
         } finally {
             abandonAudioFocus()
         }
+    }
+
+    /**
+     * The silence that follows a sentence. Rhythm is what makes a reply sound
+     * spoken rather than recited, and a neural engine has no notion of it: the
+     * pause has to be pushed into the track as actual samples. This is what the
+     * "Durata delle pause" and "Espressività" settings act on — [SpeechShaper]
+     * turns them into per-segment milliseconds and they are honoured here.
+     */
+    private fun silenceFor(pauseMs: Long, sampleRate: Int): FloatArray? {
+        if (pauseMs <= 0) return null
+        val samples = (sampleRate * pauseMs.coerceAtMost(MAX_PAUSE_MS) / 1000L).toInt()
+        return if (samples > 0) FloatArray(samples) else null
+    }
+
+    private suspend fun writePause(pauseMs: Long, sampleRate: Int): Boolean {
+        val silence = silenceFor(pauseMs, sampleRate) ?: return true
+        return player.write(silence)
     }
 
     @Volatile private var stopped = false
@@ -193,5 +223,8 @@ class HybridTtsEngine @Inject constructor(
         const val TAG = "JarvisHybridTts"
         const val MIN_SPEED = 0.5f
         const val MAX_SPEED = 2.0f
+
+        /** A pause longer than this is a settings mistake, not a breath. */
+        const val MAX_PAUSE_MS = 2_000L
     }
 }

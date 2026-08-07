@@ -160,9 +160,13 @@ class NeuralTtsRepository @Inject constructor(
         }
     }
 
-    /** Kokoro names Italian voices `if_*` / `im_*`; prefer one over an English default. */
+    /**
+     * Kokoro names Italian voices `if_*` (female) and `im_*` (male). Prefer an
+     * Italian one over an English default, but do not prefer a gender — that is
+     * the user's choice, and picking one silently would override it.
+     */
     private fun preferredItalian(voices: List<String>): String? =
-        voices.firstOrNull { it.startsWith("im_") } ?: voices.firstOrNull { it.startsWith("if_") }
+        voices.firstOrNull { it.startsWith("if_") || it.startsWith("im_") }
 
     suspend fun setEngine(id: String) {
         settings.setTtsEngineId(id)
