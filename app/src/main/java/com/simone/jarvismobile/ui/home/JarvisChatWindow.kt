@@ -462,7 +462,10 @@ private fun MessageList(
         val jarvisMax = maxWidth * JARVIS_BUBBLE_SHARE
 
         val listState = rememberLazyListState()
-        LaunchedEffect(messages.size) {
+        // Keyed on the last message, not just the count: once the window is full
+        // the count stops changing, and a reply that streams in place would
+        // otherwise scroll off the bottom as it grows.
+        LaunchedEffect(messages.size, messages.lastOrNull()) {
             listState.animateScrollToItem(messages.size - 1)
         }
         LazyColumn(
