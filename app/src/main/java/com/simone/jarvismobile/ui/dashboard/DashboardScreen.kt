@@ -1,5 +1,7 @@
 package com.simone.jarvismobile.ui.dashboard
 
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -189,6 +191,8 @@ fun DashboardScreen(
     onOpenSettings: () -> Unit = {},
     onOpenMemory: () -> Unit = {},
     onOpenChat: () -> Unit = {},
+    onOpenAgenda: () -> Unit = {},
+    onOpenModels: () -> Unit = {},
     viewModel: DashboardViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -301,6 +305,54 @@ fun DashboardScreen(
                     Spacer(Modifier.height(4.dp))
                     DemoBadge()
                 }
+            }
+
+            // --- Four stat tiles, as in the reference layout ---------------
+            // Every one is a real number and every one opens the screen that
+            // owns it: a tile that shows a count but does nothing is furniture.
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                StatTile(
+                    icon = Icons.Filled.CalendarMonth,
+                    label = "Calendario",
+                    value = today.count { it.time != null }.toString(),
+                    unit = "eventi oggi",
+                    footer = upcoming.firstOrNull { it.time != null }
+                        ?.let { "Prossimo alle " + Agenda.humanTime(it.time) }
+                        ?: "Nessun evento",
+                    accent = Cyan,
+                    onClick = onOpenAgenda,
+                    modifier = Modifier.weight(1f),
+                )
+                StatTile(
+                    icon = Icons.Filled.CheckCircle,
+                    label = "Attività",
+                    value = today.count { it.time == null }.toString(),
+                    unit = "attività",
+                    footer = today.count { !it.done }.let { "$it da fare" },
+                    accent = Blue,
+                    onClick = onOpenAgenda,
+                    modifier = Modifier.weight(1f),
+                )
+                StatTile(
+                    icon = Icons.Filled.Memory,
+                    label = "Sistema",
+                    value = if (loadState == LlmLoadState.LOADED) "OK" else "—",
+                    unit = if (loadState == LlmLoadState.LOADED) "attivo" else "modello",
+                    footer = loadedModel?.take(14) ?: "Nessun modello",
+                    accent = Green,
+                    onClick = onOpenModels,
+                    modifier = Modifier.weight(1f),
+                )
+                StatTile(
+                    icon = Icons.Filled.Book,
+                    label = "Memoria",
+                    value = memory.noteCount.toString(),
+                    unit = "note",
+                    footer = "${memory.chunkCount} frammenti",
+                    accent = Violet,
+                    onClick = onOpenMemory,
+                    modifier = Modifier.weight(1f),
+                )
             }
 
             // --- Row: Panoramica + Agenda (2 columns) ---------------------
@@ -505,6 +557,58 @@ private fun GlassCard(
             verticalArrangement = Arrangement.spacedBy(6.dp),
             content = content,
         )
+    }
+}
+
+/**
+ * One of the four tiles across the top: icon + label, a big number, its unit,
+ * and a footer line that says what the number means. Tapping opens the screen
+ * that owns the data — a tile that shows a count and does nothing is furniture.
+ */
+@Composable
+private fun StatTile(
+    icon: ImageVector,
+    label: String,
+    value: String,
+    unit: String,
+    footer: String,
+    accent: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    JarvisCard(modifier = modifier.clickable(onClick = onClick), contentPadding = 10.dp) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, null, tint = accent, modifier = Modifier.size(15.dp))
+            Spacer(Modifier.width(5.dp))
+            Text(
+                label,
+                color = Ink,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(value, color = accent, fontSize = 25.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+        Text(unit, color = Muted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Spacer(Modifier.height(6.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                footer,
+                color = accent.copy(alpha = 0.85f),
+                fontSize = 9.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            Icon(
+                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                null,
+                tint = accent.copy(alpha = 0.85f),
+                modifier = Modifier.size(12.dp),
+            )
+        }
     }
 }
 

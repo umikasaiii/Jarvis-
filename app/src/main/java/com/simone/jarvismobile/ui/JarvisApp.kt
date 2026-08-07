@@ -1,5 +1,13 @@
 package com.simone.jarvismobile.ui
 
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Arrangement
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
@@ -98,23 +106,67 @@ fun JarvisApp(
                             ),
                         ),
                 ) {
-                    NavigationBar(containerColor = Color(0xCC0A1826)) {
+                    // Custom bar rather than Material's NavigationBar: the
+                    // stock one paints an opaque surface and a pill-shaped
+                    // indicator behind the active item, both of which fight a
+                    // translucent HUD. Here the bar is glass and the active
+                    // entry is marked by the icon itself lighting up.
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0x99040C14))
+                            .navigationBarsPadding()
+                            .padding(vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                         Tab.entries.forEach { entry ->
-                            NavigationBarItem(
-                                selected = tab == entry && entry != Tab.CHAT,
-                                onClick = {
-                                    if (entry == Tab.CHAT) overlay = Overlay.CHAT else tab = entry
-                                },
-                                icon = { Icon(entry.icon, contentDescription = entry.label) },
-                                label = { Text(entry.label, fontSize = 10.sp) },
-                                colors = NavigationBarItemDefaults.colors(
-                                    selectedIconColor = Color(0xFF9FEEFF),
-                                    selectedTextColor = Color(0xFF9FEEFF),
-                                    indicatorColor = Color(0x593FD8F0),
-                                    unselectedIconColor = Color(0xFF7C8B95),
-                                    unselectedTextColor = Color(0xFF7C8B95),
-                                ),
-                            )
+                            val active = tab == entry && entry != Tab.CHAT
+                            val tint = if (active) Color(0xFF12D9FF) else Color(0xFF6B7C87)
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null,
+                                    ) {
+                                        if (entry == Tab.CHAT) overlay = Overlay.CHAT else tab = entry
+                                    }
+                                    .padding(vertical = 4.dp),
+                            ) {
+                                Icon(
+                                    entry.icon,
+                                    contentDescription = entry.label,
+                                    tint = tint,
+                                    modifier = Modifier.size(22.dp),
+                                )
+                                Spacer(Modifier.height(3.dp))
+                                Text(
+                                    entry.label,
+                                    fontSize = 9.sp,
+                                    color = tint,
+                                    maxLines = 1,
+                                    style = if (active) {
+                                        androidx.compose.ui.text.TextStyle(
+                                            shadow = androidx.compose.ui.graphics.Shadow(
+                                                color = Color(0xFF12D9FF),
+                                                blurRadius = 16f,
+                                            ),
+                                        )
+                                    } else {
+                                        androidx.compose.ui.text.TextStyle.Default
+                                    },
+                                )
+                                // A short lit underline under the open section.
+                                Spacer(Modifier.height(3.dp))
+                                Box(
+                                    Modifier
+                                        .width(if (active) 18.dp else 0.dp)
+                                        .height(2.dp)
+                                        .background(Color(0xFF12D9FF)),
+                                )
+                            }
                         }
                     }
                 }
@@ -126,6 +178,8 @@ fun JarvisApp(
                         onOpenSettings = { tab = Tab.IMPOSTAZIONI },
                         onOpenMemory = { overlay = Overlay.MEMORY },
                         onOpenChat = { overlay = Overlay.CHAT },
+                        onOpenAgenda = { tab = Tab.NOTIFICHE },
+                        onOpenModels = { overlay = Overlay.MODELS },
                     )
                     Tab.CHAT -> Unit
                     Tab.COMANDI -> CommandsScreen()
