@@ -309,6 +309,9 @@ private const val FRAME_RAIL_TOP = 484f / 1536f
 private const val FRAME_RAIL_HEIGHT = 12f / 1536f
 private const val FRAME_BOTTOM_START = 1086f / 1536f
 
+/** The frame is scenery, not content: it stays behind the conversation. */
+private const val FRAME_ALPHA = 0.8f
+
 /**
  * The HUD frame: a fixed, non-interactive overlay with a genuinely transparent
  * centre. It draws nothing but the artwork, so it takes no pointer input and the
@@ -345,6 +348,7 @@ private fun FixedHudFrame(modifier: Modifier = Modifier) {
             srcSize = IntSize(sw, topSrc),
             dstOffset = IntOffset.Zero,
             dstSize = IntSize(w, topH.roundToInt()),
+            alpha = FRAME_ALPHA,
         )
         if (midH > 0f) {
             drawImage(
@@ -353,6 +357,7 @@ private fun FixedHudFrame(modifier: Modifier = Modifier) {
                 srcSize = IntSize(sw, (sh * FRAME_RAIL_HEIGHT).roundToInt().coerceAtLeast(2)),
                 dstOffset = IntOffset(0, topH.roundToInt()),
                 dstSize = IntSize(w, midH.roundToInt()),
+                alpha = FRAME_ALPHA,
             )
         }
         drawImage(
@@ -361,6 +366,7 @@ private fun FixedHudFrame(modifier: Modifier = Modifier) {
             srcSize = IntSize(sw, sh - bottomSrc),
             dstOffset = IntOffset(0, (size.height - bottomH).roundToInt()),
             dstSize = IntSize(w, bottomH.roundToInt()),
+            alpha = FRAME_ALPHA,
         )
     }
 }
