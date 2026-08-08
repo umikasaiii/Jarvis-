@@ -34,8 +34,18 @@ class AutomationScheduler @Inject constructor(
     fun sync(automations: List<Automation>, now: LocalDateTime = LocalDateTime.now()) {
         val desired = LinkedHashMap<String, LocalDateTime>()
         automations.filter { it.enabled }.forEach { rule ->
-            val trigger = rule.trigger as? Trigger.TimeOfDay ?: return@forEach
-            desired[workName(rule.id)] = nextRun(trigger, now)
+            when (val trigger = rule.trigger) {
+                is Trigger.TimeOfDay -> desired[workName(rule.id)] = nextRun(trigger, now)
+                // A one-shot rule is booked only if it hasn't fired yet and its
+                // moment is still ahead: once spent (lastFired set) or past, it is
+                // never rescheduled, which is what makes it fire exactly once.
+                is Trigger.Once ->
+                    if (rule.lastFired == null && trigger.at.isAfter(now)) {
+                        desired[workName(rule.id)] = trigger.at
+                    }
+                // Battery/charger are evaluated on the system broadcast, not here.
+                is Trigger.BatteryBelow, Trigger.ChargingStarted -> Unit
+            }
         }
 
         val known = prefs.getStringSet(KEY_SCHEDULED, emptySet()).orEmpty()

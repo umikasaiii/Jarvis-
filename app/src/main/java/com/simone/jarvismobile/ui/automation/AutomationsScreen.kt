@@ -79,7 +79,8 @@ fun AutomationsScreen(
                 Text(
                     "Esempi: «ogni lunedì e venerdì alle 19:30 dimmi di andare in " +
                         "palestra» · «quando la batteria scende sotto il 20% avvisami» · " +
-                        "«quando metto in carica dimmi buonanotte»",
+                        "«quando metto in carica dimmi buonanotte» · " +
+                        "«alle 11.45 accendi la torcia»",
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
@@ -120,8 +121,11 @@ fun AutomationsScreen(
                 )
                 Text(
                     "Un'automazione può solo fare ciò che potresti chiedere tu: una " +
-                        "notifica, una frase detta a voce, una voce in agenda. Niente " +
-                        "microfono in background, nessun permesso aggiuntivo.",
+                        "notifica, una frase detta a voce, una voce in agenda, oppure un " +
+                        "comando del telefono (torcia, riproduzione) a un orario preciso. " +
+                        "Il comando passa dallo stesso elenco consentito dei comandi a voce " +
+                        "e viene ricontrollato quando scatta. Niente microfono in " +
+                        "background, nessun permesso aggiuntivo.",
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
@@ -176,6 +180,11 @@ private fun triggerLabel(trigger: Trigger): String = when (trigger) {
             "$days alle $clock"
         }
     }
+    is Trigger.Once -> {
+        val clock = "%02d:%02d".format(trigger.at.hour, trigger.at.minute)
+        val date = trigger.at.toLocalDate()
+        "Una volta il ${date.dayOfMonth} ${MONTH_LABELS[date.monthValue - 1]} alle $clock"
+    }
     is Trigger.BatteryBelow -> "Batteria sotto il ${trigger.percent}%"
     Trigger.ChargingStarted -> "Quando metto in carica"
 }
@@ -184,7 +193,13 @@ private fun actionLabel(action: Action): String = when (action) {
     is Action.Notify -> "Notifica: ${action.payload}"
     is Action.Speak -> "A voce: ${action.payload}"
     is Action.AddAgenda -> "In agenda: ${action.payload}"
+    is Action.Tool -> "Comando: ${action.payload}"
 }
+
+private val MONTH_LABELS = listOf(
+    "gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno",
+    "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre",
+)
 
 private val DAY_LABELS = listOf(
     "Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica",

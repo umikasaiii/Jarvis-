@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.simone.jarvismobile.automation.AutomationRepository
 import com.simone.jarvismobile.automation.AutomationRunner
+import com.simone.jarvismobile.automation.DeferredCommand
 import com.simone.jarvismobile.core.automation.Automation
 import com.simone.jarvismobile.core.automation.AutomationCodec
 import com.simone.jarvismobile.core.automation.AutomationPhrase
@@ -34,11 +35,13 @@ class AutomationsViewModel @Inject constructor(
      * phrasebook.
      */
     fun create(phrase: String) = viewModelScope.launch {
-        val parsed = AutomationPhrase.parse(phrase)
+        // Recurring/conditional first, then a one-shot device command
+        // ("alle 11.45 accendi la torcia"): the same grammar the chat understands.
+        val parsed = AutomationPhrase.parse(phrase) ?: DeferredCommand.parse(phrase)
         if (parsed == null) {
             _message.value = "Non ho capito la regola. Prova: «ogni giorno alle 8 " +
-                "ricordami di prendere le vitamine» oppure «quando la batteria " +
-                "scende sotto il 20% avvisami»."
+                "ricordami di prendere le vitamine», «quando la batteria " +
+                "scende sotto il 20% avvisami» oppure «alle 11.45 accendi la torcia»."
             return@launch
         }
         _message.value = if (repository.add(parsed)) {

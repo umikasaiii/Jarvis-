@@ -76,6 +76,21 @@ class DashboardViewModel @Inject constructor(
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /**
+     * The dashboard timeline: today's already-completed items shown alongside
+     * everything still ahead, in chronological order. Done items are kept in so
+     * the "Completato" badge is real and not decoration — the plain [upcoming]
+     * flow drops them.
+     */
+    val timeline: StateFlow<List<AgendaEntry>> = agenda.entries
+        .map { entries ->
+            val d = java.time.LocalDate.now()
+            val doneToday = Agenda.filter(entries, d, day = d, includeDone = true).filter { it.done }
+            val ahead = Agenda.filter(entries, d)
+            Agenda.sorted(doneToday + ahead)
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     init {
         // Ensure the model auto-loads and the vault index is built even if the
         // user opens the app straight onto the dashboard tab.

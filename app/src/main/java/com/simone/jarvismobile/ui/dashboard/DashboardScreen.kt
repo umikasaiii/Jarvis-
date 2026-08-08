@@ -49,7 +49,6 @@ import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.CloudUpload
-import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.GraphicEq
@@ -206,6 +205,7 @@ fun DashboardScreen(
     val unread by viewModel.unread.collectAsStateWithLifecycle()
     val upcoming by viewModel.upcoming.collectAsStateWithLifecycle()
     val today by viewModel.today.collectAsStateWithLifecycle()
+    val timeline by viewModel.timeline.collectAsStateWithLifecycle()
     val lastError by viewModel.lastError.collectAsStateWithLifecycle()
     val battery = rememberBatteryStatus()
     val context = LocalContext.current
@@ -373,46 +373,16 @@ fun DashboardScreen(
                 )
             }
 
-            // --- Row: Panoramica + Agenda (2 columns) ---------------------
-            // Both are backed by the real agenda file and the real note index.
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                GlassCard(Modifier.weight(1f)) {
-                    CardHeader(Icons.Filled.Dashboard, "PANORAMICA", reserveEnd = false)
-                    Text(todayLabel(), color = Muted, fontSize = 11.sp)
-                    Spacer(Modifier.height(4.dp))
-                    StatLine(today.count { it.time != null }.toString(), "Eventi oggi", Cyan)
-                    StatLine(today.count { it.time == null }.toString(), "Attività oggi", Blue)
-                    StatLine(upcoming.size.toString(), "In programma", Violet)
-                    Spacer(Modifier.height(8.dp))
-                    val doneToday = today.count { it.done }
-                    val pct = if (today.isEmpty()) 0 else doneToday * 100 / today.size
-                    DonutRing(percent = pct, label = "Completato", modifier = Modifier.size(96.dp).align(Alignment.CenterHorizontally))
-                }
-                GlassCard(Modifier.weight(1f)) {
-                    CardHeader(Icons.Filled.CalendarMonth, "AGENDA", reserveEnd = false)
-                    if (upcoming.isEmpty()) {
-                        Text(
-                            "Nessun impegno.\nDì «ricordami di … domani alle 15».",
-                            color = Muted,
-                            fontSize = 11.sp,
-                            lineHeight = 15.sp,
-                        )
-                    } else {
-                        val shown = upcoming.take(3)
-                        shown.forEachIndexed { i, e ->
-                            AgendaRow(
-                                time = e.time?.let { Agenda.humanTime(it) } ?: "—",
-                                title = e.text,
-                                place = Agenda.humanDate(e.date, java.time.LocalDate.now()),
-                                alerts = e.alerts,
-                                onAlerts = { editingAlerts = e },
-                                dot = when (i) { 0 -> Cyan; 1 -> Green; else -> Violet },
-                                last = i == shown.lastIndex,
-                            )
-                        }
-                    }
-                }
-            }
+            // --- Agenda: date block + week strip + vertical timeline ------
+            // One cohesive view of the real Agenda.md, in the reference layout:
+            // today's date, the week with the active day ringed, then a timeline
+            // of appointments and tasks with an "In arrivo"/"Completato" badge.
+            AgendaBlock(
+                today = today,
+                week = upcoming,
+                timeline = timeline,
+                onEditAlerts = { editingAlerts = it },
+            )
 
             // --- Row: Casa + Sistema (2 columns) --------------------------
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -464,31 +434,6 @@ fun DashboardScreen(
                     AutoChip("Modalità Lavoro", "Giorni feriali", Modifier.weight(1f))
                     AutoChip("Routine Mattutina", "07:30", Modifier.weight(1f))
                     AutoChip("Modalità Relax", "Dopo le 22:00", Modifier.weight(1f))
-                }
-            }
-
-            // --- Calendario personale: next seven days from Agenda.md ------
-            GlassCard {
-                CardHeader(Icons.Filled.CalendarMonth, "CALENDARIO PERSONALE", reserveEnd = false)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    val weekStart = LocalDate.now()
-                    for (i in 0 until 7) {
-                        val date = weekStart.plusDays(i.toLong())
-                        DayCell(
-                            date = date,
-                            isToday = i == 0,
-                            entries = upcoming.filter { it.date == date },
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    CalendarLegend(Cyan, "Appuntamenti")
-                    CalendarLegend(Violet, "Attività")
                 }
             }
 
@@ -695,98 +640,232 @@ private fun DemoBadge(text: String = "DEMO") {
     )
 }
 
+/**
+ * The agenda, in the reference layout: a date block, the week strip with today
+ * ringed, and a vertical timeline of appointments and tasks. Everything is the
+ * real `Agenda.md` — [today] for the counts, [week] (still-open items) for the
+ * strip dots, and [timeline] (today's done items plus everything ahead) for the
+ * rows, so the "Completato" badge is real rather than decoration.
+ */
 @Composable
-private fun StatLine(value: String, label: String, dot: Color) {
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 3.dp)) {
-        Box(Modifier.size(7.dp).clip(RoundedCornerShape(4.dp)).background(dot))
-        Spacer(Modifier.width(8.dp))
-        Text(value, color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.width(6.dp))
-        Text(label, color = Muted, fontSize = 11.sp)
+private fun AgendaBlock(
+    today: List<AgendaEntry>,
+    week: List<AgendaEntry>,
+    timeline: List<AgendaEntry>,
+    onEditAlerts: (AgendaEntry) -> Unit,
+) {
+    val todayDate = LocalDate.now()
+    val doneToday = timeline.count { it.date == todayDate && it.done }
+    val totalToday = today.count { it.date == todayDate } + doneToday
+
+    GlassCard {
+        CardHeader(Icons.Filled.CalendarMonth, "AGENDA", reserveEnd = false)
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            // Date block.
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    todayDate.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.ITALIAN).uppercase(),
+                    color = Cyan,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 2.sp,
+                )
+                Text(
+                    "${todayDate.dayOfMonth}",
+                    color = Ink,
+                    fontSize = 40.sp,
+                    fontWeight = FontWeight.Bold,
+                    style = androidx.compose.ui.text.TextStyle(
+                        shadow = androidx.compose.ui.graphics.Shadow(color = Cyan, offset = Offset.Zero, blurRadius = 22f),
+                    ),
+                )
+                Text(
+                    todayDate.month.getDisplayName(TextStyle.FULL, Locale.ITALIAN)
+                        .replaceFirstChar { it.uppercase() },
+                    color = Muted,
+                    fontSize = 11.sp,
+                )
+                Text(
+                    if (totalToday == 0) "Niente oggi" else "$totalToday impegni · $doneToday fatti",
+                    color = Muted,
+                    fontSize = 9.sp,
+                )
+            }
+
+            // Week strip: seven days from today, the active one ringed.
+            Row(
+                modifier = Modifier.weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                for (i in 0 until 7) {
+                    val date = todayDate.plusDays(i.toLong())
+                    WeekDayPip(
+                        date = date,
+                        isToday = i == 0,
+                        hasEntries = week.any { it.date == date },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(6.dp))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0x14FFFFFF)))
+        Spacer(Modifier.height(6.dp))
+
+        if (timeline.isEmpty()) {
+            Text(
+                "Nessun impegno.\nDì «ricordami di … domani alle 15».",
+                color = Muted,
+                fontSize = 11.sp,
+                lineHeight = 15.sp,
+            )
+        } else {
+            val shown = timeline.take(6)
+            shown.forEachIndexed { i, e ->
+                TimelineEntry(
+                    entry = e,
+                    dot = if (e.done) Green else when (i % 3) { 0 -> Cyan; 1 -> Blue; else -> Violet },
+                    last = i == shown.lastIndex,
+                    onEditAlerts = { onEditAlerts(e) },
+                )
+            }
+        }
     }
 }
 
+/** One day in the week strip. The active day is ringed; a dot marks a day with entries. */
 @Composable
-private fun ProgressBar(fraction: Float, color: Color) {
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .height(5.dp)
-            .clip(RoundedCornerShape(3.dp))
-            .background(Color(0x22FFFFFF)),
+private fun WeekDayPip(
+    date: LocalDate,
+    isToday: Boolean,
+    hasEntries: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(3.dp),
     ) {
+        Text(
+            date.dayOfWeek.getDisplayName(TextStyle.NARROW, Locale.ITALIAN).uppercase(),
+            color = Muted,
+            fontSize = 9.sp,
+        )
+        Box(
+            modifier = Modifier
+                .size(28.dp)
+                .clip(androidx.compose.foundation.shape.CircleShape)
+                .then(
+                    if (isToday) {
+                        Modifier
+                            .background(Cyan.copy(alpha = 0.16f))
+                            .border(1.5.dp, Cyan, androidx.compose.foundation.shape.CircleShape)
+                    } else {
+                        Modifier
+                    },
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                "${date.dayOfMonth}",
+                color = if (isToday) Cyan else Ink,
+                fontSize = 13.sp,
+                fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal,
+            )
+        }
         Box(
             Modifier
-                .fillMaxWidth(fraction.coerceIn(0f, 1f))
-                .height(5.dp)
-                .clip(RoundedCornerShape(3.dp))
-                .background(Brush.horizontalGradient(listOf(color.copy(alpha = 0.7f), color))),
+                .size(5.dp)
+                .clip(androidx.compose.foundation.shape.CircleShape)
+                .background(if (hasEntries) Cyan else Color.Transparent),
         )
     }
 }
 
+/**
+ * One timeline row: the time (or a dash for an untimed task), a dot on a
+ * connecting line, the title and its day, and an "In arrivo"/"Completato" badge.
+ * Tapping the bell edits the entry's reminder alerts (Phase 6e).
+ */
 @Composable
-private fun DonutRing(percent: Int, label: String, modifier: Modifier = Modifier) {
-    Box(modifier, contentAlignment = Alignment.Center) {
-        Canvas(Modifier.fillMaxSize()) {
-            val stroke = size.minDimension * 0.13f
-            val inset = stroke / 2f
-            val arcSize = Size(size.width - stroke, size.height - stroke)
-            drawArc(
-                color = Color(0x2AFFFFFF),
-                startAngle = -90f, sweepAngle = 360f, useCenter = false,
-                topLeft = Offset(inset, inset), size = arcSize,
-                style = Stroke(width = stroke, cap = StrokeCap.Round),
-            )
-            drawArc(
-                brush = Brush.sweepGradient(listOf(Cyan, Blue, Violet, Cyan)),
-                startAngle = -90f, sweepAngle = 360f * (percent.coerceIn(0, 100) / 100f), useCenter = false,
-                topLeft = Offset(inset, inset), size = arcSize,
-                style = Stroke(width = stroke, cap = StrokeCap.Round),
+private fun TimelineEntry(
+    entry: AgendaEntry,
+    dot: Color,
+    last: Boolean,
+    onEditAlerts: () -> Unit,
+) {
+    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+        // Time column.
+        Column(
+            modifier = Modifier.width(46.dp).padding(top = 2.dp),
+            horizontalAlignment = Alignment.End,
+        ) {
+            Text(
+                entry.time?.let { Agenda.humanTime(it) } ?: "—",
+                color = if (entry.done) Muted else dot,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
             )
         }
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("$percent%", color = Ink, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-            Text(label, color = Muted, fontSize = 9.sp)
+        Spacer(Modifier.width(8.dp))
+        // Dot + connector.
+        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(top = 4.dp)) {
+            Box(
+                Modifier
+                    .size(9.dp)
+                    .clip(androidx.compose.foundation.shape.CircleShape)
+                    .then(if (entry.done) Modifier.background(dot) else Modifier.border(2.dp, dot, androidx.compose.foundation.shape.CircleShape)),
+            )
+            if (!last) Box(Modifier.width(2.dp).height(30.dp).background(Color(0x1AFFFFFF)))
+        }
+        Spacer(Modifier.width(10.dp))
+        // Title + day + badge.
+        Column(Modifier.weight(1f)) {
+            Text(
+                entry.text,
+                color = if (entry.done) Muted else Ink,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(Agenda.humanDate(entry.date, LocalDate.now()), color = Muted, fontSize = 10.sp)
+            Spacer(Modifier.height(2.dp))
+            StatusBadge(done = entry.done)
+        }
+        IconButton(onClick = onEditAlerts, modifier = Modifier.size(30.dp)) {
+            Icon(
+                if (entry.alerts.isEmpty()) Icons.Filled.NotificationsOff else Icons.Filled.Notifications,
+                contentDescription = "Imposta avvisi",
+                tint = if (entry.alerts.isEmpty()) Amber else Green,
+                modifier = Modifier.size(17.dp),
+            )
         }
     }
 }
 
+/** "In arrivo" (cyan) or "Completato" (green) pill. */
 @Composable
-private fun AgendaRow(
-    time: String,
-    title: String,
-    place: String,
-    alerts: List<ReminderAlert>,
-    onAlerts: () -> Unit,
-    dot: Color,
-    last: Boolean = false,
-) {
-    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(top = 3.dp)) {
-            Box(Modifier.size(8.dp).clip(RoundedCornerShape(5.dp)).background(dot))
-            if (!last) Box(Modifier.width(2.dp).height(28.dp).background(Color(0x22FFFFFF)))
-        }
-        Spacer(Modifier.width(10.dp))
-        Column(Modifier.weight(1f)) {
-            Text(time, color = dot, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-            Text(title, color = Ink, fontSize = 13.sp)
-            Text(place, color = Muted, fontSize = 10.sp)
-            Text(
-                if (alerts.isEmpty()) "Avviso non impostato" else "${alerts.size} avvis${if (alerts.size == 1) "o" else "i"}",
-                color = if (alerts.isEmpty()) Amber else Green,
-                fontSize = 9.sp,
-            )
-        }
-        IconButton(onClick = onAlerts, modifier = Modifier.size(32.dp)) {
-            Icon(
-                if (alerts.isEmpty()) Icons.Filled.NotificationsOff else Icons.Filled.Notifications,
-                contentDescription = "Imposta avvisi",
-                tint = if (alerts.isEmpty()) Amber else Green,
-                modifier = Modifier.size(18.dp),
-            )
-        }
-    }
+private fun StatusBadge(done: Boolean) {
+    val color = if (done) Green else Cyan
+    val label = if (done) "Completato" else "In arrivo"
+    Text(
+        text = label,
+        color = color,
+        fontSize = 9.sp,
+        fontWeight = FontWeight.SemiBold,
+        modifier = Modifier
+            .clip(RoundedCornerShape(5.dp))
+            .background(color.copy(alpha = 0.12f))
+            .border(1.dp, color.copy(alpha = 0.4f), RoundedCornerShape(5.dp))
+            .padding(horizontal = 6.dp, vertical = 1.dp),
+    )
 }
 
 @Composable
@@ -957,55 +1036,6 @@ private fun AutoChip(title: String, subtitle: String, modifier: Modifier = Modif
         Icon(Icons.Filled.Bolt, null, tint = Cyan, modifier = Modifier.size(16.dp))
         Text(title, color = Ink, fontSize = 11.sp, fontWeight = FontWeight.Medium)
         Text(subtitle, color = Muted, fontSize = 9.sp)
-    }
-}
-
-@Composable
-private fun DayCell(
-    date: LocalDate,
-    isToday: Boolean,
-    entries: List<AgendaEntry>,
-    modifier: Modifier = Modifier,
-) {
-    val dow = date.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.ITALIAN).uppercase().take(3)
-    Column(
-        modifier = modifier
-            .clip(RoundedCornerShape(10.dp))
-            .background(if (isToday) Cyan.copy(alpha = 0.16f) else Color(0x33081521))
-            .border(1.dp, if (isToday) Cyan.copy(alpha = 0.55f) else Color(0x1AFFFFFF), RoundedCornerShape(10.dp))
-            .padding(vertical = 8.dp, horizontal = 2.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
-        Text(dow, color = Muted, fontSize = 9.sp)
-        Text("${date.dayOfMonth}", color = if (isToday) Cyan else Ink, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-        if (entries.isNotEmpty()) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(2.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                if (entries.any { it.time != null }) {
-                    Box(Modifier.size(5.dp).clip(RoundedCornerShape(3.dp)).background(Cyan))
-                }
-                if (entries.any { it.time == null }) {
-                    Box(Modifier.size(5.dp).clip(RoundedCornerShape(3.dp)).background(Violet))
-                }
-                if (entries.size > 1) {
-                    Text(entries.size.toString(), color = Muted, fontSize = 8.sp)
-                }
-            }
-        } else {
-            Text(if (isToday) "Oggi" else "·", color = Muted, fontSize = 8.sp)
-        }
-    }
-}
-
-@Composable
-private fun CalendarLegend(color: Color, label: String) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(6.dp).clip(RoundedCornerShape(3.dp)).background(color))
-        Spacer(Modifier.width(4.dp))
-        Text(label, color = Muted, fontSize = 9.sp)
     }
 }
 
@@ -1257,10 +1287,4 @@ private fun orbSubtitle(state: ConversationState): String = when (state) {
     ConversationState.Listening, ConversationState.FollowUpWindow -> "Ti ascolto"
     ConversationState.Speaking -> "Tocca per fermare"
     else -> ""
-}
-
-private fun todayLabel(): String {
-    val d = LocalDate.now()
-    val month = d.month.getDisplayName(TextStyle.FULL, Locale.ITALIAN).replaceFirstChar { it.uppercase() }
-    return "Oggi, ${d.dayOfMonth} $month"
 }

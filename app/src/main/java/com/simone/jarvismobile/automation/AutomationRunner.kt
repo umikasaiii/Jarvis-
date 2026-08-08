@@ -17,6 +17,10 @@ import com.simone.jarvismobile.background.JarvisNotifications
 import com.simone.jarvismobile.core.agenda.AgendaEntry
 import com.simone.jarvismobile.core.automation.Action
 import com.simone.jarvismobile.core.automation.Automation
+import com.simone.jarvismobile.tools.CommandMatcher
+import com.simone.jarvismobile.tools.Match
+import com.simone.jarvismobile.tools.ToolOutcome
+import com.simone.jarvismobile.tools.ToolRunner
 import com.simone.jarvismobile.ui.MainActivity
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.time.LocalDate
@@ -36,6 +40,7 @@ class AutomationRunner @Inject constructor(
     @ApplicationContext private val context: Context,
     private val agenda: AgendaRepository,
     private val coordinator: SessionCoordinator,
+    private val tools: ToolRunner,
 ) {
     suspend fun run(automation: Automation): Boolean {
         Log.i(TAG, "automation_fire id=${automation.id}")
@@ -51,7 +56,34 @@ class AutomationRunner @Inject constructor(
             is Action.AddAgenda -> agenda.add(
                 AgendaEntry(date = LocalDate.now(), time = null, text = action.payload),
             )
+            is Action.Tool -> runTool(automation, action.command)
         }
+    }
+
+    /**
+     * Runs a stored device command by feeding its words back through the very
+     * same [CommandMatcher] a typed command uses, then executing the result on
+     * the [ToolRunner]. The rule holds only text: if the words no longer map to
+     * a permitted, deferrable tool the action does nothing but say why — there is
+     * no path from a stored automation to an arbitrary tool. Whatever happens is
+     * shown in a notification, because a rule that silently touched the device
+     * would break the no-hidden-actions rule.
+     */
+    private suspend fun runTool(automation: Automation, command: String): Boolean {
+        val match = CommandMatcher.match(command) as? Match.Run
+        if (match == null || match.call.name !in DeferredCommand.ELIGIBLE_TOOLS) {
+            Log.w(TAG, "automation_tool_unrecognised id=${automation.id}")
+            notify(automation, "Comando non più riconosciuto: «$command».")
+            return false
+        }
+        val (ok, spoken) = when (val outcome = tools.run(match.call)) {
+            is ToolOutcome.Done -> true to outcome.spoken
+            is ToolOutcome.Failed -> false to outcome.spoken
+            is ToolOutcome.NeedsConfirmation ->
+                false to "«$command» richiede una conferma e non può partire da un'automazione."
+        }
+        notify(automation, spoken)
+        return ok
     }
 
     private fun notify(automation: Automation, message: String): Boolean {

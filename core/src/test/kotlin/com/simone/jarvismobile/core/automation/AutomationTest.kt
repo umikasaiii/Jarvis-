@@ -1,6 +1,7 @@
 package com.simone.jarvismobile.core.automation
 
 import java.time.DayOfWeek
+import java.time.LocalDateTime
 import java.time.LocalTime
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -42,6 +43,37 @@ class AutomationTest {
             assertEquals(a.trigger, b.trigger)
             assertEquals(a.action, b.action)
         }
+    }
+
+    @Test
+    fun `a one-shot command rule survives a round trip through the file`() {
+        val rule = Automation(
+            id = "once0001",
+            name = "accendi la torcia",
+            trigger = Trigger.Once(LocalDateTime.of(2026, 8, 8, 11, 45)),
+            action = Action.Tool("accendi la torcia"),
+        )
+        assertEquals(
+            "- [x] una volta 2026-08-08 11:45 — comando: accendi la torcia {#once0001}",
+            rule.toMarkdown(),
+        )
+        val back = AutomationCodec.parseLine(rule.toMarkdown())!!
+        assertEquals(rule.id, back.id)
+        assertEquals(Trigger.Once(LocalDateTime.of(2026, 8, 8, 11, 45)), back.trigger)
+        assertEquals(Action.Tool("accendi la torcia"), back.action)
+    }
+
+    @Test
+    fun `a one-shot instant reads as one line`() {
+        val rule = Automation(
+            name = "x",
+            trigger = Trigger.Once(LocalDateTime.of(2026, 12, 31, 9, 5)),
+            action = Action.Tool("metti in pausa la musica"),
+        )
+        assertEquals(
+            "una volta 2026-12-31 09:05 → comando: metti in pausa la musica",
+            AutomationCodec.describe(rule),
+        )
     }
 
     @Test

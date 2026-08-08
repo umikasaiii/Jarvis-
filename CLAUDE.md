@@ -89,7 +89,8 @@ Plugin and all AndroidX/Compose/Material3 artifacts. Consequences:
 | 6b | Personal structured calendar | **Implemented (pending device check)** — `:core` `agenda` package (`AgendaEntry`, `ItalianDateTimeParser`, `Agenda`): a timed item is an appointment and an untimed item is a dated task, never "domani" hidden in prose. `AgendaRepository` stores both in `JARVIS/Agenda.md` (app-private fallback with later vault migration), supports alerts and confirmed completion, and the seven-day dashboard reads the real file. Generic calendar requests save locally; Google/Android Calendar is explicit draft export only. Clock arithmetic stays deterministic via `time_until`. See ADRs 0004 and 0010. |
 | 6c | Understanding V3 | **Implemented (pending CI/device check)** — knowledge/conversation messages, including multiple questions, now take one coherent model turn. Deterministic tools run first; only plausible unfamiliar operations invoke the one-line LLM classifier. Low-confidence output cannot execute a tool, and generated role/template continuations are removed. |
 | 6d | Persistent response queue | **Implemented (pending CI/device check)** — typed requests are persisted in Room and run by a long-running WorkManager worker with visible progress, real native cancellation, retry and idempotent chat writes. The chat send control becomes Stop while active; a 90-second native watchdog prevents infinite inference. Model load, memory retrieval and generation survive Activity closure/process recreation. A private “response ready” notification opens the chat; preview is opt-in. |
-| 6e | Reminder engine | **Implemented (pending CI/device check)** — agenda entries keep stable IDs plus zero/multiple alert rules in human-readable Markdown metadata. Dashboard choices: due time, morning-of, 1/2/3/7 days before, custom time, or none. WorkManager persists notifications across app exit/reboot; reconciliation handles edits/deletes and the morning hour is configurable. |
+| 6e | Reminder engine | **Verified on HONOR 200** — exact-alarm reminders arrive on time with the app closed. Agenda entries keep stable IDs plus zero/multiple alert rules in human-readable Markdown metadata. Dashboard choices: due time, morning-of, 1/2/3/7 days before, custom time, or none. WorkManager/exact-alarm path persists notifications across app exit/reboot; reconciliation handles edits/deletes and the morning hour is configurable. |
+| 6f | Automazioni | **Implemented, expanded (pending CI/device check)** — recurring ("ogni giorno alle 8") and conditional ("quando la batteria…") rules, plus a new one-shot **deferred command**: "alle 11.45 accendi la torcia" becomes a `Trigger.Once` + `Action.Tool` rule instead of firing the torch now. The tool action passes the existing `CommandMatcher` at save *and* fire time and is confined to a headless subset of the command allowlist (`flashlight`, `media_control`); every firing posts a visible notification. Scheduled on the same exact-alarm path as reminders; fires once, then is spent. See ADR 0011. Dashboard agenda block rebuilt as date + weekly strip (active day ringed) + vertical timeline with «In arrivo»/«Completato» badges. |
 | 7 | Home Assistant | Not started |
 | 8 | PC companion (`server/`) | Not started |
 | 9 | Hardening / release | Not started |
@@ -116,6 +117,15 @@ lint is clean, docs/decisions updated. Never leave the main branch uncompilable.
 - **Verified on-device (HONOR 200, build `045bb77`):** offline STT (Phase 2) plus
   the **LiteRT-LM** local LLM (Phase 3) — a user-imported `.litertlm` Gemma loads
   and generates a reply fully on-device, no network.
+- **Real & tested (JVM):** the automation model + codec, including the new
+  `Trigger.Once`/`Action.Tool` round-trip through `Automazioni.md`
+  (`cd core && ./gradlew test`). The deferred-command parser and its allowlist
+  re-check live in `app/` (they need the real `CommandMatcher`) and carry a
+  `:app:testDebugUnitTest` suite that only CI can run.
+- **Pending on-device verification (Phases 4 → 6e + automations/dashboard):**
+  walked through function by function in `docs/DEVICE_TEST_PHASES_4_6E.md`. Do
+  not promote any of these from "pending device check" until its section is ticked
+  off on the phone.
 - **Not implemented yet:** local document/Wikipedia knowledge, Room/FTS vault
   index, HA, PC server, custom wake word, benchmarks, release signing and the
   final instrumented/device acceptance suite.

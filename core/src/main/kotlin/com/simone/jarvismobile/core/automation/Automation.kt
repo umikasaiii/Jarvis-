@@ -20,6 +20,14 @@ sealed interface Trigger {
         fun matches(day: DayOfWeek): Boolean = days.isEmpty() || day in days
     }
 
+    /**
+     * A single moment in the future. Fires once and is then spent — the rule
+     * keeps its [lastFired] mark so it is never rescheduled. This is what turns
+     * "alle 11.45 accendi la torcia" from an action that runs *now* into a rule
+     * that runs *then*.
+     */
+    data class Once(val at: LocalDateTime) : Trigger
+
     /** The battery has fallen to [percent] or below. */
     data class BatteryBelow(val percent: Int) : Trigger {
         init { require(percent in 1..99) }
@@ -46,12 +54,22 @@ sealed interface Action {
     /** Files a dated item in JARVIS's own agenda. */
     data class AddAgenda(val text: String) : Action
 
+    /**
+     * Runs an allowlisted device command — the very same words a typed command
+     * would use. Only the text is stored; nothing is executed until the trigger
+     * is due, and even then the words must still map to a permitted tool through
+     * the existing CommandMatcher. There is no way to smuggle an arbitrary tool
+     * in here: an unrecognised [command] simply does nothing (ADR 0008).
+     */
+    data class Tool(val command: String) : Action
+
     /** The words the action carries, whatever the action calls them. */
     val payload: String
         get() = when (this) {
             is Notify -> message
             is Speak -> message
             is AddAgenda -> text
+            is Tool -> command
         }
 }
 

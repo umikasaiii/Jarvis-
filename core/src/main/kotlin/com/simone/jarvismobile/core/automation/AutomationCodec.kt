@@ -1,6 +1,7 @@
 package com.simone.jarvismobile.core.automation
 
 import java.time.DayOfWeek
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 
@@ -23,10 +24,16 @@ object AutomationCodec {
 
     private val EVERY_DAY = Regex("""^ogni giorno\s+(\d{1,2}):(\d{2})$""", RegexOption.IGNORE_CASE)
     private val EVERY_DAYS = Regex("""^ogni\s+([a-z,]+)\s+(\d{1,2}):(\d{2})$""", RegexOption.IGNORE_CASE)
+    // A one-shot instant is stored as an ISO date plus a clock time, e.g.
+    // "una volta 2026-08-08 11:45" — machine-unambiguous, still readable.
+    private val ONCE = Regex(
+        """^una volta\s+(\d{4}-\d{2}-\d{2})\s+(\d{1,2}):(\d{2})$""",
+        RegexOption.IGNORE_CASE,
+    )
     private val BATTERY = Regex("""^batteria\s*<\s*(\d{1,2})\s*%$""", RegexOption.IGNORE_CASE)
     private val CHARGING = Regex("""^in\s+carica$""", RegexOption.IGNORE_CASE)
 
-    private val ACTION = Regex("""^(notifica|voce|agenda)\s*:\s*(.+)$""", RegexOption.IGNORE_CASE)
+    private val ACTION = Regex("""^(notifica|voce|agenda|comando)\s*:\s*(.+)$""", RegexOption.IGNORE_CASE)
 
     fun parseFile(text: String): List<Automation> =
         text.lineSequence().mapNotNull { parseLine(it) }.toList()
@@ -80,6 +87,11 @@ object AutomationCodec {
             val time = time(m.groupValues[2], m.groupValues[3]) ?: return null
             return Trigger.TimeOfDay(time, days)
         }
+        ONCE.find(t)?.let { m ->
+            val date = runCatching { LocalDate.parse(m.groupValues[1]) }.getOrNull() ?: return null
+            val time = time(m.groupValues[2], m.groupValues[3]) ?: return null
+            return Trigger.Once(LocalDateTime.of(date, time))
+        }
         BATTERY.find(t)?.let { m ->
             val percent = m.groupValues[1].toIntOrNull() ?: return null
             return if (percent in 1..99) Trigger.BatteryBelow(percent) else null
@@ -98,6 +110,11 @@ object AutomationCodec {
                 "ogni $days $clock"
             }
         }
+        is Trigger.Once -> {
+            val date = trigger.at.toLocalDate()
+            val clock = "%02d:%02d".format(trigger.at.hour, trigger.at.minute)
+            "una volta $date $clock"
+        }
         is Trigger.BatteryBelow -> "batteria < ${trigger.percent}%"
         Trigger.ChargingStarted -> "in carica"
     }
@@ -112,6 +129,7 @@ object AutomationCodec {
             "notifica" -> Action.Notify(body)
             "voce" -> Action.Speak(body)
             "agenda" -> Action.AddAgenda(body)
+            "comando" -> Action.Tool(body)
             else -> null
         }
     }
@@ -120,6 +138,7 @@ object AutomationCodec {
         is Action.Notify -> "notifica: ${action.payload}"
         is Action.Speak -> "voce: ${action.payload}"
         is Action.AddAgenda -> "agenda: ${action.payload}"
+        is Action.Tool -> "comando: ${action.payload}"
     }
 
     /** How the rule is described in the UI and read back to the user. */

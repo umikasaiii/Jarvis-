@@ -27,6 +27,7 @@ import com.simone.jarvismobile.core.knowledge.Evidence
 import com.simone.jarvismobile.memory.MemoryIndex
 import com.simone.jarvismobile.memory.ConversationMemoryStore
 import com.simone.jarvismobile.automation.AutomationRepository
+import com.simone.jarvismobile.automation.DeferredCommand
 import com.simone.jarvismobile.core.automation.AutomationCodec
 import com.simone.jarvismobile.core.automation.AutomationPhrase
 import com.simone.jarvismobile.tools.CommandMatcher
@@ -417,6 +418,22 @@ class SessionCoordinator @Inject constructor(
                 } else {
                     // Name the reason. "Non sono riuscito" on its own is a dead
                     // end for the user and for whoever has to fix it.
+                    val why = automations.lastError.value
+                    "Non sono riuscito a salvare l'automazione" +
+                        (if (why.isBlank()) "." else " ($why).")
+                }
+            }
+
+            // A device command aimed at a future minute — "alle 11.45 accendi la
+            // torcia" — is a one-shot rule, not something to run right now.
+            // Caught before the command path below, which would otherwise fire
+            // the torch this instant. An appointment still falls through: its
+            // remainder maps to no tool, so DeferredCommand returns null.
+            DeferredCommand.parse(transcript)?.let { rule ->
+                val saved = runCatching { automations.add(rule) }.getOrDefault(false)
+                return if (saved) {
+                    "Automazione creata: ${AutomationCodec.describe(rule)}."
+                } else {
                     val why = automations.lastError.value
                     "Non sono riuscito a salvare l'automazione" +
                         (if (why.isBlank()) "." else " ($why).")
