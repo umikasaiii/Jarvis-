@@ -53,6 +53,7 @@ private val Muted = Color(0xFF7C8B95)
  * models are present, then start the interpreter loop. The conversation appears as
  * paired source/translation lines; nothing here is stored beyond the session.
  */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun LiveTranslatorScreen(
     onBack: () -> Unit,
