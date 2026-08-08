@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
@@ -62,6 +63,9 @@ fun SettingsScreen(
     val followUpEnabled by viewModel.followUpEnabled.collectAsStateWithLifecycle()
     val wakeWordEnabled by viewModel.wakeWordEnabled.collectAsStateWithLifecycle()
     val wakeWord by viewModel.wakeWord.collectAsStateWithLifecycle()
+    val autoExpressive by viewModel.autoExpressive.collectAsStateWithLifecycle()
+    val expressiveIntensity by viewModel.expressiveIntensity.collectAsStateWithLifecycle()
+    val expressiveManualStyle by viewModel.expressiveManualStyle.collectAsStateWithLifecycle()
     val responseNotifications by viewModel.responseNotifications.collectAsStateWithLifecycle()
     val showResponsePreview by viewModel.showResponsePreview.collectAsStateWithLifecycle()
     val reminderNotifications by viewModel.reminderNotifications.collectAsStateWithLifecycle()
@@ -451,6 +455,52 @@ fun SettingsScreen(
                         "Tutto offline sul dispositivo.",
                     style = MaterialTheme.typography.bodySmall,
                 )
+            }
+        }
+
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                ) {
+                    Text("Espressività automatica", style = MaterialTheme.typography.titleMedium)
+                    Switch(checked = autoExpressive, onCheckedChange = viewModel::setAutoExpressive)
+                }
+                Text(
+                    "JARVIS adatta tono, ritmo, pause ed enfasi al senso della risposta e al " +
+                        "contesto, mantenendo sempre la stessa voce. In conversazione normale " +
+                        "resta naturale e poco marcata, non teatrale.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                if (autoExpressive) {
+                    Text("Intensità", style = MaterialTheme.typography.bodyMedium)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf("bassa" to "Bassa", "media" to "Media", "alta" to "Alta").forEach { (key, label) ->
+                            OutlinedButton(
+                                onClick = { viewModel.setExpressiveIntensity(key) },
+                                modifier = Modifier.weight(1f),
+                            ) { Text(if (expressiveIntensity == key) "● $label" else label) }
+                        }
+                    }
+                } else {
+                    Text("Stile fisso", style = MaterialTheme.typography.bodyMedium)
+                    Row(
+                        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        listOf(
+                            "naturale" to "Naturale", "calma" to "Calma", "allegra" to "Allegra",
+                            "seria" to "Seria", "energica" to "Energica", "delicata" to "Delicata",
+                            "autorevole" to "Autorevole",
+                        ).forEach { (key, label) ->
+                            OutlinedButton(onClick = { viewModel.setExpressiveManualStyle(key) }) {
+                                Text(if (expressiveManualStyle == key) "● $label" else label)
+                            }
+                        }
+                    }
+                }
             }
         }
 

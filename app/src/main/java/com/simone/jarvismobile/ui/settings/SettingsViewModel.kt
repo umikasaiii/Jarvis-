@@ -62,6 +62,15 @@ class SettingsViewModel @Inject constructor(
     val wakeWord: StateFlow<String> = settings.wakeWord
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsRepository.DEFAULT_NAME)
 
+    val autoExpressive: StateFlow<Boolean> = settings.autoExpressive
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
+
+    val expressiveIntensity: StateFlow<String> = settings.expressiveIntensity
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "media")
+
+    val expressiveManualStyle: StateFlow<String> = settings.expressiveManualStyle
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "naturale")
+
     val ttsVoiceName: StateFlow<String> = settings.ttsVoiceName
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
 
@@ -105,6 +114,9 @@ class SettingsViewModel @Inject constructor(
     }
     fun setWakeWordEnabled(value: Boolean) = viewModelScope.launch { settings.setWakeWordEnabled(value) }
     fun setWakeWord(value: String) = viewModelScope.launch { settings.setWakeWord(value) }
+    fun setAutoExpressive(value: Boolean) = viewModelScope.launch { settings.setAutoExpressive(value) }
+    fun setExpressiveIntensity(value: String) = viewModelScope.launch { settings.setExpressiveIntensity(value) }
+    fun setExpressiveManualStyle(value: String) = viewModelScope.launch { settings.setExpressiveManualStyle(value) }
     fun refreshVoices() = viewModelScope.launch { coordinator.refreshVoices() }
     fun setTtsVoice(name: String) = viewModelScope.launch {
         settings.setTtsVoiceName(name)

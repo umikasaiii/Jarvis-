@@ -30,6 +30,9 @@ import com.simone.jarvismobile.automation.AutomationRepository
 import com.simone.jarvismobile.automation.DeferredCommand
 import com.simone.jarvismobile.core.automation.AutomationCodec
 import com.simone.jarvismobile.core.automation.AutomationPhrase
+import com.simone.jarvismobile.core.speech.Emotion
+import com.simone.jarvismobile.core.speech.ExpressivePlanner
+import com.simone.jarvismobile.core.speech.SpeechStyle
 import com.simone.jarvismobile.tools.CommandMatcher
 import com.simone.jarvismobile.tools.ItalianNumbers
 import com.simone.jarvismobile.tools.LlmIntentClassifier
@@ -1229,10 +1232,49 @@ class SessionCoordinator @Inject constructor(
 
     private suspend fun speakOut(text: String) {
         if (tts.ensureReady()) {
-            tts.speak(text)
+            tts.speak(expressiveText(text))
         } else {
             _diagnostic.value = "${_diagnostic.value} | tts_unavailable [${tts.lastDetail.value}]"
         }
+    }
+
+    /**
+     * Chooses how the reply is delivered and returns the text to speak with any
+     * hidden expressive metadata stripped. When "Espressività automatica" is on
+     * the tone follows the reply's meaning (metadata tag if the model emitted one,
+     * otherwise a light heuristic); when off, a fixed style is applied. Either way
+     * the chosen [SpeechStyle] is pushed to the engine before it speaks, so the
+     * same voice varies interpretation, never identity.
+     */
+    private suspend fun expressiveText(text: String): String {
+        val base = SpeechStyle(
+            rate = runCatching { settings.ttsSpeechRate.first() }.getOrDefault(SpeechStyle.NATURALE.rate),
+            pitch = runCatching { settings.ttsPitch.first() }.getOrDefault(SpeechStyle.NATURALE.pitch),
+            pauseScale = runCatching { settings.ttsPauseScale.first() }.getOrDefault(SpeechStyle.NATURALE.pauseScale),
+            expressiveness = runCatching { settings.ttsExpressiveness.first() }
+                .getOrDefault(SpeechStyle.NATURALE.expressiveness),
+        )
+        val auto = runCatching { settings.autoExpressive.first() }.getOrDefault(true)
+        val intensity = when (runCatching { settings.expressiveIntensity.first() }.getOrDefault("media").lowercase()) {
+            "bassa" -> ExpressivePlanner.LOW
+            "alta" -> ExpressivePlanner.HIGH
+            else -> ExpressivePlanner.MEDIUM
+        }
+        val forced = if (auto) {
+            null
+        } else {
+            Emotion.fromTag(runCatching { settings.expressiveManualStyle.first() }.getOrDefault("naturale"))
+                ?: Emotion.WARM
+        }
+        val plan = ExpressivePlanner.plan(
+            reply = text,
+            base = base,
+            intensityScale = intensity,
+            userContext = recentConversationContext(),
+            forcedEmotion = forced,
+        )
+        runCatching { tts.setStyle(plan.style) }
+        return plan.cleanedText
     }
 
     /** Speaks a worker result only when the user explicitly enabled the option. */
@@ -1242,7 +1284,7 @@ class SessionCoordinator @Inject constructor(
         // worker. The text answer/notification remains the authoritative result.
         if (state.value != ConversationState.Idle || tts.state.value == TtsState.SPEAKING) return false
         if (!tts.ensureReady()) return false
-        tts.speak(text.take(MAX_BACKGROUND_SPEECH_CHARS))
+        tts.speak(expressiveText(text).take(MAX_BACKGROUND_SPEECH_CHARS))
         return true
     }
 

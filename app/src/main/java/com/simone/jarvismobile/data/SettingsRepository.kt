@@ -48,6 +48,9 @@ class SettingsRepository @Inject constructor(
         val SPEAK_BACKGROUND_RESPONSES = booleanPreferencesKey("speak_background_responses")
         val WAKE_WORD_ENABLED = booleanPreferencesKey("wake_word_enabled")
         val WAKE_WORD = stringPreferencesKey("wake_word")
+        val AUTO_EXPRESSIVE = booleanPreferencesKey("tts_auto_expressive")
+        val EXPRESSIVE_INTENSITY = stringPreferencesKey("tts_expressive_intensity")
+        val EXPRESSIVE_MANUAL_STYLE = stringPreferencesKey("tts_expressive_manual_style")
 
         // --- external neural voice (Phase 4b) ---------------------------
         val TTS_ENGINE_ID = stringPreferencesKey("tts_engine_id")
@@ -180,6 +183,20 @@ class SettingsRepository @Inject constructor(
             it[Keys.WAKE_WORD]?.takeIf { w -> w.isNotBlank() } ?: DEFAULT_NAME
         }
 
+    /**
+     * Contextual expressivity: JARVIS chooses tone/rhythm from the reply's
+     * meaning. On by default. Off falls back to a fixed style. Intensity is
+     * "bassa"/"media"/"alta"; the manual style is one of the tone labels.
+     */
+    val autoExpressive: Flow<Boolean> =
+        context.settingsDataStore.data.map { it[Keys.AUTO_EXPRESSIVE] ?: true }
+
+    val expressiveIntensity: Flow<String> =
+        context.settingsDataStore.data.map { it[Keys.EXPRESSIVE_INTENSITY] ?: "media" }
+
+    val expressiveManualStyle: Flow<String> =
+        context.settingsDataStore.data.map { it[Keys.EXPRESSIVE_MANUAL_STYLE] ?: "naturale" }
+
     val reminderMorningHour: Flow<Int> =
         context.settingsDataStore.data.map { (it[Keys.REMINDER_MORNING_HOUR] ?: 8).coerceIn(0, 23) }
 
@@ -251,6 +268,18 @@ class SettingsRepository @Inject constructor(
 
     suspend fun setWakeWord(value: String) {
         context.settingsDataStore.edit { it[Keys.WAKE_WORD] = value.trim() }
+    }
+
+    suspend fun setAutoExpressive(value: Boolean) {
+        context.settingsDataStore.edit { it[Keys.AUTO_EXPRESSIVE] = value }
+    }
+
+    suspend fun setExpressiveIntensity(value: String) {
+        context.settingsDataStore.edit { it[Keys.EXPRESSIVE_INTENSITY] = value }
+    }
+
+    suspend fun setExpressiveManualStyle(value: String) {
+        context.settingsDataStore.edit { it[Keys.EXPRESSIVE_MANUAL_STYLE] = value }
     }
 
     suspend fun setReminderMorningHour(value: Int) {
