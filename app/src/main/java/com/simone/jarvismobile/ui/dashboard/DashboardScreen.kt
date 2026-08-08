@@ -207,7 +207,6 @@ fun DashboardScreen(
     val today by viewModel.today.collectAsStateWithLifecycle()
     val timeline by viewModel.timeline.collectAsStateWithLifecycle()
     val lastError by viewModel.lastError.collectAsStateWithLifecycle()
-    val listeningForWake by viewModel.listeningForWake.collectAsStateWithLifecycle()
     val battery = rememberBatteryStatus()
     val context = LocalContext.current
 
@@ -324,17 +323,6 @@ fun DashboardScreen(
                 )
             }
 
-            // Wake-word hint: shown only while it is actively listening (app open).
-            if (listeningForWake && state.isRestingLike()) {
-                Text(
-                    "In ascolto della parola — dì «${name}»",
-                    color = Cyan.copy(alpha = 0.85f),
-                    fontSize = 11.sp,
-                    letterSpacing = 1.sp,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
-                )
-            }
 
             // --- Four stat tiles, as in the reference layout ---------------
             // Every one is a real number and every one opens the screen that
