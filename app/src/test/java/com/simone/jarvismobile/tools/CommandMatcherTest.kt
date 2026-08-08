@@ -68,6 +68,46 @@ class CommandMatcherTest {
     }
 
     @Test
+    fun taskIntoNamedListBecomesAddTask() {
+        val match = CommandMatcher.match("Aggiungi alla lista Lavoro comprare il pane") as Match.Run
+
+        assertEquals("add_task", match.call.name)
+        assertEquals("Lavoro", match.call.arguments["list"]?.jsonPrimitive?.content)
+        assertEquals("Comprare il pane", match.call.arguments["text"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun specialTaskIsStarred() {
+        val match = CommandMatcher.match("Attività speciale chiamare Mario") as Match.Run
+
+        assertEquals("add_task", match.call.name)
+        assertEquals("true", match.call.arguments["starred"]?.jsonPrimitive?.content)
+        assertEquals("Chiamare mario", match.call.arguments["text"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun taskIntoListKeepsAnExplicitDay() {
+        val match = CommandMatcher.match(
+            "Nella lista Spesa il latte domani",
+            now = LocalDateTime.of(2026, 8, 6, 10, 0),
+        ) as Match.Run
+
+        assertEquals("add_task", match.call.name)
+        assertEquals("Spesa", match.call.arguments["list"]?.jsonPrimitive?.content)
+        assertEquals("2026-08-07", match.call.arguments["date"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun plainReminderIsNotHijackedByTheTaskPath() {
+        // No list, no "speciale" → stays a reminder, not add_task.
+        val match = CommandMatcher.match(
+            "Ricordami di comprare il pane domani",
+            now = LocalDateTime.of(2026, 8, 6, 10, 0),
+        ) as Match.Run
+        assertEquals("add_reminder", match.call.name)
+    }
+
+    @Test
     fun explicitGoogleCalendarRequestCreatesOnlyAnExternalDraft() {
         val match = CommandMatcher.match(
             "Esporta su Google Calendar dentista domani alle 15",

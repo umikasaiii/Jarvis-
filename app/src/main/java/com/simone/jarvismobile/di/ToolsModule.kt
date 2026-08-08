@@ -8,6 +8,7 @@ import com.simone.jarvismobile.knowledge.KnowledgeRepository
 import com.simone.jarvismobile.memory.MemoryIndex
 import com.simone.jarvismobile.memory.VaultRepository
 import com.simone.jarvismobile.tools.AddReminderTool
+import com.simone.jarvismobile.tools.AddTaskTool
 import com.simone.jarvismobile.tools.AlarmTool
 import com.simone.jarvismobile.tools.BatteryTool
 import com.simone.jarvismobile.tools.FlashlightTool
@@ -62,6 +63,7 @@ object ToolsModule {
             AlarmTool(context),
             FlashlightTool(context),
             AddReminderTool(agenda),
+            AddTaskTool(agenda),
             ListAgendaTool(agenda),
             CompleteAgendaTool(agenda),
             RememberTool(memory),

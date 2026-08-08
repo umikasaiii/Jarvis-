@@ -69,6 +69,60 @@ class AddReminderTool(private val agenda: AgendaRepository) : Tool {
 }
 
 /**
+ * Creates a Google-Tasks-style task: a title, an OPTIONAL due date/time, the
+ * list it belongs to, and whether it is starred. Unlike [AddReminderTool] the
+ * date is optional, so "aggiungi alla lista Lavoro comprare il pane" files an
+ * undated task. Arguments always come from the user's own words (the matcher),
+ * never invented by the model.
+ */
+class AddTaskTool(private val agenda: AgendaRepository) : Tool {
+    override val name = "add_task"
+    override val description = "Aggiunge un'attività (con lista, stella e scadenza opzionali)."
+    override val policy = ToolPolicy.LOW_RISK_WRITE
+    override val sensitivity = SensitivityLevel.PERSONAL
+    override val requiresNetwork = false
+    override val timeoutMs = 8_000L
+
+    override fun validate(arguments: JsonObject): String? {
+        val text = arguments.text("text") ?: return "manca il campo 'text'"
+        if (text.length < 2) return "testo troppo corto"
+        arguments.text("date")?.let {
+            runCatching { LocalDate.parse(it) }.getOrNull() ?: return "data non valida"
+        }
+        arguments.text("time")?.let {
+            runCatching { LocalTime.parse(it) }.getOrNull() ?: return "ora non valida"
+        }
+        return null
+    }
+
+    override suspend fun execute(arguments: JsonObject): ToolResult {
+        val text = arguments.text("text") ?: return ToolResult.Failure("missing_text")
+        val date = arguments.text("date")?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+        val time = arguments.text("time")?.let { runCatching { LocalTime.parse(it) }.getOrNull() }
+        val list = arguments.text("list") ?: AgendaEntry.DEFAULT_LIST
+        val starred = arguments.text("starred") == "true"
+
+        val entry = AgendaEntry(date = date, time = time, text = text, list = list, starred = starred)
+        val saved = runCatching { agenda.add(entry) }.getOrDefault(false)
+        if (!saved) return ToolResult.Failure("agenda_write_failed")
+
+        val today = LocalDate.now()
+        val where = if (list == AgendaEntry.DEFAULT_LIST) "" else " nella lista $list"
+        val whenSaid = date?.let {
+            ", " + Agenda.humanDate(it, today) + (time?.let { t -> " alle ${Agenda.humanTime(t)}" } ?: "")
+        } ?: ""
+        val star = if (starred) " ⭐" else ""
+        return okJson(
+            "text" to text,
+            "list" to list,
+            "starred" to starred.toString(),
+            "date" to (date?.toString() ?: ""),
+            "spoken" to "Aggiunta$star: $text$where$whenSaid.",
+        )
+    }
+}
+
+/**
  * Reads the agenda back. Deterministic on purpose: what is on the calendar comes
  * from the file, never from the model, so an appointment can't be invented.
  */

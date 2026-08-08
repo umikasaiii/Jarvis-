@@ -965,6 +965,14 @@ class SessionCoordinator @Inject constructor(
                 else -> null
             }
 
+            // The title was missing; keep the list/starred that were understood.
+            "add_task" -> if (reply.length < 2) {
+                null
+            } else {
+                val partial = pending.args.toMutableMap().apply { put("text", reply.take(240)) }
+                build(*partial.entries.map { it.key to it.value }.toTypedArray())
+            }
+
             "complete_agenda" -> reply.takeIf { it.length >= 2 }
                 ?.let { build("text" to it.take(200)) }
 

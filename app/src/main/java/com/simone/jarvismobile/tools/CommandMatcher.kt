@@ -74,6 +74,10 @@ object CommandMatcher {
         // come from the user's own words; missing details become a follow-up
         // question instead of an inferred phone number, destination or title.
         settingsCall(raw)?.let { return it }
+        // A task aimed at a named list or flagged "speciale" is a Google-Tasks
+        // style task, not a calendar event — intercept before the calendar rule,
+        // which would otherwise swallow "aggiungi (un')attività …".
+        taskCreateCall(raw, now)?.let { return it }
         calendarEventCall(raw, now)?.let { return it }
         smsDraftCall(raw)?.let { return it }
         dialDraftCall(raw)?.let { return it }
@@ -206,6 +210,49 @@ object CommandMatcher {
         if (!Regex("""\d\s*[+\-*/]\s*\(?\s*\d""").containsMatchIn(expr)) return null
         if (!expr.all { it.isDigit() || it in "+-*/(). " }) return null
         return expr
+    }
+
+    /**
+     * "aggiungi alla lista Lavoro comprare il pane", "attività speciale chiamare
+     * Mario", "nella lista Spesa il latte domani" → a Google-Tasks-style task.
+     * Fires only when the user names a list or asks for a special/starred task,
+     * so ordinary reminders and calendar phrasing are left untouched. The list
+     * name and title come from the user's own words; a due date is optional.
+     */
+    fun taskCreateCall(raw: String, now: LocalDateTime = LocalDateTime.now()): Match? {
+        val norm = normalize(raw)
+        val listName = TASK_LIST_RE.find(norm)?.groupValues?.getOrNull(1)
+            ?.trim()?.takeIf { it.isNotEmpty() }
+        val starred = TASK_STAR_RE.containsMatchIn(norm)
+        if (listName == null && !starred) return null
+
+        val parsed = ItalianDateTimeParser.parse(raw, now)
+        var body = normalize(parsed.remainder)
+        body = TASK_LIST_RE.replace(body, " ")
+        body = TASK_STAR_RE.replace(body, " ")
+        body = TASK_LEAD_RE.replace(body, " ")
+        body = body.replace(Regex("""\s+"""), " ").trim().trim(',', ':', '-', '.', ' ')
+            .replaceFirstChar { it.uppercase() }
+
+        val list = listName?.replaceFirstChar { it.uppercase() }
+        val partial = buildMap {
+            list?.let { put("list", it) }
+            if (starred) put("starred", "true")
+        }
+        if (body.length < 2) {
+            return Match.Ask("Quale attività aggiungo?", "add_task", "text", partial)
+        }
+        val args = buildList {
+            add("text" to body)
+            list?.let { add("list" to it) }
+            if (starred) add("starred" to "true")
+            // Keep a date only when the user actually named a day.
+            if (parsed.date != null && (parsed.dateExplicit || parsed.time != null)) {
+                add("date" to parsed.date.toString())
+                parsed.time?.let { add("time" to "%02d:%02d".format(it.hour, it.minute)) }
+            }
+        }
+        return call("add_task", *args.toTypedArray())
     }
 
     /** "apri Spotify" / "apri il calendario". Only fixed aliases are accepted. */
@@ -533,6 +580,19 @@ object CommandMatcher {
     private val POLITE_PREFIXES = listOf(
         "puoi ", "potresti ", "per favore ", "mi ", "ti ", "jarvis ", "ehi ", "hey ",
         "vorrei che ", "voglio che ", "riesci a ", "sai ",
+    )
+
+    // --- Google-Tasks-style task creation -------------------------------
+    /** Captures the list name after "lista" (with an optional preposition). */
+    private val TASK_LIST_RE = Regex(
+        """\b(?:(?:alla|nella|in|della|dalla|sulla)\s+)?lista\s+([\p{L}][\p{L}0-9]*)""",
+    )
+    /** Marks the task as starred ("speciale", "preferita"). */
+    private val TASK_STAR_RE = Regex("""\b(special[ei]|preferit\w+)\b""")
+    /** Leading scaffolding stripped from the task title. */
+    private val TASK_LEAD_RE = Regex(
+        """^(?:(?:aggiung\w*|crea\w*|mett\w*|segna\w*|inserisc\w*|nuov[ao]|un[' ]?|una)\s+)*""" +
+            """(?:(?:attivit[àa]|task|impegno|cosa)\s+)?(?:(?:di|da|come|:)\s+)*""",
     )
 
     private val SUPPORTED_APPS = setOf(
