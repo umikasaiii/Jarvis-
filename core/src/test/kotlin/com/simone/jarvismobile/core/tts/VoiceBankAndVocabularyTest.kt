@@ -146,6 +146,26 @@ class VoiceBankAndVocabularyTest {
     }
 
     @Test
+    fun `names are listed without decoding the samples`() {
+        val blob = npz(
+            "af_heart.npy" to npy(4, 8) { it.toFloat() },
+            "af_bella.npy" to npy(4, 8) { it.toFloat() },
+            "if_sara.npy" to npy(4, 8) { it.toFloat() },
+        )
+        assertEquals(
+            listOf("af_bella", "af_heart", "if_sara"),
+            VoiceBankReader.readNames(blob.inputStream()),
+        )
+    }
+
+    @Test
+    fun `a flat blob reports a single default voice name`() {
+        val floats = ByteBuffer.allocate(512 * 4).order(ByteOrder.LITTLE_ENDIAN)
+        repeat(512) { floats.putFloat(it.toFloat()) }
+        assertEquals(listOf("default"), VoiceBankReader.readNames(floats.array().inputStream()))
+    }
+
+    @Test
     fun `a wrong dtype is refused rather than reinterpreted`() {
         val header = "{'descr': '<f8', 'fortran_order': False, 'shape': (2, 1, 4), }\n"
         val out = ByteArrayOutputStream()

@@ -12,6 +12,7 @@ import com.simone.jarvismobile.data.SettingsRepository
 import com.simone.jarvismobile.tts.NeuralTtsEngine
 import com.simone.jarvismobile.tts.NeuralTtsRepository
 import com.simone.jarvismobile.tts.NeuralTtsState
+import com.simone.jarvismobile.tts.PreviewOutcome
 import com.simone.jarvismobile.tts.TtsAsset
 import com.simone.jarvismobile.tts.TtsAssetKind
 import com.simone.jarvismobile.tts.TtsImportResult
@@ -227,7 +228,35 @@ class SettingsViewModel @Inject constructor(
         _importedTtsAssets.value = neural.importedAssets()
     }
 
-    fun setNeuralVoice(voice: String) = viewModelScope.launch { neural.setVoice(voice) }
+    fun setNeuralVoice(voice: String) = viewModelScope.launch {
+        neural.setVoice(voice)
+        _ttsMessage.value = "Voce selezionata: $voice"
+    }
+
+    /**
+     * "Prova voce": runs a real synthesis through the imported graph with the
+     * selected voice. Deliberately not the generic preview — that one goes
+     * through the whole session path and reports "tts_unavailable" for six
+     * different reasons. This one says which step failed.
+     */
+    fun testNeuralVoice() = viewModelScope.launch {
+        _ttsBusy.value = true
+        _ttsMessage.value = "Sintesi in corso…"
+        coordinator.stopSpeaking()
+        _ttsMessage.value = when (val outcome = neural.preview()) {
+            is PreviewOutcome.Ok ->
+                "Riprodotto con %s — %.1f s di audio, generati in %d ms."
+                    .format(outcome.voice, outcome.seconds, outcome.elapsedMs)
+            is PreviewOutcome.NotLoaded ->
+                "Modello non caricato${if (outcome.detail.isBlank()) "" else ": ${outcome.detail}"}"
+            is PreviewOutcome.SynthesisFailed ->
+                "La sintesi con «${outcome.voice}» non ha prodotto audio. " +
+                    "Controlla il file voci e il vocabolario."
+            PreviewOutcome.NoVoice -> "Nessuna voce disponibile: importa voices-v1.0.bin."
+        }
+        neural.refresh()
+        _ttsBusy.value = false
+    }
 
     fun setTtsVolume(value: Float) = viewModelScope.launch { settings.setTtsVolume(value) }
 

@@ -2,13 +2,16 @@ package com.simone.jarvismobile.tts
 
 import android.net.Uri
 import android.util.Log
+import com.simone.jarvismobile.core.tts.VoiceBankReader
 import com.simone.jarvismobile.data.SettingsRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -24,6 +27,15 @@ enum class NeuralTtsStatus {
     LOADING,
     LOADED,
     ERROR,
+}
+
+/** What "Prova voce" actually did, so the screen can say something specific. */
+sealed interface PreviewOutcome {
+    data class Ok(val voice: String, val seconds: Float, val elapsedMs: Long) : PreviewOutcome
+    /** The session could not be built; [detail] is the engine's reason. */
+    data class NotLoaded(val detail: String) : PreviewOutcome
+    data class SynthesisFailed(val voice: String) : PreviewOutcome
+    data object NoVoice : PreviewOutcome
 }
 
 /** Everything the Settings screen needs to draw the section in one object. */
@@ -57,6 +69,8 @@ class NeuralTtsRepository @Inject constructor(
     private val settings: SettingsRepository,
     private val assets: TtsAssetStore,
     private val kokoro: KokoroTtsEngine,
+    private val player: PcmPlayer,
+    private val focus: AudioFocusGate,
 ) {
     private val mutex = Mutex()
 
@@ -99,6 +113,13 @@ class NeuralTtsRepository @Inject constructor(
             _state.value.status == NeuralTtsStatus.ERROR -> NeuralTtsStatus.ERROR
             else -> NeuralTtsStatus.READY_TO_LOAD
         }
+        // The voice list does not need the graph: the names are entries in the
+        // pack, so they can be shown the moment the file is imported rather than
+        // after a ~90 MB session has been built.
+        val names = loadedEngine?.voices()
+            ?: voicesFile?.let { readVoiceNames(it.path) }
+            ?: emptyList()
+
         _state.value = _state.value.copy(
             engineId = id,
             engineLabel = engine?.label.orEmpty(),
@@ -106,9 +127,30 @@ class NeuralTtsRepository @Inject constructor(
             model = model,
             voicesFile = voicesFile,
             vocabulary = vocabulary,
-            voices = loadedEngine?.voices() ?: _state.value.voices,
-            selectedVoice = settings.ttsNeuralVoice.first(),
+            voices = names.ifEmpty { _state.value.voices },
+            selectedVoice = resolveVoice(settings.ttsNeuralVoice.first(), names),
         )
+    }
+
+    /** Reads only the names out of the pack; cheap enough to do on every refresh. */
+    private suspend fun readVoiceNames(path: String): List<String>? = withContext(Dispatchers.IO) {
+        val file = assets.fileFor(path) ?: return@withContext null
+        runCatching { file.inputStream().use { VoiceBankReader.readNames(it) } }
+            .onFailure { Log.w(TAG, "voice_names_failed ${it.javaClass.simpleName}") }
+            .getOrNull()
+    }
+
+    /**
+     * Keeps the stored choice when the pack still has it, and otherwise falls
+     * back — a voice that vanished (a different pack, a renamed file) must not
+     * leave the selector pointing at nothing.
+     */
+    private suspend fun resolveVoice(stored: String, available: List<String>): String {
+        if (available.isEmpty()) return stored
+        if (stored in available) return stored
+        val fallback = preferredItalian(available) ?: available.first()
+        settings.setTtsNeuralVoice(fallback)
+        return fallback
     }
 
     /**
@@ -207,6 +249,39 @@ class NeuralTtsRepository @Inject constructor(
         _state.value = _state.value.copy(selectedVoice = voice)
     }
 
+    /**
+     * Synthesises a fixed Italian sentence with [voice] through the real graph
+     * and plays it. This is the only honest way to answer "does the voice work?"
+     * — it exercises loading, phonemisation, inference and playback in the same
+     * order a reply does, and reports which step gave way.
+     *
+     * Entirely offline: nothing on this path opens a socket.
+     */
+    suspend fun preview(voice: String = ""): PreviewOutcome {
+        val engine = ensureLoaded() ?: return PreviewOutcome.NotLoaded(_state.value.detail)
+        val chosen = voice.ifBlank { settings.ttsNeuralVoice.first() }
+            .ifBlank { _state.value.voices.firstOrNull().orEmpty() }
+        if (chosen.isBlank()) return PreviewOutcome.NoVoice
+
+        val speed = settings.ttsSpeechRate.first()
+        val volume = settings.ttsVolume.first()
+        val startedAt = System.currentTimeMillis()
+        val pcm = engine.synthesize(SAMPLE, chosen, speed)
+        if (pcm == null || pcm.isEmpty()) return PreviewOutcome.SynthesisFailed(chosen)
+        val elapsed = System.currentTimeMillis() - startedAt
+
+        focus.acquire { player.stop() }
+        try {
+            player.start(engine.sampleRate)
+            player.setVolume(volume)
+            player.write(pcm)
+            player.drain()
+        } finally {
+            focus.release()
+        }
+        return PreviewOutcome.Ok(chosen, pcm.size.toFloat() / engine.sampleRate, elapsed)
+    }
+
     fun importedAssets(): List<TtsAsset> = assets.list()
 
     /** Drops the session. The files and the choice stay. */
@@ -219,5 +294,10 @@ class NeuralTtsRepository @Inject constructor(
 
     private companion object {
         const val TAG = "JarvisNeuralTts"
+
+        /** Exercises the shaping rules and a few awkward Italian sounds. */
+        const val SAMPLE =
+            "Buonasera Simone. Sono JARVIS: alle 15:30 hai la revisione dell'auto, " +
+                "e la batteria è al 68 per cento."
     }
 }

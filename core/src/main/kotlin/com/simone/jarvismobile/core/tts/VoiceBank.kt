@@ -56,6 +56,35 @@ object VoiceBankReader {
         }
     }
 
+    /**
+     * Just the voice names, without decoding a single sample.
+     *
+     * The pack is tens of megabytes of float32; parsing all of it to answer
+     * "which voices are in here?" would cost seconds and the memory of every
+     * embedding, for a dropdown. The names are zip entry names, so this walks
+     * the central structure and stops. It also means the list can be shown the
+     * moment the file is imported, before the ONNX graph exists.
+     */
+    fun readNames(input: InputStream): List<String> {
+        val out = ArrayList<String>()
+        ZipInputStream(input).use { zip ->
+            while (true) {
+                val entry = try {
+                    zip.nextEntry ?: break
+                } catch (e: Exception) {
+                    break // not a zip after all
+                }
+                if (!entry.isDirectory) {
+                    val name = entry.name.substringAfterLast('/').removeSuffix(".npy")
+                    if (name.isNotBlank()) out.add(name)
+                }
+                zip.closeEntry()
+            }
+        }
+        // A flat blob has no entries at all: it is one unnamed voice.
+        return if (out.isEmpty()) listOf("default") else out.sorted()
+    }
+
     private fun readNpz(bytes: ByteArray): VoiceBank {
         val out = LinkedHashMap<String, VoiceStyles>()
         ZipInputStream(bytes.inputStream()).use { zip ->

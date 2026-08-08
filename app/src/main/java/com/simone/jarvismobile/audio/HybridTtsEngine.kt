@@ -1,16 +1,12 @@
 package com.simone.jarvismobile.audio
 
-import android.content.Context
-import android.media.AudioAttributes
-import android.media.AudioFocusRequest
-import android.media.AudioManager
 import android.util.Log
 import com.simone.jarvismobile.core.speech.SpeechShaper
 import com.simone.jarvismobile.core.speech.SpeechStyle
 import com.simone.jarvismobile.data.SettingsRepository
+import com.simone.jarvismobile.tts.AudioFocusGate
 import com.simone.jarvismobile.tts.NeuralTtsRepository
 import com.simone.jarvismobile.tts.PcmPlayer
-import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -36,10 +32,10 @@ import javax.inject.Singleton
  */
 @Singleton
 class HybridTtsEngine @Inject constructor(
-    @ApplicationContext private val context: Context,
     private val android: AndroidOfflineTtsEngine,
     private val neural: NeuralTtsRepository,
     private val player: PcmPlayer,
+    private val focus: AudioFocusGate,
     private val settings: SettingsRepository,
 ) : TextToSpeechEngine {
 
@@ -103,7 +99,8 @@ class HybridTtsEngine @Inject constructor(
             return
         }
 
-        val voice = neural.state.value.selectedVoice
+        val voice = settings.ttsNeuralVoice.first()
+            .ifBlank { neural.state.value.selectedVoice }
         val speed = style.rate.coerceIn(MIN_SPEED, MAX_SPEED)
         val volume = settings.ttsVolume.first()
         val streaming = settings.ttsStreamingEnabled.first()
@@ -116,7 +113,7 @@ class HybridTtsEngine @Inject constructor(
         val segments = SpeechShaper.shape(text, style).filter { it.text.isNotBlank() }
         if (segments.isEmpty()) return
 
-        requestAudioFocus()
+        focus.acquire { stop() }
         _state.value = TtsState.SPEAKING
         stopped = false
         player.start(engine.sampleRate)
@@ -148,7 +145,7 @@ class HybridTtsEngine @Inject constructor(
             _lastDetail.value = "neural_speak_failed ${e.javaClass.simpleName}"
             Log.w(TAG, "neural_speak_failed ${e.javaClass.simpleName}")
         } finally {
-            abandonAudioFocus()
+            focus.release()
         }
     }
 
@@ -176,7 +173,7 @@ class HybridTtsEngine @Inject constructor(
         stopped = true
         player.stop()
         android.stop()
-        abandonAudioFocus()
+        focus.release()
         _state.value = TtsState.IDLE
     }
 
@@ -184,39 +181,6 @@ class HybridTtsEngine @Inject constructor(
         stop()
         android.shutdown()
         neural.unload()
-    }
-
-    // --- audio focus ------------------------------------------------------
-    // The Android engine holds its own focus; the neural path has to hold one
-    // too or music keeps playing straight through the reply.
-
-    private val audioManager by lazy { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
-    private var focusRequest: AudioFocusRequest? = null
-    private val focusListener = AudioManager.OnAudioFocusChangeListener { change ->
-        if (change == AudioManager.AUDIOFOCUS_LOSS || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
-            stop()
-        }
-    }
-
-    private fun requestAudioFocus() {
-        if (focusRequest != null) return
-        val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                    .build(),
-            )
-            .setOnAudioFocusChangeListener(focusListener)
-            .setWillPauseWhenDucked(true)
-            .build()
-        focusRequest = request
-        runCatching { audioManager.requestAudioFocus(request) }
-    }
-
-    private fun abandonAudioFocus() {
-        focusRequest?.let { req -> runCatching { audioManager.abandonAudioFocusRequest(req) } }
-        focusRequest = null
     }
 
     private companion object {

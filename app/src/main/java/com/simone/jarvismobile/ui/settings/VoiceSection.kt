@@ -181,12 +181,23 @@ fun VoiceSection(viewModel: SettingsViewModel) {
                     style = MaterialTheme.typography.bodySmall,
                 )
 
+                Button(
+                    onClick = viewModel::testNeuralVoice,
+                    enabled = !busy && state.voices.isNotEmpty(),
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text(if (busy) "Attendi…" else "Prova voce") }
+                Text(
+                    "Sintetizza davvero una frase con il modello importato e la " +
+                        "voce selezionata. Il primo avvio carica il modello e può " +
+                        "richiedere qualche secondo.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(
+                    OutlinedButton(
                         onClick = viewModel::previewVoice,
                         enabled = !busy && speechEnabled,
                         modifier = Modifier.weight(1f),
-                    ) { Text("Ascolta anteprima") }
+                    ) { Text("Anteprima stile") }
                     OutlinedButton(
                         onClick = viewModel::reloadNeuralTts,
                         enabled = !busy,
@@ -247,11 +258,12 @@ private fun VoicePicker(state: NeuralTtsState, enabled: Boolean, onPick: (String
     var open by remember { mutableStateOf(false) }
     if (state.voices.isEmpty()) {
         Text(
-            "Le voci compaiono dopo il primo caricamento del modello.",
+            "Nessuna voce: importa il file voci (voices-v1.0.bin).",
             style = MaterialTheme.typography.bodySmall,
         )
         return
     }
+    Text("Voci disponibili: ${state.voices.size}", style = MaterialTheme.typography.bodySmall)
     Box {
         OutlinedButton(onClick = { open = true }, enabled = enabled, modifier = Modifier.fillMaxWidth()) {
             Text("Voce: ${state.selectedVoice.ifBlank { "—" }}")
@@ -259,12 +271,40 @@ private fun VoicePicker(state: NeuralTtsState, enabled: Boolean, onPick: (String
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             state.voices.forEach { voice ->
                 DropdownMenuItem(
-                    text = { Text(voice) },
+                    text = { Text("$voice${voiceHint(voice)}") },
                     onClick = { open = false; onPick(voice) },
                 )
             }
         }
     }
+}
+
+/**
+ * Kokoro encodes language and gender in the prefix: first letter the language
+ * (a/b English, i Italian, e Spanish, f French, p Portuguese, h Hindi, j
+ * Japanese, z Chinese), second the gender. Spelling it out saves the user
+ * guessing what "af_bella" is.
+ */
+private fun voiceHint(voice: String): String {
+    if (voice.length < 3 || voice[2] != '_') return ""
+    val language = when (voice[0]) {
+        'a' -> "inglese US"
+        'b' -> "inglese UK"
+        'i' -> "italiano"
+        'e' -> "spagnolo"
+        'f' -> "francese"
+        'p' -> "portoghese"
+        'h' -> "hindi"
+        'j' -> "giapponese"
+        'z' -> "cinese"
+        else -> return ""
+    }
+    val gender = when (voice[1]) {
+        'f' -> "F"
+        'm' -> "M"
+        else -> return " · $language"
+    }
+    return " · $language $gender"
 }
 
 @Composable
