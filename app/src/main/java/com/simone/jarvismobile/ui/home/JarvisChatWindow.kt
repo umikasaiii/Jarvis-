@@ -662,8 +662,21 @@ private fun AssetButton(
         }
     }
 
+    // The touch target is the whole box, not the artwork inside it. It used to
+    // sit on the 54dp image, so the lit ring around the disc — which reads as
+    // part of the button — did nothing, and stopping a running reply meant
+    // hitting a smaller circle than the one on screen.
     Box(
-        modifier = Modifier.size(62.dp).aspectRatio(1f),
+        modifier = Modifier
+            .size(62.dp)
+            .aspectRatio(1f)
+            .clip(CircleShape)
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+                enabled = enabled,
+                onClick = onClick,
+            ),
         contentAlignment = Alignment.Center,
     ) {
         if (glow > 0f) {
@@ -687,14 +700,7 @@ private fun AssetButton(
             modifier = Modifier
                 .size(54.dp)
                 .aspectRatio(1f)
-                .scale(press.value)
-                .clip(CircleShape)
-                .clickable(
-                    interactionSource = interaction,
-                    indication = null,
-                    enabled = enabled,
-                    onClick = onClick,
-                ),
+                .scale(press.value),
         )
         overlay()
     }
