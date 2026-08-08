@@ -3,6 +3,7 @@ package com.simone.jarvismobile.ui.agenda
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,14 +16,37 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Subject
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarBorder
+import androidx.compose.material.icons.filled.SubdirectoryArrowRight
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -30,6 +54,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -41,39 +66,44 @@ import java.time.LocalDate
 private val Cyan = Color(0xFF3FD8F0)
 private val Ink = Color(0xFFE3EFF5)
 private val Muted = Color(0xFF7C8B95)
-
-/** Today is aqua-green, tomorrow deep blue, anything later stays muted. */
+private val Gold = Color(0xFFF3C34C)
 private val Today = Color(0xFF4FE3C1)
 private val Tomorrow = Color(0xFF2C5BFF)
 private val Later = Color(0xFF6B7C87)
+private val CardBg = Color(0x660A1826)
 
-private fun dotFor(date: LocalDate?, today: LocalDate): Color = when (date) {
-    today -> Today
-    today.plusDays(1) -> Tomorrow
+private fun dotFor(date: LocalDate?, today: LocalDate): Color = when {
+    date == null -> Later
+    date == today -> Today
+    date == today.plusDays(1) -> Tomorrow
+    date.isBefore(today) -> Gold // overdue
     else -> Later
 }
 
 /**
- * Everything on the calendar, grouped by day.
- *
- * The point of the screen is the dot: tapping it completes the item on the spot.
- * Completing a reminder is the most frequent thing anyone does with one, and it
- * should not require opening a menu or dictating a sentence.
+ * The unified "Attività" section, in the shape of Google Tasks: list tabs across
+ * the top, a quick add row, tasks you can star, complete, give a due date and
+ * sub-tasks, and a collapsible "Completate" archive. All of it is the real
+ * `Agenda.md`, so appointments dictated by voice and tasks typed here are one
+ * list.
  */
 @Composable
 fun AgendaScreen(viewModel: AgendaViewModel = hiltViewModel()) {
-    val entries by viewModel.entries.collectAsStateWithLifecycle()
+    val lists by viewModel.lists.collectAsStateWithLifecycle()
+    val selected by viewModel.selectedList.collectAsStateWithLifecycle()
+    val view by viewModel.visible.collectAsStateWithLifecycle()
+    val message by viewModel.message.collectAsStateWithLifecycle()
     val today = LocalDate.now()
 
-    // Open items first, chronological; done ones sink to the bottom of their day.
-    // Undated tasks (no due date) group last, under "Senza data".
-    val groups: List<Pair<LocalDate?, List<AgendaEntry>>> = entries
-        .groupBy { it.date }
-        .toList()
-        .sortedWith(compareBy(nullsLast<LocalDate>()) { it.first })
-        .filter { (date, dayEntries) ->
-            date == null || !date.isBefore(today) || dayEntries.any { !it.done }
-        }
+    var newTask by remember { mutableStateOf("") }
+    var completedOpen by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf<AgendaEntry?>(null) }
+    var subtaskParent by remember { mutableStateOf<AgendaEntry?>(null) }
+    var newListDialog by remember { mutableStateOf(false) }
+
+    // The selected list may be one just created that has no tasks yet, so it
+    // isn't in the derived list; show it anyway so the tab stays visible.
+    val tabs = if (selected in lists) lists else lists + selected
 
     Column(
         modifier = Modifier
@@ -81,21 +111,81 @@ fun AgendaScreen(viewModel: AgendaViewModel = hiltViewModel()) {
             .background(
                 Brush.verticalGradient(listOf(Color(0xFF050C16), Color(0xFF081420), Color(0xFF03080E))),
             )
-            .padding(horizontal = 18.dp),
+            .padding(horizontal = 16.dp),
     ) {
         Spacer(Modifier.size(16.dp))
         Text("Attività", style = MaterialTheme.typography.headlineSmall, color = Cyan)
-        Text(
-            "Tocca il pallino per segnare un'attività come completata.",
-            color = Muted,
-            fontSize = 12.sp,
-        )
-        Spacer(Modifier.size(12.dp))
 
-        if (groups.isEmpty()) {
+        // --- List tabs ------------------------------------------------------
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            tabs.forEach { list ->
+                val active = list == selected
+                Text(
+                    text = list,
+                    color = if (active) Color(0xFF04121A) else Ink,
+                    fontSize = 13.sp,
+                    fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(if (active) Cyan else Color(0x330A1826))
+                        .clickable { viewModel.selectList(list) }
+                        .padding(horizontal = 14.dp, vertical = 7.dp),
+                )
+            }
+            Text(
+                text = "＋",
+                color = Cyan,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Color(0x330A1826))
+                    .clickable { newListDialog = true }
+                    .padding(horizontal = 14.dp, vertical = 5.dp),
+            )
+        }
+
+        // --- Quick add ------------------------------------------------------
+        if (selected != viewModel.starredTab) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OutlinedTextField(
+                    value = newTask,
+                    onValueChange = { newTask = it; viewModel.clearMessage() },
+                    modifier = Modifier.weight(1f),
+                    placeholder = { Text("Nuova attività in “$selected”") },
+                    singleLine = true,
+                )
+                Spacer(Modifier.width(8.dp))
+                IconButton(
+                    onClick = { viewModel.addTask(newTask); newTask = "" },
+                    enabled = newTask.isNotBlank(),
+                ) {
+                    Icon(Icons.Filled.Add, contentDescription = "Aggiungi", tint = Cyan)
+                }
+            }
+        }
+
+        if (message.isNotBlank()) {
+            Text(message, color = Gold, fontSize = 12.sp, modifier = Modifier.padding(bottom = 6.dp))
+        }
+
+        if (view.open.isEmpty() && view.done.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
-                    "Nessuna attività.\nDì «ricordami di … domani alle 15».",
+                    if (selected == viewModel.starredTab) {
+                        "Nessuna attività speciale.\nTocca la stella su un'attività."
+                    } else {
+                        "Nessuna attività.\nScrivine una qui sopra o dì «ricordami di …»."
+                    },
                     color = Muted,
                     fontSize = 14.sp,
                 )
@@ -103,88 +193,385 @@ fun AgendaScreen(viewModel: AgendaViewModel = hiltViewModel()) {
             return@Column
         }
 
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            groups.forEach { (date, dayEntries) ->
-                item(key = "h-$date") {
-                    Text(
-                        Agenda.humanDate(date, today).replaceFirstChar { it.uppercase() },
-                        color = dotFor(date, today),
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.padding(top = 14.dp, bottom = 4.dp),
+        LazyColumn(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            // Open tasks with their sub-tasks.
+            view.open.forEach { (task, children) ->
+                item(key = task.id) {
+                    TaskRow(
+                        entry = task,
+                        today = today,
+                        lists = lists.filterNot { it == viewModel.starredTab },
+                        onToggle = { viewModel.toggle(task) },
+                        onStar = { viewModel.toggleStar(task) },
+                        onOpen = { editing = task },
+                        onAddSubtask = { subtaskParent = task },
+                        onDue = { viewModel.setDue(task, it) },
+                        onMove = { viewModel.moveTo(task, it) },
+                        onDelete = { viewModel.delete(task) },
                     )
                 }
-                items(
-                    items = dayEntries.sortedWith(compareBy({ it.done }, { it.time })),
-                    key = { it.id },
-                ) { entry ->
-                    EntryRow(
-                        entry = entry,
-                        dot = dotFor(entry.date, today),
-                        onToggle = { viewModel.toggle(entry) },
+                items(children, key = { "c-${it.id}" }) { child ->
+                    SubtaskRow(
+                        entry = child,
+                        today = today,
+                        onToggle = { viewModel.toggle(child) },
+                        onDelete = { viewModel.delete(child) },
                     )
+                }
+                if (subtaskParent?.id == task.id) {
+                    item(key = "sub-input-${task.id}") {
+                        SubtaskInput(
+                            onAdd = { viewModel.addSubtask(task, it); subtaskParent = null },
+                            onCancel = { subtaskParent = null },
+                        )
+                    }
                 }
             }
+
+            // Completed archive.
+            if (view.done.isNotEmpty()) {
+                item(key = "completed-header") {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { completedOpen = !completedOpen }
+                            .padding(top = 14.dp, bottom = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            if (completedOpen) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                            contentDescription = null,
+                            tint = Muted,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            "Completate (${view.done.size})",
+                            color = Muted,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                }
+                if (completedOpen) {
+                    items(view.done, key = { "d-${it.id}" }) { entry ->
+                        CompletedRow(
+                            entry = entry,
+                            today = today,
+                            onToggle = { viewModel.toggle(entry) },
+                            onDelete = { viewModel.delete(entry) },
+                        )
+                    }
+                }
+            }
+
             item("tail") { Spacer(Modifier.size(24.dp)) }
+        }
+    }
+
+    editing?.let { entry ->
+        TaskDetailDialog(
+            entry = entry,
+            onDismiss = { editing = null },
+            onSave = { title, notes ->
+                viewModel.rename(entry, title)
+                viewModel.setNotes(entry, notes)
+                editing = null
+            },
+            onDelete = { viewModel.delete(entry); editing = null },
+        )
+    }
+
+    if (newListDialog) {
+        NewListDialog(
+            onDismiss = { newListDialog = false },
+            onCreate = { name ->
+                viewModel.selectList(name)
+                newListDialog = false
+            },
+        )
+    }
+}
+
+@Composable
+private fun NewListDialog(onDismiss: () -> Unit, onCreate: (String) -> Unit) {
+    var name by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Nuova lista") },
+        text = {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("Nome") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { if (name.isNotBlank()) onCreate(name.trim()) }) { Text("Crea") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Annulla") } },
+    )
+}
+
+@Composable
+private fun TaskRow(
+    entry: AgendaEntry,
+    today: LocalDate,
+    lists: List<String>,
+    onToggle: () -> Unit,
+    onStar: () -> Unit,
+    onOpen: () -> Unit,
+    onAddSubtask: () -> Unit,
+    onDue: (LocalDate?) -> Unit,
+    onMove: (String) -> Unit,
+    onDelete: () -> Unit,
+) {
+    val dot = dotFor(entry.date, today)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(CardBg)
+            .padding(start = 8.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CompleteDot(done = entry.done, color = dot, onToggle = onToggle)
+        Spacer(Modifier.width(4.dp))
+        Column(Modifier.weight(1f).clickable(onClick = onOpen)) {
+            Text(entry.text, color = Ink, fontSize = 15.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            if (entry.notes.isNotBlank()) {
+                Text(entry.notes, color = Muted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            if (entry.date != null) {
+                Text(
+                    Agenda.humanDate(entry.date, today).replaceFirstChar { it.uppercase() } +
+                        (entry.time?.let { " · " + Agenda.humanTime(it) } ?: ""),
+                    color = dot,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+        }
+        IconButton(onClick = onStar, modifier = Modifier.size(36.dp)) {
+            Icon(
+                if (entry.starred) Icons.Filled.Star else Icons.Filled.StarBorder,
+                contentDescription = "Speciale",
+                tint = if (entry.starred) Gold else Muted,
+                modifier = Modifier.size(19.dp),
+            )
+        }
+        TaskMenu(
+            lists = lists,
+            onAddSubtask = onAddSubtask,
+            onDue = onDue,
+            onMove = onMove,
+            onDelete = onDelete,
+        )
+    }
+}
+
+@Composable
+private fun CompleteDot(done: Boolean, color: Color, onToggle: () -> Unit) {
+    Box(
+        modifier = Modifier.size(40.dp).clip(CircleShape).clickable(onClick = onToggle),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (done) {
+            Box(Modifier.size(18.dp).clip(CircleShape).background(color), contentAlignment = Alignment.Center) {
+                Icon(Icons.Filled.Check, contentDescription = "Fatto", tint = Color(0xFF04121A), modifier = Modifier.size(12.dp))
+            }
+        } else {
+            Box(Modifier.size(18.dp).clip(CircleShape).border(2.dp, color, CircleShape))
         }
     }
 }
 
 @Composable
-private fun EntryRow(entry: AgendaEntry, dot: Color, onToggle: () -> Unit) {
+private fun TaskMenu(
+    lists: List<String>,
+    onAddSubtask: () -> Unit,
+    onDue: (LocalDate?) -> Unit,
+    onMove: (String) -> Unit,
+    onDelete: () -> Unit,
+) {
+    var open by remember { mutableStateOf(false) }
+    var dueOpen by remember { mutableStateOf(false) }
+    var moveOpen by remember { mutableStateOf(false) }
+    val today = LocalDate.now()
+    Box {
+        IconButton(onClick = { open = true }, modifier = Modifier.size(36.dp)) {
+            Icon(Icons.Filled.MoreVert, contentDescription = "Altro", tint = Muted, modifier = Modifier.size(19.dp))
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            DropdownMenuItem(
+                text = { Text("Aggiungi sottoattività") },
+                leadingIcon = { Icon(Icons.Filled.SubdirectoryArrowRight, null) },
+                onClick = { open = false; onAddSubtask() },
+            )
+            DropdownMenuItem(
+                text = { Text("Scadenza") },
+                leadingIcon = { Icon(Icons.Filled.CalendarMonth, null) },
+                onClick = { open = false; dueOpen = true },
+            )
+            DropdownMenuItem(
+                text = { Text("Sposta in…") },
+                leadingIcon = { Icon(Icons.Filled.FolderOpen, null) },
+                onClick = { open = false; moveOpen = true },
+            )
+            DropdownMenuItem(
+                text = { Text("Elimina") },
+                leadingIcon = { Icon(Icons.Filled.Delete, null) },
+                onClick = { open = false; onDelete() },
+            )
+        }
+        DropdownMenu(expanded = dueOpen, onDismissRequest = { dueOpen = false }) {
+            DropdownMenuItem(text = { Text("Oggi") }, onClick = { dueOpen = false; onDue(today) })
+            DropdownMenuItem(text = { Text("Domani") }, onClick = { dueOpen = false; onDue(today.plusDays(1)) })
+            DropdownMenuItem(text = { Text("Prossima settimana") }, onClick = { dueOpen = false; onDue(today.plusWeeks(1)) })
+            DropdownMenuItem(text = { Text("Nessuna data") }, onClick = { dueOpen = false; onDue(null) })
+        }
+        DropdownMenu(expanded = moveOpen, onDismissRequest = { moveOpen = false }) {
+            lists.forEach { list ->
+                DropdownMenuItem(text = { Text(list) }, onClick = { moveOpen = false; onMove(list) })
+            }
+        }
+    }
+}
+
+@Composable
+private fun SubtaskRow(
+    entry: AgendaEntry,
+    today: LocalDate,
+    onToggle: () -> Unit,
+    onDelete: () -> Unit,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
-            .background(Color(0x660A1826))
-            .padding(horizontal = 12.dp, vertical = 12.dp),
+            .padding(start = 28.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(Color(0x440A1826))
+            .padding(start = 6.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // The dot IS the control. 40dp of touch target around a 16dp mark, so it
-        // is comfortably tappable without a big checkbox dominating the row.
-        Box(
-            modifier = Modifier
-                .size(40.dp)
-                .clip(CircleShape)
-                .clickable(onClick = onToggle),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (entry.done) {
-                Box(
-                    Modifier.size(18.dp).clip(CircleShape).background(dot),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        Icons.Filled.Check,
-                        contentDescription = "Segna come da fare",
-                        tint = Color(0xFF04121A),
-                        modifier = Modifier.size(12.dp),
-                    )
-                }
-            } else {
-                Box(
-                    Modifier
-                        .size(18.dp)
-                        .clip(CircleShape)
-                        .border(2.dp, dot, CircleShape),
-                )
-            }
+        Icon(Icons.Filled.SubdirectoryArrowRight, null, tint = Muted, modifier = Modifier.size(14.dp))
+        CompleteDot(done = entry.done, color = dotFor(entry.date, today), onToggle = onToggle)
+        Text(
+            entry.text,
+            color = if (entry.done) Muted else Ink,
+            fontSize = 14.sp,
+            textDecoration = if (entry.done) TextDecoration.LineThrough else null,
+            modifier = Modifier.weight(1f),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
+            Icon(Icons.Filled.Delete, contentDescription = "Elimina", tint = Muted, modifier = Modifier.size(16.dp))
         }
-        Spacer(Modifier.width(6.dp))
+    }
+}
+
+@Composable
+private fun CompletedRow(
+    entry: AgendaEntry,
+    today: LocalDate,
+    onToggle: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(Color(0x330A1826))
+            .padding(start = 8.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CompleteDot(done = true, color = Later, onToggle = onToggle)
+        Spacer(Modifier.width(4.dp))
         Column(Modifier.weight(1f)) {
             Text(
                 entry.text,
-                color = if (entry.done) Muted else Ink,
-                fontSize = 15.sp,
-                textDecoration = if (entry.done) TextDecoration.LineThrough else null,
+                color = Muted,
+                fontSize = 14.sp,
+                textDecoration = TextDecoration.LineThrough,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
-            val time = entry.time?.let { Agenda.humanTime(it) }
-            val alerts = entry.alerts.size
-            val sub = listOfNotNull(
-                time,
-                if (alerts > 0) "$alerts avviso${if (alerts > 1) "" else ""}" else null,
-            ).joinToString(" · ")
-            if (sub.isNotBlank()) Text(sub, color = Muted, fontSize = 11.sp)
+            entry.completedAt?.let {
+                Text(
+                    "Completata: " + Agenda.humanDate(it, today),
+                    color = Muted,
+                    fontSize = 10.sp,
+                )
+            }
+        }
+        IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
+            Icon(Icons.Filled.Delete, contentDescription = "Elimina", tint = Muted, modifier = Modifier.size(16.dp))
         }
     }
+}
+
+@Composable
+private fun SubtaskInput(onAdd: (String) -> Unit, onCancel: () -> Unit) {
+    var text by remember { mutableStateOf("") }
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(start = 28.dp, top = 2.dp, bottom = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        OutlinedTextField(
+            value = text,
+            onValueChange = { text = it },
+            modifier = Modifier.weight(1f),
+            placeholder = { Text("Sottoattività") },
+            singleLine = true,
+        )
+        IconButton(onClick = { if (text.isNotBlank()) onAdd(text) }, enabled = text.isNotBlank()) {
+            Icon(Icons.Filled.Add, contentDescription = "Aggiungi", tint = Cyan)
+        }
+        IconButton(onClick = onCancel) {
+            Icon(Icons.Filled.ExpandLess, contentDescription = "Chiudi", tint = Muted)
+        }
+    }
+}
+
+@Composable
+private fun TaskDetailDialog(
+    entry: AgendaEntry,
+    onDismiss: () -> Unit,
+    onSave: (title: String, notes: String) -> Unit,
+    onDelete: () -> Unit,
+) {
+    var title by remember { mutableStateOf(entry.text) }
+    var notes by remember { mutableStateOf(entry.notes) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Dettagli attività") },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = { title = it },
+                    label = { Text("Titolo") },
+                    leadingIcon = { Icon(Icons.Filled.Edit, null) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                )
+                Spacer(Modifier.size(8.dp))
+                OutlinedTextField(
+                    value = notes,
+                    onValueChange = { notes = it },
+                    label = { Text("Note") },
+                    leadingIcon = { Icon(Icons.AutoMirrored.Filled.Subject, null) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = { onSave(title, notes) }) { Text("Salva") } },
+        dismissButton = { TextButton(onClick = onDelete) { Text("Elimina") } },
+    )
 }

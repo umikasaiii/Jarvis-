@@ -106,7 +106,12 @@ class AgendaRepository @Inject constructor(
     suspend fun setDone(id: String, done: Boolean): AgendaEntry? = mutex.withLock {
         val current = loadLocked()
         val target = current.firstOrNull { it.id == id } ?: return@withLock null
-        val updatedEntry = target.copy(done = done)
+        // Stamp the completion date so the "Completate" section can show when,
+        // like Google Tasks; clear it when the item is re-opened.
+        val updatedEntry = target.copy(
+            done = done,
+            completedAt = if (done) LocalDate.now() else null,
+        )
         val updated = Agenda.sorted(current.map { if (it.id == id) updatedEntry else it })
         if (!writeRaw(Agenda.renderFile(updated))) return@withLock null
         _entries.value = updated
@@ -114,6 +119,54 @@ class AgendaRepository @Inject constructor(
         // A re-opened item gets its alerts scheduled again; a completed one does not.
         reminderScheduler.sync(updated)
         updatedEntry
+    }
+
+    /**
+     * Applies [transform] to one entry by id and persists — the general edit the
+     * task UI needs (rename, star, move to another list, retype notes, change
+     * due date). Keeps the id stable so nothing is duplicated.
+     */
+    suspend fun update(id: String, transform: (AgendaEntry) -> AgendaEntry): AgendaEntry? = mutex.withLock {
+        val current = loadLocked()
+        val target = current.firstOrNull { it.id == id } ?: return@withLock null
+        val updatedEntry = transform(target).copy(id = id)
+        val updated = Agenda.sorted(current.map { if (it.id == id) updatedEntry else it })
+        if (!writeRaw(Agenda.renderFile(updated))) return@withLock null
+        _entries.value = updated
+        reminderScheduler.cancelEntry(id)
+        reminderScheduler.sync(updated)
+        updatedEntry
+    }
+
+    /** Removes one entry (and any of its sub-tasks) by id. */
+    suspend fun removeById(id: String): Boolean = mutex.withLock {
+        val current = loadLocked()
+        if (current.none { it.id == id }) return@withLock false
+        val updated = current.filterNot { it.id == id || it.parentId == id }
+        if (!writeRaw(Agenda.renderFile(updated))) return@withLock false
+        _entries.value = updated
+        reminderScheduler.cancelEntry(id)
+        reminderScheduler.sync(updated)
+        true
+    }
+
+    /** Adds a child task under [parentId], inheriting the parent's list. */
+    suspend fun addSubtask(parentId: String, title: String): AgendaEntry? = mutex.withLock {
+        val trimmed = title.trim()
+        if (trimmed.isEmpty()) return@withLock null
+        val current = loadLocked()
+        val parent = current.firstOrNull { it.id == parentId } ?: return@withLock null
+        val child = AgendaEntry(
+            date = null,
+            text = trimmed,
+            list = parent.list,
+            parentId = parentId,
+            order = (current.filter { it.parentId == parentId }.maxOfOrNull { it.order } ?: 0) + 1,
+        )
+        val updated = Agenda.sorted(current + child)
+        if (!writeRaw(Agenda.renderFile(updated))) return@withLock null
+        _entries.value = updated
+        child
     }
 
     /** Removes the first entry whose text contains [needle]. */
