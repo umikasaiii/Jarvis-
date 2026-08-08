@@ -83,6 +83,27 @@ class PiperVoiceConfigTest {
     }
 
     @Test
+    fun `a precomposed affricate symbol matches the decomposed g2p output`() {
+        val c = PiperConfigReader.parse(config())!!
+        // The config keys the affricate as the single ʧ (id 51); the G2P emits
+        // t + ʃ. Longest-match must use the affricate id, not t(34)+ʃ(50) — this
+        // is the ce/ci, ge/gi sound that used to be lost.
+        assertEquals(listOf(1, 51, 0, 2), c.encode("tʃ").toList())
+    }
+
+    @Test
+    fun `a tie-bar affricate key is normalised and still matches`() {
+        val json = "{\"phoneme_id_map\":{" +
+            "\"_\":[0],\"^\":[1],\"\$\":[2]," +
+            "\"t\":[34],\"ʃ\":[50],\"t͡ʃ\":[70]," +
+            "\"a\":[14],\"b\":[15],\"d\":[17],\"e\":[18],\"f\":[19]," +
+            "\"i\":[23],\"k\":[25],\"l\":[26],\"m\":[27],\"n\":[28]}}"
+        val c = PiperConfigReader.parse(json)!!
+        // "t͡ʃ" (with the U+0361 tie bar) normalises to "tʃ" and wins over bare t.
+        assertEquals(listOf(1, 70, 0, 2), c.encode("tʃ").toList())
+    }
+
+    @Test
     fun `a file that is not a piper config is refused`() {
         assertNull(PiperConfigReader.parse("""{"vocab": {"a": 1}}"""))
         assertNull(PiperConfigReader.parse("not json at all"))

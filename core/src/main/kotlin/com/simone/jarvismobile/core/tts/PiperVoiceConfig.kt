@@ -29,12 +29,21 @@ data class PiperVoiceConfig(
     /** Speaker names in id order; a single-speaker voice reports one entry. */
     val speakers: List<String>,
     val speakerIds: Map<String, Int>,
-    /** IPA character to token ids. A phoneme can map to more than one id. */
-    val phonemeIds: Map<Char, List<Int>>,
+    /**
+     * Phoneme SYMBOL to token ids. A symbol may be more than one codepoint —
+     * espeak/Piper Italian configs key affricates as `tʃ`/`dʒ` (and sometimes
+     * with a tie bar), which the old single-`Char` map dropped, taking the
+     * ce/ci, ge/gi, gn and z sounds down with it. Tie bars are normalised away
+     * at parse time so the tie-less phonemes the G2P emits still match.
+     */
+    val phonemeIds: Map<String, List<Int>>,
     /** espeak voice the model was trained on, e.g. "it". */
     val language: String,
 ) {
     val isMultiSpeaker: Boolean get() = numSpeakers > 1
+
+    /** Longest key, so [encode] knows how far to look ahead for a match. */
+    private val maxKeyLength: Int = phonemeIds.keys.maxOfOrNull { it.length }?.coerceAtLeast(1) ?: 1
 
     fun speakerId(name: String): Int = speakerIds[name] ?: 0
 
@@ -44,24 +53,64 @@ data class PiperVoiceConfig(
      * interleaved pad is not decoration — the model was trained on it, and
      * leaving it out produces audio that is recognisably wrong rather than
      * merely worse.
+     *
+     * Matching is greedy longest-first, so a multi-codepoint symbol like `tʃ`
+     * wins over the bare `t`. A codepoint the table doesn't cover is skipped
+     * rather than mapped to something wrong.
      */
     fun encode(phonemes: String): IntArray {
         val out = ArrayList<Int>(phonemes.length * 2 + 4)
         phonemeIds[BOS]?.let(out::addAll)
         val pad = phonemeIds[PAD]
-        for (c in phonemes) {
-            val ids = phonemeIds[c] ?: continue
-            out.addAll(ids)
-            pad?.let(out::addAll)
+        var i = 0
+        while (i < phonemes.length) {
+            var matchedLen = 0
+            var len = minOf(maxKeyLength, phonemes.length - i)
+            while (len >= 1) {
+                val ids = phonemeIds[phonemes.substring(i, i + len)]
+                if (ids != null) {
+                    out.addAll(ids)
+                    pad?.let(out::addAll)
+                    matchedLen = len
+                    break
+                }
+                len--
+            }
+            i += if (matchedLen > 0) matchedLen else 1
         }
         phonemeIds[EOS]?.let(out::addAll)
         return out.toIntArray()
     }
 
     companion object {
-        const val PAD = '_'
-        const val BOS = '^'
-        const val EOS = '$'
+        const val PAD = "_"
+        const val BOS = "^"
+        const val EOS = "$"
+
+        /** Combining tie bars that espeak may wrap around affricates. */
+        private val TIE_BARS = charArrayOf('͡', '͜')
+
+        /**
+         * Precomposed affricate codepoints → the two-codepoint form the Italian
+         * G2P actually emits. Without this a config that keys "ciao" as the single
+         * ʧ (U+02A7) never matches the G2P's t + ʃ, and every c/g/z affricate is
+         * lost — which is most of what makes Italian sound Italian.
+         */
+        private val PRECOMPOSED = mapOf(
+            'ʦ' to "ts", // ʦ
+            'ʧ' to "tʃ", // ʧ
+            'ʣ' to "dz", // ʣ
+            'ʤ' to "dʒ", // ʤ
+        )
+
+        /** Tie bars removed and precomposed affricates decomposed to match the G2P. */
+        fun normalizeSymbol(symbol: String): String {
+            val noTies = if (symbol.any { it in TIE_BARS }) symbol.filterNot { it in TIE_BARS } else symbol
+            if (noTies.none { it in PRECOMPOSED }) return noTies
+            return buildString {
+                for (c in noTies) append(PRECOMPOSED[c] ?: c.toString())
+            }
+        }
     }
 }
 
@@ -75,13 +124,13 @@ object PiperConfigReader {
 
         val phonemeIds = (root["phoneme_id_map"] as? JsonObject)
             ?.mapNotNull { (symbol, value) ->
-                // Keys are single characters; multi-character entries are not
-                // phonemes this pipeline can emit, so they are skipped rather
-                // than mangled.
-                val c = symbol.singleOrNull() ?: return@mapNotNull null
+                // Keep every symbol, single- or multi-codepoint, normalising tie
+                // bars so the G2P's tie-less "tʃ"/"dʒ" match. Empty keys are junk.
+                val key = PiperVoiceConfig.normalizeSymbol(symbol).takeIf { it.isNotEmpty() }
+                    ?: return@mapNotNull null
                 val ids = (value as? JsonArray)?.mapNotNull { it.jsonPrimitive.intOrNull }
                     ?: (value as? JsonPrimitive)?.intOrNull?.let { listOf(it) }
-                if (ids.isNullOrEmpty()) null else c to ids
+                if (ids.isNullOrEmpty()) null else key to ids
             }
             ?.toMap()
             ?: return null
