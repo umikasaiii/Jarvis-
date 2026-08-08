@@ -33,6 +33,10 @@ import com.simone.jarvismobile.core.automation.AutomationPhrase
 import com.simone.jarvismobile.core.speech.Emotion
 import com.simone.jarvismobile.core.speech.ExpressivePlanner
 import com.simone.jarvismobile.core.speech.SpeechStyle
+import com.simone.jarvismobile.core.translate.LiveTranslatorCommand
+import com.simone.jarvismobile.core.translate.LiveTranslatorCommands
+import com.simone.jarvismobile.translate.LiveTranslatorManager
+import com.simone.jarvismobile.translate.LiveTranslatorRepository
 import com.simone.jarvismobile.tools.CommandMatcher
 import com.simone.jarvismobile.tools.ItalianNumbers
 import com.simone.jarvismobile.tools.LlmIntentClassifier
@@ -93,6 +97,8 @@ class SessionCoordinator @Inject constructor(
     private val agenda: com.simone.jarvismobile.agenda.AgendaRepository,
     private val automations: AutomationRepository,
     private val conversationMemory: ConversationMemoryStore,
+    private val liveTranslator: LiveTranslatorManager,
+    private val liveTranslatorRepo: LiveTranslatorRepository,
 ) {
 
     /** Long-lived scope for fire-and-forget persistence; lives as long as the app. */
@@ -394,6 +400,13 @@ class SessionCoordinator @Inject constructor(
         // An offer JARVIS made on the previous turn takes precedence: the user is
         // answering it, not starting something new.
         answerPendingOffer(transcript)?.let { return it }
+
+        // Live Translator voice control: "avvia traduzione live italiano
+        // giapponese", "ferma la traduzione", "scambia le lingue". Handled before
+        // the command/LLM path so a translator phrase never becomes a chat turn.
+        if (pendingConfirmation == null && pendingSlot == null && !awaitingAnswer) {
+            handleTranslatorCommand(transcript)?.let { return it }
+        }
 
         // "Sono andato dal dentista" is a statement, but if the dentist is an open
         // item the useful move is to offer to tick it off rather than leave a
@@ -1100,6 +1113,37 @@ class SessionCoordinator @Inject constructor(
             "- [" + p.chunk.citation + "] " + p.chunk.text.replace('\n', ' ').trim().take(KNOWLEDGE_CHARS)
         }
     }
+
+    /**
+     * Recognises and executes a Live Translator voice/chat command. Returns the
+     * spoken confirmation, or null when the utterance isn't a translator command so
+     * the normal pipeline continues. Starting the interpreter runs a separate
+     * offline pipeline (STT → ML Kit translate → TTS) that never touches the LLM.
+     */
+    private suspend fun handleTranslatorCommand(transcript: String): String? =
+        when (val cmd = LiveTranslatorCommands.parse(transcript)) {
+            is LiveTranslatorCommand.Start -> {
+                val session = runCatching {
+                    liveTranslatorRepo.buildSession(a = cmd.source, b = cmd.target)
+                }.getOrNull() ?: return "Non sono riuscito ad avviare il traduttore."
+                liveTranslator.start(session)
+                _diagnostic.value = "traduttore live avviato"
+                "Traduttore live avviato tra ${session.languageA.display} e " +
+                    "${session.languageB.display}. Apri il Traduttore per vederlo."
+            }
+            LiveTranslatorCommand.Stop -> {
+                if (!liveTranslator.isRunning) return null
+                liveTranslator.stop()
+                _diagnostic.value = "traduttore live fermato"
+                "Ho fermato il traduttore live."
+            }
+            LiveTranslatorCommand.Swap -> {
+                if (!liveTranslator.isRunning) return null
+                liveTranslator.swap()
+                "Ho invertito le lingue del traduttore."
+            }
+            null -> null
+        }
 
     /** Indexes the offline library in the background if one is configured. */
     suspend fun ensureKnowledgeReady() = knowledge.ensureBuilt()

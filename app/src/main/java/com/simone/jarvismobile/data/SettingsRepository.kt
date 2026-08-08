@@ -1,6 +1,9 @@
 package com.simone.jarvismobile.data
 
 import com.simone.jarvismobile.core.speech.SpeechStyle
+import com.simone.jarvismobile.core.translate.TranslationAudioOutput
+import com.simone.jarvismobile.core.translate.TranslationLanguage
+import com.simone.jarvismobile.core.translate.TranslationMode
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
@@ -51,6 +54,14 @@ class SettingsRepository @Inject constructor(
         val AUTO_EXPRESSIVE = booleanPreferencesKey("tts_auto_expressive")
         val EXPRESSIVE_INTENSITY = stringPreferencesKey("tts_expressive_intensity")
         val EXPRESSIVE_MANUAL_STYLE = stringPreferencesKey("tts_expressive_manual_style")
+
+        // --- Live Translator (Phase: live translation) ------------------
+        val TRANSLATE_LANG_A = stringPreferencesKey("translate_lang_a")
+        val TRANSLATE_LANG_B = stringPreferencesKey("translate_lang_b")
+        val TRANSLATE_MODE = stringPreferencesKey("translate_mode")
+        val TRANSLATE_TTS = booleanPreferencesKey("translate_tts")
+        val TRANSLATE_WIFI_ONLY = booleanPreferencesKey("translate_wifi_only")
+        val TRANSLATE_AUDIO_OUTPUT = stringPreferencesKey("translate_audio_output")
 
         // --- external neural voice (Phase 4b) ---------------------------
         val TTS_ENGINE_ID = stringPreferencesKey("tts_engine_id")
@@ -406,6 +417,63 @@ class SettingsRepository @Inject constructor(
 
     suspend fun setSpeakBackgroundResponses(value: Boolean) {
         context.settingsDataStore.edit { it[Keys.SPEAK_BACKGROUND_RESPONSES] = value }
+    }
+
+    // --- Live Translator -------------------------------------------------
+    // Only preferences are persisted, never a transcript or any translated
+    // content (docs/PRIVACY.md): the last language pair, the preferred mode,
+    // whether to speak, Wi-Fi-only model downloads and the audio sink.
+
+    val translateLanguageA: Flow<TranslationLanguage> =
+        context.settingsDataStore.data.map {
+            it[Keys.TRANSLATE_LANG_A]?.let(TranslationLanguage::fromCode) ?: TranslationLanguage.ITALIAN
+        }
+
+    val translateLanguageB: Flow<TranslationLanguage> =
+        context.settingsDataStore.data.map {
+            it[Keys.TRANSLATE_LANG_B]?.let(TranslationLanguage::fromCode) ?: TranslationLanguage.ENGLISH
+        }
+
+    val translateMode: Flow<TranslationMode> =
+        context.settingsDataStore.data.map {
+            it[Keys.TRANSLATE_MODE]?.let { name -> runCatching { TranslationMode.valueOf(name) }.getOrNull() }
+                ?: TranslationMode.AUTO
+        }
+
+    val translateTtsEnabled: Flow<Boolean> =
+        context.settingsDataStore.data.map { it[Keys.TRANSLATE_TTS] ?: true }
+
+    val translateWifiOnly: Flow<Boolean> =
+        context.settingsDataStore.data.map { it[Keys.TRANSLATE_WIFI_ONLY] ?: true }
+
+    val translateAudioOutput: Flow<TranslationAudioOutput> =
+        context.settingsDataStore.data.map {
+            it[Keys.TRANSLATE_AUDIO_OUTPUT]?.let { name ->
+                runCatching { TranslationAudioOutput.valueOf(name) }.getOrNull()
+            } ?: TranslationAudioOutput.AUTO
+        }
+
+    suspend fun setTranslatePair(a: TranslationLanguage, b: TranslationLanguage) {
+        context.settingsDataStore.edit {
+            it[Keys.TRANSLATE_LANG_A] = a.code
+            it[Keys.TRANSLATE_LANG_B] = b.code
+        }
+    }
+
+    suspend fun setTranslateMode(mode: TranslationMode) {
+        context.settingsDataStore.edit { it[Keys.TRANSLATE_MODE] = mode.name }
+    }
+
+    suspend fun setTranslateTtsEnabled(value: Boolean) {
+        context.settingsDataStore.edit { it[Keys.TRANSLATE_TTS] = value }
+    }
+
+    suspend fun setTranslateWifiOnly(value: Boolean) {
+        context.settingsDataStore.edit { it[Keys.TRANSLATE_WIFI_ONLY] = value }
+    }
+
+    suspend fun setTranslateAudioOutput(value: TranslationAudioOutput) {
+        context.settingsDataStore.edit { it[Keys.TRANSLATE_AUDIO_OUTPUT] = value.name }
     }
 
     companion object {

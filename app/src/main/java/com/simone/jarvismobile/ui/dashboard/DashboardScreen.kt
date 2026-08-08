@@ -59,6 +59,7 @@ import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.AlertDialog
@@ -195,6 +196,7 @@ fun DashboardScreen(
     onOpenAgenda: () -> Unit = {},
     onOpenAutomations: () -> Unit = {},
     onOpenModels: () -> Unit = {},
+    onOpenTranslator: () -> Unit = {},
     viewModel: DashboardViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -388,6 +390,29 @@ fun DashboardScreen(
                         ?: "Nessuna regola",
                     accent = Amber,
                     onClick = onOpenAutomations,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+
+            // Live Translator: a full-width entry point, like Automations. Shows
+            // how many of the current pair's offline models are ready so the user
+            // knows before they open it whether it works in airplane mode.
+            val translatorVm: com.simone.jarvismobile.ui.livetranslate.LiveTranslatorViewModel = hiltViewModel()
+            val trPairA by translatorVm.languageA.collectAsStateWithLifecycle()
+            val trPairB by translatorVm.languageB.collectAsStateWithLifecycle()
+            val trModels by translatorVm.modelStatuses.collectAsStateWithLifecycle()
+            val trReady = listOf(trPairA, trPairB).count {
+                trModels[it] == com.simone.jarvismobile.translate.ModelStatus.DOWNLOADED
+            }
+            Row(Modifier.fillMaxWidth()) {
+                StatTile(
+                    icon = Icons.Filled.Translate,
+                    label = "Traduttore Live",
+                    value = "${trPairA.code.uppercase()}⇄${trPairB.code.uppercase()}",
+                    unit = "coppia",
+                    footer = if (trReady >= 2) "Pronto offline" else "Scarica i modelli",
+                    accent = Cyan,
+                    onClick = onOpenTranslator,
                     modifier = Modifier.weight(1f),
                 )
             }

@@ -132,6 +132,11 @@ dependencies {
     implementation(libs.androidx.documentfile)
     implementation(libs.onnxruntime.android)
 
+    // Live Translator: ML Kit on-device translation + language identification.
+    // Models are downloaded at runtime via RemoteModelManager, never bundled.
+    implementation("com.google.mlkit:translate:17.0.3")
+    implementation("com.google.mlkit:language-id:17.0.6")
+
     // Unit tests.
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

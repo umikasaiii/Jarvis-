@@ -54,6 +54,7 @@ fun SettingsScreen(
     onOpenModels: () -> Unit = {},
     onOpenMemory: () -> Unit = {},
     onOpenAutomations: () -> Unit = {},
+    onOpenTranslator: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val name by viewModel.assistantName.collectAsStateWithLifecycle()
@@ -523,6 +524,8 @@ fun SettingsScreen(
             }
         }
 
+        TranslatorSettingsSection(onOpenTranslator = onOpenTranslator)
+
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("In arrivo (fasi successive)", style = MaterialTheme.typography.titleMedium)
@@ -556,6 +559,57 @@ fun SettingsScreen(
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth(),
         )
+    }
+}
+
+/**
+ * Live Translator settings: the offline language models (download/delete),
+ * Wi-Fi-only downloads, spoken output, and a shortcut into the translator itself.
+ * Self-contained (its own ViewModel) so it doesn't bloat [SettingsViewModel].
+ */
+@Composable
+private fun TranslatorSettingsSection(
+    onOpenTranslator: () -> Unit,
+    viewModel: com.simone.jarvismobile.ui.livetranslate.LiveTranslatorViewModel = hiltViewModel(),
+) {
+    val statuses by viewModel.modelStatuses.collectAsStateWithLifecycle()
+    val wifiOnly by viewModel.wifiOnly.collectAsStateWithLifecycle()
+    val ttsEnabled by viewModel.ttsEnabled.collectAsStateWithLifecycle()
+
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("Traduttore Live", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Traduzione vocale offline tra due lingue. Scarica una volta i modelli, " +
+                    "poi funziona anche in modalità aereo.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Text("Lingue offline", style = MaterialTheme.typography.titleSmall)
+            com.simone.jarvismobile.core.translate.TranslationLanguage.entries.forEach { lang ->
+                Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    Text(lang.display, modifier = Modifier.weight(1f))
+                    when (statuses[lang]) {
+                        com.simone.jarvismobile.translate.ModelStatus.DOWNLOADED ->
+                            TextButton(onClick = { viewModel.deleteModel(lang) }) { Text("Rimuovi") }
+                        com.simone.jarvismobile.translate.ModelStatus.DOWNLOADING ->
+                            Text("Scarico…", style = MaterialTheme.typography.labelMedium)
+                        else ->
+                            TextButton(onClick = { viewModel.downloadModel(lang) }) { Text("Scarica") }
+                    }
+                }
+            }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Switch(checked = wifiOnly, onCheckedChange = viewModel::setWifiOnly)
+                Text("  Scarica solo su Wi-Fi")
+            }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Switch(checked = ttsEnabled, onCheckedChange = viewModel::setTtsEnabled)
+                Text("  Leggi la traduzione ad alta voce")
+            }
+            OutlinedButton(onClick = onOpenTranslator, modifier = Modifier.fillMaxWidth()) {
+                Text("Apri il Traduttore Live")
+            }
+        }
     }
 }
 

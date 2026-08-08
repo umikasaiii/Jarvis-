@@ -55,6 +55,7 @@ import com.simone.jarvismobile.ui.dashboard.DashboardScreen
 import com.simone.jarvismobile.ui.diagnostics.DiagnosticsScreen
 import com.simone.jarvismobile.ui.automation.AutomationsScreen
 import com.simone.jarvismobile.ui.home.JarvisChatWindow
+import com.simone.jarvismobile.ui.livetranslate.LiveTranslatorScreen
 import com.simone.jarvismobile.ui.memory.MemoryScreen
 import com.simone.jarvismobile.ui.models.ModelsScreen
 import com.simone.jarvismobile.ui.settings.SettingsScreen
@@ -69,7 +70,7 @@ private enum class Tab(val label: String, val icon: ImageVector) {
     IMPOSTAZIONI("Impostazioni", Icons.Filled.Settings),
 }
 
-private enum class Overlay { CHAT, MODELS, MEMORY, DIAGNOSTICS, AUTOMATIONS }
+private enum class Overlay { CHAT, MODELS, MEMORY, DIAGNOSTICS, AUTOMATIONS, TRANSLATOR }
 
 /**
  * Top-level navigation. The dashboard shell is always present; the written chat
@@ -184,6 +185,7 @@ fun JarvisApp(
                         onOpenAgenda = { tab = Tab.NOTIFICHE },
                         onOpenAutomations = { overlay = Overlay.AUTOMATIONS },
                         onOpenModels = { overlay = Overlay.MODELS },
+                        onOpenTranslator = { overlay = Overlay.TRANSLATOR },
                     )
                     Tab.CHAT -> Unit
                     Tab.COMANDI -> CommandsScreen()
@@ -193,6 +195,7 @@ fun JarvisApp(
                         onOpenModels = { overlay = Overlay.MODELS },
                         onOpenMemory = { overlay = Overlay.MEMORY },
                         onOpenAutomations = { overlay = Overlay.AUTOMATIONS },
+                        onOpenTranslator = { overlay = Overlay.TRANSLATOR },
                     )
                 }
             }
@@ -245,7 +248,8 @@ fun JarvisApp(
 
         // Full-screen overlays (opaque) for the secondary screens.
         if (overlay == Overlay.MODELS || overlay == Overlay.MEMORY ||
-            overlay == Overlay.DIAGNOSTICS || overlay == Overlay.AUTOMATIONS
+            overlay == Overlay.DIAGNOSTICS || overlay == Overlay.AUTOMATIONS ||
+            overlay == Overlay.TRANSLATOR
         ) {
             BackHandler { overlay = null }
             Box(Modifier.fillMaxSize().background(Color(0xFF071119))) {
@@ -254,6 +258,7 @@ fun JarvisApp(
                     Overlay.MEMORY -> MemoryScreen(onBack = { overlay = null })
                     Overlay.AUTOMATIONS -> AutomationsScreen(onBack = { overlay = null })
                     Overlay.DIAGNOSTICS -> DiagnosticsScreen(onBack = { overlay = null })
+                    Overlay.TRANSLATOR -> LiveTranslatorScreen(onBack = { overlay = null })
                     else -> Unit
                 }
             }
