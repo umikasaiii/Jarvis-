@@ -100,6 +100,7 @@ fun AgendaScreen(viewModel: AgendaViewModel = hiltViewModel()) {
     var editing by remember { mutableStateOf<AgendaEntry?>(null) }
     var subtaskParent by remember { mutableStateOf<AgendaEntry?>(null) }
     var newListDialog by remember { mutableStateOf(false) }
+    var datePickerFor by remember { mutableStateOf<AgendaEntry?>(null) }
 
     // The selected list may be one just created that has no tasks yet, so it
     // isn't in the derived list; show it anyway so the tab stays visible.
@@ -209,6 +210,7 @@ fun AgendaScreen(viewModel: AgendaViewModel = hiltViewModel()) {
                         onOpen = { editing = task },
                         onAddSubtask = { subtaskParent = task },
                         onDue = { viewModel.setDue(task, it) },
+                        onPickDate = { datePickerFor = task },
                         onMove = { viewModel.moveTo(task, it) },
                         onDelete = { viewModel.delete(task) },
                     )
@@ -294,6 +296,44 @@ fun AgendaScreen(viewModel: AgendaViewModel = hiltViewModel()) {
             },
         )
     }
+
+    datePickerFor?.let { entry ->
+        TaskDatePicker(
+            initial = entry.date,
+            onDismiss = { datePickerFor = null },
+            onPick = { date ->
+                viewModel.setDue(entry, date)
+                datePickerFor = null
+            },
+        )
+    }
+}
+
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun TaskDatePicker(
+    initial: LocalDate?,
+    onDismiss: () -> Unit,
+    onPick: (LocalDate) -> Unit,
+) {
+    val startMillis = (initial ?: LocalDate.now())
+        .atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli()
+    val state = androidx.compose.material3.rememberDatePickerState(initialSelectedDateMillis = startMillis)
+    androidx.compose.material3.DatePickerDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = {
+                state.selectedDateMillis?.let { millis ->
+                    val picked = java.time.Instant.ofEpochMilli(millis)
+                        .atZone(java.time.ZoneOffset.UTC).toLocalDate()
+                    onPick(picked)
+                }
+            }) { Text("OK") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Annulla") } },
+    ) {
+        androidx.compose.material3.DatePicker(state = state)
+    }
 }
 
 @Composable
@@ -328,6 +368,7 @@ private fun TaskRow(
     onOpen: () -> Unit,
     onAddSubtask: () -> Unit,
     onDue: (LocalDate?) -> Unit,
+    onPickDate: () -> Unit,
     onMove: (String) -> Unit,
     onDelete: () -> Unit,
 ) {
@@ -369,6 +410,7 @@ private fun TaskRow(
             lists = lists,
             onAddSubtask = onAddSubtask,
             onDue = onDue,
+            onPickDate = onPickDate,
             onMove = onMove,
             onDelete = onDelete,
         )
@@ -396,6 +438,7 @@ private fun TaskMenu(
     lists: List<String>,
     onAddSubtask: () -> Unit,
     onDue: (LocalDate?) -> Unit,
+    onPickDate: () -> Unit,
     onMove: (String) -> Unit,
     onDelete: () -> Unit,
 ) {
@@ -433,6 +476,7 @@ private fun TaskMenu(
             DropdownMenuItem(text = { Text("Oggi") }, onClick = { dueOpen = false; onDue(today) })
             DropdownMenuItem(text = { Text("Domani") }, onClick = { dueOpen = false; onDue(today.plusDays(1)) })
             DropdownMenuItem(text = { Text("Prossima settimana") }, onClick = { dueOpen = false; onDue(today.plusWeeks(1)) })
+            DropdownMenuItem(text = { Text("Scegli data…") }, onClick = { dueOpen = false; onPickDate() })
             DropdownMenuItem(text = { Text("Nessuna data") }, onClick = { dueOpen = false; onDue(null) })
         }
         DropdownMenu(expanded = moveOpen, onDismissRequest = { moveOpen = false }) {
