@@ -182,6 +182,7 @@ fun JarvisApp(
                         onOpenMemory = { overlay = Overlay.MEMORY },
                         onOpenChat = { overlay = Overlay.CHAT },
                         onOpenAgenda = { tab = Tab.NOTIFICHE },
+                        onOpenAutomations = { overlay = Overlay.AUTOMATIONS },
                         onOpenModels = { overlay = Overlay.MODELS },
                     )
                     Tab.CHAT -> Unit

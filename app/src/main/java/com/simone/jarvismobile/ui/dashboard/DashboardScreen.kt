@@ -99,6 +99,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.simone.jarvismobile.R
 import com.simone.jarvismobile.core.agenda.Agenda
+import com.simone.jarvismobile.core.automation.AutomationCodec
+import com.simone.jarvismobile.ui.automation.AutomationsViewModel
 import com.simone.jarvismobile.core.agenda.AgendaEntry
 import com.simone.jarvismobile.core.agenda.ReminderAlert
 import com.simone.jarvismobile.core.agenda.ReminderAlertType
@@ -192,6 +194,7 @@ fun DashboardScreen(
     onOpenMemory: () -> Unit = {},
     onOpenChat: () -> Unit = {},
     onOpenAgenda: () -> Unit = {},
+    onOpenAutomations: () -> Unit = {},
     onOpenModels: () -> Unit = {},
     viewModel: DashboardViewModel = hiltViewModel(),
 ) {
@@ -346,6 +349,26 @@ fun DashboardScreen(
                     footer = "${memory.chunkCount} frammenti",
                     accent = Violet,
                     onClick = onOpenMemory,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+
+            // Automations get their own full-width tile rather than a fifth
+            // column: four labels already crowd a 360dp screen, and this one is
+            // a section entry point, not a metric to compare against the others.
+            val automationsVm: AutomationsViewModel = hiltViewModel()
+            val rules by automationsVm.automations.collectAsStateWithLifecycle()
+            Row(Modifier.fillMaxWidth()) {
+                StatTile(
+                    icon = Icons.Filled.Bolt,
+                    label = "Automazioni",
+                    value = rules.count { it.enabled }.toString(),
+                    unit = if (rules.count { it.enabled } == 1) "regola attiva" else "regole attive",
+                    footer = rules.firstOrNull { it.enabled }
+                        ?.let { AutomationCodec.describe(it) }
+                        ?: "Nessuna regola",
+                    accent = Amber,
+                    onClick = onOpenAutomations,
                     modifier = Modifier.weight(1f),
                 )
             }
