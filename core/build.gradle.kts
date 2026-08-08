@@ -1,6 +1,11 @@
 plugins {
-    kotlin("jvm") version "2.0.21"
-    kotlin("plugin.serialization") version "2.0.21"
+    // Kept in lockstep with the Android app's toolchain (gradle/libs.versions.toml).
+    // The app runs Kotlin 2.2.21's stdlib and kotlinx-serialization 1.8.1 at
+    // runtime; when :core was compiled against older versions, its classes were
+    // linked against a stdlib/serialization the device didn't ship, which is a
+    // recipe for a runtime NoClassDefFoundError that no JVM unit test can catch.
+    kotlin("jvm") version "2.2.21"
+    kotlin("plugin.serialization") version "2.2.21"
 }
 
 group = "com.simone.jarvismobile"
@@ -11,7 +16,7 @@ repositories {
 }
 
 dependencies {
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
 
     testImplementation(kotlin("test"))

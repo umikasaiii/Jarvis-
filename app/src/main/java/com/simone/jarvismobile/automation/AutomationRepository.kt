@@ -69,10 +69,21 @@ class AutomationRepository @Inject constructor(
             }
         } catch (e: Throwable) {
             // An exception here used to surface as a bare "could not save".
-            _lastError.value = e.javaClass.simpleName
-            Log.w(TAG, "automation_add_failed ${e.javaClass.simpleName}")
+            // Include the message and any cause: a NoClassDefFoundError alone
+            // hides *which* class, and an init failure hides the real reason.
+            _lastError.value = describe(e)
+            Log.w(TAG, "automation_add_failed ${describe(e)}")
             false
         }
+    }
+
+    /** A short, personal-data-free description of a failure: type + message + cause. */
+    private fun describe(e: Throwable): String {
+        val head = e.message?.let { "${e.javaClass.simpleName}: $it" } ?: e.javaClass.simpleName
+        val cause = e.cause?.let { c ->
+            " ← ${c.javaClass.simpleName}${c.message?.let { ": $it" } ?: ""}"
+        }.orEmpty()
+        return (head + cause).take(200)
     }
 
     suspend fun remove(id: String): Boolean = mutex.withLock {
