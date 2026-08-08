@@ -415,7 +415,11 @@ class SessionCoordinator @Inject constructor(
                 return if (saved) {
                     "Automazione creata: ${AutomationCodec.describe(rule)}."
                 } else {
-                    "Non sono riuscito a salvare l'automazione."
+                    // Name the reason. "Non sono riuscito" on its own is a dead
+                    // end for the user and for whoever has to fix it.
+                    val why = automations.lastError.value
+                    "Non sono riuscito a salvare l'automazione" +
+                        (if (why.isBlank()) "." else " ($why).")
                 }
             }
         }

@@ -40,6 +40,14 @@ class AutomationRepository @Inject constructor(
     private val _automations = MutableStateFlow<List<Automation>>(emptyList())
     val automations: StateFlow<List<Automation>> = _automations.asStateFlow()
 
+    /**
+     * Why the last write failed, in a word. Without this a failed save is a
+     * dead end: the caller says "non sono riuscito" and nobody, including the
+     * developer, can tell whether it was the vault, the disk or a bug.
+     */
+    private val _lastError = MutableStateFlow("")
+    val lastError: StateFlow<String> = _lastError.asStateFlow()
+
     private val localFile: File get() = File(context.filesDir, LOCAL_FILE)
 
     suspend fun reload(): List<Automation> {
@@ -54,9 +62,16 @@ class AutomationRepository @Inject constructor(
     }
 
     suspend fun add(automation: Automation): Boolean = mutex.withLock {
-        val updated = loadLocked() + automation
-        commit(updated).also {
-            Log.i(TAG, "automation_add ok=$it total=${updated.size}")
+        try {
+            val updated = loadLocked() + automation
+            commit(updated).also {
+                Log.i(TAG, "automation_add ok=$it total=${updated.size}")
+            }
+        } catch (e: Throwable) {
+            // An exception here used to surface as a bare "could not save".
+            _lastError.value = e.javaClass.simpleName
+            Log.w(TAG, "automation_add_failed ${e.javaClass.simpleName}")
+            false
         }
     }
 
@@ -81,30 +96,41 @@ class AutomationRepository @Inject constructor(
     fun find(id: String): Automation? = _automations.value.firstOrNull { it.id == id }
 
     private suspend fun commit(updated: List<Automation>): Boolean {
-        if (!writeRaw(AutomationCodec.renderFile(updated))) return false
+        if (!writeRaw(AutomationCodec.renderFile(updated))) {
+            if (_lastError.value.isBlank()) _lastError.value = "scrittura file"
+            return false
+        }
         _automations.value = updated
-        scheduler.sync(updated)
+        // Scheduling must never fail a save: the rule is stored, and a schedule
+        // that did not take can be rebuilt on the next reload. Losing the rule
+        // because WorkManager complained would be the wrong trade.
+        runCatching { scheduler.sync(updated) }
+            .onFailure { Log.w(TAG, "automation_schedule_failed ${it.javaClass.simpleName}") }
+        _lastError.value = ""
         return true
     }
 
     // --- storage ---------------------------------------------------------
 
     private suspend fun readRaw(): String {
-        vault.readJarvisFile(FILE)?.let { fromVault ->
+        val fromVaultOrNull = runCatching { vault.readJarvisFile(FILE) }
+            .onFailure { Log.w(TAG, "automation_vault_read_failed ${it.javaClass.simpleName}") }
+            .getOrNull()
+        fromVaultOrNull?.let { fromVault ->
             val local = readLocal()
             if (local.isNotBlank()) {
                 val merged = (AutomationCodec.parseFile(fromVault) + AutomationCodec.parseFile(local))
                     .distinctBy { it.id }
-                if (vault.writeJarvisFile(FILE, AutomationCodec.renderFile(merged))) {
+                if (vaultWrite(AutomationCodec.renderFile(merged))) {
                     clearLocal()
                     return AutomationCodec.renderFile(merged)
                 }
             }
             return fromVault
         }
-        if (vault.isConfigured()) {
+        if (runCatching { vault.isConfigured() }.getOrDefault(false)) {
             val local = readLocal()
-            if (local.isNotBlank() && vault.writeJarvisFile(FILE, local)) {
+            if (local.isNotBlank() && vaultWrite(local)) {
                 clearLocal()
                 return local
             }
@@ -114,9 +140,14 @@ class AutomationRepository @Inject constructor(
     }
 
     private suspend fun writeRaw(content: String): Boolean {
-        if (vault.isConfigured() && vault.writeJarvisFile(FILE, content)) return true
+        if (runCatching { vault.isConfigured() }.getOrDefault(false) && vaultWrite(content)) return true
         return writeLocal(content)
     }
+
+    private suspend fun vaultWrite(content: String): Boolean =
+        runCatching { vault.writeJarvisFile(FILE, content) }
+            .onFailure { Log.w(TAG, "automation_vault_write_failed ${it.javaClass.simpleName}") }
+            .getOrDefault(false)
 
     private suspend fun readLocal(): String = withContext(Dispatchers.IO) {
         runCatching { if (localFile.exists()) localFile.readText() else "" }.getOrDefault("")
