@@ -1,0 +1,73 @@
+package com.simone.jarvismobile.ui.automation
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.simone.jarvismobile.automation.AutomationRepository
+import com.simone.jarvismobile.automation.AutomationRunner
+import com.simone.jarvismobile.core.automation.Automation
+import com.simone.jarvismobile.core.automation.AutomationCodec
+import com.simone.jarvismobile.core.automation.AutomationPhrase
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
+import javax.inject.Inject
+
+@HiltViewModel
+class AutomationsViewModel @Inject constructor(
+    private val repository: AutomationRepository,
+    private val runner: AutomationRunner,
+) : ViewModel() {
+
+    val automations: StateFlow<List<Automation>> = repository.automations
+
+    private val _message = MutableStateFlow("")
+    val message: StateFlow<String> = _message
+
+    init {
+        viewModelScope.launch { runCatching { repository.reload() } }
+    }
+
+    /**
+     * Creates a rule from a plain Italian sentence — the same grammar the chat
+     * understands, so there is one thing to learn rather than a form and a
+     * phrasebook.
+     */
+    fun create(phrase: String) = viewModelScope.launch {
+        val parsed = AutomationPhrase.parse(phrase)
+        if (parsed == null) {
+            _message.value = "Non ho capito la regola. Prova: «ogni giorno alle 8 " +
+                "ricordami di prendere le vitamine» oppure «quando la batteria " +
+                "scende sotto il 20% avvisami»."
+            return@launch
+        }
+        _message.value = if (repository.add(parsed)) {
+            "Creata: ${AutomationCodec.describe(parsed)}"
+        } else {
+            "Non sono riuscito a salvare la regola."
+        }
+    }
+
+    fun toggle(automation: Automation) = viewModelScope.launch {
+        repository.setEnabled(automation.id, !automation.enabled)
+    }
+
+    fun delete(automation: Automation) = viewModelScope.launch {
+        if (repository.remove(automation.id)) {
+            _message.value = "Eliminata: ${AutomationCodec.describe(automation)}"
+        }
+    }
+
+    /** Runs a rule now, so its effect can be judged without waiting for it. */
+    fun testRun(automation: Automation) = viewModelScope.launch {
+        _message.value = if (runner.run(automation)) {
+            "Eseguita adesso."
+        } else {
+            "Non è stato possibile eseguirla: controlla i permessi di notifica."
+        }
+    }
+
+    fun clearMessage() {
+        _message.value = ""
+    }
+}

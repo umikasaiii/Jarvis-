@@ -116,6 +116,20 @@
             android:name=".background.CancelTaskReceiver"
             android:exported="false" />
 
+        <!-- Condition automations. Android has no per-percent broadcast a
+             manifest may declare, so battery thresholds are evaluated at the
+             moments the system does wake us: charger in/out and its own low
+             battery warning. -->
+        <receiver
+            android:name=".automation.PowerEventReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.ACTION_POWER_CONNECTED" />
+                <action android:name="android.intent.action.ACTION_POWER_DISCONNECTED" />
+                <action android:name="android.intent.action.BATTERY_LOW" />
+            </intent-filter>
+        </receiver>
+
         <service
             android:name=".tools.JarvisNotificationListener"
             android:exported="true"

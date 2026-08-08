@@ -52,6 +52,7 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onOpenModels: () -> Unit = {},
     onOpenMemory: () -> Unit = {},
+    onOpenAutomations: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val name by viewModel.assistantName.collectAsStateWithLifecycle()
@@ -448,6 +449,9 @@ fun SettingsScreen(
         }
         OutlinedButton(onClick = onOpenMemory, modifier = Modifier.fillMaxWidth()) {
             Text("Memoria (appunti Obsidian)")
+        }
+        OutlinedButton(onClick = onOpenAutomations, modifier = Modifier.fillMaxWidth()) {
+            Text("Automazioni")
         }
         OutlinedButton(onClick = viewModel::newConversation, modifier = Modifier.fillMaxWidth()) {
             Text("Nuova conversazione (svuota memoria)")

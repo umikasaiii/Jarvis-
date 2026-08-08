@@ -53,6 +53,7 @@ import androidx.compose.ui.unit.sp
 import com.simone.jarvismobile.ui.commands.CommandsScreen
 import com.simone.jarvismobile.ui.dashboard.DashboardScreen
 import com.simone.jarvismobile.ui.diagnostics.DiagnosticsScreen
+import com.simone.jarvismobile.ui.automation.AutomationsScreen
 import com.simone.jarvismobile.ui.home.JarvisChatWindow
 import com.simone.jarvismobile.ui.memory.MemoryScreen
 import com.simone.jarvismobile.ui.models.ModelsScreen
@@ -68,7 +69,7 @@ private enum class Tab(val label: String, val icon: ImageVector) {
     IMPOSTAZIONI("Impostazioni", Icons.Filled.Settings),
 }
 
-private enum class Overlay { CHAT, MODELS, MEMORY, DIAGNOSTICS }
+private enum class Overlay { CHAT, MODELS, MEMORY, DIAGNOSTICS, AUTOMATIONS }
 
 /**
  * Top-level navigation. The dashboard shell is always present; the written chat
@@ -190,6 +191,7 @@ fun JarvisApp(
                         onBack = { tab = Tab.HOME },
                         onOpenModels = { overlay = Overlay.MODELS },
                         onOpenMemory = { overlay = Overlay.MEMORY },
+                        onOpenAutomations = { overlay = Overlay.AUTOMATIONS },
                     )
                 }
             }
@@ -241,12 +243,15 @@ fun JarvisApp(
         }
 
         // Full-screen overlays (opaque) for the secondary screens.
-        if (overlay == Overlay.MODELS || overlay == Overlay.MEMORY || overlay == Overlay.DIAGNOSTICS) {
+        if (overlay == Overlay.MODELS || overlay == Overlay.MEMORY ||
+            overlay == Overlay.DIAGNOSTICS || overlay == Overlay.AUTOMATIONS
+        ) {
             BackHandler { overlay = null }
             Box(Modifier.fillMaxSize().background(Color(0xFF071119))) {
                 when (overlay) {
                     Overlay.MODELS -> ModelsScreen(onBack = { overlay = null })
                     Overlay.MEMORY -> MemoryScreen(onBack = { overlay = null })
+                    Overlay.AUTOMATIONS -> AutomationsScreen(onBack = { overlay = null })
                     Overlay.DIAGNOSTICS -> DiagnosticsScreen(onBack = { overlay = null })
                     else -> Unit
                 }
