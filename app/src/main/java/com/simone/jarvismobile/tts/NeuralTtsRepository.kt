@@ -2,16 +2,14 @@ package com.simone.jarvismobile.tts
 
 import android.net.Uri
 import android.util.Log
-import com.simone.jarvismobile.core.tts.VoiceBankReader
 import com.simone.jarvismobile.data.SettingsRepository
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
+import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -22,9 +20,11 @@ enum class NeuralTtsStatus {
     /** Selected, but a required file is missing. */
     INCOMPLETE,
 
-    /** Files are in place; the session has not been built yet. */
-    READY_TO_LOAD,
+    /** Files are in place. NOT ready: the runtime has not been initialised. */
+    FILES_READY,
     LOADING,
+
+    /** Runtime and model initialised successfully. Only this one means "Pronto". */
     LOADED,
     ERROR,
 }
@@ -38,37 +38,57 @@ sealed interface PreviewOutcome {
     data object NoVoice : PreviewOutcome
 }
 
+/** One file slot as the current engine defines it. */
+data class TtsSlot(
+    val kind: TtsAssetKind,
+    val label: String,
+    val required: Boolean,
+    val asset: TtsAsset?,
+)
+
 /** Everything the Settings screen needs to draw the section in one object. */
 data class NeuralTtsState(
     val engineId: String = NeuralTtsEngines.NONE,
     val engineLabel: String = "",
     val status: NeuralTtsStatus = NeuralTtsStatus.OFF,
-    val model: TtsAsset? = null,
-    val voicesFile: TtsAsset? = null,
-    val vocabulary: TtsAsset? = null,
+    /** Only the slots the selected engine actually uses, in display order. */
+    val slots: List<TtsSlot> = emptyList(),
     val voices: List<String> = emptyList(),
     val selectedVoice: String = "",
+    val sampleRate: Int = 0,
     val vocabularySource: String = "",
     val detail: String = "",
-)
+) {
+    fun slot(kind: TtsAssetKind): TtsAsset? = slots.firstOrNull { it.kind == kind }?.asset
+
+    /** True only after a real initialisation of runtime and model. */
+    val isReady: Boolean get() = status == NeuralTtsStatus.LOADED
+}
 
 /**
  * Owns the external voice: which engine, which files, which voice, and the
  * loaded session.
  *
- * Loading is lazy and sticky. The session is built the first time something asks
- * to speak and then kept for the life of the process, so consecutive replies pay
- * the cost once. Changing any file or switching engine tears it down; nothing
- * else does.
+ * Two engines live here — Kokoro and Piper — and they do not share files. Each
+ * one declares the slots it needs and its file paths are stored under its own
+ * keys, so switching engines can never hand one engine the other's model. A
+ * Piper voice is a model plus its `.onnx.json`; Kokoro's `voices-v1.0.bin`
+ * belongs to Kokoro alone and is never offered to Piper.
  *
- * The repository never plays audio and never touches the recogniser. It is the
- * configuration and the model, nothing more.
+ * Loading is lazy and sticky: the session is built the first time something asks
+ * to speak and then kept for the life of the process, so consecutive replies pay
+ * the cost once. Changing any file or switching engine tears it down.
+ *
+ * Status is honest about initialisation. Having the files on disk is
+ * [NeuralTtsStatus.FILES_READY], not "ready" — only a successful
+ * [NeuralTtsEngine.load] produces [NeuralTtsStatus.LOADED].
  */
 @Singleton
 class NeuralTtsRepository @Inject constructor(
     private val settings: SettingsRepository,
     private val assets: TtsAssetStore,
     private val kokoro: KokoroTtsEngine,
+    private val piper: PiperTtsEngine,
     private val player: PcmPlayer,
     private val focus: AudioFocusGate,
 ) {
@@ -77,67 +97,92 @@ class NeuralTtsRepository @Inject constructor(
     private val _state = MutableStateFlow(NeuralTtsState())
     val state: StateFlow<NeuralTtsState> = _state.asStateFlow()
 
-    private fun engineFor(id: String): NeuralTtsEngine? = when (id) {
-        NeuralTtsEngines.KOKORO -> kokoro
-        else -> null
+    /** All engines this build offers, in the order Settings shows them. */
+    fun engines(): List<NeuralTtsEngine> = listOf(kokoro, piper)
+
+    private fun engineFor(id: String): NeuralTtsEngine? = engines().firstOrNull { it.id == id }
+
+    // --- file resolution ---------------------------------------------------
+
+    private suspend fun pathFor(engine: String, kind: TtsAssetKind): String = when (kind) {
+        TtsAssetKind.MODEL -> settings.ttsModelPath(engine).first()
+        TtsAssetKind.VOICES -> settings.ttsVoicesPath(engine).first()
+        TtsAssetKind.VOCABULARY -> settings.ttsVocabularyPath(engine).first()
     }
 
-    /** All engines this build offers, for the picker. */
-    fun engines(): List<NeuralTtsEngine> = listOf(kokoro)
+    private suspend fun fileFor(engine: String, kind: TtsAssetKind): File? =
+        assets.fileFor(pathFor(engine, kind))
 
-    /** True when the user has chosen an external engine and its files are present. */
+    private suspend fun setPath(engine: String, kind: TtsAssetKind, path: String) = when (kind) {
+        TtsAssetKind.MODEL -> settings.setTtsModelPath(engine, path)
+        TtsAssetKind.VOICES -> settings.setTtsVoicesPath(engine, path)
+        TtsAssetKind.VOCABULARY -> settings.setTtsVocabularyPath(engine, path)
+    }
+
+    /** True when the selected engine has every file it declared as required. */
     suspend fun isConfigured(): Boolean {
         val id = settings.ttsEngineId.first()
         val engine = engineFor(id) ?: return false
-        val model = assets.fileFor(settings.ttsModelPath.first()) ?: return false
-        val needsVoices = TtsAssetKind.VOICES in engine.requiredAssets
-        val voices = assets.fileFor(settings.ttsVoicesPath.first())
-        return model.isFile && (!needsVoices || voices != null)
+        return engine.requiredAssets.all { fileFor(id, it) != null }
     }
+
+    // --- state -------------------------------------------------------------
 
     /** Re-reads the configuration and publishes it without touching the session. */
     suspend fun refresh() {
         val id = settings.ttsEngineId.first()
         val engine = engineFor(id)
-        val model = assets.describe(settings.ttsModelPath.first(), TtsAssetKind.MODEL)
-        val voicesFile = assets.describe(settings.ttsVoicesPath.first(), TtsAssetKind.VOICES)
-        val vocabulary = assets.describe(settings.ttsVocabularyPath.first(), TtsAssetKind.VOCABULARY)
-        val loadedEngine = engine?.takeIf { it.isLoaded }
-        val loaded = loadedEngine != null
+        if (engine == null) {
+            _state.value = NeuralTtsState()
+            return
+        }
+
+        val kinds = TtsAssetKind.entries.filter {
+            it in engine.requiredAssets || it in engine.optionalAssets
+        }
+        val slots = kinds.map { kind ->
+            TtsSlot(
+                kind = kind,
+                label = engine.assetLabel(kind),
+                required = kind in engine.requiredAssets,
+                asset = assets.describe(pathFor(id, kind), kind),
+            )
+        }
+        val complete = slots.filter { it.required }.all { it.asset != null }
+        val loaded = engine.isLoaded
 
         val status = when {
-            engine == null -> NeuralTtsStatus.OFF
-            model == null || (TtsAssetKind.VOICES in engine.requiredAssets && voicesFile == null) ->
-                NeuralTtsStatus.INCOMPLETE
+            !complete -> NeuralTtsStatus.INCOMPLETE
             loaded -> NeuralTtsStatus.LOADED
-            _state.value.status == NeuralTtsStatus.ERROR -> NeuralTtsStatus.ERROR
-            else -> NeuralTtsStatus.READY_TO_LOAD
+            _state.value.status == NeuralTtsStatus.ERROR && _state.value.engineId == id ->
+                NeuralTtsStatus.ERROR
+            else -> NeuralTtsStatus.FILES_READY
         }
-        // The voice list does not need the graph: the names are entries in the
-        // pack, so they can be shown the moment the file is imported rather than
-        // after a ~90 MB session has been built.
-        val names = loadedEngine?.voices()
-            ?: voicesFile?.let { readVoiceNames(it.path) }
-            ?: emptyList()
 
-        _state.value = _state.value.copy(
+        // The voice list does not need the graph: Kokoro's names are entries in
+        // the pack and Piper's are in its config, so both can be shown as soon
+        // as the files land rather than after a session has been built.
+        val names = if (loaded) {
+            engine.voices()
+        } else {
+            engine.peekVoices(
+                model = fileFor(id, TtsAssetKind.MODEL),
+                voices = fileFor(id, TtsAssetKind.VOICES),
+                vocabulary = fileFor(id, TtsAssetKind.VOCABULARY),
+            )
+        }
+
+        _state.value = NeuralTtsState(
             engineId = id,
-            engineLabel = engine?.label.orEmpty(),
+            engineLabel = engine.label,
             status = status,
-            model = model,
-            voicesFile = voicesFile,
-            vocabulary = vocabulary,
-            voices = names.ifEmpty { _state.value.voices },
-            selectedVoice = resolveVoice(settings.ttsNeuralVoice.first(), names),
+            slots = slots,
+            voices = names,
+            selectedVoice = resolveVoice(id, settings.ttsNeuralVoice(id).first(), names),
+            sampleRate = if (loaded) engine.sampleRate else 0,
+            vocabularySource = if (loaded) _state.value.vocabularySource else "",
+            detail = if (_state.value.engineId == id) _state.value.detail else "",
         )
-    }
-
-    /** Reads only the names out of the pack; cheap enough to do on every refresh. */
-    private suspend fun readVoiceNames(path: String): List<String>? = withContext(Dispatchers.IO) {
-        val file = assets.fileFor(path) ?: return@withContext null
-        runCatching { file.inputStream().use { VoiceBankReader.readNames(it) } }
-            .onFailure { Log.w(TAG, "voice_names_failed ${it.javaClass.simpleName}") }
-            .getOrNull()
     }
 
     /**
@@ -145,13 +190,24 @@ class NeuralTtsRepository @Inject constructor(
      * back — a voice that vanished (a different pack, a renamed file) must not
      * leave the selector pointing at nothing.
      */
-    private suspend fun resolveVoice(stored: String, available: List<String>): String {
+    private suspend fun resolveVoice(engine: String, stored: String, available: List<String>): String {
         if (available.isEmpty()) return stored
         if (stored in available) return stored
         val fallback = preferredItalian(available) ?: available.first()
-        settings.setTtsNeuralVoice(fallback)
+        settings.setTtsNeuralVoice(engine, fallback)
         return fallback
     }
+
+    /**
+     * Kokoro names Italian voices `if_*` (female) and `im_*` (male). Prefer an
+     * Italian one over an English default, but do not prefer a gender — that is
+     * the user's choice, and picking one silently would override it.
+     */
+    private fun preferredItalian(voices: List<String>): String? =
+        voices.firstOrNull { it.startsWith("if_") || it.startsWith("im_") }
+            ?: voices.firstOrNull { it.startsWith("it_") }
+
+    // --- loading -----------------------------------------------------------
 
     /**
      * Builds the session if it is not up yet. Safe to call before every reply —
@@ -163,27 +219,30 @@ class NeuralTtsRepository @Inject constructor(
         if (engine.isLoaded) return engine
         return mutex.withLock {
             if (engine.isLoaded) return@withLock engine
-            val model = assets.fileFor(settings.ttsModelPath.first()) ?: run {
+
+            val model = fileFor(id, TtsAssetKind.MODEL) ?: run {
                 _state.value = _state.value.copy(status = NeuralTtsStatus.INCOMPLETE)
                 return@withLock null
             }
-            val voices = assets.fileFor(settings.ttsVoicesPath.first())
-            val vocabulary = assets.fileFor(settings.ttsVocabularyPath.first())
+            val voices = fileFor(id, TtsAssetKind.VOICES)
+            val vocabulary = fileFor(id, TtsAssetKind.VOCABULARY)
 
             _state.value = _state.value.copy(status = NeuralTtsStatus.LOADING)
             when (val result = engine.load(model, voices, vocabulary)) {
                 is TtsLoadResult.Ok -> {
                     val info = result.info
-                    // A voice chosen before the pack was read may not exist in it.
-                    val stored = settings.ttsNeuralVoice.first()
+                    val stored = settings.ttsNeuralVoice(id).first()
                     val voice = stored.takeIf { it in info.voices }
                         ?: preferredItalian(info.voices)
                         ?: info.voices.firstOrNull().orEmpty()
-                    if (voice != stored) settings.setTtsNeuralVoice(voice)
+                    if (voice != stored) settings.setTtsNeuralVoice(id, voice)
                     _state.value = _state.value.copy(
+                        engineId = id,
+                        engineLabel = engine.label,
                         status = NeuralTtsStatus.LOADED,
                         voices = info.voices,
                         selectedVoice = voice,
+                        sampleRate = info.sampleRate,
                         vocabularySource = info.vocabularySource,
                         detail = info.detail,
                     )
@@ -192,6 +251,7 @@ class NeuralTtsRepository @Inject constructor(
                 }
                 is TtsLoadResult.Failed -> {
                     _state.value = _state.value.copy(
+                        engineId = id,
                         status = NeuralTtsStatus.ERROR,
                         detail = result.reason,
                     )
@@ -202,13 +262,7 @@ class NeuralTtsRepository @Inject constructor(
         }
     }
 
-    /**
-     * Kokoro names Italian voices `if_*` (female) and `im_*` (male). Prefer an
-     * Italian one over an English default, but do not prefer a gender — that is
-     * the user's choice, and picking one silently would override it.
-     */
-    private fun preferredItalian(voices: List<String>): String? =
-        voices.firstOrNull { it.startsWith("if_") || it.startsWith("im_") }
+    // --- configuration -----------------------------------------------------
 
     suspend fun setEngine(id: String) {
         settings.setTtsEngineId(id)
@@ -222,44 +276,57 @@ class NeuralTtsRepository @Inject constructor(
         return result
     }
 
-    /** Points a slot at an already-imported file (the model-manager path). */
+    /** Points a slot of the CURRENT engine at an already-imported file. */
     suspend fun selectAsset(path: String, kind: TtsAssetKind) {
-        when (kind) {
-            TtsAssetKind.MODEL -> settings.setTtsModelPath(path)
-            TtsAssetKind.VOICES -> settings.setTtsVoicesPath(path)
-            TtsAssetKind.VOCABULARY -> settings.setTtsVocabularyPath(path)
-        }
+        val id = settings.ttsEngineId.first()
+        if (id.isBlank()) return
+        setPath(id, kind, path)
         unload()
         refresh()
     }
 
     /** Forgets a slot; with [deleteFile] the copy in app storage goes too. */
     suspend fun clearAsset(kind: TtsAssetKind, deleteFile: Boolean) {
-        val path = when (kind) {
-            TtsAssetKind.MODEL -> settings.ttsModelPath.first()
-            TtsAssetKind.VOICES -> settings.ttsVoicesPath.first()
-            TtsAssetKind.VOCABULARY -> settings.ttsVocabularyPath.first()
-        }
+        val id = settings.ttsEngineId.first()
+        if (id.isBlank()) return
+        val path = pathFor(id, kind)
         if (deleteFile && path.isNotBlank()) assets.delete(path)
         selectAsset("", kind)
     }
 
     suspend fun setVoice(voice: String) {
-        settings.setTtsNeuralVoice(voice)
+        val id = settings.ttsEngineId.first()
+        settings.setTtsNeuralVoice(id, voice)
         _state.value = _state.value.copy(selectedVoice = voice)
     }
+
+    fun importedAssets(): List<TtsAsset> = assets.list()
+
+    /**
+     * The persisted voice for the engine in use, read fresh rather than from a
+     * cached snapshot: a process that has just started has no snapshot, and
+     * would otherwise speak with whatever the pack happens to list first.
+     */
+    suspend fun currentVoice(): String {
+        val id = settings.ttsEngineId.first()
+        if (id.isBlank()) return ""
+        return settings.ttsNeuralVoice(id).first().ifBlank { _state.value.selectedVoice }
+    }
+
+    // --- trying it out -----------------------------------------------------
 
     /**
      * Synthesises a fixed Italian sentence with [voice] through the real graph
      * and plays it. This is the only honest way to answer "does the voice work?"
-     * — it exercises loading, phonemisation, inference and playback in the same
-     * order a reply does, and reports which step gave way.
+     * — it exercises initialisation, phonemisation, inference and playback in
+     * the same order a reply does, and reports which step gave way.
      *
      * Entirely offline: nothing on this path opens a socket.
      */
     suspend fun preview(voice: String = ""): PreviewOutcome {
         val engine = ensureLoaded() ?: return PreviewOutcome.NotLoaded(_state.value.detail)
-        val chosen = voice.ifBlank { settings.ttsNeuralVoice.first() }
+        val id = engine.id
+        val chosen = voice.ifBlank { settings.ttsNeuralVoice(id).first() }
             .ifBlank { _state.value.voices.firstOrNull().orEmpty() }
         if (chosen.isBlank()) return PreviewOutcome.NoVoice
 
@@ -282,13 +349,16 @@ class NeuralTtsRepository @Inject constructor(
         return PreviewOutcome.Ok(chosen, pcm.size.toFloat() / engine.sampleRate, elapsed)
     }
 
-    fun importedAssets(): List<TtsAsset> = assets.list()
-
-    /** Drops the session. The files and the choice stay. */
+    /** Drops every session. The files and the choice stay. */
     fun unload() {
         engines().forEach { it.release() }
         _state.value = _state.value.copy(
-            status = if (_state.value.engineId.isBlank()) NeuralTtsStatus.OFF else NeuralTtsStatus.READY_TO_LOAD,
+            status = when {
+                _state.value.engineId.isBlank() -> NeuralTtsStatus.OFF
+                _state.value.status == NeuralTtsStatus.INCOMPLETE -> NeuralTtsStatus.INCOMPLETE
+                else -> NeuralTtsStatus.FILES_READY
+            },
+            sampleRate = 0,
         )
     }
 

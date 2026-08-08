@@ -83,6 +83,9 @@ fun VoiceSection(viewModel: SettingsViewModel) {
 
             if (state.engineId != NeuralTtsEngines.NONE) {
                 Text("Stato: ${statusLabel(state.status)}", style = MaterialTheme.typography.bodyMedium)
+                if (state.isReady && state.sampleRate > 0) {
+                    Text("${state.sampleRate} Hz", style = MaterialTheme.typography.bodySmall)
+                }
                 if (state.vocabularySource.isNotBlank()) {
                     Text(
                         "Vocabolario fonemi: ${state.vocabularySource}",
@@ -95,30 +98,16 @@ fun VoiceSection(viewModel: SettingsViewModel) {
 
                 HorizontalDivider()
 
-                AssetRow(
-                    title = "Modello (.onnx)",
-                    asset = state.model,
-                    enabled = !busy,
-                    onImport = { pendingKind = TtsAssetKind.MODEL; picker.launch("*/*") },
-                    onRemove = { viewModel.clearTtsAsset(TtsAssetKind.MODEL, deleteFile = false) },
-                    onDelete = { viewModel.clearTtsAsset(TtsAssetKind.MODEL, deleteFile = true) },
-                )
-                AssetRow(
-                    title = "Voci (voices-v1.0.bin)",
-                    asset = state.voicesFile,
-                    enabled = !busy,
-                    onImport = { pendingKind = TtsAssetKind.VOICES; picker.launch("*/*") },
-                    onRemove = { viewModel.clearTtsAsset(TtsAssetKind.VOICES, deleteFile = false) },
-                    onDelete = { viewModel.clearTtsAsset(TtsAssetKind.VOICES, deleteFile = true) },
-                )
-                AssetRow(
-                    title = "Vocabolario (tokens.txt o config.json) — opzionale",
-                    asset = state.vocabulary,
-                    enabled = !busy,
-                    onImport = { pendingKind = TtsAssetKind.VOCABULARY; picker.launch("*/*") },
-                    onRemove = { viewModel.clearTtsAsset(TtsAssetKind.VOCABULARY, deleteFile = false) },
-                    onDelete = { viewModel.clearTtsAsset(TtsAssetKind.VOCABULARY, deleteFile = true) },
-                )
+                state.slots.forEach { slot ->
+                    AssetRow(
+                        title = slot.label + if (slot.required) "" else " — opzionale",
+                        asset = slot.asset,
+                        enabled = !busy,
+                        onImport = { pendingKind = slot.kind; picker.launch("*/*") },
+                        onRemove = { viewModel.clearTtsAsset(slot.kind, deleteFile = false) },
+                        onDelete = { viewModel.clearTtsAsset(slot.kind, deleteFile = true) },
+                    )
+                }
 
                 // Files already copied in can be re-assigned without picking again.
                 if (imported.isNotEmpty()) {
@@ -258,7 +247,7 @@ private fun VoicePicker(state: NeuralTtsState, enabled: Boolean, onPick: (String
     var open by remember { mutableStateOf(false) }
     if (state.voices.isEmpty()) {
         Text(
-            "Nessuna voce: importa il file voci (voices-v1.0.bin).",
+            "Nessuna voce disponibile: importa i file richiesti qui sopra.",
             style = MaterialTheme.typography.bodySmall,
         )
         return
@@ -340,11 +329,16 @@ private fun AssetRow(
     }
 }
 
+/**
+ * "Pronto" is reserved for a runtime and model that really initialised. Having
+ * the files on disk is not the same thing, and saying so would send the user
+ * looking for a fault somewhere else when the first reply comes out silent.
+ */
 private fun statusLabel(status: NeuralTtsStatus): String = when (status) {
     NeuralTtsStatus.OFF -> "voce Android"
     NeuralTtsStatus.INCOMPLETE -> "file mancanti"
-    NeuralTtsStatus.READY_TO_LOAD -> "pronto (si carica alla prima risposta)"
-    NeuralTtsStatus.LOADING -> "caricamento…"
-    NeuralTtsStatus.LOADED -> "caricato"
+    NeuralTtsStatus.FILES_READY -> "file presenti — non ancora inizializzato"
+    NeuralTtsStatus.LOADING -> "inizializzazione…"
+    NeuralTtsStatus.LOADED -> "Pronto"
     NeuralTtsStatus.ERROR -> "errore"
 }

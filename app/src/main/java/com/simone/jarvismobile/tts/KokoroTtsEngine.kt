@@ -33,6 +33,13 @@ class KokoroTtsEngine @Inject constructor() : NeuralTtsEngine {
     override val id = NeuralTtsEngines.KOKORO
     override val label = "Kokoro v1.0 (ONNX)"
     override val requiredAssets = setOf(TtsAssetKind.MODEL, TtsAssetKind.VOICES)
+    override val optionalAssets = setOf(TtsAssetKind.VOCABULARY)
+
+    override fun assetLabel(kind: TtsAssetKind): String = when (kind) {
+        TtsAssetKind.MODEL -> "Modello (kokoro-v1.0.*.onnx)"
+        TtsAssetKind.VOICES -> "Voci (voices-v1.0.bin)"
+        TtsAssetKind.VOCABULARY -> "Vocabolario (tokens.txt o config.json)"
+    }
 
     /** Kokoro always emits 24 kHz mono. */
     override val sampleRate = 24_000
@@ -106,6 +113,12 @@ class KokoroTtsEngine @Inject constructor() : NeuralTtsEngine {
         }
 
     override fun voices(): List<String> = bank?.names.orEmpty()
+
+    override suspend fun peekVoices(model: File?, voices: File?, vocabulary: File?): List<String> =
+        withContext(Dispatchers.IO) {
+            val file = voices?.takeIf { it.isFile } ?: return@withContext emptyList()
+            runCatching { file.inputStream().use { VoiceBankReader.readNames(it) } }.getOrDefault(emptyList())
+        }
 
     override suspend fun synthesize(text: String, voice: String, speed: Float): FloatArray? =
         withContext(Dispatchers.Default) {

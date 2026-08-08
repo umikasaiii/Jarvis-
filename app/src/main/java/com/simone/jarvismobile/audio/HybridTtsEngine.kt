@@ -99,8 +99,7 @@ class HybridTtsEngine @Inject constructor(
             return
         }
 
-        val voice = settings.ttsNeuralVoice.first()
-            .ifBlank { neural.state.value.selectedVoice }
+        val voice = neural.currentVoice()
         val speed = style.rate.coerceIn(MIN_SPEED, MAX_SPEED)
         val volume = settings.ttsVolume.first()
         val streaming = settings.ttsStreamingEnabled.first()

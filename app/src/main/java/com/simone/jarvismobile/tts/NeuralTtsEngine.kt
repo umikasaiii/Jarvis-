@@ -2,11 +2,18 @@ package com.simone.jarvismobile.tts
 
 import java.io.File
 
-/** The three files a neural voice can be made of. Only MODEL is always required. */
+/**
+ * The file slots a neural voice can be made of. Which ones an engine uses is the
+ * engine's business: Kokoro needs a voice pack, Piper needs its config and must
+ * never be offered the pack — `voices-v1.0.bin` is a Kokoro artefact and means
+ * nothing to a Piper graph.
+ */
 enum class TtsAssetKind(val label: String, val extensions: List<String>) {
     MODEL("Modello", listOf("onnx")),
     VOICES("Voci", listOf("bin", "npz")),
-    VOCABULARY("Vocabolario", listOf("txt", "json")),
+
+    /** Kokoro: an optional token table. Piper: the required `.onnx.json`. */
+    VOCABULARY("Configurazione", listOf("txt", "json")),
 }
 
 /** What a loaded engine can tell the UI about itself. */
@@ -44,8 +51,14 @@ interface NeuralTtsEngine {
     /** Shown in Settings. */
     val label: String
 
-    /** Which of the three asset slots this engine actually uses. */
+    /** Slots without which this engine cannot load. */
     val requiredAssets: Set<TtsAssetKind>
+
+    /** Slots this engine can use but does not need. */
+    val optionalAssets: Set<TtsAssetKind> get() = emptySet()
+
+    /** What to call a slot in Settings, in the engine's own terms. */
+    fun assetLabel(kind: TtsAssetKind): String = kind.label
 
     /** Output sample rate in Hz; only meaningful once loaded. */
     val sampleRate: Int
@@ -63,6 +76,13 @@ interface NeuralTtsEngine {
     fun voices(): List<String>
 
     /**
+     * Voice names readable from the files alone, without building the session.
+     * A user who has just imported a voice should see what is in it straight
+     * away rather than after a ~100 MB graph has been compiled.
+     */
+    suspend fun peekVoices(model: File?, voices: File?, vocabulary: File?): List<String> = emptyList()
+
+    /**
      * Synthesises one chunk — a sentence, not a whole reply — into mono float
      * PCM in [-1, 1]. Returns null when the chunk produced nothing usable.
      */
@@ -75,5 +95,8 @@ interface NeuralTtsEngine {
 /** The engines this build knows about, in the order Settings offers them. */
 object NeuralTtsEngines {
     const val KOKORO = "kokoro"
+    const val PIPER = "piper"
     const val NONE = ""
+
+    val ALL = listOf(KOKORO, PIPER)
 }

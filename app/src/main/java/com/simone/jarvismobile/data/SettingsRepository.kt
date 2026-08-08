@@ -259,24 +259,38 @@ class SettingsRepository @Inject constructor(
     }
 
     // --- external neural voice ------------------------------------------
-    // Paths point at files copied into app-private storage by TtsAssetStore, so
-    // they stay valid across restarts without holding a SAF grant. Empty means
-    // "not chosen"; an empty engine id means the Android voice is in charge.
+    // Every file slot is scoped to its engine. Kokoro and Piper take different
+    // files, and a single shared "model path" would hand a Piper graph to Kokoro
+    // the moment the user switched engines. The pre-Piper keys are still read as
+    // a fallback for Kokoro so an existing import is not lost.
 
     val ttsEngineId: Flow<String> =
         context.settingsDataStore.data.map { it[Keys.TTS_ENGINE_ID] ?: "" }
 
-    val ttsModelPath: Flow<String> =
-        context.settingsDataStore.data.map { it[Keys.TTS_MODEL_PATH] ?: "" }
+    private fun modelKey(engine: String) = stringPreferencesKey("tts_model_path_$engine")
+    private fun voicesKey(engine: String) = stringPreferencesKey("tts_voices_path_$engine")
+    private fun vocabularyKey(engine: String) = stringPreferencesKey("tts_vocabulary_path_$engine")
+    private fun voiceKey(engine: String) = stringPreferencesKey("tts_neural_voice_$engine")
 
-    val ttsVoicesPath: Flow<String> =
-        context.settingsDataStore.data.map { it[Keys.TTS_VOICES_PATH] ?: "" }
+    fun ttsModelPath(engine: String): Flow<String> = context.settingsDataStore.data.map {
+        it[modelKey(engine)] ?: legacy(engine, it[Keys.TTS_MODEL_PATH])
+    }
 
-    val ttsVocabularyPath: Flow<String> =
-        context.settingsDataStore.data.map { it[Keys.TTS_VOCABULARY_PATH] ?: "" }
+    fun ttsVoicesPath(engine: String): Flow<String> = context.settingsDataStore.data.map {
+        it[voicesKey(engine)] ?: legacy(engine, it[Keys.TTS_VOICES_PATH])
+    }
 
-    val ttsNeuralVoice: Flow<String> =
-        context.settingsDataStore.data.map { it[Keys.TTS_NEURAL_VOICE] ?: "" }
+    fun ttsVocabularyPath(engine: String): Flow<String> = context.settingsDataStore.data.map {
+        it[vocabularyKey(engine)] ?: legacy(engine, it[Keys.TTS_VOCABULARY_PATH])
+    }
+
+    fun ttsNeuralVoice(engine: String): Flow<String> = context.settingsDataStore.data.map {
+        it[voiceKey(engine)] ?: legacy(engine, it[Keys.TTS_NEURAL_VOICE])
+    }
+
+    /** The old, engine-less keys only ever held Kokoro's files. */
+    private fun legacy(engine: String, value: String?): String =
+        if (engine == LEGACY_ENGINE) value.orEmpty() else ""
 
     val ttsVolume: Flow<Float> =
         context.settingsDataStore.data.map {
@@ -295,20 +309,20 @@ class SettingsRepository @Inject constructor(
         context.settingsDataStore.edit { it[Keys.TTS_ENGINE_ID] = value.trim() }
     }
 
-    suspend fun setTtsModelPath(value: String) {
-        context.settingsDataStore.edit { it[Keys.TTS_MODEL_PATH] = value }
+    suspend fun setTtsModelPath(engine: String, value: String) {
+        context.settingsDataStore.edit { it[modelKey(engine)] = value }
     }
 
-    suspend fun setTtsVoicesPath(value: String) {
-        context.settingsDataStore.edit { it[Keys.TTS_VOICES_PATH] = value }
+    suspend fun setTtsVoicesPath(engine: String, value: String) {
+        context.settingsDataStore.edit { it[voicesKey(engine)] = value }
     }
 
-    suspend fun setTtsVocabularyPath(value: String) {
-        context.settingsDataStore.edit { it[Keys.TTS_VOCABULARY_PATH] = value }
+    suspend fun setTtsVocabularyPath(engine: String, value: String) {
+        context.settingsDataStore.edit { it[vocabularyKey(engine)] = value }
     }
 
-    suspend fun setTtsNeuralVoice(value: String) {
-        context.settingsDataStore.edit { it[Keys.TTS_NEURAL_VOICE] = value }
+    suspend fun setTtsNeuralVoice(engine: String, value: String) {
+        context.settingsDataStore.edit { it[voiceKey(engine)] = value }
     }
 
     suspend fun setTtsVolume(value: Float) {
@@ -346,6 +360,8 @@ class SettingsRepository @Inject constructor(
         const val DEFAULT_NAME = "JARVIS"
         const val DEFAULT_RECORD_SECONDS = 3
         const val DEFAULT_TTS_VOLUME = 1.0f
+        /** Engine the pre-Piper preference keys belonged to. */
+        const val LEGACY_ENGINE = "kokoro"
         const val DEFAULT_TTS_RATE = 0.95f
         const val DEFAULT_TTS_PITCH = 0.98f
         const val MIN_TTS_RATE = 0.6f
