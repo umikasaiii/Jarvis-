@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.simone.jarvismobile.agenda.AgendaRepository
 import com.simone.jarvismobile.audio.SessionCoordinator
+import com.simone.jarvismobile.audio.WakeWordController
 import com.simone.jarvismobile.core.agenda.Agenda
 import com.simone.jarvismobile.core.agenda.AgendaEntry
 import com.simone.jarvismobile.core.agenda.ReminderAlert
@@ -25,11 +26,18 @@ import javax.inject.Inject
 class DashboardViewModel @Inject constructor(
     private val coordinator: SessionCoordinator,
     private val agenda: AgendaRepository,
+    private val wakeWord: WakeWordController,
     memory: MemoryIndex,
     settings: SettingsRepository,
 ) : ViewModel() {
 
     val state: StateFlow<ConversationState> = coordinator.state
+
+    /** True while listening for the wake word (foreground only), for the orb hint. */
+    val listeningForWake: StateFlow<Boolean> = wakeWord.listeningForWake
+
+    /** Called by the screen on resume/pause so the wake word runs only when open. */
+    fun setWakeActive(active: Boolean) = wakeWord.setForegroundActive(active)
     val llmLoadState: StateFlow<LlmLoadState> = coordinator.llmLoadState
     val loadedModelName: StateFlow<String?> = coordinator.loadedModelName
     val memoryStatus: StateFlow<MemoryIndex.Status> = memory.status

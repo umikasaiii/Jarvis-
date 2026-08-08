@@ -46,6 +46,8 @@ class SettingsRepository @Inject constructor(
         val TTS_PAUSE_SCALE = floatPreferencesKey("tts_pause_scale")
         val TTS_EXPRESSIVENESS = floatPreferencesKey("tts_expressiveness")
         val SPEAK_BACKGROUND_RESPONSES = booleanPreferencesKey("speak_background_responses")
+        val WAKE_WORD_ENABLED = booleanPreferencesKey("wake_word_enabled")
+        val WAKE_WORD = stringPreferencesKey("wake_word")
 
         // --- external neural voice (Phase 4b) ---------------------------
         val TTS_ENGINE_ID = stringPreferencesKey("tts_engine_id")
@@ -165,6 +167,19 @@ class SettingsRepository @Inject constructor(
     val reminderNotifications: Flow<Boolean> =
         context.settingsDataStore.data.map { it[Keys.REMINDER_NOTIFICATIONS] ?: true }
 
+    /**
+     * Foreground-only wake word. Off by default — this is opt-in and only ever
+     * listens while the app is open and visible; it is never a background mic
+     * (docs/PRIVACY.md). Blank word falls back to the assistant's name.
+     */
+    val wakeWordEnabled: Flow<Boolean> =
+        context.settingsDataStore.data.map { it[Keys.WAKE_WORD_ENABLED] ?: false }
+
+    val wakeWord: Flow<String> =
+        context.settingsDataStore.data.map {
+            it[Keys.WAKE_WORD]?.takeIf { w -> w.isNotBlank() } ?: DEFAULT_NAME
+        }
+
     val reminderMorningHour: Flow<Int> =
         context.settingsDataStore.data.map { (it[Keys.REMINDER_MORNING_HOUR] ?: 8).coerceIn(0, 23) }
 
@@ -228,6 +243,14 @@ class SettingsRepository @Inject constructor(
 
     suspend fun setReminderNotifications(value: Boolean) {
         context.settingsDataStore.edit { it[Keys.REMINDER_NOTIFICATIONS] = value }
+    }
+
+    suspend fun setWakeWordEnabled(value: Boolean) {
+        context.settingsDataStore.edit { it[Keys.WAKE_WORD_ENABLED] = value }
+    }
+
+    suspend fun setWakeWord(value: String) {
+        context.settingsDataStore.edit { it[Keys.WAKE_WORD] = value.trim() }
     }
 
     suspend fun setReminderMorningHour(value: Int) {

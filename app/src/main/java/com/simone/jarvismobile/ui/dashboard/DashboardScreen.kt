@@ -207,8 +207,27 @@ fun DashboardScreen(
     val today by viewModel.today.collectAsStateWithLifecycle()
     val timeline by viewModel.timeline.collectAsStateWithLifecycle()
     val lastError by viewModel.lastError.collectAsStateWithLifecycle()
+    val listeningForWake by viewModel.listeningForWake.collectAsStateWithLifecycle()
     val battery = rememberBatteryStatus()
     val context = LocalContext.current
+
+    // The wake word listens ONLY while this screen is resumed (app open + visible):
+    // start on ON_RESUME, stop on ON_PAUSE. Never a background microphone.
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            when (event) {
+                androidx.lifecycle.Lifecycle.Event.ON_RESUME -> viewModel.setWakeActive(true)
+                androidx.lifecycle.Lifecycle.Event.ON_PAUSE -> viewModel.setWakeActive(false)
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            viewModel.setWakeActive(false)
+        }
+    }
     var editingAlerts by remember { mutableStateOf<AgendaEntry?>(null) }
 
     // Buzz once when a new message lands (e.g. a voice reply) while on the dashboard.
@@ -302,6 +321,18 @@ fun DashboardScreen(
                         }
                     },
                     size = 205.dp,
+                )
+            }
+
+            // Wake-word hint: shown only while it is actively listening (app open).
+            if (listeningForWake && state.isRestingLike()) {
+                Text(
+                    "In ascolto della parola — dì «${name}»",
+                    color = Cyan.copy(alpha = 0.85f),
+                    fontSize = 11.sp,
+                    letterSpacing = 1.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
                 )
             }
 

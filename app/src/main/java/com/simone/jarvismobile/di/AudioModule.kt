@@ -7,7 +7,9 @@ import com.simone.jarvismobile.audio.AudioCapture
 import com.simone.jarvismobile.audio.AudioRouteManager
 import com.simone.jarvismobile.audio.SpeechToTextEngine
 import com.simone.jarvismobile.audio.HybridTtsEngine
+import com.simone.jarvismobile.audio.RecognizerWakeWordEngine
 import com.simone.jarvismobile.audio.TextToSpeechEngine
+import com.simone.jarvismobile.audio.WakeWordEngine
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -38,4 +40,8 @@ abstract class AudioModule {
     @Binds
     @Singleton
     abstract fun bindSpeechToTextEngine(impl: AndroidOnDeviceSpeechEngine): SpeechToTextEngine
+
+    @Binds
+    @Singleton
+    abstract fun bindWakeWordEngine(impl: RecognizerWakeWordEngine): WakeWordEngine
 }

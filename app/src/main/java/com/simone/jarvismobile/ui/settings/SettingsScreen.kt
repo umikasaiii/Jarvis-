@@ -60,6 +60,8 @@ fun SettingsScreen(
     val seconds by viewModel.recordSeconds.collectAsStateWithLifecycle()
     val useBluetooth by viewModel.useBluetooth.collectAsStateWithLifecycle()
     val followUpEnabled by viewModel.followUpEnabled.collectAsStateWithLifecycle()
+    val wakeWordEnabled by viewModel.wakeWordEnabled.collectAsStateWithLifecycle()
+    val wakeWord by viewModel.wakeWord.collectAsStateWithLifecycle()
     val responseNotifications by viewModel.responseNotifications.collectAsStateWithLifecycle()
     val showResponsePreview by viewModel.showResponsePreview.collectAsStateWithLifecycle()
     val reminderNotifications by viewModel.reminderNotifications.collectAsStateWithLifecycle()
@@ -72,6 +74,7 @@ fun SettingsScreen(
     val speakBackground by viewModel.speakBackgroundResponses.collectAsStateWithLifecycle()
 
     var nameField by remember(name) { mutableStateOf(name) }
+    var wakeField by remember(wakeWord) { mutableStateOf(wakeWord) }
     var sliderValue by remember(seconds) { mutableStateOf(seconds.toFloat()) }
     var morningSlider by remember(reminderMorningHour) { mutableStateOf(reminderMorningHour.toFloat()) }
     var rateSlider by remember(ttsRate) { mutableStateOf(ttsRate) }
@@ -412,6 +415,40 @@ fun SettingsScreen(
                         "secondo: puoi rispondere o incalzare senza ripremere. Se resti in " +
                         "silenzio, si chiude da solo. Nessun microfono sempre acceso: la " +
                         "finestra è breve e legata alla conversazione appena avvenuta.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                ) {
+                    Text("Parola di attivazione", style = MaterialTheme.typography.titleMedium)
+                    Switch(checked = wakeWordEnabled, onCheckedChange = viewModel::setWakeWordEnabled)
+                }
+                OutlinedTextField(
+                    value = wakeField,
+                    onValueChange = { wakeField = it },
+                    label = { Text("Parola") },
+                    singleLine = true,
+                    enabled = wakeWordEnabled,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedButton(
+                    onClick = { viewModel.setWakeWord(wakeField) },
+                    enabled = wakeWordEnabled && wakeField.isNotBlank(),
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Salva parola") }
+                Text(
+                    "Quando è attiva e l'app è aperta, JARVIS ascolta questa parola e avvia " +
+                        "l'ascolto da solo. Funziona SOLO ad app aperta e in primo piano: si " +
+                        "ferma appena esci o metti l'app in secondo piano. Nessun microfono in " +
+                        "background, nessun permesso aggiuntivo oltre a quello del microfono. " +
+                        "Tutto offline sul dispositivo.",
                     style = MaterialTheme.typography.bodySmall,
                 )
             }

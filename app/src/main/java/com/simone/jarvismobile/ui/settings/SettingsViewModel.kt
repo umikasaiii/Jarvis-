@@ -56,6 +56,12 @@ class SettingsViewModel @Inject constructor(
     val reminderMorningHour: StateFlow<Int> = settings.reminderMorningHour
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 8)
 
+    val wakeWordEnabled: StateFlow<Boolean> = settings.wakeWordEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    val wakeWord: StateFlow<String> = settings.wakeWord
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsRepository.DEFAULT_NAME)
+
     val ttsVoiceName: StateFlow<String> = settings.ttsVoiceName
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
 
@@ -97,6 +103,8 @@ class SettingsViewModel @Inject constructor(
         settings.setReminderMorningHour(value)
         agenda.reload()
     }
+    fun setWakeWordEnabled(value: Boolean) = viewModelScope.launch { settings.setWakeWordEnabled(value) }
+    fun setWakeWord(value: String) = viewModelScope.launch { settings.setWakeWord(value) }
     fun refreshVoices() = viewModelScope.launch { coordinator.refreshVoices() }
     fun setTtsVoice(name: String) = viewModelScope.launch {
         settings.setTtsVoiceName(name)
