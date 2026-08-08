@@ -1,6 +1,7 @@
 package com.simone.jarvismobile.audio
 
 import android.util.Log
+import com.simone.jarvismobile.core.state.ConversationState
 import com.simone.jarvismobile.data.SettingsRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -54,7 +55,7 @@ class WakeWordController @Inject constructor(
             // Abort a wake listen the instant a session (manual or wake) begins.
             launch {
                 coordinator.state.collect { st ->
-                    if (!st.isRestingLike()) engine.cancel()
+                    if (st != ConversationState.Idle) engine.cancel()
                 }
             }
             while (isActive) {
@@ -63,7 +64,7 @@ class WakeWordController @Inject constructor(
                     foreground.value &&
                     engine.isAvailable() &&
                     coordinator.hasRecordPermission() &&
-                    coordinator.state.value.isRestingLike()
+                    coordinator.state.value == ConversationState.Idle
                 if (!ready) {
                     _listeningForWake.value = false
                     delay(IDLE_POLL_MS)
@@ -73,7 +74,7 @@ class WakeWordController @Inject constructor(
                 _listeningForWake.value = true
                 val heard = engine.awaitWakeWord(word)
                 _listeningForWake.value = false
-                if (heard && foreground.value && coordinator.state.value.isRestingLike()) {
+                if (heard && foreground.value && coordinator.state.value == ConversationState.Idle) {
                     Log.i(TAG, "wake_word_detected")
                     runCatching { coordinator.runSession() }
                 }
