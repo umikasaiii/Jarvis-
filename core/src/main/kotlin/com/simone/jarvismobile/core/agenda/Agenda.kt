@@ -34,12 +34,17 @@ object Agenda {
         sorted(entries).forEach { append(it.toMarkdown()).append('\n') }
     }
 
-    /** Chronological order; entries without a time come first within their day. */
+    /**
+     * Chronological order; entries without a time come first within their day,
+     * and undated tasks sort last (they have no place on the timeline). Within
+     * the same slot the manual [AgendaEntry.order] wins, then the text.
+     */
     fun sorted(entries: List<AgendaEntry>): List<AgendaEntry> =
         entries.sortedWith(
             compareBy(
-                { it.date },
+                { it.date ?: LocalDate.MAX },
                 { it.time ?: LocalTime.MIN },
+                { it.order },
                 { it.text },
             ),
         )
@@ -58,8 +63,9 @@ object Agenda {
     ): List<AgendaEntry> = sorted(
         entries.filter { e ->
             if (!includeDone && e.done) return@filter false
+            // An undated task belongs to no specific day and isn't "past".
             if (day != null && e.date != day) return@filter false
-            if (day == null && e.date.isBefore(today)) return@filter false
+            if (day == null && e.date != null && e.date.isBefore(today)) return@filter false
             if (period != null) {
                 val t = e.time ?: return@filter false
                 if (!period.contains(t)) return@filter false
@@ -69,7 +75,8 @@ object Agenda {
     )
 
     /** "oggi", "domani", "venerdì", "12 agosto" — how a human would say the date. */
-    fun humanDate(date: LocalDate, today: LocalDate): String = when {
+    fun humanDate(date: LocalDate?, today: LocalDate): String = when {
+        date == null -> "senza data"
         date == today -> "oggi"
         date == today.plusDays(1) -> "domani"
         date == today.plusDays(2) -> "dopodomani"

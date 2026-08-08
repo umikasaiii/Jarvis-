@@ -64,7 +64,7 @@ class ReminderScheduler @Inject constructor(
     private fun enqueue(name: String, reminder: ScheduledReminder) {
         val entry = reminder.entry
         val whenText = listOfNotNull(
-            entry.date.toString(),
+            entry.date?.toString(),
             entry.time?.toString(),
         ).joinToString(" · ")
         alarms.schedule(

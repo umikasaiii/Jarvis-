@@ -47,7 +47,7 @@ private val Today = Color(0xFF4FE3C1)
 private val Tomorrow = Color(0xFF2C5BFF)
 private val Later = Color(0xFF6B7C87)
 
-private fun dotFor(date: LocalDate, today: LocalDate): Color = when (date) {
+private fun dotFor(date: LocalDate?, today: LocalDate): Color = when (date) {
     today -> Today
     today.plusDays(1) -> Tomorrow
     else -> Later
@@ -66,10 +66,14 @@ fun AgendaScreen(viewModel: AgendaViewModel = hiltViewModel()) {
     val today = LocalDate.now()
 
     // Open items first, chronological; done ones sink to the bottom of their day.
-    val groups = entries
+    // Undated tasks (no due date) group last, under "Senza data".
+    val groups: List<Pair<LocalDate?, List<AgendaEntry>>> = entries
         .groupBy { it.date }
-        .toSortedMap()
-        .filterKeys { !it.isBefore(today) || entries.any { e -> e.date == it && !e.done } }
+        .toList()
+        .sortedWith(compareBy(nullsLast<LocalDate>()) { it.first })
+        .filter { (date, dayEntries) ->
+            date == null || !date.isBefore(today) || dayEntries.any { !it.done }
+        }
 
     Column(
         modifier = Modifier
