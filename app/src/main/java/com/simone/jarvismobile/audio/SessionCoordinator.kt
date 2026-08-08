@@ -26,6 +26,9 @@ import com.simone.jarvismobile.knowledge.KnowledgeRepository
 import com.simone.jarvismobile.core.knowledge.Evidence
 import com.simone.jarvismobile.memory.MemoryIndex
 import com.simone.jarvismobile.memory.ConversationMemoryStore
+import com.simone.jarvismobile.automation.AutomationRepository
+import com.simone.jarvismobile.core.automation.AutomationCodec
+import com.simone.jarvismobile.core.automation.AutomationPhrase
 import com.simone.jarvismobile.tools.CommandMatcher
 import com.simone.jarvismobile.tools.ItalianNumbers
 import com.simone.jarvismobile.tools.LlmIntentClassifier
@@ -84,6 +87,7 @@ class SessionCoordinator @Inject constructor(
     private val chatStore: ChatStore,
     private val knowledge: KnowledgeRepository,
     private val agenda: com.simone.jarvismobile.agenda.AgendaRepository,
+    private val automations: AutomationRepository,
     private val conversationMemory: ConversationMemoryStore,
 ) {
 
@@ -396,6 +400,23 @@ class SessionCoordinator @Inject constructor(
             com.simone.jarvismobile.core.agenda.CompletionHint.detect(transcript, open)?.let { hit ->
                 pendingCompletion = hit
                 return "Hai completato “${hit.text}”? Se vuoi lo segno come fatto."
+            }
+        }
+
+        // A standing rule, dictated. "ogni giorno alle 8 ricordami di…" is an
+        // instruction that outlives the turn, while "domani alle 15 il dentista"
+        // is an appointment — the parser refuses anything not explicitly
+        // recurring or conditional, so the second still falls through to the
+        // agenda below. What was created is read straight back, because a rule
+        // the user cannot see is a rule they cannot undo.
+        if (pendingConfirmation == null && pendingSlot == null && !awaitingAnswer) {
+            AutomationPhrase.parse(transcript)?.let { rule ->
+                val saved = runCatching { automations.add(rule) }.getOrDefault(false)
+                return if (saved) {
+                    "Automazione creata: ${AutomationCodec.describe(rule)}."
+                } else {
+                    "Non sono riuscito a salvare l'automazione."
+                }
             }
         }
 
