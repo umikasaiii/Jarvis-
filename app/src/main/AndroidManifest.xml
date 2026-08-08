@@ -29,6 +29,17 @@
     <!-- Short haptic when a voice reply lands while the chat is closed. -->
     <uses-permission android:name="android.permission.VIBRATE" />
 
+    <!-- Reminders and time automations are promises about a specific minute, so
+         they use AlarmManager rather than deferrable work. USE_EXACT_ALARM is
+         granted at install for an alarm-shaped app; SCHEDULE_EXACT_ALARM is the
+         Android 12 fallback, and a denial degrades to an inexact alarm rather
+         than dropping it. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+
+    <!-- Alarms do not survive a reboot; the schedule is rebuilt from the files. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
     <!-- Phase 6 tools: set timers/alarms in the system clock app without opening its UI. -->
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
 
@@ -120,6 +131,25 @@
              manifest may declare, so battery thresholds are evaluated at the
              moments the system does wake us: charger in/out and its own low
              battery warning. -->
+        <receiver
+            android:name=".alarms.AlarmReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.simone.jarvismobile.ALARM_FIRE" />
+                <data android:scheme="jarvis" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name=".alarms.BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
+
         <receiver
             android:name=".automation.PowerEventReceiver"
             android:exported="false">

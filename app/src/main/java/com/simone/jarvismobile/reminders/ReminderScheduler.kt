@@ -1,10 +1,7 @@
 package com.simone.jarvismobile.reminders
 
 import android.content.Context
-import androidx.work.ExistingWorkPolicy
-import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.WorkManager
-import androidx.work.workDataOf
+import com.simone.jarvismobile.alarms.ExactAlarms
 import com.simone.jarvismobile.core.agenda.AgendaEntry
 import com.simone.jarvismobile.core.agenda.ReminderSchedule
 import com.simone.jarvismobile.data.SettingsRepository
@@ -23,8 +20,8 @@ import javax.inject.Singleton
 class ReminderScheduler @Inject constructor(
     @ApplicationContext private val context: Context,
     private val settings: SettingsRepository,
+    private val alarms: ExactAlarms,
 ) {
-    private val workManager = WorkManager.getInstance(context)
     private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
     suspend fun sync(entries: List<AgendaEntry>) {
@@ -46,7 +43,7 @@ class ReminderScheduler @Inject constructor(
         }
 
         val old = prefs.getStringSet(KEY_SCHEDULED, emptySet()).orEmpty()
-        (old - desired.keys).forEach(workManager::cancelUniqueWork)
+        (old - desired.keys).forEach(alarms::cancel)
         desired.forEach { (name, reminder) -> enqueue(name, reminder) }
         prefs.edit().putStringSet(KEY_SCHEDULED, desired.keys.toSet()).apply()
     }
@@ -55,34 +52,36 @@ class ReminderScheduler @Inject constructor(
         val old = prefs.getStringSet(KEY_SCHEDULED, emptySet()).orEmpty()
         val prefix = "jarvis_reminder_${entryId}_"
         val removed = old.filter { it.startsWith(prefix) }.toSet()
-        removed.forEach(workManager::cancelUniqueWork)
+        removed.forEach(alarms::cancel)
         prefs.edit().putStringSet(KEY_SCHEDULED, old - removed).apply()
     }
 
+    /**
+     * An exact alarm, not deferrable work. A reminder is a promise about a
+     * minute; WorkManager only ever promised "eventually", and on a sleeping
+     * phone that meant the notification turned up when the app was next opened.
+     */
     private fun enqueue(name: String, reminder: ScheduledReminder) {
-        val zone = ZoneId.systemDefault()
-        val delay = Duration.between(java.time.Instant.now(), reminder.trigger.atZone(zone).toInstant())
-            .toMillis().coerceAtLeast(0)
         val entry = reminder.entry
-        val request = OneTimeWorkRequestBuilder<ReminderWorker>()
-            .setInitialDelay(delay, TimeUnit.MILLISECONDS)
-            .setInputData(
-                workDataOf(
-                    ReminderWorker.KEY_ENTRY_ID to entry.id,
-                    ReminderWorker.KEY_TITLE to entry.text,
-                    ReminderWorker.KEY_DATE to entry.date.toString(),
-                    ReminderWorker.KEY_TIME to (entry.time?.toString() ?: ""),
-                    ReminderWorker.KEY_ALERT_KEY to reminder.alertKey,
-                ),
-            )
-            .addTag(TAG_REMINDERS)
-            .build()
-        workManager.enqueueUniqueWork(name, ExistingWorkPolicy.REPLACE, request)
+        val whenText = listOfNotNull(
+            entry.date.toString(),
+            entry.time?.toString(),
+        ).joinToString(" · ")
+        alarms.schedule(
+            key = name,
+            at = reminder.trigger,
+            extras = mapOf(
+                ExactAlarms.EXTRA_KIND to ExactAlarms.KIND_REMINDER,
+                ExactAlarms.EXTRA_ID to "${entry.id}_${reminder.alertKey}",
+                ExactAlarms.EXTRA_TITLE to entry.text,
+                ExactAlarms.EXTRA_SUBTEXT to whenText,
+            ),
+        )
     }
 
     private fun cancelAllKnown() {
         val old = prefs.getStringSet(KEY_SCHEDULED, emptySet()).orEmpty()
-        old.forEach(workManager::cancelUniqueWork)
+        old.forEach(alarms::cancel)
         prefs.edit().remove(KEY_SCHEDULED).apply()
     }
 

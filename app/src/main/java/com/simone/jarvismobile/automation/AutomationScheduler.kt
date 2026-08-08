@@ -1,18 +1,11 @@
 package com.simone.jarvismobile.automation
 
 import android.content.Context
-import androidx.work.ExistingWorkPolicy
-import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.WorkManager
-import androidx.work.workDataOf
+import com.simone.jarvismobile.alarms.ExactAlarms
 import com.simone.jarvismobile.core.automation.Automation
 import com.simone.jarvismobile.core.automation.Trigger
 import dagger.hilt.android.qualifiers.ApplicationContext
-import java.time.Duration
-import java.time.Instant
 import java.time.LocalDateTime
-import java.time.ZoneId
-import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -33,8 +26,8 @@ import javax.inject.Singleton
 @Singleton
 class AutomationScheduler @Inject constructor(
     @ApplicationContext private val context: Context,
+    private val alarms: ExactAlarms,
 ) {
-    private val workManager = WorkManager.getInstance(context)
     private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
     /** Re-points the schedule at exactly the enabled time rules, nothing else. */
@@ -46,14 +39,14 @@ class AutomationScheduler @Inject constructor(
         }
 
         val known = prefs.getStringSet(KEY_SCHEDULED, emptySet()).orEmpty()
-        (known - desired.keys).forEach(workManager::cancelUniqueWork)
+        (known - desired.keys).forEach(alarms::cancel)
         desired.forEach { (name, at) -> enqueueAt(name, name.removePrefix(PREFIX), at) }
         prefs.edit().putStringSet(KEY_SCHEDULED, desired.keys.toSet()).apply()
     }
 
     fun cancel(id: String) {
         val name = workName(id)
-        workManager.cancelUniqueWork(name)
+        alarms.cancel(name)
         val known = prefs.getStringSet(KEY_SCHEDULED, emptySet()).orEmpty()
         prefs.edit().putStringSet(KEY_SCHEDULED, known - name).apply()
     }
@@ -75,19 +68,19 @@ class AutomationScheduler @Inject constructor(
     }
 
     /**
-     * The single point where a time becomes a platform wake-up. Swap this for an
-     * exact alarm and every automation becomes punctual at once.
+     * The single point where a time becomes a platform wake-up — and it is now
+     * an exact alarm. It used to be deferrable work, which is why a rule set for
+     * 08:00 arrived whenever the phone next woke up.
      */
-    private fun enqueueAt(workName: String, automationId: String, at: LocalDateTime) {
-        val delay = Duration.between(Instant.now(), at.atZone(ZoneId.systemDefault()).toInstant())
-            .toMillis()
-            .coerceAtLeast(0)
-        val request = OneTimeWorkRequestBuilder<AutomationWorker>()
-            .setInitialDelay(delay, TimeUnit.MILLISECONDS)
-            .setInputData(workDataOf(AutomationWorker.KEY_ID to automationId))
-            .addTag(TAG_AUTOMATIONS)
-            .build()
-        workManager.enqueueUniqueWork(workName, ExistingWorkPolicy.REPLACE, request)
+    private fun enqueueAt(key: String, automationId: String, at: LocalDateTime) {
+        alarms.schedule(
+            key = key,
+            at = at,
+            extras = mapOf(
+                ExactAlarms.EXTRA_KIND to ExactAlarms.KIND_AUTOMATION,
+                ExactAlarms.EXTRA_ID to automationId,
+            ),
+        )
     }
 
     private fun workName(id: String) = "$PREFIX$id"
