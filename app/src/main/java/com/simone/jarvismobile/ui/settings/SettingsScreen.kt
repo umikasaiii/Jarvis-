@@ -528,6 +528,8 @@ fun SettingsScreen(
 
         InterfaceSettingsSection()
 
+        DocumentSettingsSection()
+
         TranslatorSettingsSection(onOpenTranslator = onOpenTranslator)
 
         Card(Modifier.fillMaxWidth()) {
@@ -659,6 +661,33 @@ private fun InterfaceSettingsSection(
             SwitchRow("Notifiche promemoria", remNotif, viewModel::setReminderNotifications)
             SwitchRow("Suono notifiche", sound, viewModel::setNotifSound)
             SwitchRow("Vibrazione", vibration, viewModel::setNotifVibration)
+        }
+    }
+}
+
+/** Memoria & Conoscenza → Documenti. Shares the interface settings ViewModel. */
+@Composable
+private fun DocumentSettingsSection(
+    viewModel: InterfaceSettingsViewModel = hiltViewModel(),
+) {
+    val saveDefault by viewModel.docSaveToVaultDefault.collectAsStateWithLifecycle()
+    val autoIndex by viewModel.docAutoIndex.collectAsStateWithLifecycle()
+    val dedup by viewModel.docDedup.collectAsStateWithLifecycle()
+    val ocr by viewModel.docOcrImages.collectAsStateWithLifecycle()
+
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Memoria & Conoscenza — Documenti", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "I documenti allegati dalla chat («+») vengono copiati in privato e, se " +
+                    "scegli l'archivio, anche nel vault Obsidian in 20_KNOWLEDGE/Documents. " +
+                    "L'originale non viene mai modificato.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            SwitchRow("Salva nell'archivio per default", saveDefault, viewModel::setDocSaveToVaultDefault)
+            SwitchRow("Indicizza per la ricerca (RAG)", autoIndex, viewModel::setDocAutoIndex)
+            SwitchRow("Rileva duplicati (SHA-256)", dedup, viewModel::setDocDedup)
+            SwitchRow("OCR immagini (più lento, opzionale)", ocr, viewModel::setDocOcrImages)
         }
     }
 }

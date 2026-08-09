@@ -183,6 +183,48 @@ class CsvParser : DocumentParser {
     }
 }
 
+/** HTML/XHTML: tags stripped to readable text, split on headings into sections. */
+class HtmlParser : DocumentParser {
+    override val version = 1
+    override val id = "html"
+    private val heading = Regex("(?is)<h([1-6])[^>]*>(.*?)</h[1-6]>")
+
+    override fun supports(mimeType: String, fileName: String): Boolean {
+        val e = ext(fileName)
+        return e == "html" || e == "htm" || e == "xhtml" || mimeType == "text/html"
+    }
+
+    override fun parse(documentId: String, fileName: String, text: String): ParsedDocument {
+        // Break the document at each heading so a citation can name the section.
+        val sections = ArrayList<DocumentSection>()
+        val headings = heading.findAll(text).toList()
+        if (headings.isEmpty()) {
+            val body = Html.toText(text)
+            sections += DocumentSection("", null, body)
+        } else {
+            var cursor = 0
+            var currentTitle = ""
+            for (h in headings) {
+                if (h.range.first > cursor) {
+                    val body = Html.toText(text.substring(cursor, h.range.first))
+                    if (body.isNotBlank()) sections += DocumentSection(currentTitle, null, body)
+                }
+                currentTitle = Html.toText(h.groupValues[2]).replace('\n', ' ').trim()
+                cursor = h.range.last + 1
+            }
+            val tail = Html.toText(text.substring(cursor))
+            if (tail.isNotBlank()) sections += DocumentSection(currentTitle, null, tail)
+        }
+        val body = sections.joinToString("\n\n") { it.text }
+        return ParsedDocument(
+            documentId = documentId,
+            text = body.trim(),
+            sections = sections.ifEmpty { listOf(DocumentSection("", null, "")) },
+            metadata = ParsedMetadata(title = fileName.substringBeforeLast('.')),
+        )
+    }
+}
+
 /**
  * Picks the right parser for a file. New formats register here (or, for binary
  * formats, in the Android layer which appends its parsers before building this).
@@ -196,6 +238,6 @@ class ParserRegistry(private val parsers: List<DocumentParser>) {
     companion object {
         /** The dependency-free text parsers usable anywhere, incl. unit tests. */
         fun textOnly(): ParserRegistry =
-            ParserRegistry(listOf(MarkdownParser(), JsonParser(), CsvParser(), PlainTextParser()))
+            ParserRegistry(listOf(MarkdownParser(), HtmlParser(), JsonParser(), CsvParser(), PlainTextParser()))
     }
 }

@@ -10,11 +10,16 @@ import com.simone.jarvismobile.core.document.DocumentRecord
 import com.simone.jarvismobile.core.document.DocumentRetrieval
 import com.simone.jarvismobile.core.document.DocumentSource
 import com.simone.jarvismobile.core.document.DocumentStatus
-import com.simone.jarvismobile.core.document.LexicalDocumentRetriever
+import com.simone.jarvismobile.core.document.DocumentSection
+import com.simone.jarvismobile.core.document.HybridDocumentRetriever
+import com.simone.jarvismobile.core.document.ParsedDocument
+import com.simone.jarvismobile.core.document.ParsedMetadata
 import com.simone.jarvismobile.core.document.ParserRegistry
 import com.simone.jarvismobile.core.document.SafeFileName
+import com.simone.jarvismobile.data.SettingsRepository
 import com.simone.jarvismobile.memory.VaultRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
@@ -51,6 +56,7 @@ class DocumentImportManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val dao: DocumentDao,
     private val vault: VaultRepository,
+    private val settings: SettingsRepository,
 ) {
     /** A duplicate the user must resolve before it is (re-)imported. */
     data class DuplicatePrompt(
@@ -73,7 +79,7 @@ class DocumentImportManager @Inject constructor(
     private val textRegistry = ParserRegistry.textOnly()
 
     // A warm retriever over every READY chunk, rebuilt when the corpus changes.
-    @Volatile private var retriever: LexicalDocumentRetriever? = null
+    @Volatile private var retriever: HybridDocumentRetriever? = null
 
     /** Loads the persisted documents into the UI state at startup. */
     suspend fun refresh() {
@@ -163,8 +169,8 @@ class DocumentImportManager @Inject constructor(
             coroutineContext.ensureActive()
             val checksum = Checksums.sha256(bytes)
 
-            // Duplicate detection before doing the expensive work.
-            if (!force) {
+            // Duplicate detection before doing the expensive work (if enabled).
+            if (!force && settings.docDedup.first()) {
                 val existing = dao.findByChecksum(checksum)
                 if (existing != null && existing.status == DocumentStatus.READY.name) {
                     dao.deleteDocument(id) // drop the draft
@@ -195,24 +201,53 @@ class DocumentImportManager @Inject constructor(
                 vaultPath = vaultPath,
             )
 
-            // Images are attached, not indexed: no OCR in this pass, so a picture
-            // is kept as a conversation/vault attachment and marked ready directly.
-            if (mime.startsWith("image/")) {
-                record = record.copy(status = DocumentStatus.READY, modifiedAt = System.currentTimeMillis())
-                persist(record)
-                return
+            // Images: OCR only if the user has opted in; otherwise the picture is
+            // kept as an attachment (no text) and marked ready directly.
+            val ocrText = if (mime.startsWith("image/")) {
+                if (settings.docOcrImages.first()) {
+                    record = record.copy(status = DocumentStatus.PARSING); persist(record)
+                    withContext(Dispatchers.Default) { ImageOcr.recognize(bytes) }
+                } else {
+                    record = record.copy(status = DocumentStatus.READY, modifiedAt = System.currentTimeMillis())
+                    persist(record)
+                    return
+                }
+            } else {
+                null
             }
 
-            // PARSING
-            record = record.copy(status = DocumentStatus.PARSING); persist(record)
-            coroutineContext.ensureActive()
-            val parsed = withContext(Dispatchers.Default) {
-                if (DocumentTextExtractors.isBinary(mime, safeName)) {
-                    DocumentTextExtractors.extract(context, id, safeName, mime, bytes)
-                } else {
-                    val text = bytes.toString(Charsets.UTF_8)
-                    val parser = textRegistry.parserFor(mime, displayName) ?: textRegistry.parserFor("text/plain", "x.txt")!!
-                    parser.parse(id, safeName, text)
+            // PARSING — images that already produced OCR text skip the file parser.
+            val parsed = if (ocrText != null) {
+                if (ocrText.isBlank()) {
+                    record = record.copy(status = DocumentStatus.READY, modifiedAt = System.currentTimeMillis())
+                    persist(record)
+                    return
+                }
+                ParsedDocument(
+                    documentId = id,
+                    text = ocrText,
+                    sections = listOf(DocumentSection("", null, ocrText)),
+                    metadata = ParsedMetadata(title = displayName.substringBeforeLast('.')),
+                )
+            } else {
+                record = record.copy(status = DocumentStatus.PARSING); persist(record)
+                coroutineContext.ensureActive()
+                withContext(Dispatchers.Default) {
+                    when {
+                        // PDF/DOCX need platform code (PDFBox / DOCX zip) — Android side.
+                        DocumentTextExtractors.isBinary(mime, safeName) ->
+                            DocumentTextExtractors.extract(context, id, safeName, mime, bytes)
+                        // EPUB/XLSX are ZIP+XML: pure-Kotlin, handled in :core.
+                        com.simone.jarvismobile.core.document.OfficeExtractors.isContainer(mime, safeName) ->
+                            com.simone.jarvismobile.core.document.OfficeExtractors.extract(id, safeName, mime, bytes)
+                        // Everything text-native (txt/md/html/json/csv) → the registry.
+                        else -> {
+                            val text = bytes.toString(Charsets.UTF_8)
+                            val parser = textRegistry.parserFor(mime, displayName)
+                                ?: textRegistry.parserFor("text/plain", "x.txt")!!
+                            parser.parse(id, safeName, text)
+                        }
+                    }
                 }
             }
             if (parsed.text.isBlank()) {
@@ -225,6 +260,14 @@ class DocumentImportManager @Inject constructor(
                 pageCount = parsed.metadata.pageCount,
                 language = parsed.metadata.language,
             )
+
+            // Auto-index unless the user turned it off: then it stays a ready
+            // attachment (kept and citable by name, but not searched).
+            if (!settings.docAutoIndex.first()) {
+                record = record.copy(status = DocumentStatus.READY, modifiedAt = System.currentTimeMillis())
+                persist(record)
+                return
+            }
 
             // INDEXING
             record = record.copy(status = DocumentStatus.INDEXING); persist(record)
@@ -269,7 +312,7 @@ class DocumentImportManager @Inject constructor(
 
     private suspend fun rebuildRetriever(): Unit = withContext(Dispatchers.Default) {
         val chunks = runCatching { dao.readyChunks().map { it.toChunk() } }.getOrDefault(emptyList())
-        retriever = if (chunks.isEmpty()) null else LexicalDocumentRetriever(chunks)
+        retriever = if (chunks.isEmpty()) null else HybridDocumentRetriever(chunks)
     }
 
     private suspend fun persist(record: DocumentRecord) {

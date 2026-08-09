@@ -66,21 +66,24 @@ class LexicalDocumentRetriever(
             .take(topK.coerceAtLeast(1))
     }
 
-    private fun terms(text: String): List<String> = text.lowercase()
+    private fun terms(text: String): List<String> = DocumentTerms.of(text)
+}
+
+/** Shared tokenizer/stemmer for document search, used by every retriever. */
+internal object DocumentTerms {
+    fun of(text: String): List<String> = text.lowercase()
         .replace('à', 'a').replace('è', 'e').replace('é', 'e')
         .replace('ì', 'i').replace('ò', 'o').replace('ù', 'u')
         .split(NON_WORD)
         .filter { it.length >= 3 && it !in STOPWORDS }
 
-    private companion object {
-        val NON_WORD = Regex("""[^\p{L}\p{Nd}]+""")
-        val STOPWORDS = setOf(
-            "che", "chi", "con", "come", "cosa", "del", "della", "delle", "degli", "dei",
-            "per", "una", "uno", "nel", "nella", "nelle", "negli", "sono", "quando",
-            "dove", "questo", "questa", "quello", "quella", "the", "and", "for", "with",
-            "dice", "dico", "documento", "file", "pdf", "manuale", "jarvis",
-        )
-    }
+    private val NON_WORD = Regex("""[^\p{L}\p{Nd}]+""")
+    private val STOPWORDS = setOf(
+        "che", "chi", "con", "come", "cosa", "del", "della", "delle", "degli", "dei",
+        "per", "una", "uno", "nel", "nella", "nelle", "negli", "sono", "quando",
+        "dove", "questo", "questa", "quello", "quella", "the", "and", "for", "with",
+        "dice", "dico", "documento", "file", "pdf", "manuale", "jarvis",
+    )
 }
 
 /**

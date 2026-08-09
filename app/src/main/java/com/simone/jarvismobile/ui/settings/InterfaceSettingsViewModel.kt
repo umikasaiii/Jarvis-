@@ -27,6 +27,12 @@ class InterfaceSettingsViewModel @Inject constructor(
     val notifSound = flow(settings.notifSound, true)
     val notifVibration = flow(settings.notifVibration, true)
 
+    // Document import (Memory & Knowledge).
+    val docSaveToVaultDefault = flow(settings.docSaveToVaultDefault, false)
+    val docAutoIndex = flow(settings.docAutoIndex, true)
+    val docDedup = flow(settings.docDedup, true)
+    val docOcrImages = flow(settings.docOcrImages, false)
+
     fun setWidgetShowStatus(v: Boolean) = viewModelScope.launch { settings.setWidgetShowStatus(v) }
     fun setWidgetStyle(v: String) = viewModelScope.launch { settings.setWidgetStyle(v) }
     fun setWidgetTransparency(v: Float) = viewModelScope.launch { settings.setWidgetTransparency(v) }
@@ -34,4 +40,9 @@ class InterfaceSettingsViewModel @Inject constructor(
     fun setReminderNotifications(v: Boolean) = viewModelScope.launch { settings.setReminderNotifications(v) }
     fun setNotifSound(v: Boolean) = viewModelScope.launch { settings.setNotifSound(v) }
     fun setNotifVibration(v: Boolean) = viewModelScope.launch { settings.setNotifVibration(v) }
+
+    fun setDocSaveToVaultDefault(v: Boolean) = viewModelScope.launch { settings.setDocSaveToVaultDefault(v) }
+    fun setDocAutoIndex(v: Boolean) = viewModelScope.launch { settings.setDocAutoIndex(v) }
+    fun setDocDedup(v: Boolean) = viewModelScope.launch { settings.setDocDedup(v) }
+    fun setDocOcrImages(v: Boolean) = viewModelScope.launch { settings.setDocOcrImages(v) }
 }

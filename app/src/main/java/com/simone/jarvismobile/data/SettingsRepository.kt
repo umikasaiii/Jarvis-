@@ -62,6 +62,12 @@ class SettingsRepository @Inject constructor(
         val NOTIF_SOUND = booleanPreferencesKey("notif_sound")
         val NOTIF_VIBRATION = booleanPreferencesKey("notif_vibration")
 
+        // Document import (Memory & Knowledge).
+        val DOC_SAVE_DEFAULT = booleanPreferencesKey("doc_save_to_vault_default")
+        val DOC_AUTO_INDEX = booleanPreferencesKey("doc_auto_index")
+        val DOC_DEDUP = booleanPreferencesKey("doc_dedup")
+        val DOC_OCR_IMAGES = booleanPreferencesKey("doc_ocr_images")
+
         // --- Live Translator (Phase: live translation) ------------------
         val TRANSLATE_LANG_A = stringPreferencesKey("translate_lang_a")
         val TRANSLATE_LANG_B = stringPreferencesKey("translate_lang_b")
@@ -464,6 +470,40 @@ class SettingsRepository @Inject constructor(
 
     suspend fun setNotifVibration(value: Boolean) {
         context.settingsDataStore.edit { it[Keys.NOTIF_VIBRATION] = value }
+    }
+
+    // --- Document import (Memory & Knowledge) ----------------------------
+
+    /** Default for the chat "+" import: copy into the vault vs attach only. */
+    val docSaveToVaultDefault: Flow<Boolean> =
+        context.settingsDataStore.data.map { it[Keys.DOC_SAVE_DEFAULT] ?: false }
+
+    /** Whether imported documents are indexed for retrieval (vs attached only). */
+    val docAutoIndex: Flow<Boolean> =
+        context.settingsDataStore.data.map { it[Keys.DOC_AUTO_INDEX] ?: true }
+
+    /** Whether identical files (same SHA-256) raise the duplicate prompt. */
+    val docDedup: Flow<Boolean> =
+        context.settingsDataStore.data.map { it[Keys.DOC_DEDUP] ?: true }
+
+    /** Whether images are OCR'd on import (off by default: OCR is opt-in). */
+    val docOcrImages: Flow<Boolean> =
+        context.settingsDataStore.data.map { it[Keys.DOC_OCR_IMAGES] ?: false }
+
+    suspend fun setDocSaveToVaultDefault(value: Boolean) {
+        context.settingsDataStore.edit { it[Keys.DOC_SAVE_DEFAULT] = value }
+    }
+
+    suspend fun setDocAutoIndex(value: Boolean) {
+        context.settingsDataStore.edit { it[Keys.DOC_AUTO_INDEX] = value }
+    }
+
+    suspend fun setDocDedup(value: Boolean) {
+        context.settingsDataStore.edit { it[Keys.DOC_DEDUP] = value }
+    }
+
+    suspend fun setDocOcrImages(value: Boolean) {
+        context.settingsDataStore.edit { it[Keys.DOC_OCR_IMAGES] = value }
     }
 
     // --- Live Translator -------------------------------------------------

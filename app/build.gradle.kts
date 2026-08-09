@@ -145,6 +145,10 @@ dependencies {
     // Android port). Fully on-device; DOCX is parsed with java.util.zip, no dep.
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
 
+    // Optional, opt-in on-device OCR for imported images (ML Kit, bundled Latin
+    // model — no network). Off by default so imports stay fast.
+    implementation("com.google.mlkit:text-recognition:16.0.1")
+
     // Unit tests.
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
