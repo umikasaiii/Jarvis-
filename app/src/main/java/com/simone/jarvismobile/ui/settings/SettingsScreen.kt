@@ -58,6 +58,7 @@ fun SettingsScreen(
     onOpenAutomations: () -> Unit = {},
     onOpenTranslator: () -> Unit = {},
     onOpenDocuments: () -> Unit = {},
+    onOpenNavigation: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val name by viewModel.assistantName.collectAsStateWithLifecycle()
@@ -530,6 +531,21 @@ fun SettingsScreen(
         InterfaceSettingsSection()
 
         DocumentSettingsSection(onOpenArchive = onOpenDocuments)
+
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Navigazione offline", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Navigatore GPS che funziona senza Internet una volta scaricata la " +
+                        "regione. Mappa e posizione sono attive; routing vocale e ricerca " +
+                        "arrivano con i dati offline della regione.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                OutlinedButton(onClick = onOpenNavigation, modifier = Modifier.fillMaxWidth()) {
+                    Text("Apri navigazione")
+                }
+            }
+        }
 
         TranslatorSettingsSection(onOpenTranslator = onOpenTranslator)
 

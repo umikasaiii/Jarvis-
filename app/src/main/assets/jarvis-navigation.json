@@ -1,0 +1,92 @@
+{
+  "version": 8,
+  "name": "JARVIS Navigation",
+  "metadata": { "jarvis:theme": "dark-night" },
+  "glyphs": "asset://glyphs/{fontstack}/{range}.pbf",
+  "sources": {
+    "jarvis-region": {
+      "type": "vector",
+      "url": "pmtiles://LOCAL_REGION_PLACEHOLDER"
+    }
+  },
+  "layers": [
+    {
+      "id": "background",
+      "type": "background",
+      "paint": { "background-color": "#0A0E14" }
+    },
+    {
+      "id": "water",
+      "type": "fill",
+      "source": "jarvis-region",
+      "source-layer": "water",
+      "paint": { "fill-color": "#0E1826" }
+    },
+    {
+      "id": "landuse",
+      "type": "fill",
+      "source": "jarvis-region",
+      "source-layer": "landuse",
+      "minzoom": 8,
+      "paint": { "fill-color": "#0C1420", "fill-opacity": 0.5 }
+    },
+    {
+      "id": "buildings",
+      "type": "fill",
+      "source": "jarvis-region",
+      "source-layer": "building",
+      "minzoom": 14,
+      "paint": { "fill-color": "#121A26", "fill-opacity": 0.6 }
+    },
+    {
+      "id": "roads-minor",
+      "type": "line",
+      "source": "jarvis-region",
+      "source-layer": "transportation",
+      "filter": ["in", "class", "minor", "service", "track"],
+      "minzoom": 12,
+      "paint": { "line-color": "#2A3646", "line-width": 1.0 }
+    },
+    {
+      "id": "roads-secondary",
+      "type": "line",
+      "source": "jarvis-region",
+      "source-layer": "transportation",
+      "filter": ["in", "class", "secondary", "tertiary"],
+      "paint": { "line-color": "#4A5A6E", "line-width": 2.0 }
+    },
+    {
+      "id": "roads-primary",
+      "type": "line",
+      "source": "jarvis-region",
+      "source-layer": "transportation",
+      "filter": ["in", "class", "primary", "trunk"],
+      "paint": { "line-color": "#8A97A6", "line-width": 3.0 }
+    },
+    {
+      "id": "roads-motorway",
+      "type": "line",
+      "source": "jarvis-region",
+      "source-layer": "transportation",
+      "filter": ["==", "class", "motorway"],
+      "paint": { "line-color": "#E23A2E", "line-width": 3.5 }
+    },
+    {
+      "id": "road-labels",
+      "type": "symbol",
+      "source": "jarvis-region",
+      "source-layer": "transportation_name",
+      "minzoom": 13,
+      "layout": {
+        "symbol-placement": "line",
+        "text-field": ["get", "name"],
+        "text-size": 12
+      },
+      "paint": {
+        "text-color": "#D9DEE3",
+        "text-halo-color": "#0A0E14",
+        "text-halo-width": 1.4
+      }
+    }
+  ]
+}

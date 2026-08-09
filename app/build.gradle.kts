@@ -149,6 +149,10 @@ dependencies {
     // model — no network). Off by default so imports stay fast.
     implementation("com.google.mlkit:text-recognition:16.0.1")
 
+    // Offline navigation map rendering (MapLibre Native Android). Renders local
+    // vector maps (PMTiles) from local files; no tile server during navigation.
+    implementation("org.maplibre.gl:android-sdk:11.13.5")
+
     // Unit tests.
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

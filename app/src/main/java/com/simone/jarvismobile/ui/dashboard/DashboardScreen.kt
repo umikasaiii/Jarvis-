@@ -60,6 +60,7 @@ import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -198,6 +199,7 @@ fun DashboardScreen(
     onOpenAutomations: () -> Unit = {},
     onOpenModels: () -> Unit = {},
     onOpenTranslator: () -> Unit = {},
+    onOpenNavigation: () -> Unit = {},
     viewModel: DashboardViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -409,7 +411,7 @@ fun DashboardScreen(
             val trReady = listOf(trPairA, trPairB).count {
                 trModels[it] == com.simone.jarvismobile.translate.ModelStatus.DOWNLOADED
             }
-            Row(Modifier.fillMaxWidth()) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 StatTile(
                     icon = Icons.Filled.Translate,
                     label = "Traduttore Live",
@@ -418,6 +420,16 @@ fun DashboardScreen(
                     footer = if (trReady >= 2) "Pronto offline" else "Scarica i modelli",
                     accent = Cyan,
                     onClick = onOpenTranslator,
+                    modifier = Modifier.weight(1f),
+                )
+                StatTile(
+                    icon = Icons.Filled.Navigation,
+                    label = "Navigazione",
+                    value = "Offline",
+                    unit = "GPS",
+                    footer = "Apri mappa",
+                    accent = Cyan,
+                    onClick = onOpenNavigation,
                     modifier = Modifier.weight(1f),
                 )
             }
