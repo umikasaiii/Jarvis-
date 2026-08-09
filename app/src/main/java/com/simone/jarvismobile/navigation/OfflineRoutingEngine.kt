@@ -31,6 +31,7 @@ class OfflineRoutingEngine @Inject constructor(
 ) {
     @Volatile private var cachedRegionId: String? = null
     @Volatile private var cachedGraph: RoadGraph? = null
+    @Volatile private var cachedMtime: Long = 0L
 
     suspend fun hasRoutingData(region: RegionMetadata): Boolean =
         graphFor(region) != null
@@ -58,11 +59,16 @@ class OfflineRoutingEngine @Inject constructor(
     ): RoutingResult = calculateRoute(region, current, destination, profile, options)
 
     private suspend fun graphFor(region: RegionMetadata): RoadGraph? = withContext(Dispatchers.IO) {
-        cachedGraph?.let { if (cachedRegionId == region.id) return@withContext it }
+        val file = java.io.File(store.regionDir(region.id), RoadGraphLoader.ROUTING_FILE)
+        val mtime = if (file.exists()) file.lastModified() else 0L
+        // Reuse the cache only if the routing file hasn't changed (a fresh download
+        // bumps its mtime, so newly-added routing data takes effect immediately).
+        cachedGraph?.let { if (cachedRegionId == region.id && cachedMtime == mtime) return@withContext it }
         val graph = RoadGraphLoader.load(store.regionDir(region.id))
         if (graph != null) {
             cachedGraph = graph
             cachedRegionId = region.id
+            cachedMtime = mtime
         }
         graph
     }

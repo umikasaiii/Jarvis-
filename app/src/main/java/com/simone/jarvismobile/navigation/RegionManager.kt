@@ -44,8 +44,15 @@ class RegionManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val store: InstalledRegionStore,
     private val navDao: NavDao,
+    private val placeSearch: PlaceSearchRepository,
 ) {
     enum class Phase { DOWNLOADING, COPYING, VERIFYING, INSTALLING, DONE, PAUSED, FAILED }
+
+    /** A per-region companion payload downloadable separately from the map. */
+    enum class CompanionKind(val fileName: String, val label: String) {
+        ROUTING("routing.json", "percorsi"),
+        SEARCH("search.json", "ricerca"),
+    }
 
     data class Progress(
         val name: String,
@@ -112,6 +119,78 @@ class RegionManager @Inject constructor(
     fun cancelDownload() {
         runCatching { currentCall?.cancel() }
         downloadJob?.cancel()
+    }
+
+    /**
+     * Downloads a region's routing ([CompanionKind.ROUTING]) or search
+     * ([CompanionKind.SEARCH]) data from [url] into an already-installed region, so a
+     * map becomes complete — map + routes + POIs — with separate downloads. The
+     * file is fetched to a `*.part`, swapped in atomically, and the region's
+     * metadata version is bumped; the routing cache self-refreshes and the search
+     * index is rebuilt. Internet is used only for the download.
+     */
+    fun downloadCompanion(regionId: String, companion: CompanionKind, url: String) {
+        downloadJob?.cancel()
+        downloadJob = scope.launch { runCompanionDownload(regionId, companion, url) }
+    }
+
+    private suspend fun runCompanionDownload(regionId: String, companion: CompanionKind, url: String) =
+        withContext(Dispatchers.IO) {
+            val dir = store.regionDir(regionId)
+            if (!dir.exists()) { fail(companion.label, "regione non trovata"); return@withContext }
+            val name = "${companion.label} · ${store.installed().firstOrNull { it.id == regionId }?.name ?: regionId}"
+            val dest = File(dir, companion.fileName)
+            val part = File(dir, "${companion.fileName}.part")
+            _progress.value = Progress(name, Phase.DOWNLOADING, 0, 0)
+            try {
+                val call = httpClient.newCall(Request.Builder().url(url).build())
+                currentCall = call
+                call.execute().use { resp ->
+                    if (!resp.isSuccessful) { fail(name, "download HTTP ${resp.code}"); return@withContext }
+                    val body = resp.body ?: run { fail(name, "risposta vuota"); return@withContext }
+                    val total = body.contentLength()
+                    body.byteStream().use { input ->
+                        java.io.FileOutputStream(part).use { output ->
+                            val buf = ByteArray(64 * 1024)
+                            var done = 0L
+                            while (true) {
+                                val n = input.read(buf); if (n < 0) break
+                                output.write(buf, 0, n); done += n
+                                if (done % (1 shl 19) < buf.size) _progress.value = Progress(name, Phase.DOWNLOADING, done, total)
+                            }
+                        }
+                    }
+                }
+                currentCall = null
+                if (!part.renameTo(dest)) { part.copyTo(dest, overwrite = true); part.delete() }
+                bumpVersion(dir, companion)
+                if (companion == CompanionKind.SEARCH) runCatching { placeSearch.reloadPlaces(regionId) }
+                refresh()
+                _progress.value = Progress(name, Phase.DONE, dest.length(), dest.length())
+            } catch (t: Throwable) {
+                if (t is kotlinx.coroutines.CancellationException) {
+                    _progress.value = Progress(name, Phase.PAUSED, part.length(), 0); throw t
+                }
+                Log.w(TAG, "companion_download_failed ${t.javaClass.simpleName}")
+                fail(name, "download non riuscito")
+            } finally {
+                currentCall = null
+            }
+        }
+
+    /** Bumps the region metadata version for a freshly-installed companion. */
+    private fun bumpVersion(dir: File, companion: CompanionKind) {
+        runCatching {
+            val metaFile = File(dir, METADATA_NAME)
+            val json = JSONObject(metaFile.readText())
+            val versions = json.optJSONObject("versions") ?: JSONObject()
+            when (companion) {
+                CompanionKind.ROUTING -> versions.put("routingVersion", versions.optInt("routingVersion", 0) + 1)
+                CompanionKind.SEARCH -> versions.put("searchIndexVersion", versions.optInt("searchIndexVersion", 0) + 1)
+            }
+            json.put("versions", versions)
+            metaFile.writeText(json.toString())
+        }
     }
 
     private suspend fun runDownload(url: String, displayName: String?, expectedSha256: String?) =

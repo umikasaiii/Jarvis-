@@ -24,10 +24,13 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -57,6 +60,8 @@ fun MapsScreen(
     val picker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
     ) { uri -> uri?.let { viewModel.importPmtiles(it) } }
+
+    var companionTarget by remember { mutableStateOf<Pair<String, RegionManager.CompanionKind>?>(null) }
 
     Scaffold(
         topBar = {
@@ -131,27 +136,86 @@ fun MapsScreen(
             } else {
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(regions, key = { it.id }) { region ->
-                        RegionRow(region = region, onDelete = { viewModel.delete(region.id) })
+                        RegionRow(
+                            region = region,
+                            onDelete = { viewModel.delete(region.id) },
+                            onAddCompanion = { companion -> companionTarget = region.id to companion },
+                        )
                     }
                 }
             }
+        }
+
+        // Download routing/search data for a region from a URL.
+        companionTarget?.let { (regionId, companion) ->
+            var companionUrl by rememberSaveable(regionId, companion) { mutableStateOf("") }
+            AlertDialog(
+                onDismissRequest = { companionTarget = null },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            if (companionUrl.isNotBlank()) viewModel.downloadCompanion(regionId, companion, companionUrl)
+                            companionTarget = null
+                        },
+                        enabled = companionUrl.isNotBlank(),
+                    ) { Text("Scarica") }
+                },
+                dismissButton = { TextButton(onClick = { companionTarget = null }) { Text("Annulla") } },
+                title = { Text("Scarica dati «${companion.label}»") },
+                text = {
+                    Column {
+                        Text(
+                            "Incolla l'URL del file ${companion.fileName} per questa regione.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        OutlinedTextField(
+                            value = companionUrl,
+                            onValueChange = { companionUrl = it },
+                            singleLine = true,
+                            placeholder = { Text("https://…/${companion.fileName}") },
+                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                        )
+                    }
+                },
+            )
         }
     }
 }
 
 @Composable
-private fun RegionRow(region: RegionMetadata, onDelete: () -> Unit) {
+private fun RegionRow(
+    region: RegionMetadata,
+    onDelete: () -> Unit,
+    onAddCompanion: (RegionManager.CompanionKind) -> Unit,
+) {
+    val hasRouting = region.versions.routingVersion > 0
+    val hasSearch = region.versions.searchIndexVersion > 0
     Card(Modifier.fillMaxWidth()) {
-        Row(
-            Modifier.fillMaxWidth().padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text(region.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(subtitle(region), style = MaterialTheme.typography.bodySmall)
+        Column(Modifier.fillMaxWidth().padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(region.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(subtitle(region), style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        "Mappa ✓ · Percorsi ${if (hasRouting) "✓" else "—"} · Ricerca ${if (hasSearch) "✓" else "—"}",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                IconButton(onClick = onDelete) {
+                    Icon(Icons.Filled.Delete, contentDescription = "Elimina")
+                }
             }
-            IconButton(onClick = onDelete) {
-                Icon(Icons.Filled.Delete, contentDescription = "Elimina")
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (!hasRouting) {
+                    OutlinedButton(onClick = { onAddCompanion(RegionManager.CompanionKind.ROUTING) }) {
+                        Text("+ Percorsi")
+                    }
+                }
+                if (!hasSearch) {
+                    OutlinedButton(onClick = { onAddCompanion(RegionManager.CompanionKind.SEARCH) }) {
+                        Text("+ Ricerca")
+                    }
+                }
             }
         }
     }

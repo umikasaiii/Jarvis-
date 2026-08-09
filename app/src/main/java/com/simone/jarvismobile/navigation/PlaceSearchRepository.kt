@@ -59,6 +59,12 @@ class PlaceSearchRepository @Inject constructor(
         }.onFailure { Log.w(TAG, "places_load_failed ${it.javaClass.simpleName}") }
     }
 
+    /** Rebuilds a region's place index from a freshly-downloaded search.json. */
+    suspend fun reloadPlaces(regionId: String) = withContext(Dispatchers.IO) {
+        runCatching { dao.deleteRegionPlaces(regionId) }
+        ensurePlacesLoaded(regionId)
+    }
+
     suspend fun search(query: String, origin: LatLng?, limit: Int = 10): List<PlaceHit> =
         withContext(Dispatchers.IO) {
             val match = ftsQuery(query) ?: return@withContext emptyList()

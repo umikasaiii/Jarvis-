@@ -31,4 +31,8 @@ class MapsViewModel @Inject constructor(
     /** Downloads a .pmtiles from [url] (resumable) and keeps it offline. */
     fun downloadFromUrl(url: String) = regionManager.download(url.trim())
     fun cancelDownload() = regionManager.cancelDownload()
+
+    /** Downloads a region's routing/search companion data from [url]. */
+    fun downloadCompanion(regionId: String, companion: RegionManager.CompanionKind, url: String) =
+        regionManager.downloadCompanion(regionId, companion, url.trim())
 }
