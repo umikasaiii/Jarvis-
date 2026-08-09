@@ -72,7 +72,7 @@ class ListeningService : Service() {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(getString(R.string.listening_title))
             .setContentText(getString(R.string.listening_text))
-            .setSmallIcon(R.drawable.ic_tile_jarvis)
+            .setSmallIcon(R.drawable.ic_stat_jarvis)
             .setOngoing(true)
             .setContentIntent(contentIntent)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)

@@ -118,7 +118,7 @@ class AssistantTaskWorker(
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val notification = NotificationCompat.Builder(applicationContext, JarvisNotifications.CHANNEL_PROCESSING)
-            .setSmallIcon(R.drawable.ic_tile_jarvis)
+            .setSmallIcon(R.drawable.ic_stat_jarvis)
             .setContentTitle("JARVIS sta lavorando")
             .setContentText(detail)
             .setProgress(100, progress, false)

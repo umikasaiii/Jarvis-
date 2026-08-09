@@ -98,6 +98,27 @@ class LiveTranslatorManager @Inject constructor(
     /** Why the last spoken translation was or wasn't heard (missing voice, etc.). */
     val audioDetail: StateFlow<String> = audio.lastDetail
 
+    /**
+     * Speaks a fixed phrase in [language] so the user can check the voice output
+     * independently of the translation pipeline (and see the audio diagnostic).
+     */
+    fun testVoice(language: TranslationLanguage) {
+        scope.launch {
+            runCatching {
+                audio.speak(
+                    when (language) {
+                        TranslationLanguage.ITALIAN -> "Prova voce. Il traduttore è pronto."
+                        TranslationLanguage.ENGLISH -> "Voice test. The translator is ready."
+                        TranslationLanguage.SPANISH -> "Prueba de voz. El traductor está listo."
+                        TranslationLanguage.FRENCH -> "Test de voix. Le traducteur est prêt."
+                        TranslationLanguage.JAPANESE -> "音声テスト。翻訳の準備ができました。"
+                    },
+                    language,
+                )
+            }
+        }
+    }
+
     private val stabilizer = LanguageStabilizer(minConfidence = 0.5f, switchThreshold = 2)
     private val segmentIds = AtomicLong(0)
     private val controlMutex = Mutex()

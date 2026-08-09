@@ -91,6 +91,7 @@ class LiveTranslatorViewModel @Inject constructor(
         }
     }
 
+    fun testVoice(language: TranslationLanguage) = manager.testVoice(language)
     fun pushToTalk(source: TranslationLanguage) = manager.pushToTalk(source)
     fun swap() {
         manager.swap()

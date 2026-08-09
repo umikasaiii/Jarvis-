@@ -91,8 +91,8 @@ import kotlin.math.roundToInt
 private const val MAX_VISIBLE_MESSAGES = 40
 
 /** How wide a bubble may get, as a share of the list. */
-private const val USER_BUBBLE_SHARE = 0.72f
-private const val JARVIS_BUBBLE_SHARE = 0.78f
+private const val USER_BUBBLE_SHARE = 0.82f
+private const val JARVIS_BUBBLE_SHARE = 0.88f
 
 private val Cyan = Color(0xFF3FD8F0)
 private val CyanBright = Color(0xFF12D9FF)
@@ -477,8 +477,8 @@ private fun MessageList(
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             state = listState,
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-            contentPadding = PaddingValues(vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+            contentPadding = PaddingValues(vertical = 10.dp),
         ) {
             items(messages) { message ->
                 MessageBubble(
@@ -498,7 +498,7 @@ private fun MessageList(
 @Composable
 private fun MessageBubble(message: ChatMessage, assistantName: String, maxWidth: Dp) {
     val isUser = message.fromUser
-    val shape = RoundedCornerShape(22.dp)
+    val shape = RoundedCornerShape(24.dp)
 
     // Arrival: fade up from slightly below. Only new items animate — an existing
     // bubble keeps its finished animation across recompositions.
@@ -519,23 +519,23 @@ private fun MessageBubble(message: ChatMessage, assistantName: String, maxWidth:
                     translationY = (1f - appear.value) * 8.dp.toPx()
                 }
                 .clip(shape)
-                .background(if (isUser) Color(0xB3103048) else Color(0xCC050D16))
+                .background(if (isUser) Color(0xCC12354F) else Color(0xE60A1420))
                 .border(
-                    width = 1.dp,
-                    color = if (isUser) Cyan.copy(alpha = 0.55f) else Color(0xFF4FA8E8).copy(alpha = 0.34f),
+                    width = 1.2.dp,
+                    color = if (isUser) Cyan.copy(alpha = 0.6f) else Color(0xFF4FA8E8).copy(alpha = 0.38f),
                     shape = shape,
                 )
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+                .padding(horizontal = 18.dp, vertical = 14.dp),
         ) {
             Text(
                 if (isUser) "TU" else assistantName.uppercase(),
                 color = Cyan,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Medium,
-                letterSpacing = 1.4.sp,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 1.5.sp,
             )
-            Spacer(Modifier.height(5.dp))
-            Text(message.text, color = Ink, fontSize = 16.sp, lineHeight = 23.sp)
+            Spacer(Modifier.height(7.dp))
+            Text(message.text, color = Ink, fontSize = 18.sp, lineHeight = 26.sp)
         }
     }
 }

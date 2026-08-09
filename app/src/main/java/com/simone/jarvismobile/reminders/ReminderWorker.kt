@@ -42,7 +42,7 @@ class ReminderWorker(
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val notification = NotificationCompat.Builder(applicationContext, JarvisNotifications.CHANNEL_REMINDERS)
-            .setSmallIcon(R.drawable.ic_tile_jarvis)
+            .setSmallIcon(R.drawable.ic_stat_jarvis)
             .setContentTitle("Promemoria JARVIS")
             .setContentText(title)
             .setSubText(whenText)

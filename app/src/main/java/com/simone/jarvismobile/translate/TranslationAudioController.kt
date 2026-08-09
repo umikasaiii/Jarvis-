@@ -139,7 +139,13 @@ class TranslationAudioController @Inject constructor(
             } else {
                 _lastDetail.value = "ok ${language.code}"
             }
-            engine.speak(trimmed, TextToSpeech.QUEUE_FLUSH, null, id) == TextToSpeech.SUCCESS
+            // Force full volume on the media stream: some ROMs otherwise route the
+            // utterance to a muted/near-silent stream and nothing is heard.
+            val params = android.os.Bundle().apply {
+                putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f)
+                putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, android.media.AudioManager.STREAM_MUSIC)
+            }
+            engine.speak(trimmed, TextToSpeech.QUEUE_FLUSH, params, id) == TextToSpeech.SUCCESS
         }
         if (!ok) {
             Log.w(TAG, "tts_speak_rejected ${language.code}")

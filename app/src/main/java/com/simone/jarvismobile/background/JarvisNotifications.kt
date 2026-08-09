@@ -43,7 +43,7 @@ object JarvisNotifications {
         withStopAction: Boolean = false,
     ): NotificationCompat.Builder {
         val builder = NotificationCompat.Builder(context, channelId)
-            .setSmallIcon(R.drawable.ic_tile_jarvis)
+            .setSmallIcon(R.drawable.ic_stat_jarvis)
             .setColor(ACCENT)
             .setColorized(false)
             .setContentTitle(title)

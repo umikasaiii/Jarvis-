@@ -148,6 +148,18 @@ fun LiveTranslatorScreen(
                     Spacer(Modifier.height(0.dp))
                     Text("  Leggi ad alta voce la traduzione")
                 }
+                // Test the target voice independently of the pipeline.
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { viewModel.testVoice(langA) }) { Text("Prova ${langA.display}") }
+                    OutlinedButton(onClick = { viewModel.testVoice(langB) }) { Text("Prova ${langB.display}") }
+                }
+                if (audioDetail.isNotBlank()) {
+                    Text(
+                        "Audio: $audioDetail",
+                        color = if (audioDetail.startsWith("ok")) Color(0xFF2ECC71) else Color(0xFFF3A65B),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
             }
         }
 
@@ -180,17 +192,6 @@ fun LiveTranslatorScreen(
 
         if (partial.isNotBlank()) {
             Text("… $partial", color = Cyan, style = MaterialTheme.typography.bodyMedium)
-        }
-
-        // If a translation was shown but not heard, say why (usually a missing
-        // voice pack for the target language, which the user can install).
-        if (ttsEnabled && audioDetail.startsWith("voce ") && audioDetail.endsWith("non installata")) {
-            Text(
-                "Nessuna voce per questa lingua: installa la voce nelle impostazioni " +
-                    "di sintesi vocale di Android ($audioDetail).",
-                color = Color(0xFFF3A65B),
-                style = MaterialTheme.typography.bodySmall,
-            )
         }
 
         // --- Conversation ----------------------------------------------------

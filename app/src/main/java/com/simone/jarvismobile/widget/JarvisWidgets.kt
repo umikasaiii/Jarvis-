@@ -41,7 +41,7 @@ import kotlinx.coroutines.flow.first
 
 // --- shared palette (black / red / silver, per the reference) --------------
 private val Ink = Color(0xFF0A0A0C)
-private val Panel = Color(0xFF14100F)
+private val Panel = Color(0xFF1C0E0E)
 private val Red = Color(0xFFE23A2E)
 private val RedSoft = Color(0x33E23A2E)
 private val Silver = Color(0xFFD9DEE3)
@@ -139,65 +139,84 @@ class JarvisControlWidget : GlanceAppWidget() {
         val prefs = readWidgetPrefs(context)
         val panel = Panel.copy(alpha = prefs.transparency)
         provideContent {
+            // Glass-like dark red panel with the dragon left, the name over a red
+            // divider and the live status, then a red mic circle and a chat button
+            // — modelled on the reference. Glance can't do glow/blur, so the depth
+            // is approximated with flat black/red/silver tones.
             Row(
                 modifier = GlanceModifier.fillMaxSize()
                     .background(ColorProvider(panel))
-                    .cornerRadius(24.dp)
-                    .padding(12.dp),
+                    .cornerRadius(26.dp)
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Image(
-                    provider = ImageProvider(R.drawable.jarvis_dragon),
-                    contentDescription = "JARVIS",
-                    modifier = GlanceModifier.size(48.dp)
+                // Dragon in a dark ring.
+                Box(
+                    modifier = GlanceModifier.size(54.dp)
+                        .background(ColorProvider(Color(0xFF17100F)))
+                        .cornerRadius(27.dp)
                         .clickable(actionStartActivity(JarvisIntents.voiceIntent(context))),
-                )
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Image(
+                        provider = ImageProvider(R.drawable.jarvis_dragon),
+                        contentDescription = "JARVIS",
+                        modifier = GlanceModifier.size(48.dp),
+                    )
+                }
                 Spacer(GlanceModifier.width(12.dp))
                 Column(modifier = GlanceModifier.defaultWeight()) {
                     Text(
                         "JARVIS",
                         style = TextStyle(
                             color = ColorProvider(Silver),
-                            fontSize = 18.sp,
+                            fontSize = 20.sp,
                             fontWeight = FontWeight.Bold,
                         ),
                     )
+                    // Red divider under the name.
+                    Box(
+                        GlanceModifier.fillMaxWidth().height(2.dp).cornerRadius(1.dp)
+                            .background(ColorProvider(Color(0x88E23A2E))),
+                    ) {}
+                    Spacer(GlanceModifier.height(5.dp))
                     if (prefs.showStatus) {
                         Text(
                             label,
-                            style = TextStyle(color = ColorProvider(Red), fontSize = 13.sp),
+                            style = TextStyle(color = ColorProvider(Silver), fontSize = 14.sp),
                         )
                     }
                 }
-                // Microphone → voice.
+                Spacer(GlanceModifier.width(8.dp))
+                // Microphone → voice: a red disc.
                 Box(
-                    modifier = GlanceModifier.size(44.dp)
-                        .background(ColorProvider(RedSoft))
-                        .cornerRadius(22.dp)
+                    modifier = GlanceModifier.size(48.dp)
+                        .background(ColorProvider(Color(0xFFE23A2E)))
+                        .cornerRadius(24.dp)
                         .clickable(actionStartActivity(JarvisIntents.voiceIntent(context))),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text("🎤", style = TextStyle(fontSize = 20.sp))
+                    Text("🎤", style = TextStyle(fontSize = 22.sp))
                 }
                 Spacer(GlanceModifier.width(8.dp))
-                // Chat → ChatScreen.
+                // Chat → ChatScreen: a red rounded square.
                 Box(
-                    modifier = GlanceModifier.size(44.dp)
-                        .background(ColorProvider(RedSoft))
-                        .cornerRadius(22.dp)
+                    modifier = GlanceModifier.size(48.dp)
+                        .background(ColorProvider(Color(0x33E23A2E)))
+                        .cornerRadius(14.dp)
                         .clickable(actionStartActivity(JarvisIntents.chatIntent(context))),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text("💬", style = TextStyle(fontSize = 20.sp))
+                    Text("💬", style = TextStyle(fontSize = 22.sp))
                 }
-                Spacer(GlanceModifier.width(8.dp))
+                Spacer(GlanceModifier.width(6.dp))
                 // Stop → cancel (broadcast; never opens the app).
                 Box(
-                    modifier = GlanceModifier.size(30.dp)
+                    modifier = GlanceModifier.size(26.dp)
                         .clickable(actionSendBroadcast(JarvisIntents.stopBroadcast(context))),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text("⏹", style = TextStyle(color = ColorProvider(Muted), fontSize = 16.sp))
+                    Text("⏹", style = TextStyle(color = ColorProvider(Muted), fontSize = 15.sp))
                 }
             }
         }
