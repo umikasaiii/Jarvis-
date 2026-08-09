@@ -27,4 +27,8 @@ class MapsViewModel @Inject constructor(
 
     fun importPmtiles(uri: Uri) = viewModelScope.launch { regionManager.importPmtiles(uri) }
     fun delete(id: String) = viewModelScope.launch { regionManager.deleteRegion(id) }
+
+    /** Downloads a .pmtiles from [url] (resumable) and keeps it offline. */
+    fun downloadFromUrl(url: String) = regionManager.download(url.trim())
+    fun cancelDownload() = regionManager.cancelDownload()
 }

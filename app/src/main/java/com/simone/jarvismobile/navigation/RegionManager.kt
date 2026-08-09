@@ -7,16 +7,24 @@ import android.util.Log
 import com.simone.jarvismobile.core.navigation.PmtilesHeaderParser
 import com.simone.jarvismobile.core.navigation.RegionMetadata
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import okhttp3.Call
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import org.json.JSONObject
 import java.io.File
 import java.security.MessageDigest
 import java.util.Locale
 import java.util.UUID
+import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -37,7 +45,7 @@ class RegionManager @Inject constructor(
     private val store: InstalledRegionStore,
     private val navDao: NavDao,
 ) {
-    enum class Phase { COPYING, VERIFYING, INSTALLING, DONE, FAILED }
+    enum class Phase { DOWNLOADING, COPYING, VERIFYING, INSTALLING, DONE, PAUSED, FAILED }
 
     data class Progress(
         val name: String,
@@ -52,6 +60,16 @@ class RegionManager @Inject constructor(
 
     private val _regions = MutableStateFlow<List<RegionMetadata>>(emptyList())
     val regions: StateFlow<List<RegionMetadata>> = _regions.asStateFlow()
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    @Volatile private var downloadJob: Job? = null
+    @Volatile private var currentCall: Call? = null
+    private val httpClient: OkHttpClient by lazy {
+        OkHttpClient.Builder()
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(60, TimeUnit.SECONDS)
+            .build()
+    }
 
     suspend fun refresh() { _regions.value = store.installed() }
 
@@ -74,32 +92,125 @@ class RegionManager @Inject constructor(
                 Log.w(TAG, "region_copy_failed ${it.javaClass.simpleName}")
                 fail(name, "copia non riuscita"); part.delete(); return@withContext null
             }
-
-            // Read the PMTiles header for the real bounds (spec: pick region by GPS).
-            _progress.value = Progress(name, Phase.VERIFYING, total, total)
-            val header = runCatching {
-                part.inputStream().use { input ->
-                    val head = ByteArray(PmtilesHeaderParser.HEADER_SIZE)
-                    val read = input.read(head)
-                    if (read < PmtilesHeaderParser.HEADER_SIZE) null else PmtilesHeaderParser.parse(head)
-                }
-            }.getOrNull()
-            if (header == null) {
-                fail(name, "file PMTiles non valido"); part.delete(); return@withContext null
-            }
-
-            // Install: metadata beside the payload, then atomically swap into place.
-            _progress.value = Progress(name, Phase.INSTALLING, total, total)
-            val meta = buildMetadata(id, name, header.bounds, part.length(), checksum)
-            File(dir, METADATA_NAME).writeText(meta.toString())
-            if (!part.renameTo(finalFile)) {
-                part.copyTo(finalFile, overwrite = true); part.delete()
-            }
-
-            refresh()
-            _progress.value = Progress(name, Phase.DONE, total, total)
-            store.installed().firstOrNull { it.id == id }
+            finishInstall(dir, part, finalFile, id, name, checksum, expectedSha = null)
         }
+
+    /**
+     * Downloads a `.pmtiles` from [url] into a new region and keeps it offline.
+     * Internet is used only for the download; afterwards the map works with no
+     * network (spec §16). The transfer is resumable: a partial `*.part` is resumed
+     * with an HTTP Range request, so an interrupted download continues instead of
+     * restarting. Runs in the background; [cancelDownload] pauses it (keeps the
+     * `*.part`). When [expectedSha256] is given the payload is verified against it.
+     */
+    fun download(url: String, displayName: String? = null, expectedSha256: String? = null) {
+        downloadJob?.cancel()
+        downloadJob = scope.launch { runDownload(url, displayName, expectedSha256) }
+    }
+
+    /** Pauses/cancels an in-flight download, keeping the `*.part` so it can resume. */
+    fun cancelDownload() {
+        runCatching { currentCall?.cancel() }
+        downloadJob?.cancel()
+    }
+
+    private suspend fun runDownload(url: String, displayName: String?, expectedSha256: String?) =
+        withContext(Dispatchers.IO) {
+            val name = (displayName ?: url.substringAfterLast('/').substringBefore('?'))
+                .removeSuffix(".pmtiles").ifBlank { "regione" }
+            val id = slug(name).ifBlank { UUID.randomUUID().toString() }
+            val dir = store.regionDir(id).apply { mkdirs() }
+            val finalFile = File(dir, PMTILES_NAME)
+            val part = File(dir, "$PMTILES_NAME.part")
+            _progress.value = Progress(name, Phase.DOWNLOADING, part.length(), 0)
+
+            try {
+                val already = if (part.exists()) part.length() else 0L
+                val builder = Request.Builder().url(url)
+                if (already > 0) builder.header("Range", "bytes=$already-")
+                val call = httpClient.newCall(builder.build())
+                currentCall = call
+                call.execute().use { resp ->
+                    if (!resp.isSuccessful) { fail(name, "download HTTP ${resp.code}"); return@withContext null }
+                    val body = resp.body ?: run { fail(name, "risposta vuota"); return@withContext null }
+                    // If the server ignored our Range (200 not 206), restart cleanly.
+                    val resume = resp.code == 206 && already > 0
+                    val start = if (resume) already else 0L
+                    if (!resume && already > 0) part.delete()
+                    val total = start + body.contentLength()
+
+                    body.byteStream().use { input ->
+                        java.io.FileOutputStream(part, resume).use { output ->
+                            val buf = ByteArray(64 * 1024)
+                            var done = start
+                            while (true) {
+                                val n = input.read(buf)
+                                if (n < 0) break
+                                output.write(buf, 0, n)
+                                done += n
+                                if (done % (1 shl 20) < buf.size) {
+                                    _progress.value = Progress(name, Phase.DOWNLOADING, done, total)
+                                }
+                            }
+                        }
+                    }
+                }
+                currentCall = null
+                // Hash the finished file (resume-safe: we hash the whole payload).
+                _progress.value = Progress(name, Phase.VERIFYING, part.length(), part.length())
+                val checksum = hashFile(part)
+                finishInstall(dir, part, finalFile, id, name, checksum, expectedSha256)
+            } catch (t: Throwable) {
+                if (t is kotlinx.coroutines.CancellationException) {
+                    _progress.value = Progress(name, Phase.PAUSED, part.length(), 0) // keep .part to resume
+                    throw t
+                }
+                Log.w(TAG, "region_download_failed ${t.javaClass.simpleName}")
+                fail(name, "download non riuscito")
+                null
+            } finally {
+                currentCall = null
+            }
+        }
+
+    /**
+     * Shared tail: read the PMTiles header for bounds, verify an optional checksum,
+     * write metadata.json and atomically swap the `*.part` into place. A file that
+     * isn't a valid PMTiles (or fails the checksum) never installs.
+     */
+    private suspend fun finishInstall(
+        dir: File,
+        part: File,
+        finalFile: File,
+        id: String,
+        name: String,
+        checksum: String,
+        expectedSha: String?,
+    ): RegionMetadata? {
+        if (expectedSha != null && !checksum.equals(expectedSha, ignoreCase = true)) {
+            fail(name, "checksum non corrispondente"); part.delete(); return null
+        }
+        _progress.value = Progress(name, Phase.VERIFYING, part.length(), part.length())
+        val header = runCatching {
+            part.inputStream().use { input ->
+                val head = ByteArray(PmtilesHeaderParser.HEADER_SIZE)
+                val read = input.read(head)
+                if (read < PmtilesHeaderParser.HEADER_SIZE) null else PmtilesHeaderParser.parse(head)
+            }
+        }.getOrNull()
+        if (header == null) {
+            fail(name, "file PMTiles non valido"); part.delete(); return null
+        }
+        _progress.value = Progress(name, Phase.INSTALLING, part.length(), part.length())
+        val meta = buildMetadata(id, name, header.bounds, part.length(), checksum)
+        File(dir, METADATA_NAME).writeText(meta.toString())
+        if (!part.renameTo(finalFile)) {
+            part.copyTo(finalFile, overwrite = true); part.delete()
+        }
+        refresh()
+        _progress.value = Progress(name, Phase.DONE, finalFile.length(), finalFile.length())
+        return store.installed().firstOrNull { it.id == id }
+    }
 
     suspend fun deleteRegion(id: String): Boolean = withContext(Dispatchers.IO) {
         runCatching { navDao.deleteRegionPlaces(id) } // drop this region's POIs too

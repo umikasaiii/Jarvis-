@@ -24,7 +24,12 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
@@ -78,14 +83,41 @@ fun MapsScreen(
                 Text("Importa mappa (.pmtiles)")
             }
 
+            // Download-from-URL: fetch a .pmtiles once, then use it fully offline.
+            var url by rememberSaveable { mutableStateOf("") }
+            OutlinedTextField(
+                value = url,
+                onValueChange = { url = it },
+                label = { Text("URL .pmtiles") },
+                placeholder = { Text("https://…/lazio.pmtiles") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            )
+            Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = { if (url.isNotBlank()) viewModel.downloadFromUrl(url) },
+                    enabled = url.isNotBlank(),
+                    modifier = Modifier.weight(1f),
+                ) { Text("Scarica da URL") }
+                val downloading = progress?.phase == RegionManager.Phase.DOWNLOADING
+                if (downloading) {
+                    OutlinedButton(onClick = { viewModel.cancelDownload() }) { Text("Pausa") }
+                }
+            }
+
             progress?.let { p ->
                 Card(Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
                     Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text("${p.name} · ${phaseLabel(p.phase)}", style = MaterialTheme.typography.bodyMedium)
-                        if (p.phase == RegionManager.Phase.COPYING && p.bytesTotal > 0) {
+                        val active = p.phase == RegionManager.Phase.COPYING || p.phase == RegionManager.Phase.DOWNLOADING
+                        if (active && p.bytesTotal > 0) {
                             LinearProgressIndicator(
                                 progress = { (p.bytesDone.toFloat() / p.bytesTotal).coerceIn(0f, 1f) },
                                 modifier = Modifier.fillMaxWidth(),
+                            )
+                            Text(
+                                "${p.bytesDone / (1024 * 1024)} / ${p.bytesTotal / (1024 * 1024)} MB",
+                                style = MaterialTheme.typography.bodySmall,
                             )
                         }
                         p.error?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
@@ -135,9 +167,11 @@ private fun subtitle(r: RegionMetadata): String {
 }
 
 private fun phaseLabel(p: RegionManager.Phase): String = when (p) {
+    RegionManager.Phase.DOWNLOADING -> "download…"
     RegionManager.Phase.COPYING -> "copia…"
     RegionManager.Phase.VERIFYING -> "verifica…"
     RegionManager.Phase.INSTALLING -> "installazione…"
     RegionManager.Phase.DONE -> "completata"
+    RegionManager.Phase.PAUSED -> "in pausa (riprendi con Scarica)"
     RegionManager.Phase.FAILED -> "non riuscita"
 }
