@@ -1120,8 +1120,8 @@ class SessionCoordinator @Inject constructor(
      * the normal pipeline continues. Starting the interpreter runs a separate
      * offline pipeline (STT → ML Kit translate → TTS) that never touches the LLM.
      */
-    private suspend fun handleTranslatorCommand(transcript: String): String? =
-        when (val cmd = LiveTranslatorCommands.parse(transcript)) {
+    private suspend fun handleTranslatorCommand(transcript: String): String? {
+        return when (val cmd = LiveTranslatorCommands.parse(transcript)) {
             is LiveTranslatorCommand.Start -> {
                 val session = runCatching {
                     liveTranslatorRepo.buildSession(a = cmd.source, b = cmd.target)
@@ -1144,6 +1144,7 @@ class SessionCoordinator @Inject constructor(
             }
             null -> null
         }
+    }
 
     /** Indexes the offline library in the background if one is configured. */
     suspend fun ensureKnowledgeReady() = knowledge.ensureBuilt()
