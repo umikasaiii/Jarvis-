@@ -40,6 +40,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -94,6 +95,15 @@ fun JarvisApp(
 
     LaunchedEffect(openChatRequest) {
         if (openChatRequest > 0) overlay = Overlay.CHAT
+    }
+
+    // A spoken "avvia traduzione live …" starts the session in the background and
+    // bumps this counter; bring the translator screen to the front so the user
+    // lands where they asked to be.
+    val translatorViewModel: com.simone.jarvismobile.ui.livetranslate.LiveTranslatorViewModel = hiltViewModel()
+    val openTranslator by translatorViewModel.openScreenRequest.collectAsStateWithLifecycle()
+    LaunchedEffect(openTranslator) {
+        if (openTranslator > 0) overlay = Overlay.TRANSLATOR
     }
 
     Box(Modifier.fillMaxSize()) {

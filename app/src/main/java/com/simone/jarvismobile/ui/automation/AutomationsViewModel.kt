@@ -47,7 +47,10 @@ class AutomationsViewModel @Inject constructor(
         _message.value = if (repository.add(parsed)) {
             "Creata: ${AutomationCodec.describe(parsed)}"
         } else {
-            "Non sono riuscito a salvare la regola."
+            // Name the reason (vault, disk, or a bug): a bare "could not save" is a
+            // dead end for the user and for whoever has to fix it.
+            val why = repository.lastError.value
+            "Non sono riuscito a salvare la regola" + (if (why.isBlank()) "." else " ($why).")
         }
     }
 

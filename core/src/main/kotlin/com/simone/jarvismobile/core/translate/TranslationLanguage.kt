@@ -16,6 +16,20 @@ enum class TranslationLanguage(val code: String, val display: String) {
     /** The upper-case heading shown above a segment (Japanese has no case). */
     val heading: String get() = if (this == JAPANESE) display else display.uppercase()
 
+    /**
+     * The BCP-47 tag the Android speech recognizer and TTS expect. The bare code
+     * ("it") is NOT accepted by the on-device recognizer — it reports the language
+     * unavailable — so a region must be attached (it→it-IT, en→en-US, …).
+     */
+    val recognizerTag: String
+        get() = when (this) {
+            ITALIAN -> "it-IT"
+            ENGLISH -> "en-US"
+            SPANISH -> "es-ES"
+            FRENCH -> "fr-FR"
+            JAPANESE -> "ja-JP"
+        }
+
     companion object {
         val CODES: List<String> = entries.map { it.code }
 

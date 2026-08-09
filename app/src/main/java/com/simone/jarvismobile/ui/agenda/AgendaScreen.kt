@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.SubdirectoryArrowRight
@@ -102,6 +103,17 @@ fun AgendaScreen(viewModel: AgendaViewModel = hiltViewModel()) {
     var newListDialog by remember { mutableStateOf(false) }
     var datePickerFor by remember { mutableStateOf<AgendaEntry?>(null) }
 
+    // Inline date/time/star for the task being typed, Google-Tasks style: chosen
+    // before saving and cleared once the task is added.
+    var newTaskDate by remember { mutableStateOf<LocalDate?>(null) }
+    var newTaskTime by remember { mutableStateOf<java.time.LocalTime?>(null) }
+    var newTaskStarred by remember { mutableStateOf(false) }
+    var newTaskDatePicker by remember { mutableStateOf(false) }
+    var newTaskTimePicker by remember { mutableStateOf(false) }
+    fun resetNewTask() {
+        newTask = ""; newTaskDate = null; newTaskTime = null; newTaskStarred = false
+    }
+
     // The selected list may be one just created that has no tasks yet, so it
     // isn't in the derived list; show it anyway so the tab stays visible.
     val tabs = if (selected in lists) lists else lists + selected
@@ -152,25 +164,69 @@ fun AgendaScreen(viewModel: AgendaViewModel = hiltViewModel()) {
             )
         }
 
-        // --- Quick add ------------------------------------------------------
+        // --- Quick add (Google-Tasks style: text + date/time/star toolbar) --
         if (selected != viewModel.starredTab) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                OutlinedTextField(
-                    value = newTask,
-                    onValueChange = { newTask = it; viewModel.clearMessage() },
-                    modifier = Modifier.weight(1f),
-                    placeholder = { Text("Nuova attività in “$selected”") },
-                    singleLine = true,
-                )
-                Spacer(Modifier.width(8.dp))
-                IconButton(
-                    onClick = { viewModel.addTask(newTask); newTask = "" },
-                    enabled = newTask.isNotBlank(),
+            Column(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = newTask,
+                        onValueChange = { newTask = it; viewModel.clearMessage() },
+                        modifier = Modifier.weight(1f),
+                        placeholder = { Text("Nuova attività in “$selected”") },
+                        singleLine = true,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    IconButton(
+                        onClick = {
+                            viewModel.addTask(newTask, newTaskDate, newTaskTime, newTaskStarred)
+                            resetNewTask()
+                        },
+                        enabled = newTask.isNotBlank(),
+                    ) {
+                        Icon(Icons.Filled.Add, contentDescription = "Aggiungi", tint = Cyan)
+                    }
+                }
+                // Toolbar: set date, set time, star — mirrors Google Tasks.
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    Icon(Icons.Filled.Add, contentDescription = "Aggiungi", tint = Cyan)
+                    IconButton(onClick = { newTaskDatePicker = true }) {
+                        Icon(
+                            Icons.Filled.CalendarMonth,
+                            contentDescription = "Data",
+                            tint = if (newTaskDate != null) Cyan else Muted,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                    IconButton(onClick = { newTaskTimePicker = true }) {
+                        Icon(
+                            Icons.Filled.Schedule,
+                            contentDescription = "Ora",
+                            tint = if (newTaskTime != null) Cyan else Muted,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                    IconButton(onClick = { newTaskStarred = !newTaskStarred }) {
+                        Icon(
+                            if (newTaskStarred) Icons.Filled.Star else Icons.Filled.StarBorder,
+                            contentDescription = "Speciale",
+                            tint = if (newTaskStarred) Gold else Muted,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                    // Echo the chosen date/time so the user sees what will be saved.
+                    val label = buildString {
+                        newTaskDate?.let { append(Agenda.humanDate(it, today)) }
+                        newTaskTime?.let {
+                            if (isNotEmpty()) append(" · ")
+                            append(Agenda.humanTime(it))
+                        }
+                    }
+                    if (label.isNotBlank()) {
+                        Text(label, color = Cyan, fontSize = 12.sp)
+                    }
                 }
             }
         }
@@ -307,6 +363,45 @@ fun AgendaScreen(viewModel: AgendaViewModel = hiltViewModel()) {
             },
         )
     }
+
+    // Pickers for the task being typed in the quick-add row.
+    if (newTaskDatePicker) {
+        TaskDatePicker(
+            initial = newTaskDate,
+            onDismiss = { newTaskDatePicker = false },
+            onPick = { date -> newTaskDate = date; newTaskDatePicker = false },
+        )
+    }
+    if (newTaskTimePicker) {
+        TaskTimePicker(
+            initial = newTaskTime,
+            onDismiss = { newTaskTimePicker = false },
+            onPick = { time -> newTaskTime = time; newTaskTimePicker = false },
+        )
+    }
+}
+
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun TaskTimePicker(
+    initial: java.time.LocalTime?,
+    onDismiss: () -> Unit,
+    onPick: (java.time.LocalTime) -> Unit,
+) {
+    val base = initial ?: java.time.LocalTime.of(9, 0)
+    val state = androidx.compose.material3.rememberTimePickerState(
+        initialHour = base.hour,
+        initialMinute = base.minute,
+        is24Hour = true,
+    )
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = { onPick(java.time.LocalTime.of(state.hour, state.minute)) }) { Text("OK") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Annulla") } },
+        text = { androidx.compose.material3.TimePicker(state = state) },
+    )
 }
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)

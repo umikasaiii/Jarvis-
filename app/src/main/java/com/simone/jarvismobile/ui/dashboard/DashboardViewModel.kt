@@ -71,6 +71,14 @@ class DashboardViewModel @Inject constructor(
         coordinator.clearResponseNotifications()
     }
 
+    /** Every agenda entry, so a tapped calendar day can list exactly its items. */
+    val allEntries: StateFlow<List<AgendaEntry>> = agenda.entries
+
+    /** Marks a day's task done/undone from the dashboard day view. */
+    fun toggleDone(entry: AgendaEntry) {
+        viewModelScope.launch { runCatching { agenda.setDone(entry.id, !entry.done) } }
+    }
+
     /** Everything still ahead, so the Agenda tile shows the real calendar. */
     val upcoming: StateFlow<List<AgendaEntry>> = agenda.entries
         .map { Agenda.filter(it, java.time.LocalDate.now()) }

@@ -252,6 +252,16 @@ class SessionCoordinator @Inject constructor(
     /** Set by a visible mic press while TTS is speaking (barge-in). */
     @Volatile private var bargeInRequested = false
 
+    /** True after JARVIS asked which two languages to translate between. */
+    @Volatile private var awaitingTranslatorLanguages = false
+
+    /**
+     * Set when this turn just handed the microphone to the Live Translator. The
+     * voice session must then NOT re-open its follow-up mic: two recognizers on
+     * the one shared engine would fight over the microphone.
+     */
+    @Volatile private var translatorTakingOver = false
+
     /** Runs one conversation turn. Safe to call repeatedly; ignores overlap. */
     suspend fun runSession() {
         // A visible talk press always wins over optional background speech.
@@ -313,6 +323,14 @@ class SessionCoordinator @Inject constructor(
                 machine.dispatch(ConversationEvent.AudioReady)
                 turn++
                 continue
+            }
+
+            // The Live Translator just took the microphone: end this session
+            // quietly instead of re-opening a follow-up that would fight it.
+            if (translatorTakingOver) {
+                translatorTakingOver = false
+                machine.dispatch(ConversationEvent.FollowUpTimeout) // -> Idle
+                return
             }
 
             // A reply was spoken; the machine is now in FollowUpWindow.
@@ -397,6 +415,13 @@ class SessionCoordinator @Inject constructor(
      * points the user to the Models screen.
      */
     private suspend fun generateAnswer(transcript: String): String {
+        // If JARVIS asked "Tra quali lingue?" the previous turn, this message is
+        // the answer — handle it before anything else, since the question mark set
+        // the generic awaitingAnswer flag that would otherwise route it to chat.
+        if (awaitingTranslatorLanguages) {
+            handleTranslatorCommand(transcript)?.let { return it }
+        }
+
         // An offer JARVIS made on the previous turn takes precedence: the user is
         // answering it, not starting something new.
         answerPendingOffer(transcript)?.let { return it }
@@ -1121,15 +1146,32 @@ class SessionCoordinator @Inject constructor(
      * offline pipeline (STT → ML Kit translate → TTS) that never touches the LLM.
      */
     private suspend fun handleTranslatorCommand(transcript: String): String? {
+        // The user is answering "Tra quali lingue?" from a previous turn.
+        if (awaitingTranslatorLanguages) {
+            val langs = LiveTranslatorCommands.languagesIn(transcript)
+            if (langs.size >= 2) {
+                awaitingTranslatorLanguages = false
+                return startTranslator(langs[0], langs[1])
+            }
+            // Not two languages yet: keep waiting unless they clearly gave up.
+            if (transcript.lowercase().trim().let { it in setOf("no", "niente", "lascia", "annulla", "stop") }) {
+                awaitingTranslatorLanguages = false
+                return "Va bene, nessuna traduzione."
+            }
+            return "Dimmi due lingue tra italiano, inglese, spagnolo, francese e giapponese. " +
+                "Ad esempio «italiano e inglese»."
+        }
+
         return when (val cmd = LiveTranslatorCommands.parse(transcript)) {
             is LiveTranslatorCommand.Start -> {
-                val session = runCatching {
-                    liveTranslatorRepo.buildSession(a = cmd.source, b = cmd.target)
-                }.getOrNull() ?: return "Non sono riuscito ad avviare il traduttore."
-                liveTranslator.start(session)
-                _diagnostic.value = "traduttore live avviato"
-                "Traduttore live avviato tra ${session.languageA.display} e " +
-                    "${session.languageB.display}. Apri il Traduttore per vederlo."
+                if (cmd.source == null || cmd.target == null) {
+                    // No pair named: ask, and start on the next answer.
+                    awaitingTranslatorLanguages = true
+                    "Tra quali due lingue vuoi tradurre? " +
+                        "Scegli tra italiano, inglese, spagnolo, francese e giapponese."
+                } else {
+                    startTranslator(cmd.source, cmd.target)
+                }
             }
             LiveTranslatorCommand.Stop -> {
                 if (!liveTranslator.isRunning) return null
@@ -1144,6 +1186,30 @@ class SessionCoordinator @Inject constructor(
             }
             null -> null
         }
+    }
+
+    /**
+     * Starts a live-translation session between two languages in CONVERSAZIONE
+     * mode and asks the UI to open the translator screen — a spoken request to
+     * translate should land the user on the translator, not run it invisibly.
+     */
+    private suspend fun startTranslator(
+        a: com.simone.jarvismobile.core.translate.TranslationLanguage,
+        b: com.simone.jarvismobile.core.translate.TranslationLanguage,
+    ): String {
+        val session = runCatching {
+            liveTranslatorRepo.buildSession(
+                a = a,
+                b = b,
+                mode = com.simone.jarvismobile.core.translate.TranslationMode.CONVERSAZIONE,
+            )
+        }.getOrNull() ?: return "Non sono riuscito ad avviare il traduttore."
+        liveTranslator.start(session)
+        liveTranslator.requestOpenScreen()
+        translatorTakingOver = true
+        _diagnostic.value = "traduttore live avviato"
+        return "Apro il traduttore tra ${session.languageA.display} e ${session.languageB.display}, " +
+            "in modalità conversazione."
     }
 
     /** Indexes the offline library in the background if one is configured. */
@@ -1260,6 +1326,7 @@ class SessionCoordinator @Inject constructor(
         pendingConfirmation = null
         pendingSlot = null
         awaitingAnswer = false
+        awaitingTranslatorLanguages = false
         activeSystems.clear()
         activeEpochs.clear()
         injectedContexts.clear()

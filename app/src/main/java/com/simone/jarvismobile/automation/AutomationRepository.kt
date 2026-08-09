@@ -52,7 +52,10 @@ class AutomationRepository @Inject constructor(
 
     suspend fun reload(): List<Automation> {
         val loaded = mutex.withLock { loadLocked() }
-        scheduler.sync(loaded)
+        // Scheduling must never fail a load: the rules are read and shown even if
+        // the exact-alarm path complains (e.g. a missing permission on an OEM ROM).
+        runCatching { scheduler.sync(loaded) }
+            .onFailure { Log.w(TAG, "automation_reload_schedule_failed ${it.javaClass.simpleName}") }
         return loaded
     }
 

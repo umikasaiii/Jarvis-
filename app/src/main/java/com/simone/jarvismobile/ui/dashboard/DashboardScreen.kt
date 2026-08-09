@@ -55,6 +55,7 @@ import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Memory
+import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Star
@@ -208,6 +209,7 @@ fun DashboardScreen(
     val upcoming by viewModel.upcoming.collectAsStateWithLifecycle()
     val today by viewModel.today.collectAsStateWithLifecycle()
     val timeline by viewModel.timeline.collectAsStateWithLifecycle()
+    val allEntries by viewModel.allEntries.collectAsStateWithLifecycle()
     val lastError by viewModel.lastError.collectAsStateWithLifecycle()
     val battery = rememberBatteryStatus()
     val context = LocalContext.current
@@ -230,6 +232,8 @@ fun DashboardScreen(
         }
     }
     var editingAlerts by remember { mutableStateOf<AgendaEntry?>(null) }
+    // A tapped calendar day opens that day's to-dos.
+    var selectedDay by remember { mutableStateOf<LocalDate?>(null) }
 
     // Buzz once when a new message lands (e.g. a voice reply) while on the dashboard.
     var prevUnread by remember { mutableStateOf(unread) }
@@ -426,6 +430,7 @@ fun DashboardScreen(
                 week = upcoming,
                 timeline = timeline,
                 onEditAlerts = { editingAlerts = it },
+                onDayClick = { selectedDay = it },
             )
 
             // --- Row: Casa + Sistema (2 columns) --------------------------
@@ -502,6 +507,67 @@ fun DashboardScreen(
             },
         )
     }
+
+    selectedDay?.let { day ->
+        DayEntriesDialog(
+            day = day,
+            entries = allEntries.filter { it.date == day }.let { Agenda.sorted(it) },
+            onToggle = { viewModel.toggleDone(it) },
+            onDismiss = { selectedDay = null },
+        )
+    }
+}
+
+/** The to-dos and appointments for one tapped calendar day. */
+@Composable
+private fun DayEntriesDialog(
+    day: LocalDate,
+    entries: List<AgendaEntry>,
+    onToggle: (AgendaEntry) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val title = day.dayOfWeek.getDisplayName(TextStyle.FULL, Locale.ITALIAN)
+        .replaceFirstChar { it.uppercase() } + " ${day.dayOfMonth} " +
+        day.month.getDisplayName(TextStyle.FULL, Locale.ITALIAN)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Chiudi") } },
+        title = { Text(title) },
+        text = {
+            if (entries.isEmpty()) {
+                Text("Niente in programma per questo giorno.", color = Muted, fontSize = 13.sp)
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    entries.forEach { e ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                if (e.done) Icons.Filled.CheckCircle else Icons.Filled.RadioButtonUnchecked,
+                                contentDescription = if (e.done) "Fatto" else "Da fare",
+                                tint = if (e.done) Green else Cyan,
+                                modifier = Modifier.size(20.dp).clickable { onToggle(e) },
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    e.text,
+                                    color = Ink,
+                                    fontSize = 14.sp,
+                                    textDecoration = if (e.done) {
+                                        androidx.compose.ui.text.style.TextDecoration.LineThrough
+                                    } else {
+                                        null
+                                    },
+                                )
+                                e.time?.let {
+                                    Text("Alle ${Agenda.humanTime(it)}", color = Muted, fontSize = 11.sp)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+    )
 }
 
 // --- Building blocks -------------------------------------------------------
@@ -697,6 +763,7 @@ private fun AgendaBlock(
     week: List<AgendaEntry>,
     timeline: List<AgendaEntry>,
     onEditAlerts: (AgendaEntry) -> Unit,
+    onDayClick: (LocalDate) -> Unit = {},
 ) {
     val todayDate = LocalDate.now()
     val doneToday = timeline.count { it.date == todayDate && it.done }
@@ -752,6 +819,7 @@ private fun AgendaBlock(
                         date = date,
                         isToday = i == 0,
                         hasEntries = week.any { it.date == date },
+                        onClick = { onDayClick(date) },
                         modifier = Modifier.weight(1f),
                     )
                 }
@@ -789,10 +857,11 @@ private fun WeekDayPip(
     date: LocalDate,
     isToday: Boolean,
     hasEntries: Boolean,
+    onClick: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Column(
-        modifier = modifier,
+        modifier = modifier.clickable { onClick() },
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(3.dp),
     ) {

@@ -69,12 +69,24 @@ class AgendaViewModel @Inject constructor(
 
     fun clearMessage() { _message.value = "" }
 
-    /** Adds a task to the current list (never the starred pseudo-tab). */
-    fun addTask(title: String, due: LocalDate? = null) = viewModelScope.launch {
+    /**
+     * Adds a task to the current list (never the starred pseudo-tab), Google-Tasks
+     * style: an optional due date, an optional time (which makes it a timed
+     * appointment on the dashboard), and an optional star — all chosen inline
+     * before saving.
+     */
+    fun addTask(
+        title: String,
+        due: LocalDate? = null,
+        time: java.time.LocalTime? = null,
+        starred: Boolean = false,
+    ) = viewModelScope.launch {
         val clean = title.trim()
         if (clean.isEmpty()) return@launch
         val list = _selectedList.value.takeIf { it != starredTab } ?: AgendaEntry.DEFAULT_LIST
-        val entry = AgendaEntry(date = due, text = clean, list = list)
+        // A time with no date means "today at HH:MM" — the same as Google Tasks.
+        val date = due ?: time?.let { LocalDate.now() }
+        val entry = AgendaEntry(date = date, time = time, text = clean, list = list, starred = starred)
         if (!agenda.add(entry)) _message.value = "Non sono riuscito a salvare l'attività."
     }
 

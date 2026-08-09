@@ -74,6 +74,17 @@ class LiveTranslatorManager @Inject constructor(
     /** Which language the recognizer is currently transcribing (UI hint). */
     val listeningLanguage: StateFlow<TranslationLanguage?> = _listeningLanguage.asStateFlow()
 
+    private val _openScreenRequest = MutableStateFlow(0)
+    /**
+     * Bumped when a session is started by voice/chat command, so the UI can bring
+     * the Live Translator screen to the front (the user asked for it out loud, so
+     * they expect to see it — not just have it running in the background).
+     */
+    val openScreenRequest: StateFlow<Int> = _openScreenRequest.asStateFlow()
+
+    /** Asks the UI to open the translator screen. */
+    fun requestOpenScreen() { _openScreenRequest.value = _openScreenRequest.value + 1 }
+
     private val stabilizer = LanguageStabilizer(minConfidence = 0.5f, switchThreshold = 2)
     private val segmentIds = AtomicLong(0)
     private val controlMutex = Mutex()
@@ -137,7 +148,7 @@ class LiveTranslatorManager @Inject constructor(
                 val listenLang = stabilizer.current ?: session.languageA
                 _listeningLanguage.value = listenLang
                 _state.value = LiveTranslationState.Listening
-                val result = stt.transcribe(listenLang.code)
+                val result = stt.transcribe(listenLang.recognizerTag)
                 if (!isActive) break
                 when (result) {
                     is SttResult.Text -> handleFinal(session, segmenter, result.text)
@@ -224,7 +235,7 @@ class LiveTranslatorManager @Inject constructor(
             val target = if (source == session.languageA) session.languageB else session.languageA
             _listeningLanguage.value = source
             _state.value = LiveTranslationState.Listening
-            when (val result = stt.transcribe(source.code)) {
+            when (val result = stt.transcribe(source.recognizerTag)) {
                 is SttResult.Text -> {
                     val engine = engineRouter.engine()
                     when (val tr = engine.translate(result.text, source.code, target.code)) {

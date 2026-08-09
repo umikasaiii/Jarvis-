@@ -37,6 +37,7 @@ class LiveTranslatorViewModel @Inject constructor(
     val segments: StateFlow<List<ConversationSegment>> = manager.segments
     val partial: StateFlow<String> = manager.partial
     val listeningLanguage: StateFlow<TranslationLanguage?> = manager.listeningLanguage
+    val openScreenRequest: StateFlow<Int> = manager.openScreenRequest
 
     val languageA: StateFlow<TranslationLanguage> = repo.languageA
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TranslationLanguage.ITALIAN)
