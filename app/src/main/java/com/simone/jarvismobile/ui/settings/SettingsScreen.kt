@@ -59,6 +59,7 @@ fun SettingsScreen(
     onOpenTranslator: () -> Unit = {},
     onOpenDocuments: () -> Unit = {},
     onOpenNavigation: () -> Unit = {},
+    onOpenMaps: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val name by viewModel.assistantName.collectAsStateWithLifecycle()
@@ -543,6 +544,9 @@ fun SettingsScreen(
                 )
                 OutlinedButton(onClick = onOpenNavigation, modifier = Modifier.fillMaxWidth()) {
                     Text("Apri navigazione")
+                }
+                OutlinedButton(onClick = onOpenMaps, modifier = Modifier.fillMaxWidth()) {
+                    Text("Mappe offline")
                 }
             }
         }

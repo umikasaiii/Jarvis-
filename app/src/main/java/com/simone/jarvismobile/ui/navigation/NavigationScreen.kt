@@ -95,7 +95,6 @@ fun NavigationScreen(
         mapView.onResume()
         mapView.getMapAsync { m ->
             m.uiSettings.isRotateGesturesEnabled = true
-            m.setStyle(Style.Builder().fromUri("asset://jarvis-navigation.json")) { }
             map = m
         }
         onDispose {
@@ -103,6 +102,23 @@ fun NavigationScreen(
             mapView.onStop()
             mapView.onDestroy()
         }
+    }
+
+    // Load the style once the map is ready, injecting the covering region's local
+    // PMTiles as the vector source. With no region installed the style still
+    // renders (dark background) and the "download map" banner shows.
+    LaunchedEffect(map, covering) {
+        val m = map ?: return@LaunchedEffect
+        val base = runCatching {
+            context.assets.open("jarvis-navigation.json").bufferedReader().use { it.readText() }
+        }.getOrNull() ?: return@LaunchedEffect
+        val pmtilesPath = viewModel.coveringPmtilesPath()
+        val styleJson = if (pmtilesPath != null) {
+            base.replace("pmtiles://LOCAL_REGION_PLACEHOLDER", "pmtiles://file://$pmtilesPath")
+        } else {
+            base
+        }
+        m.setStyle(Style.Builder().fromJson(styleJson))
     }
 
     // Start/stop GNSS with the screen; ask for permission if needed.
