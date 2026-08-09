@@ -122,6 +122,21 @@ class RegionManager @Inject constructor(
     }
 
     /**
+     * Installs a whole region from a catalogue entry in one job: the map first
+     * (verified against the manifest checksum when present), then the routing and
+     * search companions if the manifest provides them — so a single tap yields a
+     * complete, offline region. Each step is resumable and reports on [progress].
+     */
+    fun installFromCatalog(entry: CatalogEntry) {
+        downloadJob?.cancel()
+        downloadJob = scope.launch {
+            val region = runDownload(entry.pmtilesUrl, entry.name, entry.sha256) ?: return@launch
+            entry.routingUrl?.let { runCompanionDownload(region.id, CompanionKind.ROUTING, it) }
+            entry.searchUrl?.let { runCompanionDownload(region.id, CompanionKind.SEARCH, it) }
+        }
+    }
+
+    /**
      * Downloads a region's routing ([CompanionKind.ROUTING]) or search
      * ([CompanionKind.SEARCH]) data from [url] into an already-installed region, so a
      * map becomes complete — map + routes + POIs — with separate downloads. The

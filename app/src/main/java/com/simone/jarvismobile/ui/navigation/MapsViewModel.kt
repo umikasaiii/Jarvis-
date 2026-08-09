@@ -4,10 +4,14 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.simone.jarvismobile.core.navigation.RegionMetadata
+import com.simone.jarvismobile.navigation.CatalogEntry
+import com.simone.jarvismobile.navigation.RegionCatalogRepository
 import com.simone.jarvismobile.navigation.RegionManager
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -16,6 +20,7 @@ import javax.inject.Inject
 @HiltViewModel
 class MapsViewModel @Inject constructor(
     private val regionManager: RegionManager,
+    private val catalog: RegionCatalogRepository,
 ) : ViewModel() {
 
     val regions: StateFlow<List<RegionMetadata>> = regionManager.regions
@@ -23,7 +28,24 @@ class MapsViewModel @Inject constructor(
 
     val progress: StateFlow<RegionManager.Progress?> = regionManager.progress
 
-    init { viewModelScope.launch { regionManager.refresh() } }
+    private val _catalogEntries = MutableStateFlow<List<CatalogEntry>>(emptyList())
+    val catalogEntries: StateFlow<List<CatalogEntry>> = _catalogEntries.asStateFlow()
+
+    private val _manifestUrl = MutableStateFlow("")
+    val manifestUrl: StateFlow<String> = _manifestUrl.asStateFlow()
+
+    init {
+        viewModelScope.launch { regionManager.refresh() }
+        viewModelScope.launch { _manifestUrl.value = catalog.manifestUrl() }
+    }
+
+    fun fetchCatalog(url: String) = viewModelScope.launch {
+        catalog.saveManifestUrl(url)
+        _manifestUrl.value = url.trim()
+        _catalogEntries.value = catalog.fetch(url.trim())
+    }
+
+    fun installFromCatalog(entry: CatalogEntry) = regionManager.installFromCatalog(entry)
 
     fun importPmtiles(uri: Uri) = viewModelScope.launch { regionManager.importPmtiles(uri) }
     fun delete(id: String) = viewModelScope.launch { regionManager.deleteRegion(id) }

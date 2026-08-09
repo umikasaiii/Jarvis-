@@ -62,6 +62,9 @@ class SettingsRepository @Inject constructor(
         val NOTIF_SOUND = booleanPreferencesKey("notif_sound")
         val NOTIF_VIBRATION = booleanPreferencesKey("notif_vibration")
 
+        // Offline navigation region catalogue (manifest URL).
+        val NAV_MANIFEST_URL = stringPreferencesKey("nav_manifest_url")
+
         // Document import (Memory & Knowledge).
         val DOC_SAVE_DEFAULT = booleanPreferencesKey("doc_save_to_vault_default")
         val DOC_AUTO_INDEX = booleanPreferencesKey("doc_auto_index")
@@ -489,6 +492,14 @@ class SettingsRepository @Inject constructor(
     /** Whether images are OCR'd on import (off by default: OCR is opt-in). */
     val docOcrImages: Flow<Boolean> =
         context.settingsDataStore.data.map { it[Keys.DOC_OCR_IMAGES] ?: false }
+
+    /** Persisted URL of the offline-map region catalogue (manifest). */
+    val navManifestUrl: Flow<String> =
+        context.settingsDataStore.data.map { it[Keys.NAV_MANIFEST_URL] ?: "" }
+
+    suspend fun setNavManifestUrl(value: String) {
+        context.settingsDataStore.edit { it[Keys.NAV_MANIFEST_URL] = value }
+    }
 
     suspend fun setDocSaveToVaultDefault(value: Boolean) {
         context.settingsDataStore.edit { it[Keys.DOC_SAVE_DEFAULT] = value }

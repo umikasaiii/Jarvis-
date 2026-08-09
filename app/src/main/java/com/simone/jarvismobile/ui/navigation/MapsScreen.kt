@@ -8,8 +8,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
@@ -56,6 +56,8 @@ fun MapsScreen(
 ) {
     val regions by viewModel.regions.collectAsStateWithLifecycle()
     val progress by viewModel.progress.collectAsStateWithLifecycle()
+    val catalogEntries by viewModel.catalogEntries.collectAsStateWithLifecycle()
+    val savedManifestUrl by viewModel.manifestUrl.collectAsStateWithLifecycle()
 
     val picker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
@@ -75,7 +77,10 @@ fun MapsScreen(
             )
         },
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)) {
+        Column(
+            Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)
+                .verticalScroll(rememberScrollState()),
+        ) {
             Text(
                 "Installa una regione importando un file .pmtiles già sul dispositivo. " +
                     "Il file viene copiato, verificato (SHA-256) e i confini vengono letti " +
@@ -130,12 +135,60 @@ fun MapsScreen(
                 }
             }
 
+            // Region catalogue (manifest): a list of downloadable regions.
+            var manifestField by rememberSaveable { mutableStateOf("") }
+            androidx.compose.runtime.LaunchedEffect(savedManifestUrl) {
+                if (manifestField.isBlank() && savedManifestUrl.isNotBlank()) manifestField = savedManifestUrl
+            }
+            Text("Catalogo regioni", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 16.dp, bottom = 4.dp))
+            OutlinedTextField(
+                value = manifestField,
+                onValueChange = { manifestField = it },
+                label = { Text("URL catalogo (manifest JSON)") },
+                placeholder = { Text("https://…/regions.json") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedButton(
+                onClick = { if (manifestField.isNotBlank()) viewModel.fetchCatalog(manifestField) },
+                enabled = manifestField.isNotBlank(),
+                modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+            ) { Text("Aggiorna catalogo") }
+            Column(
+                Modifier.fillMaxWidth().padding(top = 6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                catalogEntries.forEach { entry ->
+                    val installed = regions.any { it.id == entry.id }
+                    Card(Modifier.fillMaxWidth()) {
+                        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(entry.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(
+                                    buildString {
+                                        if (entry.sizeBytes > 0) append("${entry.sizeBytes / (1024 * 1024)} MB · ")
+                                        append(if (entry.routingUrl != null) "percorsi " else "")
+                                        append(if (entry.searchUrl != null) "ricerca" else "")
+                                    }.trim().ifBlank { "mappa" },
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                            if (installed) {
+                                Text("installata", style = MaterialTheme.typography.bodySmall)
+                            } else {
+                                Button(onClick = { viewModel.installFromCatalog(entry) }) { Text("Scarica") }
+                            }
+                        }
+                    }
+                }
+            }
+
             Text("Mappe installate", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 12.dp, bottom = 6.dp))
             if (regions.isEmpty()) {
                 Text("Nessuna mappa installata.", style = MaterialTheme.typography.bodyMedium)
             } else {
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(regions, key = { it.id }) { region ->
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    regions.forEach { region ->
                         RegionRow(
                             region = region,
                             onDelete = { viewModel.delete(region.id) },
