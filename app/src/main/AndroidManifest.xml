@@ -107,13 +107,16 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
 
-            <!-- Safe deep link to start an explicit listening session:
-                 jarvis://listen  (docs/ARCHITECTURE.md §7.4). -->
+            <!-- Safe internal deep links: jarvis://listen and jarvis://voice
+                 start an explicit listening session; jarvis://chat opens the chat
+                 (docs/ARCHITECTURE.md §7.4). Stop is a broadcast, not a screen. -->
             <intent-filter android:autoVerify="false">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="jarvis" android:host="listen" />
+                <data android:scheme="jarvis" android:host="voice" />
+                <data android:scheme="jarvis" android:host="chat" />
             </intent-filter>
         </activity>
 
@@ -126,6 +129,16 @@
         <receiver
             android:name=".background.CancelTaskReceiver"
             android:exported="false" />
+
+        <!-- Widget/notification "Stop" action: cancels generation/TTS/voice
+             without opening the app. -->
+        <receiver
+            android:name=".widget.JarvisActionReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.simone.jarvismobile.action.STOP" />
+            </intent-filter>
+        </receiver>
 
         <!-- Condition automations. Android has no per-percent broadcast a
              manifest may declare, so battery thresholds are evaluated at the
@@ -176,6 +189,41 @@
             android:name="androidx.work.impl.foreground.SystemForegroundService"
             android:foregroundServiceType="dataSync|mediaPlayback"
             tools:node="merge" />
+
+        <!-- Home-screen widgets (Jetpack Glance). Each only fires an existing
+             deep link / broadcast; none records or holds state of its own. -->
+        <receiver
+            android:name=".widget.JarvisVoiceWidgetReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/jarvis_voice_widget_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.JarvisChatWidgetReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/jarvis_chat_widget_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.JarvisControlWidgetReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/jarvis_control_widget_info" />
+        </receiver>
 
         <!-- Quick Settings tile (Android 7+). Opens an explicit session; it never
              records silently (docs/ARCHITECTURE.md §7.2). -->

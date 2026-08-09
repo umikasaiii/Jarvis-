@@ -95,6 +95,9 @@ class LiveTranslatorManager @Inject constructor(
     /** Asks the UI to open the translator screen. */
     fun requestOpenScreen() { _openScreenRequest.value = _openScreenRequest.value + 1 }
 
+    /** Why the last spoken translation was or wasn't heard (missing voice, etc.). */
+    val audioDetail: StateFlow<String> = audio.lastDetail
+
     private val stabilizer = LanguageStabilizer(minConfidence = 0.5f, switchThreshold = 2)
     private val segmentIds = AtomicLong(0)
     private val controlMutex = Mutex()

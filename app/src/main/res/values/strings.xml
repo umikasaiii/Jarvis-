@@ -6,6 +6,11 @@
     <string name="tile_label">JARVIS</string>
     <string name="tile_subtitle_idle">Tocca per parlare</string>
 
+    <!-- Home-screen widgets. -->
+    <string name="widget_voice_desc">JARVIS — avvia l\'ascolto vocale</string>
+    <string name="widget_chat_desc">JARVIS — apri la chat</string>
+    <string name="widget_control_desc">JARVIS — stato, microfono e chat</string>
+
     <string name="listening_channel_name">Sessione di ascolto</string>
     <string name="listening_channel_desc">Notifica visibile mentre il microfono è attivo per una sessione avviata da te.</string>
     <string name="listening_title">JARVIS è in ascolto</string>

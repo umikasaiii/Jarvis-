@@ -137,6 +137,10 @@ dependencies {
     implementation("com.google.mlkit:translate:17.0.3")
     implementation("com.google.mlkit:language-id:17.0.6")
 
+    // Home-screen widgets (Jetpack Glance). Widgets are thin: they only fire the
+    // existing deep links/broadcasts, never their own controllers.
+    implementation("androidx.glance:glance-appwidget:1.1.1")
+
     // Unit tests.
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

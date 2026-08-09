@@ -43,8 +43,11 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        // Stop is an action, not a screen: honour it even on a cold start.
+        if (isStopRequest(intent)) coordinator.cancel()
         val startListening = isListeningRequest(intent)
-        val openChat = startListening || intent?.getBooleanExtra(EXTRA_OPEN_CHAT, false) == true
+        val openChat = startListening || isChatRequest(intent) ||
+            intent?.getBooleanExtra(EXTRA_OPEN_CHAT, false) == true
         if (openChat) openChatRequests.value += 1
         if (startListening) startListeningRequests.value += 1
 
@@ -66,8 +69,9 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        if (isStopRequest(intent)) coordinator.cancel()
         val startListening = isListeningRequest(intent)
-        if (startListening || intent.getBooleanExtra(EXTRA_OPEN_CHAT, false)) {
+        if (startListening || isChatRequest(intent) || intent.getBooleanExtra(EXTRA_OPEN_CHAT, false)) {
             openChatRequests.value += 1
         }
         if (startListening) startListeningRequests.value += 1
@@ -80,10 +84,18 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch { coordinator.ensureMemoryReady() }
     }
 
+    /** Voice: system Assist, or jarvis://voice / jarvis://listen. */
     private fun isListeningRequest(intent: Intent?): Boolean =
-        intent?.action == Intent.ACTION_ASSIST || intent?.data?.let {
-            it.scheme == "jarvis" && it.host == "listen"
-        } == true
+        intent?.action == Intent.ACTION_ASSIST || jarvisHost(intent) in setOf("listen", "voice")
+
+    /** Chat: jarvis://chat. */
+    private fun isChatRequest(intent: Intent?): Boolean = jarvisHost(intent) == "chat"
+
+    /** Stop: jarvis://stop — cancels LLM generation, TTS and any voice session. */
+    private fun isStopRequest(intent: Intent?): Boolean = jarvisHost(intent) == "stop"
+
+    private fun jarvisHost(intent: Intent?): String? =
+        intent?.data?.takeIf { it.scheme == "jarvis" }?.host
 
     private fun requestNeededPermissions() {
         val needed = buildList {
@@ -100,5 +112,14 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_OPEN_CHAT = "open_chat"
+
+        /**
+         * Pure mirror of the deep-link host rule (a `jarvis://<host>` URI yields
+         * `<host>`, anything else null), extracted so the contract with
+         * [com.simone.jarvismobile.widget.JarvisIntents] is unit-testable without
+         * an Android [android.net.Uri].
+         */
+        fun jarvisHostForTest(scheme: String?, host: String?): String? =
+            if (scheme == "jarvis") host else null
     }
 }

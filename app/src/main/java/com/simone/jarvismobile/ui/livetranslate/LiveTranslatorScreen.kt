@@ -71,6 +71,7 @@ fun LiveTranslatorScreen(
     val segments by viewModel.segments.collectAsStateWithLifecycle()
     val partial by viewModel.partial.collectAsStateWithLifecycle()
     val listening by viewModel.listeningLanguage.collectAsStateWithLifecycle()
+    val audioDetail by viewModel.audioDetail.collectAsStateWithLifecycle()
 
     // "Active" for the controls means a session is running or spinning up — any
     // state other than the two at-rest ones (Idle, and Error you can restart from).
@@ -179,6 +180,17 @@ fun LiveTranslatorScreen(
 
         if (partial.isNotBlank()) {
             Text("… $partial", color = Cyan, style = MaterialTheme.typography.bodyMedium)
+        }
+
+        // If a translation was shown but not heard, say why (usually a missing
+        // voice pack for the target language, which the user can install).
+        if (ttsEnabled && audioDetail.startsWith("voce ") && audioDetail.endsWith("non installata")) {
+            Text(
+                "Nessuna voce per questa lingua: installa la voce nelle impostazioni " +
+                    "di sintesi vocale di Android ($audioDetail).",
+                color = Color(0xFFF3A65B),
+                style = MaterialTheme.typography.bodySmall,
+            )
         }
 
         // --- Conversation ----------------------------------------------------

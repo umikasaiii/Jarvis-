@@ -2,14 +2,70 @@ package com.simone.jarvismobile.background
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
+import android.graphics.BitmapFactory
 import android.os.Build
+import androidx.core.app.NotificationCompat
 import com.simone.jarvismobile.R
+import com.simone.jarvismobile.widget.JarvisIntents
 
+/**
+ * The one place JARVIS notifications are shaped. Channels (Risposte, Promemoria,
+ * Sistema/background) live here, and [styled] applies the shared JARVIS look —
+ * monochrome small icon, "JARVIS" title, orb large icon, dark accent and, where
+ * relevant, the Apri chat / Parla / Stop actions — so every surface is
+ * consistent and no launch logic is duplicated (it reuses [JarvisIntents]).
+ */
 object JarvisNotifications {
     const val CHANNEL_PROCESSING = "jarvis_processing"
     const val CHANNEL_RESPONSES = "jarvis_responses"
     const val CHANNEL_REMINDERS = "jarvis_reminders"
+
+    /** JARVIS cyan, used as the notification accent where Android allows it. */
+    private const val ACCENT = 0xFF4FD1E0.toInt()
+
+    /**
+     * A notification pre-styled as JARVIS. [contentIntent] is what a tap opens
+     * (usually the chat). [expandableText], when given, becomes a BigTextStyle so
+     * long replies expand. [withVoiceAction]/[withStopAction] add the Parla/Stop
+     * buttons; [withChatAction] adds an explicit "Apri chat".
+     */
+    fun styled(
+        context: Context,
+        channelId: String,
+        title: String = "JARVIS",
+        text: String,
+        contentIntent: PendingIntent? = null,
+        expandableText: String? = null,
+        withChatAction: Boolean = false,
+        withVoiceAction: Boolean = false,
+        withStopAction: Boolean = false,
+    ): NotificationCompat.Builder {
+        val builder = NotificationCompat.Builder(context, channelId)
+            .setSmallIcon(R.drawable.ic_tile_jarvis)
+            .setColor(ACCENT)
+            .setColorized(false)
+            .setContentTitle(title)
+            .setContentText(text)
+        largeIcon(context)?.let(builder::setLargeIcon)
+        contentIntent?.let { builder.setContentIntent(it).setAutoCancel(true) }
+        expandableText?.let { builder.setStyle(NotificationCompat.BigTextStyle().bigText(it)) }
+        if (withChatAction) {
+            builder.addAction(R.drawable.ic_tile_jarvis, "Apri chat", JarvisIntents.chatPending(context))
+        }
+        if (withVoiceAction) {
+            builder.addAction(R.drawable.ic_tile_jarvis, "Parla", JarvisIntents.voicePending(context))
+        }
+        if (withStopAction) {
+            builder.addAction(R.drawable.ic_tile_jarvis, "Stop", JarvisIntents.stopPending(context))
+        }
+        return builder
+    }
+
+    /** The orb avatar shown as the notification large icon, or null if absent. */
+    private fun largeIcon(context: Context) =
+        runCatching { BitmapFactory.decodeResource(context.resources, R.drawable.orb) }.getOrNull()
 
     fun createChannels(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return

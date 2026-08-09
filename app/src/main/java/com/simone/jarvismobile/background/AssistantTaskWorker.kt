@@ -160,18 +160,19 @@ class AssistantTaskWorker(
                 .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        val builder = NotificationCompat.Builder(
-            applicationContext,
-            JarvisNotifications.CHANNEL_RESPONSES,
+        // Centralised JARVIS look + Apri chat / Parla / Stop actions.
+        val builder = JarvisNotifications.styled(
+            context = applicationContext,
+            channelId = JarvisNotifications.CHANNEL_RESPONSES,
+            title = "Risposta JARVIS pronta",
+            text = if (showPreview) answer.take(180) else "Tocca per aprire la conversazione",
+            contentIntent = openChat,
+            expandableText = if (showPreview) answer.take(700) else null,
+            withVoiceAction = true,
+            withStopAction = true,
         )
-            .setSmallIcon(R.drawable.ic_tile_jarvis)
-            .setContentTitle("Risposta JARVIS pronta")
-            .setContentText(if (showPreview) answer.take(180) else "Tocca per aprire la conversazione")
-            .setContentIntent(openChat)
-            .setAutoCancel(true)
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setVisibility(if (showPreview) NotificationCompat.VISIBILITY_PRIVATE else NotificationCompat.VISIBILITY_SECRET)
-        if (showPreview) builder.setStyle(NotificationCompat.BigTextStyle().bigText(answer.take(700)))
         val notification: Notification = builder.build()
         try {
             NotificationManagerCompat.from(applicationContext)

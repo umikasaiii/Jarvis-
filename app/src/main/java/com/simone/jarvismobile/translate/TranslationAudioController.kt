@@ -6,6 +6,7 @@ import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import android.util.Log
 import com.simone.jarvismobile.core.translate.TranslationLanguage
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CompletableDeferred
@@ -42,6 +43,10 @@ class TranslationAudioController @Inject constructor(
 
     private val _ready = MutableStateFlow(false)
     val ready: StateFlow<Boolean> = _ready.asStateFlow()
+
+    private val _lastDetail = MutableStateFlow("")
+    /** Why the last utterance was (or wasn't) heard — for diagnostics/UI. */
+    val lastDetail: StateFlow<String> = _lastDetail.asStateFlow()
 
     private var tts: TextToSpeech? = null
     private val pending = ConcurrentHashMap<String, CompletableDeferred<Unit>>()
@@ -105,9 +110,23 @@ class TranslationAudioController @Inject constructor(
     suspend fun speak(text: String, language: TranslationLanguage) {
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return
-        if (!ensureReady()) return
+        if (!ensureReady()) {
+            _lastDetail.value = "tts non inizializzato"
+            return
+        }
         val engine = tts ?: return
-        runCatching { engine.language = locale(language) }
+        // Setting the language returns a code: a missing/unsupported voice is the
+        // usual reason a translation is shown but never heard. Surface it and try
+        // to fetch the data, but still attempt to speak (some engines synthesise
+        // anyway / download on demand).
+        val langResult = runCatching { engine.setLanguage(locale(language)) }
+            .getOrDefault(TextToSpeech.LANG_NOT_SUPPORTED)
+        if (langResult == TextToSpeech.LANG_MISSING_DATA || langResult == TextToSpeech.LANG_NOT_SUPPORTED) {
+            _lastDetail.value = "voce ${language.code} non installata"
+            Log.w(TAG, "tts_language_unavailable ${language.code} code=$langResult")
+        } else {
+            _lastDetail.value = "ok ${language.code}"
+        }
 
         val id = UUID.randomUUID().toString()
         val done = CompletableDeferred<Unit>()
@@ -116,12 +135,14 @@ class TranslationAudioController @Inject constructor(
         _speaking.value = true
         val ok = engine.speak(trimmed, TextToSpeech.QUEUE_FLUSH, null, id) == TextToSpeech.SUCCESS
         if (!ok) {
+            Log.w(TAG, "tts_speak_rejected ${language.code}")
             finish(id)
             abandonFocus()
             return
         }
         try {
-            done.await()
+            // Never let a silent/stuck utterance hang the whole translation loop.
+            kotlinx.coroutines.withTimeoutOrNull(SPEAK_TIMEOUT_MS) { done.await() }
         } finally {
             if (!done.isCompleted) {
                 engine.stop()
@@ -172,5 +193,10 @@ class TranslationAudioController @Inject constructor(
         TranslationLanguage.SPANISH -> Locale("es", "ES")
         TranslationLanguage.FRENCH -> Locale.FRENCH
         TranslationLanguage.JAPANESE -> Locale.JAPANESE
+    }
+
+    private companion object {
+        const val TAG = "JarvisTranslateTts"
+        const val SPEAK_TIMEOUT_MS = 20_000L
     }
 }

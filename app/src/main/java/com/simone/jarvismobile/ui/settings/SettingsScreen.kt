@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -524,6 +526,8 @@ fun SettingsScreen(
             }
         }
 
+        InterfaceSettingsSection()
+
         TranslatorSettingsSection(onOpenTranslator = onOpenTranslator)
 
         Card(Modifier.fillMaxWidth()) {
@@ -610,6 +614,64 @@ private fun TranslatorSettingsSection(
                 Text("Apri il Traduttore Live")
             }
         }
+    }
+}
+
+/** Interfaccia → Widget e notifiche. Self-contained (its own ViewModel). */
+@Composable
+private fun InterfaceSettingsSection(
+    viewModel: InterfaceSettingsViewModel = hiltViewModel(),
+) {
+    val showStatus by viewModel.widgetShowStatus.collectAsStateWithLifecycle()
+    val style by viewModel.widgetStyle.collectAsStateWithLifecycle()
+    val transparency by viewModel.widgetTransparency.collectAsStateWithLifecycle()
+    val respNotif by viewModel.responseNotifications.collectAsStateWithLifecycle()
+    val remNotif by viewModel.reminderNotifications.collectAsStateWithLifecycle()
+    val sound by viewModel.notifSound.collectAsStateWithLifecycle()
+    val vibration by viewModel.notifVibration.collectAsStateWithLifecycle()
+
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Interfaccia — Widget e notifiche", style = MaterialTheme.typography.titleMedium)
+
+            Text("Widget", style = MaterialTheme.typography.titleSmall)
+            SwitchRow("Mostra stato nel widget", showStatus, viewModel::setWidgetShowStatus)
+            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Text("Stile widget:")
+                Spacer(Modifier.size(8.dp))
+                listOf("compatto", "standard").forEach { opt ->
+                    val on = style == opt
+                    TextButton(onClick = { viewModel.setWidgetStyle(opt) }) {
+                        Text(if (on) "● $opt" else opt)
+                    }
+                }
+            }
+            Text("Trasparenza widget: ${(transparency * 100).toInt()}%", style = MaterialTheme.typography.bodySmall)
+            Slider(
+                value = transparency,
+                onValueChange = viewModel::setWidgetTransparency,
+                valueRange = 0.2f..1f,
+            )
+
+            HorizontalDivider()
+            Text("Notifiche", style = MaterialTheme.typography.titleSmall)
+            SwitchRow("Notifiche risposte", respNotif, viewModel::setResponseNotifications)
+            SwitchRow("Notifiche promemoria", remNotif, viewModel::setReminderNotifications)
+            SwitchRow("Suono notifiche", sound, viewModel::setNotifSound)
+            SwitchRow("Vibrazione", vibration, viewModel::setNotifVibration)
+        }
+    }
+}
+
+@Composable
+private fun SwitchRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth(),
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(label, style = MaterialTheme.typography.bodyMedium)
+        Switch(checked = checked, onCheckedChange = onChange)
     }
 }
 

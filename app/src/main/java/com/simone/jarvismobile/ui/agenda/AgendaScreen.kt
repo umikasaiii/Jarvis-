@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -124,6 +125,9 @@ fun AgendaScreen(viewModel: AgendaViewModel = hiltViewModel()) {
             .background(
                 Brush.verticalGradient(listOf(Color(0xFF050C16), Color(0xFF081420), Color(0xFF03080E))),
             )
+            // Lift the whole screen above the keyboard so the bottom add-field
+            // (and what you type in it) stays visible while the IME is open.
+            .imePadding()
             .padding(horizontal = 16.dp),
     ) {
         Spacer(Modifier.size(16.dp))

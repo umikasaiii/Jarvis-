@@ -55,6 +55,13 @@ class SettingsRepository @Inject constructor(
         val EXPRESSIVE_INTENSITY = stringPreferencesKey("tts_expressive_intensity")
         val EXPRESSIVE_MANUAL_STYLE = stringPreferencesKey("tts_expressive_manual_style")
 
+        // --- Widget & notifications (Interfaccia) -----------------------
+        val WIDGET_SHOW_STATUS = booleanPreferencesKey("widget_show_status")
+        val WIDGET_STYLE = stringPreferencesKey("widget_style")
+        val WIDGET_TRANSPARENCY = floatPreferencesKey("widget_transparency")
+        val NOTIF_SOUND = booleanPreferencesKey("notif_sound")
+        val NOTIF_VIBRATION = booleanPreferencesKey("notif_vibration")
+
         // --- Live Translator (Phase: live translation) ------------------
         val TRANSLATE_LANG_A = stringPreferencesKey("translate_lang_a")
         val TRANSLATE_LANG_B = stringPreferencesKey("translate_lang_b")
@@ -417,6 +424,46 @@ class SettingsRepository @Inject constructor(
 
     suspend fun setSpeakBackgroundResponses(value: Boolean) {
         context.settingsDataStore.edit { it[Keys.SPEAK_BACKGROUND_RESPONSES] = value }
+    }
+
+    // --- Widget & notifications -----------------------------------------
+
+    /** Whether the 2×1 control widget shows the live status line. */
+    val widgetShowStatus: Flow<Boolean> =
+        context.settingsDataStore.data.map { it[Keys.WIDGET_SHOW_STATUS] ?: true }
+
+    /** "compatto" or "standard". */
+    val widgetStyle: Flow<String> =
+        context.settingsDataStore.data.map { it[Keys.WIDGET_STYLE] ?: "standard" }
+
+    /** Widget background opacity, 0..1. */
+    val widgetTransparency: Flow<Float> =
+        context.settingsDataStore.data.map { (it[Keys.WIDGET_TRANSPARENCY] ?: 1f).coerceIn(0.2f, 1f) }
+
+    val notifSound: Flow<Boolean> =
+        context.settingsDataStore.data.map { it[Keys.NOTIF_SOUND] ?: true }
+
+    val notifVibration: Flow<Boolean> =
+        context.settingsDataStore.data.map { it[Keys.NOTIF_VIBRATION] ?: true }
+
+    suspend fun setWidgetShowStatus(value: Boolean) {
+        context.settingsDataStore.edit { it[Keys.WIDGET_SHOW_STATUS] = value }
+    }
+
+    suspend fun setWidgetStyle(value: String) {
+        context.settingsDataStore.edit { it[Keys.WIDGET_STYLE] = value }
+    }
+
+    suspend fun setWidgetTransparency(value: Float) {
+        context.settingsDataStore.edit { it[Keys.WIDGET_TRANSPARENCY] = value.coerceIn(0.2f, 1f) }
+    }
+
+    suspend fun setNotifSound(value: Boolean) {
+        context.settingsDataStore.edit { it[Keys.NOTIF_SOUND] = value }
+    }
+
+    suspend fun setNotifVibration(value: Boolean) {
+        context.settingsDataStore.edit { it[Keys.NOTIF_VIBRATION] = value }
     }
 
     // --- Live Translator -------------------------------------------------

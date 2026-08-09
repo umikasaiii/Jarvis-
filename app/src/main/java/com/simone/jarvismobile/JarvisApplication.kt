@@ -6,7 +6,9 @@ import android.app.NotificationManager
 import android.os.Build
 import com.simone.jarvismobile.audio.ListeningService
 import com.simone.jarvismobile.background.JarvisNotifications
+import com.simone.jarvismobile.widget.JarvisWidgetUpdater
 import dagger.hilt.android.HiltAndroidApp
+import javax.inject.Inject
 
 /**
  * Application entry point. Registers the notification channel used by the
@@ -15,10 +17,14 @@ import dagger.hilt.android.HiltAndroidApp
 @HiltAndroidApp
 class JarvisApplication : Application() {
 
+    @Inject lateinit var widgetUpdater: JarvisWidgetUpdater
+
     override fun onCreate() {
         super.onCreate()
         createListeningChannel()
         JarvisNotifications.createChannels(this)
+        // Keep the home-screen control widget's status in sync with the assistant.
+        widgetUpdater.start()
     }
 
     private fun createListeningChannel() {
