@@ -51,6 +51,8 @@ class TranslationAudioController @Inject constructor(
     val lastDetail: StateFlow<String> = _lastDetail.asStateFlow()
 
     private var tts: TextToSpeech? = null
+    private var engineName: String = ""
+    @Volatile private var voiceInstallRequested = false
     private val pending = ConcurrentHashMap<String, CompletableDeferred<Unit>>()
 
     private val audioManager by lazy {
@@ -66,7 +68,11 @@ class TranslationAudioController @Inject constructor(
      */
     suspend fun ensureReady(): Boolean = withContext(Dispatchers.Main) {
         if (_ready.value && tts != null) return@withContext true
-        val engine = createEngine() ?: return@withContext false
+        // Prefer Google's TTS: it reliably synthesises it/en/es/fr/ja offline. On
+        // HONOR/MagicOS the stock engine can claim a language is available yet
+        // produce no audio, which is the usual reason a translation is shown but
+        // never heard. Fall back to the system default only if Google is absent.
+        val engine = createEngine(GOOGLE_TTS) ?: createEngine(null) ?: return@withContext false
         tts = engine
         engine.setAudioAttributes(
             AudioAttributes.Builder()
@@ -91,11 +97,22 @@ class TranslationAudioController @Inject constructor(
         if (pending.isEmpty()) _speaking.value = false
     }
 
-    private suspend fun createEngine(): TextToSpeech? = suspendCancellableCoroutine { cont ->
+    /**
+     * Creates an engine, optionally pinned to a specific package (e.g. Google
+     * TTS). Returns null if that engine can't init, so the caller can fall back.
+     */
+    private suspend fun createEngine(pkg: String?): TextToSpeech? = suspendCancellableCoroutine { cont ->
         var ref: TextToSpeech? = null
-        ref = TextToSpeech(context) { status ->
+        val cb = TextToSpeech.OnInitListener { status ->
             if (cont.isActive) cont.resume(if (status == TextToSpeech.SUCCESS) ref else null)
         }
+        ref = if (pkg != null) {
+            runCatching { TextToSpeech(context, cb, pkg) }.getOrNull()
+        } else {
+            TextToSpeech(context, cb)
+        }
+        if (ref == null && cont.isActive) cont.resume(null)
+        engineName = pkg ?: "default"
         cont.invokeOnCancellation { ref?.shutdown() }
     }
 
@@ -131,19 +148,24 @@ class TranslationAudioController @Inject constructor(
         // — a missing/unsupported voice is the usual reason a translation is shown
         // but never heard — and speak is queued from the same thread.
         val ok = withContext(Dispatchers.Main) {
-            val langResult = runCatching { engine.setLanguage(locale(language)) }
+            ensureAudibleVolume()
+            var langResult = runCatching { engine.setLanguage(locale(language)) }
                 .getOrDefault(TextToSpeech.LANG_NOT_SUPPORTED)
             if (langResult == TextToSpeech.LANG_MISSING_DATA || langResult == TextToSpeech.LANG_NOT_SUPPORTED) {
-                _lastDetail.value = "voce ${language.code} non installata"
-                Log.w(TAG, "tts_language_unavailable ${language.code} code=$langResult")
+                // The voice pack for this language isn't on the device. Prompt the
+                // user to install it (once) — silence otherwise looks like a bug.
+                requestVoiceInstall()
+                _lastDetail.value = "voce ${language.code} non installata — installa i dati vocali"
+                Log.w(TAG, "tts_language_unavailable ${language.code} code=$langResult eng=$engineName")
             } else {
-                _lastDetail.value = "ok ${language.code}"
+                val vol = mediaVolumePercent()
+                _lastDetail.value = "ok ${language.code} · voce=$engineName · vol=$vol%"
             }
-            // Force full volume on the media stream: some ROMs otherwise route the
-            // utterance to a muted/near-silent stream and nothing is heard.
+            // Force full utterance volume on the media stream: some ROMs otherwise
+            // route the audio to a muted/near-silent stream and nothing is heard.
             val params = android.os.Bundle().apply {
                 putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f)
-                putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, android.media.AudioManager.STREAM_MUSIC)
+                putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, AudioManager.STREAM_MUSIC)
             }
             engine.speak(trimmed, TextToSpeech.QUEUE_FLUSH, params, id) == TextToSpeech.SUCCESS
         }
@@ -200,6 +222,42 @@ class TranslationAudioController @Inject constructor(
         focusRequest = null
     }
 
+    /** Media-stream volume as a percentage, for diagnostics. */
+    private fun mediaVolumePercent(): Int = runCatching {
+        val max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+        val cur = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+        if (max <= 0) 0 else (cur * 100 / max)
+    }.getOrDefault(0)
+
+    /**
+     * If the media stream is silent the translation is spoken but inaudible, which
+     * reads as "no audio". Raise it to a sensible level (never touching it when the
+     * user has already set some volume).
+     */
+    private fun ensureAudibleVolume() {
+        runCatching {
+            val max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+            if (audioManager.getStreamVolume(AudioManager.STREAM_MUSIC) == 0 && max > 0) {
+                audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, (max * 0.6f).toInt().coerceAtLeast(1), 0)
+            }
+        }
+    }
+
+    /**
+     * Sends the user to the system "install voice data" flow, once per session, so
+     * a missing target-language voice can be downloaded. Uses NEW_TASK because we
+     * may be called from a non-Activity context.
+     */
+    private fun requestVoiceInstall() {
+        if (voiceInstallRequested) return
+        voiceInstallRequested = true
+        runCatching {
+            val intent = android.content.Intent(TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA)
+                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+        }.onFailure { Log.w(TAG, "tts_install_prompt_failed ${it.javaClass.simpleName}") }
+    }
+
     private fun locale(language: TranslationLanguage): Locale = when (language) {
         TranslationLanguage.ITALIAN -> Locale.ITALIAN
         TranslationLanguage.ENGLISH -> Locale.ENGLISH
@@ -211,5 +269,7 @@ class TranslationAudioController @Inject constructor(
     private companion object {
         const val TAG = "JarvisTranslateTts"
         const val SPEAK_TIMEOUT_MS = 20_000L
+        /** Google's TTS engine package — the reliable multilingual offline engine. */
+        const val GOOGLE_TTS = "com.google.android.tts"
     }
 }
