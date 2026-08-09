@@ -21,6 +21,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.LocationSearching
+import androidx.compose.material.icons.filled.VolumeOff
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -86,6 +88,7 @@ fun NavigationScreen(
     val covering by viewModel.coveringRegion.collectAsStateWithLifecycle()
     val route by viewModel.route.collectAsStateWithLifecycle()
     val progress by viewModel.progress.collectAsStateWithLifecycle()
+    val muted by viewModel.voiceMuted.collectAsStateWithLifecycle()
     var styleReady by remember { mutableStateOf(false) }
 
     var granted by remember { mutableStateOf(viewModel.hasLocationPermission()) }
@@ -215,13 +218,29 @@ fun NavigationScreen(
             navigating = route != null,
         )
 
-        // Controls column (recenter).
-        IconButton(
-            onClick = { following = true },
-            modifier = Modifier.align(Alignment.CenterEnd).padding(16.dp)
-                .size(48.dp).clip(CircleShape).background(Panel),
+        // Controls column: mute (only while navigating) + recenter.
+        Column(
+            Modifier.align(Alignment.CenterEnd).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Icon(Icons.Filled.LocationSearching, contentDescription = "Ricentra", tint = Silver)
+            if (route != null) {
+                IconButton(
+                    onClick = { viewModel.setVoiceMuted(!muted) },
+                    modifier = Modifier.size(48.dp).clip(CircleShape).background(Panel),
+                ) {
+                    Icon(
+                        if (muted) Icons.Filled.VolumeOff else Icons.Filled.VolumeUp,
+                        contentDescription = if (muted) "Riattiva voce" else "Silenzia",
+                        tint = Silver,
+                    )
+                }
+            }
+            IconButton(
+                onClick = { following = true },
+                modifier = Modifier.size(48.dp).clip(CircleShape).background(Panel),
+            ) {
+                Icon(Icons.Filled.LocationSearching, contentDescription = "Ricentra", tint = Silver)
+            }
         }
 
         // Offline-gap state: this area isn't downloaded (spec §16).

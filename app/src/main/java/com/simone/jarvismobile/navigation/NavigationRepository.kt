@@ -47,6 +47,7 @@ class NavigationRepository @Inject constructor(
     private val regionStore: InstalledRegionStore,
     private val routingEngine: OfflineRoutingEngine,
     private val placeSearch: PlaceSearchRepository,
+    private val voice: NavigationVoiceController,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var locationJob: Job? = null
@@ -77,6 +78,14 @@ class NavigationRepository @Inject constructor(
     /** A transient user-facing message (announcement, recalculating, routing error). */
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
+
+    /** Bumped when navigation should be brought to the foreground (open the screen). */
+    private val _openScreenRequest = MutableStateFlow(0)
+    val openScreenRequest: StateFlow<Int> = _openScreenRequest.asStateFlow()
+    fun requestOpenScreen() { _openScreenRequest.value += 1 }
+
+    val voiceMuted: StateFlow<Boolean> get() = voice.muted
+    fun setVoiceMuted(value: Boolean) = voice.setMuted(value)
 
     // Active-trip state.
     @Volatile private var destination: LatLng? = null
@@ -130,6 +139,9 @@ class NavigationRepository @Inject constructor(
         }
     }
 
+    fun pauseNavigation() { _navState.value = machine.dispatch(NavEvent.Pause) }
+    fun resumeNavigation() { _navState.value = machine.dispatch(NavEvent.Resume) }
+
     fun stopNavigation() {
         destination = null
         matcher = null
@@ -172,21 +184,21 @@ class NavigationRepository @Inject constructor(
             // Arrival.
             if (prog.remainingDistanceMeters <= ARRIVE_THRESHOLD_M) {
                 _navState.value = machine.dispatch(NavEvent.Arrived)
-                _message.value = announcer.arrival()
+                announce(announcer.arrival())
                 return
             }
 
-            // Spoken instruction (text now; TTS wiring in the voice stage).
+            // Spoken instruction, anticipated by speed and de-duplicated.
             prog.nextManeuver?.let { mv ->
                 val idx = route.maneuvers.indexOf(mv)
                 announcer.onProgress(idx, mv, prog.distanceToManeuverMeters, (fix.speedMps ?: 0f).toDouble())
-                    ?.let { _message.value = it }
+                    ?.let { announce(it) }
             }
 
             // Off-route → recalculate offline.
             if (offRoute.update(match, fix)) {
                 _navState.value = machine.dispatch(NavEvent.OffRouteConfirmed)
-                _message.value = announcer.recalculating()
+                announce(announcer.recalculating())
                 recalculate(fix.location)
             }
         }
@@ -210,6 +222,12 @@ class NavigationRepository @Inject constructor(
                 }
             }
         }
+    }
+
+    /** Shows a message and speaks it with the offline navigation voice. */
+    private fun announce(text: String) {
+        _message.value = text
+        voice.speak(text)
     }
 
     private fun recomputeCoverage() {

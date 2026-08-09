@@ -109,6 +109,13 @@ fun JarvisApp(
         if (openTranslator > 0) overlay = Overlay.TRANSLATOR
     }
 
+    // A spoken "portami a …" starts an offline route and asks to open the map.
+    val navigationViewModel: com.simone.jarvismobile.ui.navigation.NavigationViewModel = hiltViewModel()
+    val openNavigation by navigationViewModel.openScreenRequest.collectAsStateWithLifecycle()
+    LaunchedEffect(openNavigation) {
+        if (openNavigation > 0) overlay = Overlay.NAVIGATION
+    }
+
     Box(Modifier.fillMaxSize()) {
         // Base: the tab shell with the bottom navigation.
         Scaffold(

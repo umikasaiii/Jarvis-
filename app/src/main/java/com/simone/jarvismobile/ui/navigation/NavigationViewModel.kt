@@ -33,6 +33,9 @@ class NavigationViewModel @Inject constructor(
     val route: StateFlow<Route?> = repository.route
     val progress: StateFlow<NavigationProgress?> = repository.progress
     val message: StateFlow<String?> = repository.message
+    val openScreenRequest: StateFlow<Int> = repository.openScreenRequest
+    val voiceMuted: StateFlow<Boolean> = repository.voiceMuted
+    fun setVoiceMuted(value: Boolean) = repository.setVoiceMuted(value)
     val regions: StateFlow<List<RegionMetadata>> =
         repository.regions.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 

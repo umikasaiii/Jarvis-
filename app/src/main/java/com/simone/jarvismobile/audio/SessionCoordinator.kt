@@ -100,6 +100,8 @@ class SessionCoordinator @Inject constructor(
     private val liveTranslator: LiveTranslatorManager,
     private val liveTranslatorRepo: LiveTranslatorRepository,
     private val documents: com.simone.jarvismobile.document.DocumentImportManager,
+    private val navigation: com.simone.jarvismobile.navigation.NavigationRepository,
+    private val placeSearch: com.simone.jarvismobile.navigation.PlaceSearchRepository,
 ) {
 
     /** Long-lived scope for fire-and-forget persistence; lives as long as the app. */
@@ -432,6 +434,10 @@ class SessionCoordinator @Inject constructor(
         // the command/LLM path so a translator phrase never becomes a chat turn.
         if (pendingConfirmation == null && pendingSlot == null && !awaitingAnswer) {
             handleTranslatorCommand(transcript)?.let { return it }
+            // Offline navigation voice control: "portami a…", "distributore più
+            // vicino", "quanto manca?", "ferma navigazione". Coordinates come only
+            // from the offline place index or a favourite — never from the model.
+            handleNavigationCommand(transcript)?.let { return it }
         }
 
         // "Sono andato dal dentista" is a statement, but if the dentist is an open
@@ -1225,6 +1231,88 @@ class SessionCoordinator @Inject constructor(
         _diagnostic.value = "traduttore live avviato"
         return "Apro il traduttore tra ${session.languageA.display} e ${session.languageB.display}, " +
             "in modalità conversazione."
+    }
+
+    /**
+     * Recognises an offline-navigation command and acts on it, returning the
+     * spoken confirmation (or null when it isn't a navigation phrase, so the normal
+     * pipeline continues). The deterministic `:core` parser turns the words into a
+     * structured intent; the DESTINATION coordinate comes only from the offline
+     * place index or a saved favourite — the model never invents one (spec §9).
+     */
+    private suspend fun handleNavigationCommand(transcript: String): String? {
+        val intent = com.simone.jarvismobile.core.navigation.NavIntentParser.parse(transcript) ?: return null
+        val here = navigation.fix.value?.location
+        val regionId = navigation.coveringRegion.value?.id
+
+        fun startTo(dest: com.simone.jarvismobile.core.navigation.LatLng, label: String, opts: com.simone.jarvismobile.core.navigation.RouteOptions): String {
+            navigation.startNavigation(dest, opts)
+            navigation.requestOpenScreen()
+            scope.launch { runCatching { placeSearch.addHistory(label, dest) } }
+            return "Avvio la navigazione verso $label."
+        }
+
+        return when (intent) {
+            is com.simone.jarvismobile.core.navigation.NavIntent.Stop -> {
+                navigation.stopNavigation(); "Navigazione fermata."
+            }
+            is com.simone.jarvismobile.core.navigation.NavIntent.Pause -> {
+                navigation.pauseNavigation(); "Navigazione in pausa."
+            }
+            is com.simone.jarvismobile.core.navigation.NavIntent.Resume -> {
+                navigation.resumeNavigation(); "Riprendo la navigazione."
+            }
+            is com.simone.jarvismobile.core.navigation.NavIntent.Status -> {
+                val prog = navigation.progress.value
+                    ?: return "Non c'è una navigazione attiva."
+                when (intent.kind) {
+                    com.simone.jarvismobile.core.navigation.NavIntent.StatusKind.REMAINING_DISTANCE ->
+                        "Mancano circa ${formatKm(prog.remainingDistanceMeters)}."
+                    com.simone.jarvismobile.core.navigation.NavIntent.StatusKind.ETA ->
+                        "Arrivo tra circa ${formatMinutes(prog.etaSeconds)}."
+                }
+            }
+            is com.simone.jarvismobile.core.navigation.NavIntent.NavigateFavorite -> {
+                val fav = placeSearch.favorites().firstOrNull { it.kind == intent.kind }
+                    ?: return "Non hai ancora impostato «${favLabel(intent.kind)}». Puoi salvarlo dalla schermata di navigazione."
+                startTo(fav.location, fav.label.ifBlank { favLabel(intent.kind) }, com.simone.jarvismobile.core.navigation.RouteOptions())
+            }
+            is com.simone.jarvismobile.core.navigation.NavIntent.Navigate -> {
+                val hit = placeSearch.search(intent.query, here, limit = 1).firstOrNull()
+                    ?: return "Non ho trovato «${intent.query}» nelle mappe offline."
+                startTo(hit.place.location, hit.place.name, intent.options)
+            }
+            is com.simone.jarvismobile.core.navigation.NavIntent.NavigateNearest -> {
+                if (here == null || regionId == null) return "Non ho ancora la posizione GPS o la mappa di questa zona."
+                val hit = placeSearch.nearby(intent.category, here, regionId)
+                    ?: return "Non trovo un punto della categoria richiesta qui vicino."
+                startTo(hit.place.location, hit.place.name, com.simone.jarvismobile.core.navigation.RouteOptions())
+            }
+            is com.simone.jarvismobile.core.navigation.NavIntent.SearchNearby -> {
+                if (here == null || regionId == null) return "Non ho ancora la posizione o la mappa di questa zona."
+                val hit = placeSearch.nearby(intent.category, here, regionId)
+                    ?: return "Non trovo nulla di simile qui vicino."
+                "Il più vicino è ${hit.place.name}${hit.distanceMeters?.let { ", a ${formatKm(it)}" } ?: ""}."
+            }
+            is com.simone.jarvismobile.core.navigation.NavIntent.AddWaypoint,
+            is com.simone.jarvismobile.core.navigation.NavIntent.SetAvoid,
+            -> null // handled inside the navigation screen for an active route
+        }
+    }
+
+    private fun favLabel(kind: com.simone.jarvismobile.core.navigation.FavoriteKind): String = when (kind) {
+        com.simone.jarvismobile.core.navigation.FavoriteKind.HOME -> "Casa"
+        com.simone.jarvismobile.core.navigation.FavoriteKind.WORK -> "Lavoro"
+        com.simone.jarvismobile.core.navigation.FavoriteKind.CUSTOM -> "Preferito"
+    }
+
+    private fun formatKm(meters: Double): String =
+        if (meters >= 1000) String.format(java.util.Locale.ITALY, "%.1f chilometri", meters / 1000.0)
+        else "${(meters / 10).toInt() * 10} metri"
+
+    private fun formatMinutes(seconds: Double): String {
+        val m = (seconds / 60).toInt()
+        return if (m >= 60) "${m / 60} ore e ${m % 60} minuti" else "$m minuti"
     }
 
     /** Indexes the offline library in the background if one is configured. */
