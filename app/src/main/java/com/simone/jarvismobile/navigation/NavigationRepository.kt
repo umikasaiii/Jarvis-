@@ -151,6 +151,7 @@ class NavigationRepository @Inject constructor(
         announcer.reset()
         offRoute.reset()
         _navState.value = machine.dispatch(NavEvent.Stop)
+        runCatching { NavigationService.stop(context) }
     }
 
     private fun applyRoute(route: Route) {
@@ -162,6 +163,8 @@ class NavigationRepository @Inject constructor(
         announcer.reset()
         _navState.value = machine.dispatch(NavEvent.RouteFound)
         _navState.value = machine.dispatch(NavEvent.StartNavigation)
+        // Keep guidance alive with the screen off (spec §14).
+        runCatching { NavigationService.start(context) }
     }
 
     private fun onFix(fix: GpsFix) {
@@ -185,6 +188,7 @@ class NavigationRepository @Inject constructor(
             if (prog.remainingDistanceMeters <= ARRIVE_THRESHOLD_M) {
                 _navState.value = machine.dispatch(NavEvent.Arrived)
                 announce(announcer.arrival())
+                runCatching { NavigationService.stop(context) }
                 return
             }
 

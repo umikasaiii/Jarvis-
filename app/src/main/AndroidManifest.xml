@@ -132,6 +132,13 @@
             android:exported="false"
             android:foregroundServiceType="microphone" />
 
+        <!-- Offline navigation foreground service: keeps guidance running with the
+             screen off. Runs only during an active trip. -->
+        <service
+            android:name=".navigation.NavigationService"
+            android:exported="false"
+            android:foregroundServiceType="location" />
+
         <receiver
             android:name=".background.CancelTaskReceiver"
             android:exported="false" />
