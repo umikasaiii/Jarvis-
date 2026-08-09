@@ -63,9 +63,13 @@ object JarvisNotifications {
         return builder
     }
 
-    /** The JARVIS dragon avatar shown as the notification large icon. */
+    /**
+     * The JARVIS orb shown as the notification large icon (the one colourful,
+     * per-notification image Android allows). The small status-bar icon stays
+     * monochrome by system requirement — it cannot carry this artwork.
+     */
     private fun largeIcon(context: Context) =
-        runCatching { BitmapFactory.decodeResource(context.resources, R.drawable.jarvis_dragon) }.getOrNull()
+        runCatching { BitmapFactory.decodeResource(context.resources, R.drawable.jarvis_orb) }.getOrNull()
 
     fun createChannels(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
