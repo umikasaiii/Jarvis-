@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Default (Italian) strings. English can be added under res/values-en/. -->
 <resources>
-    <string name="app_name">JARVIS Mobile</string>
+    <string name="app_name">J.A.R.V.I.S.</string>
 
     <string name="tile_label">JARVIS</string>
     <string name="tile_subtitle_idle">Tocca per parlare</string>
