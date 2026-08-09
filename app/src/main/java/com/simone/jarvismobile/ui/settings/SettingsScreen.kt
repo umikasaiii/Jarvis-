@@ -57,6 +57,7 @@ fun SettingsScreen(
     onOpenMemory: () -> Unit = {},
     onOpenAutomations: () -> Unit = {},
     onOpenTranslator: () -> Unit = {},
+    onOpenDocuments: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val name by viewModel.assistantName.collectAsStateWithLifecycle()
@@ -528,7 +529,7 @@ fun SettingsScreen(
 
         InterfaceSettingsSection()
 
-        DocumentSettingsSection()
+        DocumentSettingsSection(onOpenArchive = onOpenDocuments)
 
         TranslatorSettingsSection(onOpenTranslator = onOpenTranslator)
 
@@ -668,6 +669,7 @@ private fun InterfaceSettingsSection(
 /** Memoria & Conoscenza → Documenti. Shares the interface settings ViewModel. */
 @Composable
 private fun DocumentSettingsSection(
+    onOpenArchive: () -> Unit,
     viewModel: InterfaceSettingsViewModel = hiltViewModel(),
 ) {
     val saveDefault by viewModel.docSaveToVaultDefault.collectAsStateWithLifecycle()
@@ -688,6 +690,9 @@ private fun DocumentSettingsSection(
             SwitchRow("Indicizza per la ricerca (RAG)", autoIndex, viewModel::setDocAutoIndex)
             SwitchRow("Rileva duplicati (SHA-256)", dedup, viewModel::setDocDedup)
             SwitchRow("OCR immagini (più lento, opzionale)", ocr, viewModel::setDocOcrImages)
+            OutlinedButton(onClick = onOpenArchive, modifier = Modifier.fillMaxWidth()) {
+                Text("Archivio documenti")
+            }
         }
     }
 }

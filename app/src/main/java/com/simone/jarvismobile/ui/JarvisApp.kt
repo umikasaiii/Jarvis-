@@ -57,6 +57,7 @@ import com.simone.jarvismobile.ui.diagnostics.DiagnosticsScreen
 import com.simone.jarvismobile.ui.automation.AutomationsScreen
 import com.simone.jarvismobile.ui.home.JarvisChatWindow
 import com.simone.jarvismobile.ui.livetranslate.LiveTranslatorScreen
+import com.simone.jarvismobile.ui.documents.DocumentArchiveScreen
 import com.simone.jarvismobile.ui.memory.MemoryScreen
 import com.simone.jarvismobile.ui.models.ModelsScreen
 import com.simone.jarvismobile.ui.settings.SettingsScreen
@@ -71,7 +72,7 @@ private enum class Tab(val label: String, val icon: ImageVector) {
     IMPOSTAZIONI("Impostazioni", Icons.Filled.Settings),
 }
 
-private enum class Overlay { CHAT, MODELS, MEMORY, DIAGNOSTICS, AUTOMATIONS, TRANSLATOR }
+private enum class Overlay { CHAT, MODELS, MEMORY, DIAGNOSTICS, AUTOMATIONS, TRANSLATOR, DOCUMENTS }
 
 /**
  * Top-level navigation. The dashboard shell is always present; the written chat
@@ -206,6 +207,7 @@ fun JarvisApp(
                         onOpenMemory = { overlay = Overlay.MEMORY },
                         onOpenAutomations = { overlay = Overlay.AUTOMATIONS },
                         onOpenTranslator = { overlay = Overlay.TRANSLATOR },
+                        onOpenDocuments = { overlay = Overlay.DOCUMENTS },
                     )
                 }
             }
@@ -259,7 +261,7 @@ fun JarvisApp(
         // Full-screen overlays (opaque) for the secondary screens.
         if (overlay == Overlay.MODELS || overlay == Overlay.MEMORY ||
             overlay == Overlay.DIAGNOSTICS || overlay == Overlay.AUTOMATIONS ||
-            overlay == Overlay.TRANSLATOR
+            overlay == Overlay.TRANSLATOR || overlay == Overlay.DOCUMENTS
         ) {
             BackHandler { overlay = null }
             Box(Modifier.fillMaxSize().background(Color(0xFF071119))) {
@@ -269,6 +271,7 @@ fun JarvisApp(
                     Overlay.AUTOMATIONS -> AutomationsScreen(onBack = { overlay = null })
                     Overlay.DIAGNOSTICS -> DiagnosticsScreen(onBack = { overlay = null })
                     Overlay.TRANSLATOR -> LiveTranslatorScreen(onBack = { overlay = null })
+                    Overlay.DOCUMENTS -> DocumentArchiveScreen(onBack = { overlay = null })
                     else -> Unit
                 }
             }
