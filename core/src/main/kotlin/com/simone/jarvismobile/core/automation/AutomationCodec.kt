@@ -19,8 +19,13 @@ object AutomationCodec {
 
     private val DAY_NAMES = listOf("lun", "mar", "mer", "gio", "ven", "sab", "dom")
 
-    private val LINE = Regex("""^\s*-\s*\[( |x|X)]\s*(.+?)\s+—\s+(.+?)\s*$""")
-    private val META = Regex("""\{#([A-Za-z0-9_-]+)(?:\s+@(\S+))?}\s*$""")
+    // Every literal closing bracket/brace is escaped. The desktop JVM's regex
+    // engine tolerates a bare `]` or `}`, but Android's (ART) rejects some of them
+    // at compile time — an uncaught PatternSyntaxException in this object's static
+    // initializer is what made the whole codec fail to load on the phone
+    // (ExceptionInInitializerError → "could not save the rule").
+    private val LINE = Regex("""^\s*-\s*\[( |x|X)\]\s*(.+?)\s+—\s+(.+?)\s*$""")
+    private val META = Regex("""\{#([A-Za-z0-9_-]+)(?:\s+@(\S+))?\}\s*$""")
 
     private val EVERY_DAY = Regex("""^ogni giorno\s+(\d{1,2}):(\d{2})$""", RegexOption.IGNORE_CASE)
     private val EVERY_DAYS = Regex("""^ogni\s+([a-z,]+)\s+(\d{1,2}):(\d{2})$""", RegexOption.IGNORE_CASE)

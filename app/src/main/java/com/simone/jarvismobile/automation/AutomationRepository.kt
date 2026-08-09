@@ -80,14 +80,23 @@ class AutomationRepository @Inject constructor(
         }
     }
 
-    /** A short, personal-data-free description of a failure: type + message + cause. */
-    private fun describe(e: Throwable): String {
-        val head = e.message?.let { "${e.javaClass.simpleName}: $it" } ?: e.javaClass.simpleName
-        val cause = e.cause?.let { c ->
-            " ← ${c.javaClass.simpleName}${c.message?.let { ": $it" } ?: ""}"
-        }.orEmpty()
-        return (head + cause).take(200)
-    }
+    /**
+     * A short, personal-data-free description of a failure: the whole cause chain,
+     * not just one level. A class-init failure hides the real reason two links
+     * down (NoClassDefFoundError ← ExceptionInInitializerError ← the actual
+     * PatternSyntaxException), and without the root the bug can't be fixed.
+     */
+    private fun describe(e: Throwable): String = buildString {
+        var cur: Throwable? = e
+        var depth = 0
+        while (cur != null && depth < 5) {
+            if (depth > 0) append(" ← ")
+            append(cur.javaClass.simpleName)
+            cur.message?.let { append(": ").append(it) }
+            cur = cur.cause?.takeIf { it != cur }
+            depth++
+        }
+    }.take(300)
 
     suspend fun remove(id: String): Boolean = mutex.withLock {
         val current = loadLocked()

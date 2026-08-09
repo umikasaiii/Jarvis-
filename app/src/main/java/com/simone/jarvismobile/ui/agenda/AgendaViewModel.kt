@@ -116,6 +116,23 @@ class AgendaViewModel @Inject constructor(
         runCatching { agenda.update(entry.id) { it.copy(date = due) } }
     }
 
+    /** Saves the whole editor at once (title, details, due date, time, star). */
+    fun saveDetails(
+        entry: AgendaEntry,
+        title: String,
+        notes: String,
+        date: LocalDate?,
+        time: java.time.LocalTime?,
+        starred: Boolean,
+    ) = viewModelScope.launch {
+        val clean = title.trim().ifEmpty { entry.text }
+        runCatching {
+            agenda.update(entry.id) {
+                it.copy(text = clean, notes = notes.trim(), date = date, time = time, starred = starred)
+            }
+        }
+    }
+
     fun moveTo(entry: AgendaEntry, list: String) = viewModelScope.launch {
         runCatching { agenda.update(entry.id) { it.copy(list = list) } }
     }

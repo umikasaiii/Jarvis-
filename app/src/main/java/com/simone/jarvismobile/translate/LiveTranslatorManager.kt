@@ -13,6 +13,8 @@ import com.simone.jarvismobile.core.translate.TranslationResult
 import com.simone.jarvismobile.core.translate.TranslationSegmenter
 import com.simone.jarvismobile.core.translate.TranslationSession
 import com.simone.jarvismobile.data.SettingsRepository
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -56,7 +58,15 @@ class LiveTranslatorManager @Inject constructor(
     private val models: TranslationModelManager,
     private val settings: SettingsRepository,
 ) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    // A last-resort net: an uncaught exception in any launched coroutine here
+    // would otherwise reach the thread's default handler and CRASH the app (the
+    // device symptom: "as soon as it hears a word the app closes"). Instead we
+    // surface it as an Error state and keep the app alive.
+    private val crashGuard = CoroutineExceptionHandler { _, e ->
+        Log.e(TAG, "live_translate_uncaught ${e.javaClass.simpleName}: ${e.message}")
+        _state.value = LiveTranslationState.Error("crash:${e.javaClass.simpleName}")
+    }
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default + crashGuard)
 
     private val _state = MutableStateFlow<LiveTranslationState>(LiveTranslationState.Idle)
     val state: StateFlow<LiveTranslationState> = _state.asStateFlow()
@@ -145,23 +155,30 @@ class LiveTranslatorManager @Inject constructor(
         loop = scope.launch {
             val segmenter = TranslationSegmenter()
             while (isActive) {
-                val listenLang = stabilizer.current ?: session.languageA
-                _listeningLanguage.value = listenLang
-                _state.value = LiveTranslationState.Listening
-                val result = stt.transcribe(listenLang.recognizerTag)
-                if (!isActive) break
-                when (result) {
-                    is SttResult.Text -> handleFinal(session, segmenter, result.text)
-                    SttResult.NoSpeech -> { /* nothing said; loop and keep listening */ }
-                    is SttResult.Unavailable -> {
-                        _state.value = LiveTranslationState.Error("stt_unavailable:${result.reason}")
-                        break
+                try {
+                    val listenLang = stabilizer.current ?: session.languageA
+                    _listeningLanguage.value = listenLang
+                    _state.value = LiveTranslationState.Listening
+                    val result = stt.transcribe(listenLang.recognizerTag)
+                    if (!isActive) break
+                    when (result) {
+                        is SttResult.Text -> handleFinal(session, segmenter, result.text)
+                        SttResult.NoSpeech -> { /* nothing said; loop and keep listening */ }
+                        is SttResult.Unavailable -> {
+                            _state.value = LiveTranslationState.Error("stt_unavailable:${result.reason}")
+                            break
+                        }
+                        is SttResult.Failure -> {
+                            // Transient recognizer errors shouldn't kill the session.
+                            Log.w(TAG, "stt_failure ${result.code}")
+                        }
                     }
-                    is SttResult.Failure -> {
-                        // Transient recognizer errors shouldn't kill the session;
-                        // pause briefly and try again.
-                        Log.w(TAG, "stt_failure ${result.code}")
-                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Throwable) {
+                    // One bad segment (a translate/TTS hiccup) must not crash the
+                    // app or kill the loop: log, keep listening.
+                    Log.w(TAG, "live_translate_iteration_failed ${e.javaClass.simpleName}: ${e.message}")
                 }
                 if (_state.value.isActive && _state.value !is LiveTranslationState.Error) {
                     _state.value = LiveTranslationState.Ready
@@ -231,6 +248,7 @@ class LiveTranslatorManager @Inject constructor(
     fun pushToTalk(source: TranslationLanguage) {
         val session = _session.value ?: return
         scope.launch {
+          try {
             if (_state.value == LiveTranslationState.Speaking) return@launch
             val target = if (source == session.languageA) session.languageB else session.languageA
             _listeningLanguage.value = source
@@ -263,6 +281,12 @@ class LiveTranslatorManager @Inject constructor(
                 else -> Unit
             }
             _state.value = LiveTranslationState.Ready
+          } catch (e: CancellationException) {
+              throw e
+          } catch (e: Throwable) {
+              Log.w(TAG, "ptt_failed ${e.javaClass.simpleName}: ${e.message}")
+              _state.value = LiveTranslationState.Ready
+          }
         }
     }
 

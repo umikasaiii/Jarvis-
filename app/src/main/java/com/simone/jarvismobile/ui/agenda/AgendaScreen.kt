@@ -164,92 +164,23 @@ fun AgendaScreen(viewModel: AgendaViewModel = hiltViewModel()) {
             )
         }
 
-        // --- Quick add (Google-Tasks style: text + date/time/star toolbar) --
-        if (selected != viewModel.starredTab) {
-            Column(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedTextField(
-                        value = newTask,
-                        onValueChange = { newTask = it; viewModel.clearMessage() },
-                        modifier = Modifier.weight(1f),
-                        placeholder = { Text("Nuova attività in “$selected”") },
-                        singleLine = true,
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    IconButton(
-                        onClick = {
-                            viewModel.addTask(newTask, newTaskDate, newTaskTime, newTaskStarred)
-                            resetNewTask()
-                        },
-                        enabled = newTask.isNotBlank(),
-                    ) {
-                        Icon(Icons.Filled.Add, contentDescription = "Aggiungi", tint = Cyan)
-                    }
-                }
-                // Toolbar: set date, set time, star — mirrors Google Tasks.
-                Row(
-                    Modifier.fillMaxWidth().padding(top = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    IconButton(onClick = { newTaskDatePicker = true }) {
-                        Icon(
-                            Icons.Filled.CalendarMonth,
-                            contentDescription = "Data",
-                            tint = if (newTaskDate != null) Cyan else Muted,
-                            modifier = Modifier.size(20.dp),
-                        )
-                    }
-                    IconButton(onClick = { newTaskTimePicker = true }) {
-                        Icon(
-                            Icons.Filled.Schedule,
-                            contentDescription = "Ora",
-                            tint = if (newTaskTime != null) Cyan else Muted,
-                            modifier = Modifier.size(20.dp),
-                        )
-                    }
-                    IconButton(onClick = { newTaskStarred = !newTaskStarred }) {
-                        Icon(
-                            if (newTaskStarred) Icons.Filled.Star else Icons.Filled.StarBorder,
-                            contentDescription = "Speciale",
-                            tint = if (newTaskStarred) Gold else Muted,
-                            modifier = Modifier.size(20.dp),
-                        )
-                    }
-                    // Echo the chosen date/time so the user sees what will be saved.
-                    val label = buildString {
-                        newTaskDate?.let { append(Agenda.humanDate(it, today)) }
-                        newTaskTime?.let {
-                            if (isNotEmpty()) append(" · ")
-                            append(Agenda.humanTime(it))
-                        }
-                    }
-                    if (label.isNotBlank()) {
-                        Text(label, color = Cyan, fontSize = 12.sp)
-                    }
-                }
-            }
-        }
-
         if (message.isNotBlank()) {
             Text(message, color = Gold, fontSize = 12.sp, modifier = Modifier.padding(bottom = 6.dp))
         }
 
         if (view.open.isEmpty() && view.done.isEmpty()) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                 Text(
                     if (selected == viewModel.starredTab) {
                         "Nessuna attività speciale.\nTocca la stella su un'attività."
                     } else {
-                        "Nessuna attività.\nScrivine una qui sopra o dì «ricordami di …»."
+                        "Nessuna attività.\nScrivine una qui sotto o dì «ricordami di …»."
                     },
                     color = Muted,
                     fontSize = 14.sp,
                 )
             }
-            return@Column
-        }
-
+        } else {
         LazyColumn(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -328,17 +259,82 @@ fun AgendaScreen(viewModel: AgendaViewModel = hiltViewModel()) {
 
             item("tail") { Spacer(Modifier.size(24.dp)) }
         }
+        }
+
+        // --- Quick add at the BOTTOM (Google-Tasks style) -------------------
+        if (selected != viewModel.starredTab) {
+            Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                // Toolbar: set date, set time, star — mirrors Google Tasks.
+                Row(
+                    Modifier.fillMaxWidth().padding(bottom = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    IconButton(onClick = { newTaskDatePicker = true }) {
+                        Icon(
+                            Icons.Filled.CalendarMonth,
+                            contentDescription = "Data",
+                            tint = if (newTaskDate != null) Cyan else Muted,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                    IconButton(onClick = { newTaskTimePicker = true }) {
+                        Icon(
+                            Icons.Filled.Schedule,
+                            contentDescription = "Ora",
+                            tint = if (newTaskTime != null) Cyan else Muted,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                    IconButton(onClick = { newTaskStarred = !newTaskStarred }) {
+                        Icon(
+                            if (newTaskStarred) Icons.Filled.Star else Icons.Filled.StarBorder,
+                            contentDescription = "Speciale",
+                            tint = if (newTaskStarred) Gold else Muted,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                    val label = buildString {
+                        newTaskDate?.let { append(Agenda.humanDate(it, today)) }
+                        newTaskTime?.let {
+                            if (isNotEmpty()) append(" · ")
+                            append(Agenda.humanTime(it))
+                        }
+                    }
+                    if (label.isNotBlank()) Text(label, color = Cyan, fontSize = 12.sp)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = newTask,
+                        onValueChange = { newTask = it; viewModel.clearMessage() },
+                        modifier = Modifier.weight(1f),
+                        placeholder = { Text("Nuova attività in “$selected”") },
+                        singleLine = true,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    IconButton(
+                        onClick = {
+                            viewModel.addTask(newTask, newTaskDate, newTaskTime, newTaskStarred)
+                            resetNewTask()
+                        },
+                        enabled = newTask.isNotBlank(),
+                    ) {
+                        Icon(Icons.Filled.Add, contentDescription = "Aggiungi", tint = Cyan)
+                    }
+                }
+            }
+        }
     }
 
     editing?.let { entry ->
         TaskDetailDialog(
             entry = entry,
             onDismiss = { editing = null },
-            onSave = { title, notes ->
-                viewModel.rename(entry, title)
-                viewModel.setNotes(entry, notes)
+            onSave = { title, notes, date, time, starred ->
+                viewModel.saveDetails(entry, title, notes, date, time, starred)
                 editing = null
             },
+            onComplete = { viewModel.toggle(entry); editing = null },
             onDelete = { viewModel.delete(entry); editing = null },
         )
     }
@@ -678,18 +674,41 @@ private fun SubtaskInput(onAdd: (String) -> Unit, onCancel: () -> Unit) {
     }
 }
 
+/**
+ * A Google-Tasks-style editor for one task: title, details, a due date and an
+ * optional time, a star, and a "complete" action. Everything is applied on Save.
+ */
 @Composable
 private fun TaskDetailDialog(
     entry: AgendaEntry,
     onDismiss: () -> Unit,
-    onSave: (title: String, notes: String) -> Unit,
+    onSave: (title: String, notes: String, date: LocalDate?, time: java.time.LocalTime?, starred: Boolean) -> Unit,
+    onComplete: () -> Unit,
     onDelete: () -> Unit,
 ) {
+    val today = LocalDate.now()
     var title by remember { mutableStateOf(entry.text) }
     var notes by remember { mutableStateOf(entry.notes) }
+    var date by remember { mutableStateOf(entry.date) }
+    var time by remember { mutableStateOf(entry.time) }
+    var starred by remember { mutableStateOf(entry.starred) }
+    var datePicker by remember { mutableStateOf(false) }
+    var timePicker by remember { mutableStateOf(false) }
+
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Dettagli attività") },
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Modifica attività", modifier = Modifier.weight(1f))
+                IconButton(onClick = { starred = !starred }) {
+                    Icon(
+                        if (starred) Icons.Filled.Star else Icons.Filled.StarBorder,
+                        contentDescription = "Speciale",
+                        tint = if (starred) Gold else Muted,
+                    )
+                }
+            }
+        },
         text = {
             Column {
                 OutlinedTextField(
@@ -704,13 +723,80 @@ private fun TaskDetailDialog(
                 OutlinedTextField(
                     value = notes,
                     onValueChange = { notes = it },
-                    label = { Text("Note") },
+                    label = { Text("Aggiungi dettagli") },
                     leadingIcon = { Icon(Icons.AutoMirrored.Filled.Subject, null) },
                     modifier = Modifier.fillMaxWidth(),
                 )
+                Spacer(Modifier.size(8.dp))
+                // Scadenza (data) row.
+                Row(
+                    Modifier.fillMaxWidth().clickable { datePicker = true }.padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Filled.CalendarMonth, null, tint = if (date != null) Cyan else Muted)
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        date?.let { Agenda.humanDate(it, today) } ?: "Aggiungi scadenza",
+                        color = if (date != null) Ink else Muted,
+                    )
+                    if (date != null) {
+                        Spacer(Modifier.weight(1f))
+                        IconButton(onClick = { date = null; time = null }) {
+                            Icon(Icons.Filled.Delete, "Rimuovi data", tint = Muted, modifier = Modifier.size(18.dp))
+                        }
+                    }
+                }
+                // Ora row (only meaningful with a date).
+                Row(
+                    Modifier.fillMaxWidth().clickable { timePicker = true }.padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Filled.Schedule, null, tint = if (time != null) Cyan else Muted)
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        time?.let { Agenda.humanTime(it) } ?: "Aggiungi ora",
+                        color = if (time != null) Ink else Muted,
+                    )
+                    if (time != null) {
+                        Spacer(Modifier.weight(1f))
+                        IconButton(onClick = { time = null }) {
+                            Icon(Icons.Filled.Delete, "Rimuovi ora", tint = Muted, modifier = Modifier.size(18.dp))
+                        }
+                    }
+                }
+                Spacer(Modifier.size(4.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = onComplete) {
+                        Icon(Icons.Filled.Check, null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text(if (entry.done) "Riapri" else "Segna come completa")
+                    }
+                    TextButton(onClick = onDelete) { Text("Elimina", color = Muted) }
+                }
             }
         },
-        confirmButton = { TextButton(onClick = { onSave(title, notes) }) { Text("Salva") } },
-        dismissButton = { TextButton(onClick = onDelete) { Text("Elimina") } },
+        confirmButton = {
+            TextButton(onClick = {
+                // A time with no date means "today at HH:MM", like Google Tasks.
+                val d = date ?: time?.let { today }
+                onSave(title, notes, d, time, starred)
+            }) { Text("Salva") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Annulla") } },
     )
+
+    if (datePicker) {
+        TaskDatePicker(
+            initial = date,
+            onDismiss = { datePicker = false },
+            onPick = { date = it; datePicker = false },
+        )
+    }
+    if (timePicker) {
+        TaskTimePicker(
+            initial = time,
+            onDismiss = { timePicker = false },
+            onPick = { time = it; timePicker = false },
+        )
+    }
 }

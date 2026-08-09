@@ -232,8 +232,9 @@ fun DashboardScreen(
         }
     }
     var editingAlerts by remember { mutableStateOf<AgendaEntry?>(null) }
-    // A tapped calendar day opens that day's to-dos.
-    var selectedDay by remember { mutableStateOf<LocalDate?>(null) }
+    // The day the agenda block is focused on. Tapping a day in the week strip
+    // updates this in place (no dialog); the timeline below re-renders for it.
+    var selectedDate by remember { mutableStateOf(LocalDate.now()) }
 
     // Buzz once when a new message lands (e.g. a voice reply) while on the dashboard.
     var prevUnread by remember { mutableStateOf(unread) }
@@ -429,8 +430,11 @@ fun DashboardScreen(
                 today = today,
                 week = upcoming,
                 timeline = timeline,
+                selectedDate = selectedDate,
+                dayEntries = Agenda.sorted(allEntries.filter { it.date == selectedDate }),
                 onEditAlerts = { editingAlerts = it },
-                onDayClick = { selectedDay = it },
+                onDayClick = { selectedDate = it },
+                onToggleDone = { viewModel.toggleDone(it) },
             )
 
             // --- Row: Casa + Sistema (2 columns) --------------------------
@@ -508,66 +512,6 @@ fun DashboardScreen(
         )
     }
 
-    selectedDay?.let { day ->
-        DayEntriesDialog(
-            day = day,
-            entries = allEntries.filter { it.date == day }.let { Agenda.sorted(it) },
-            onToggle = { viewModel.toggleDone(it) },
-            onDismiss = { selectedDay = null },
-        )
-    }
-}
-
-/** The to-dos and appointments for one tapped calendar day. */
-@Composable
-private fun DayEntriesDialog(
-    day: LocalDate,
-    entries: List<AgendaEntry>,
-    onToggle: (AgendaEntry) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val title = day.dayOfWeek.getDisplayName(TextStyle.FULL, Locale.ITALIAN)
-        .replaceFirstChar { it.uppercase() } + " ${day.dayOfMonth} " +
-        day.month.getDisplayName(TextStyle.FULL, Locale.ITALIAN)
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Chiudi") } },
-        title = { Text(title) },
-        text = {
-            if (entries.isEmpty()) {
-                Text("Niente in programma per questo giorno.", color = Muted, fontSize = 13.sp)
-            } else {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    entries.forEach { e ->
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                if (e.done) Icons.Filled.CheckCircle else Icons.Filled.RadioButtonUnchecked,
-                                contentDescription = if (e.done) "Fatto" else "Da fare",
-                                tint = if (e.done) Green else Cyan,
-                                modifier = Modifier.size(20.dp).clickable { onToggle(e) },
-                            )
-                            Spacer(Modifier.width(10.dp))
-                            Column(Modifier.weight(1f)) {
-                                Text(
-                                    e.text,
-                                    color = Ink,
-                                    fontSize = 14.sp,
-                                    textDecoration = if (e.done) {
-                                        androidx.compose.ui.text.style.TextDecoration.LineThrough
-                                    } else {
-                                        null
-                                    },
-                                )
-                                e.time?.let {
-                                    Text("Alle ${Agenda.humanTime(it)}", color = Muted, fontSize = 11.sp)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-    )
 }
 
 // --- Building blocks -------------------------------------------------------
@@ -762,12 +706,15 @@ private fun AgendaBlock(
     today: List<AgendaEntry>,
     week: List<AgendaEntry>,
     timeline: List<AgendaEntry>,
+    selectedDate: LocalDate,
+    dayEntries: List<AgendaEntry>,
     onEditAlerts: (AgendaEntry) -> Unit,
     onDayClick: (LocalDate) -> Unit = {},
+    onToggleDone: (AgendaEntry) -> Unit = {},
 ) {
     val todayDate = LocalDate.now()
-    val doneToday = timeline.count { it.date == todayDate && it.done }
-    val totalToday = today.count { it.date == todayDate } + doneToday
+    val isToday = selectedDate == todayDate
+    val doneOnDay = dayEntries.count { it.done }
 
     GlassCard {
         CardHeader(Icons.Filled.CalendarMonth, "AGENDA", reserveEnd = false)
@@ -777,17 +724,17 @@ private fun AgendaBlock(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            // Date block.
+            // Date block — reflects the SELECTED day, not always today.
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
-                    todayDate.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.ITALIAN).uppercase(),
+                    selectedDate.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.ITALIAN).uppercase(),
                     color = Cyan,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold,
                     letterSpacing = 2.sp,
                 )
                 Text(
-                    "${todayDate.dayOfMonth}",
+                    "${selectedDate.dayOfMonth}",
                     color = Ink,
                     fontSize = 40.sp,
                     fontWeight = FontWeight.Bold,
@@ -796,19 +743,23 @@ private fun AgendaBlock(
                     ),
                 )
                 Text(
-                    todayDate.month.getDisplayName(TextStyle.FULL, Locale.ITALIAN)
+                    selectedDate.month.getDisplayName(TextStyle.FULL, Locale.ITALIAN)
                         .replaceFirstChar { it.uppercase() },
                     color = Muted,
                     fontSize = 11.sp,
                 )
                 Text(
-                    if (totalToday == 0) "Niente oggi" else "$totalToday impegni · $doneToday fatti",
+                    if (dayEntries.isEmpty()) {
+                        if (isToday) "Niente oggi" else "Niente"
+                    } else {
+                        "${dayEntries.size} impegni · $doneOnDay fatti"
+                    },
                     color = Muted,
                     fontSize = 9.sp,
                 )
             }
 
-            // Week strip: seven days from today, the active one ringed.
+            // Week strip: seven days from today; the selected day is ringed.
             Row(
                 modifier = Modifier.weight(1f),
                 horizontalArrangement = Arrangement.spacedBy(3.dp),
@@ -817,7 +768,8 @@ private fun AgendaBlock(
                     val date = todayDate.plusDays(i.toLong())
                     WeekDayPip(
                         date = date,
-                        isToday = i == 0,
+                        isToday = date == todayDate,
+                        isSelected = date == selectedDate,
                         hasEntries = week.any { it.date == date },
                         onClick = { onDayClick(date) },
                         modifier = Modifier.weight(1f),
@@ -830,32 +782,39 @@ private fun AgendaBlock(
         Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0x14FFFFFF)))
         Spacer(Modifier.height(6.dp))
 
-        if (timeline.isEmpty()) {
+        if (dayEntries.isEmpty()) {
             Text(
-                "Nessun impegno.\nDì «ricordami di … domani alle 15».",
+                if (isToday) {
+                    "Nessun impegno.\nDì «ricordami di … domani alle 15»."
+                } else {
+                    "Niente in programma per ${selectedDate.dayOfMonth} " +
+                        selectedDate.month.getDisplayName(TextStyle.FULL, Locale.ITALIAN) + "."
+                },
                 color = Muted,
                 fontSize = 11.sp,
                 lineHeight = 15.sp,
             )
         } else {
-            val shown = timeline.take(6)
+            val shown = dayEntries.take(8)
             shown.forEachIndexed { i, e ->
                 TimelineEntry(
                     entry = e,
                     dot = if (e.done) Green else when (i % 3) { 0 -> Cyan; 1 -> Blue; else -> Violet },
                     last = i == shown.lastIndex,
                     onEditAlerts = { onEditAlerts(e) },
+                    onToggleDone = { onToggleDone(e) },
                 )
             }
         }
     }
 }
 
-/** One day in the week strip. The active day is ringed; a dot marks a day with entries. */
+/** One day in the week strip. The selected day is ringed; a dot marks entries. */
 @Composable
 private fun WeekDayPip(
     date: LocalDate,
     isToday: Boolean,
+    isSelected: Boolean,
     hasEntries: Boolean,
     onClick: () -> Unit = {},
     modifier: Modifier = Modifier,
@@ -867,7 +826,7 @@ private fun WeekDayPip(
     ) {
         Text(
             date.dayOfWeek.getDisplayName(TextStyle.NARROW, Locale.ITALIAN).uppercase(),
-            color = Muted,
+            color = if (isToday) Cyan else Muted,
             fontSize = 9.sp,
         )
         Box(
@@ -875,7 +834,7 @@ private fun WeekDayPip(
                 .size(28.dp)
                 .clip(androidx.compose.foundation.shape.CircleShape)
                 .then(
-                    if (isToday) {
+                    if (isSelected) {
                         Modifier
                             .background(Cyan.copy(alpha = 0.16f))
                             .border(1.5.dp, Cyan, androidx.compose.foundation.shape.CircleShape)
@@ -887,9 +846,9 @@ private fun WeekDayPip(
         ) {
             Text(
                 "${date.dayOfMonth}",
-                color = if (isToday) Cyan else Ink,
+                color = if (isSelected) Cyan else Ink,
                 fontSize = 13.sp,
-                fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal,
+                fontWeight = if (isSelected || isToday) FontWeight.Bold else FontWeight.Normal,
             )
         }
         Box(
@@ -912,6 +871,7 @@ private fun TimelineEntry(
     dot: Color,
     last: Boolean,
     onEditAlerts: () -> Unit,
+    onToggleDone: () -> Unit = {},
 ) {
     Row(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
         // Time column.
@@ -927,12 +887,13 @@ private fun TimelineEntry(
             )
         }
         Spacer(Modifier.width(8.dp))
-        // Dot + connector.
+        // Dot + connector — tap the dot to complete/uncomplete.
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(top = 4.dp)) {
             Box(
                 Modifier
                     .size(9.dp)
                     .clip(androidx.compose.foundation.shape.CircleShape)
+                    .clickable { onToggleDone() }
                     .then(if (entry.done) Modifier.background(dot) else Modifier.border(2.dp, dot, androidx.compose.foundation.shape.CircleShape)),
             )
             if (!last) Box(Modifier.width(2.dp).height(30.dp).background(Color(0x1AFFFFFF)))

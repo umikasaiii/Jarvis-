@@ -30,6 +30,12 @@ import com.simone.jarvismobile.core.automation.Action
 import com.simone.jarvismobile.core.automation.Automation
 import com.simone.jarvismobile.core.automation.AutomationCodec
 import com.simone.jarvismobile.core.automation.Trigger
+import androidx.compose.ui.graphics.Color
+
+private val Ink = Color(0xFFE3EFF5)
+private val Muted = Color(0xFF9DB0BC)
+private val Cyan = Color(0xFF3FD8F0)
+private val Warn = Color(0xFFF3A65B)
 
 /**
  * Customisable automations.
@@ -55,10 +61,11 @@ fun AutomationsScreen(
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Text("Automazioni", style = MaterialTheme.typography.headlineSmall)
+        Text("Automazioni", style = MaterialTheme.typography.headlineSmall, color = Ink)
         Text(
             "Regole che JARVIS esegue da solo. Scrivile come le diresti a voce.",
             style = MaterialTheme.typography.bodySmall,
+            color = Muted,
         )
 
         Card(Modifier.fillMaxWidth()) {
@@ -87,7 +94,9 @@ fun AutomationsScreen(
         }
 
         if (message.isNotBlank()) {
-            Text(message, style = MaterialTheme.typography.bodyMedium)
+            val ok = message.startsWith("Creata") || message.startsWith("Eliminata") ||
+                message.startsWith("Eseguita")
+            Text(message, style = MaterialTheme.typography.bodyMedium, color = if (ok) Cyan else Warn)
         }
 
         if (automations.isEmpty()) {
@@ -95,6 +104,7 @@ fun AutomationsScreen(
                 "Nessuna automazione. Le regole vengono salvate in " +
                     "JARVIS/Automazioni.md e restano leggibili in Obsidian.",
                 style = MaterialTheme.typography.bodyMedium,
+                color = Muted,
             )
         } else {
             automations.forEach { automation ->
