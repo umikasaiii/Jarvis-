@@ -1,6 +1,7 @@
 package com.simone.jarvismobile.widget
 
 import android.content.Context
+import androidx.glance.appwidget.updateAll
 import com.simone.jarvismobile.audio.SessionCoordinator
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
