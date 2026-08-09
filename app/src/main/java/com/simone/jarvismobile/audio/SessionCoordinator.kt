@@ -1164,13 +1164,17 @@ class SessionCoordinator @Inject constructor(
 
         return when (val cmd = LiveTranslatorCommands.parse(transcript)) {
             is LiveTranslatorCommand.Start -> {
-                if (cmd.source == null || cmd.target == null) {
+                // Copy to locals: cmd.source/target are :core properties and can't
+                // be smart-cast across the module boundary after a null check.
+                val src = cmd.source
+                val tgt = cmd.target
+                if (src == null || tgt == null) {
                     // No pair named: ask, and start on the next answer.
                     awaitingTranslatorLanguages = true
                     "Tra quali due lingue vuoi tradurre? " +
                         "Scegli tra italiano, inglese, spagnolo, francese e giapponese."
                 } else {
-                    startTranslator(cmd.source, cmd.target)
+                    startTranslator(src, tgt)
                 }
             }
             LiveTranslatorCommand.Stop -> {
