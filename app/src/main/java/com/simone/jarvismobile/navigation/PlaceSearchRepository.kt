@@ -89,6 +89,9 @@ class PlaceSearchRepository @Inject constructor(
 
     suspend fun favorites(): List<FavoritePlace> = dao.favorites().map { it.toFavorite() }
 
+    /** Raw favourite rows (with their id), for a management UI. */
+    suspend fun favoriteEntities(): List<NavFavoriteEntity> = dao.favorites()
+
     suspend fun setFavorite(kind: FavoriteKind, label: String, location: LatLng, placeId: String? = null) {
         dao.upsertFavorite(
             NavFavoriteEntity(
@@ -101,6 +104,8 @@ class PlaceSearchRepository @Inject constructor(
             ),
         )
     }
+
+    suspend fun deleteFavorite(id: String) = dao.deleteFavorite(id)
 
     suspend fun resolveFavorite(query: String): FavoritePlace? =
         FavoriteResolver.resolve(query, favorites())

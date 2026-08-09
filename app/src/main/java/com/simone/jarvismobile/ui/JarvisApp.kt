@@ -59,6 +59,7 @@ import com.simone.jarvismobile.ui.home.JarvisChatWindow
 import com.simone.jarvismobile.ui.livetranslate.LiveTranslatorScreen
 import com.simone.jarvismobile.ui.documents.DocumentArchiveScreen
 import com.simone.jarvismobile.ui.memory.MemoryScreen
+import com.simone.jarvismobile.ui.navigation.FavoritesScreen
 import com.simone.jarvismobile.ui.navigation.MapsScreen
 import com.simone.jarvismobile.ui.navigation.NavigationScreen
 import com.simone.jarvismobile.ui.models.ModelsScreen
@@ -74,7 +75,7 @@ private enum class Tab(val label: String, val icon: ImageVector) {
     IMPOSTAZIONI("Impostazioni", Icons.Filled.Settings),
 }
 
-private enum class Overlay { CHAT, MODELS, MEMORY, DIAGNOSTICS, AUTOMATIONS, TRANSLATOR, DOCUMENTS, NAVIGATION, MAPS }
+private enum class Overlay { CHAT, MODELS, MEMORY, DIAGNOSTICS, AUTOMATIONS, TRANSLATOR, DOCUMENTS, NAVIGATION, MAPS, FAVORITES }
 
 /**
  * Top-level navigation. The dashboard shell is always present; the written chat
@@ -220,6 +221,7 @@ fun JarvisApp(
                         onOpenDocuments = { overlay = Overlay.DOCUMENTS },
                         onOpenNavigation = { overlay = Overlay.NAVIGATION },
                         onOpenMaps = { overlay = Overlay.MAPS },
+                        onOpenFavorites = { overlay = Overlay.FAVORITES },
                     )
                 }
             }
@@ -274,7 +276,8 @@ fun JarvisApp(
         if (overlay == Overlay.MODELS || overlay == Overlay.MEMORY ||
             overlay == Overlay.DIAGNOSTICS || overlay == Overlay.AUTOMATIONS ||
             overlay == Overlay.TRANSLATOR || overlay == Overlay.DOCUMENTS ||
-            overlay == Overlay.NAVIGATION || overlay == Overlay.MAPS
+            overlay == Overlay.NAVIGATION || overlay == Overlay.MAPS ||
+            overlay == Overlay.FAVORITES
         ) {
             BackHandler { overlay = null }
             Box(Modifier.fillMaxSize().background(Color(0xFF071119))) {
@@ -290,6 +293,7 @@ fun JarvisApp(
                         onOpenMaps = { overlay = Overlay.MAPS },
                     )
                     Overlay.MAPS -> MapsScreen(onBack = { overlay = null })
+                    Overlay.FAVORITES -> FavoritesScreen(onBack = { overlay = null })
                     else -> Unit
                 }
             }
