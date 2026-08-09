@@ -5,6 +5,7 @@ import androidx.room.Room
 import com.simone.jarvismobile.background.AssistantTaskDao
 import com.simone.jarvismobile.background.JarvisDatabase
 import com.simone.jarvismobile.document.DocumentDao
+import com.simone.jarvismobile.navigation.NavDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -31,4 +32,8 @@ object DatabaseModule {
     @Provides
     fun provideDocumentDao(database: JarvisDatabase): DocumentDao =
         database.documentDao()
+
+    @Provides
+    fun provideNavDao(database: JarvisDatabase): NavDao =
+        database.navDao()
 }

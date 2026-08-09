@@ -35,6 +35,7 @@ import javax.inject.Singleton
 class RegionManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val store: InstalledRegionStore,
+    private val navDao: NavDao,
 ) {
     enum class Phase { COPYING, VERIFYING, INSTALLING, DONE, FAILED }
 
@@ -101,6 +102,7 @@ class RegionManager @Inject constructor(
         }
 
     suspend fun deleteRegion(id: String): Boolean = withContext(Dispatchers.IO) {
+        runCatching { navDao.deleteRegionPlaces(id) } // drop this region's POIs too
         val ok = store.regionDir(id).deleteRecursively()
         refresh()
         ok

@@ -46,6 +46,7 @@ class NavigationRepository @Inject constructor(
     private val locationProvider: NavigationLocationProvider,
     private val regionStore: InstalledRegionStore,
     private val routingEngine: OfflineRoutingEngine,
+    private val placeSearch: PlaceSearchRepository,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var locationJob: Job? = null
@@ -213,7 +214,11 @@ class NavigationRepository @Inject constructor(
 
     private fun recomputeCoverage() {
         val f = _fix.value
-        _coveringRegion.value = if (f == null) null else RegionSelector.regionFor(f.location, _regions.value)
+        val region = if (f == null) null else RegionSelector.regionFor(f.location, _regions.value)
+        val changed = region?.id != _coveringRegion.value?.id
+        _coveringRegion.value = region
+        // Warm the offline place index for the covering region (once).
+        if (changed && region != null) scope.launch { placeSearch.ensurePlacesLoaded(region.id) }
     }
 
     private companion object {
