@@ -11,7 +11,6 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import com.simone.jarvismobile.R
 import com.simone.jarvismobile.background.JarvisNotifications
 import com.simone.jarvismobile.ui.MainActivity
 
@@ -41,14 +40,17 @@ class ReminderWorker(
                 .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        val notification = NotificationCompat.Builder(applicationContext, JarvisNotifications.CHANNEL_REMINDERS)
-            .setSmallIcon(R.drawable.ic_stat_jarvis)
-            .setContentTitle("Promemoria JARVIS")
-            .setContentText(title)
+        // Shared JARVIS styling: dragon avatar large icon + monochrome small icon.
+        val notification = JarvisNotifications.styled(
+            context = applicationContext,
+            channelId = JarvisNotifications.CHANNEL_REMINDERS,
+            title = "Promemoria JARVIS",
+            text = title,
+            contentIntent = open,
+            expandableText = title,
+            withChatAction = true,
+        )
             .setSubText(whenText)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(title))
-            .setContentIntent(open)
-            .setAutoCancel(true)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setPriority(NotificationCompat.PRIORITY_HIGH)

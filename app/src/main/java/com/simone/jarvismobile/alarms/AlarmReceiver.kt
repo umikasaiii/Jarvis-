@@ -11,7 +11,6 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
-import com.simone.jarvismobile.R
 import com.simone.jarvismobile.agenda.AgendaRepository
 import com.simone.jarvismobile.automation.AutomationRepository
 import com.simone.jarvismobile.automation.AutomationRunner
@@ -98,14 +97,18 @@ class AlarmReceiver : BroadcastReceiver() {
                 .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        val notification = NotificationCompat.Builder(context, JarvisNotifications.CHANNEL_REMINDERS)
-            .setSmallIcon(R.drawable.ic_stat_jarvis)
-            .setContentTitle(title)
-            .setContentText(text)
+        // Route through the shared JARVIS styling so the dragon avatar (large
+        // icon), monochrome status-bar icon and accent are identical everywhere.
+        val notification = JarvisNotifications.styled(
+            context = context,
+            channelId = JarvisNotifications.CHANNEL_REMINDERS,
+            title = title,
+            text = text,
+            contentIntent = open,
+            expandableText = text,
+            withChatAction = true,
+        )
             .setSubText(subText.takeIf { it.isNotBlank() })
-            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
-            .setContentIntent(open)
-            .setAutoCancel(true)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setPriority(NotificationCompat.PRIORITY_HIGH)

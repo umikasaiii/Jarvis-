@@ -11,7 +11,6 @@ import androidx.glance.ImageProvider
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
-import androidx.glance.appwidget.action.actionSendBroadcast
 import androidx.glance.appwidget.action.actionStartActivity
 import androidx.glance.appwidget.cornerRadius
 import androidx.glance.appwidget.provideContent
@@ -19,15 +18,12 @@ import androidx.glance.background
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Box
 import androidx.glance.layout.Column
+import androidx.glance.layout.ContentScale
 import androidx.glance.layout.Row
-import androidx.glance.layout.Spacer
+import androidx.glance.layout.fillMaxHeight
 import androidx.glance.layout.fillMaxSize
-import androidx.glance.layout.fillMaxWidth
-import androidx.glance.layout.height
 import androidx.glance.layout.padding
 import androidx.glance.layout.size
-import androidx.glance.layout.width
-import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
@@ -42,11 +38,7 @@ import kotlinx.coroutines.flow.first
 
 // --- shared palette (black / red / silver, per the reference) --------------
 private val Ink = Color(0xFF0A0A0C)
-private val Panel = Color(0xFF1C0E0E)
-private val Red = Color(0xFFE23A2E)
-private val RedSoft = Color(0x33E23A2E)
 private val Silver = Color(0xFFD9DEE3)
-private val Muted = Color(0xFF8A9096)
 
 /** Lets a widget read the live assistant state without duplicating any controller. */
 @EntryPoint
@@ -138,89 +130,73 @@ class JarvisControlWidget : GlanceAppWidget() {
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val label = readLabel(context)
         val prefs = readWidgetPrefs(context)
-        val panel = Panel.copy(alpha = prefs.transparency)
         provideContent {
-            // Glass-like dark red panel with the dragon left, the name over a red
-            // divider and the live status, then a red mic circle and a chat button
-            // — modelled on the reference. Glance can't do glow/blur, so the depth
-            // is approximated with flat black/red/silver tones.
-            Row(
+            // The 2x1 uses the supplied JARVIS pill artwork as its face (dragon in
+            // the fire ring, name over the red divider, mic and chat buttons) and
+            // overlays *real* functional hotspots so the mic and chat regions are
+            // live controls, not a flat clickable picture. A dark scrim ground lets
+            // the artwork sit undistorted (letterboxed) whatever the cell ratio.
+            Box(
                 modifier = GlanceModifier.fillMaxSize()
-                    .background(ColorProvider(panel))
-                    .cornerRadius(26.dp)
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                    .background(ColorProvider(Ink.copy(alpha = prefs.transparency)))
+                    .cornerRadius(24.dp),
+                contentAlignment = Alignment.Center,
             ) {
-                // Dragon in a dark ring.
-                Box(
-                    modifier = GlanceModifier.size(54.dp)
-                        .background(ColorProvider(Color(0xFF17100F)))
-                        .cornerRadius(27.dp)
-                        .clickable(actionStartActivity(JarvisIntents.voiceIntent(context))),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Image(
-                        provider = ImageProvider(R.drawable.jarvis_dragon),
-                        contentDescription = "JARVIS",
-                        modifier = GlanceModifier.size(48.dp),
-                    )
-                }
-                Spacer(GlanceModifier.width(12.dp))
-                Column(modifier = GlanceModifier.defaultWeight()) {
-                    Text(
-                        "JARVIS",
-                        style = TextStyle(
-                            color = ColorProvider(Silver),
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold,
-                        ),
-                    )
-                    // Red divider under the name.
+                Image(
+                    provider = ImageProvider(R.drawable.jarvis_widget_2x1),
+                    contentDescription = "JARVIS",
+                    contentScale = ContentScale.Fit,
+                    modifier = GlanceModifier.fillMaxSize(),
+                )
+                // Live status chip, shown only while JARVIS is actually busy, so the
+                // artwork's own "Pronto" stands for the idle/ready state untouched.
+                if (prefs.showStatus && label != READY_LABEL) {
                     Box(
-                        GlanceModifier.fillMaxWidth().height(2.dp).cornerRadius(1.dp)
-                            .background(ColorProvider(Color(0x88E23A2E))),
-                    ) {}
-                    Spacer(GlanceModifier.height(5.dp))
-                    if (prefs.showStatus) {
+                        modifier = GlanceModifier.fillMaxSize().padding(bottom = 6.dp),
+                        contentAlignment = Alignment.BottomCenter,
+                    ) {
                         Text(
                             label,
-                            style = TextStyle(color = ColorProvider(Silver), fontSize = 14.sp),
+                            style = TextStyle(color = ColorProvider(Silver), fontSize = 13.sp),
+                            modifier = GlanceModifier
+                                .background(ColorProvider(Color(0xE6120A0A)))
+                                .cornerRadius(11.dp)
+                                .padding(horizontal = 10.dp, vertical = 3.dp),
                         )
                     }
                 }
-                Spacer(GlanceModifier.width(8.dp))
-                // Microphone → voice: a red disc.
-                Box(
-                    modifier = GlanceModifier.size(48.dp)
-                        .background(ColorProvider(Color(0xFFE23A2E)))
-                        .cornerRadius(24.dp)
-                        .clickable(actionStartActivity(JarvisIntents.voiceIntent(context))),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text("🎤", style = TextStyle(fontSize = 22.sp))
-                }
-                Spacer(GlanceModifier.width(8.dp))
-                // Chat → ChatScreen: a red rounded square.
-                Box(
-                    modifier = GlanceModifier.size(48.dp)
-                        .background(ColorProvider(Color(0x33E23A2E)))
-                        .cornerRadius(14.dp)
-                        .clickable(actionStartActivity(JarvisIntents.chatIntent(context))),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text("💬", style = TextStyle(fontSize = 22.sp))
-                }
-                Spacer(GlanceModifier.width(6.dp))
-                // Stop → cancel (broadcast; never opens the app).
-                Box(
-                    modifier = GlanceModifier.size(26.dp)
-                        .clickable(actionSendBroadcast(JarvisIntents.stopBroadcast(context))),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text("⏹", style = TextStyle(color = ColorProvider(Muted), fontSize = 15.sp))
+                // Functional hotspots over the artwork. Five equal columns: the left
+                // four (dragon · name · status · mic) start a voice session, the far
+                // right one (the chat bubble) opens the chat. Every cell carries its
+                // own click so routing never depends on tap fall-through.
+                Row(modifier = GlanceModifier.fillMaxSize()) {
+                    Box(
+                        GlanceModifier.defaultWeight().fillMaxHeight()
+                            .clickable(actionStartActivity(JarvisIntents.voiceIntent(context))),
+                    ) {}
+                    Box(
+                        GlanceModifier.defaultWeight().fillMaxHeight()
+                            .clickable(actionStartActivity(JarvisIntents.voiceIntent(context))),
+                    ) {}
+                    Box(
+                        GlanceModifier.defaultWeight().fillMaxHeight()
+                            .clickable(actionStartActivity(JarvisIntents.voiceIntent(context))),
+                    ) {}
+                    Box(
+                        GlanceModifier.defaultWeight().fillMaxHeight()
+                            .clickable(actionStartActivity(JarvisIntents.voiceIntent(context))),
+                    ) {}
+                    Box(
+                        GlanceModifier.defaultWeight().fillMaxHeight()
+                            .clickable(actionStartActivity(JarvisIntents.chatIntent(context))),
+                    ) {}
                 }
             }
         }
+    }
+
+    private companion object {
+        const val READY_LABEL = "Pronto"
     }
 }
 

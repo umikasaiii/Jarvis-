@@ -10,7 +10,6 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
-import com.simone.jarvismobile.R
 import com.simone.jarvismobile.agenda.AgendaRepository
 import com.simone.jarvismobile.audio.SessionCoordinator
 import com.simone.jarvismobile.background.JarvisNotifications
@@ -103,13 +102,17 @@ class AutomationRunner @Inject constructor(
                 .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        val notification = NotificationCompat.Builder(context, JarvisNotifications.CHANNEL_REMINDERS)
-            .setSmallIcon(R.drawable.ic_stat_jarvis)
-            .setContentTitle("Automazione JARVIS")
-            .setContentText(message)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(message))
-            .setContentIntent(open)
-            .setAutoCancel(true)
+        // Shared JARVIS styling: the dragon avatar as large icon, monochrome
+        // status-bar icon and accent, identical to chat/reminder notifications.
+        val notification = JarvisNotifications.styled(
+            context = context,
+            channelId = JarvisNotifications.CHANNEL_REMINDERS,
+            title = "Automazione JARVIS",
+            text = message,
+            contentIntent = open,
+            expandableText = message,
+            withChatAction = true,
+        )
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
