@@ -79,6 +79,19 @@ class SettingsRepository @Inject constructor(
         val TRANSLATE_WIFI_ONLY = booleanPreferencesKey("translate_wifi_only")
         val TRANSLATE_AUDIO_OUTPUT = stringPreferencesKey("translate_audio_output")
 
+        // --- Backup & sync (local-first evening backup) -----------------
+        val BACKUP_ENABLED = booleanPreferencesKey("backup_enabled")
+        val BACKUP_HOUR = intPreferencesKey("backup_hour")
+        val BACKUP_MINUTE = intPreferencesKey("backup_minute")
+        val BACKUP_WIFI_ONLY = booleanPreferencesKey("backup_wifi_only")
+        val BACKUP_CHARGING_ONLY = booleanPreferencesKey("backup_charging_only")
+        val BACKUP_MIN_BATTERY = intPreferencesKey("backup_min_battery")
+        val BACKUP_RETENTION_DAILY = intPreferencesKey("backup_retention_daily")
+        val BACKUP_RETENTION_WEEKLY = intPreferencesKey("backup_retention_weekly")
+        val BACKUP_RETENTION_MONTHLY = intPreferencesKey("backup_retention_monthly")
+        val BACKUP_CLOUD_ENABLED = booleanPreferencesKey("backup_cloud_enabled")
+        val BACKUP_CLOUD_PROVIDER = stringPreferencesKey("backup_cloud_provider")
+
         // --- external neural voice (Phase 4b) ---------------------------
         val TTS_ENGINE_ID = stringPreferencesKey("tts_engine_id")
         val TTS_MODEL_PATH = stringPreferencesKey("tts_model_path")
@@ -574,6 +587,90 @@ class SettingsRepository @Inject constructor(
         context.settingsDataStore.edit { it[Keys.TRANSLATE_AUDIO_OUTPUT] = value.name }
     }
 
+    // --- Backup & sync ---------------------------------------------------
+    // Local-first, offline evening backup of JARVIS's own data. Off by default;
+    // the cloud is an optional later copy, never the source of truth.
+
+    /** Whether the scheduled evening backup runs at all. */
+    val backupEnabled: Flow<Boolean> =
+        context.settingsDataStore.data.map { it[Keys.BACKUP_ENABLED] ?: false }
+
+    /** Hour of day (0..23) for the scheduled backup. Default 23 (23:30). */
+    val backupHour: Flow<Int> =
+        context.settingsDataStore.data.map { (it[Keys.BACKUP_HOUR] ?: DEFAULT_BACKUP_HOUR).coerceIn(0, 23) }
+
+    /** Minute of hour (0..59) for the scheduled backup. Default 30 (23:30). */
+    val backupMinute: Flow<Int> =
+        context.settingsDataStore.data.map { (it[Keys.BACKUP_MINUTE] ?: DEFAULT_BACKUP_MINUTE).coerceIn(0, 59) }
+
+    /** Only run when on un-metered Wi-Fi (matters for the cloud upload). */
+    val backupWifiOnly: Flow<Boolean> =
+        context.settingsDataStore.data.map { it[Keys.BACKUP_WIFI_ONLY] ?: true }
+
+    /** Only run while charging. Off by default so a nightly local backup still runs. */
+    val backupChargingOnly: Flow<Boolean> =
+        context.settingsDataStore.data.map { it[Keys.BACKUP_CHARGING_ONLY] ?: false }
+
+    /** Skip the backup below this battery percentage (0 = no floor). */
+    val backupMinBattery: Flow<Int> =
+        context.settingsDataStore.data.map { (it[Keys.BACKUP_MIN_BATTERY] ?: DEFAULT_BACKUP_MIN_BATTERY).coerceIn(0, 100) }
+
+    val backupRetentionDaily: Flow<Int> =
+        context.settingsDataStore.data.map { (it[Keys.BACKUP_RETENTION_DAILY] ?: DEFAULT_RETENTION_DAILY).coerceIn(0, 60) }
+
+    val backupRetentionWeekly: Flow<Int> =
+        context.settingsDataStore.data.map { (it[Keys.BACKUP_RETENTION_WEEKLY] ?: DEFAULT_RETENTION_WEEKLY).coerceIn(0, 52) }
+
+    val backupRetentionMonthly: Flow<Int> =
+        context.settingsDataStore.data.map { (it[Keys.BACKUP_RETENTION_MONTHLY] ?: DEFAULT_RETENTION_MONTHLY).coerceIn(0, 36) }
+
+    /** Whether to also sync an encrypted copy to a cloud provider after the local backup. */
+    val backupCloudEnabled: Flow<Boolean> =
+        context.settingsDataStore.data.map { it[Keys.BACKUP_CLOUD_ENABLED] ?: false }
+
+    /** Id of the selected cloud provider, or empty when none. */
+    val backupCloudProvider: Flow<String> =
+        context.settingsDataStore.data.map { it[Keys.BACKUP_CLOUD_PROVIDER] ?: "" }
+
+    suspend fun setBackupEnabled(value: Boolean) {
+        context.settingsDataStore.edit { it[Keys.BACKUP_ENABLED] = value }
+    }
+
+    suspend fun setBackupTime(hour: Int, minute: Int) {
+        context.settingsDataStore.edit {
+            it[Keys.BACKUP_HOUR] = hour.coerceIn(0, 23)
+            it[Keys.BACKUP_MINUTE] = minute.coerceIn(0, 59)
+        }
+    }
+
+    suspend fun setBackupWifiOnly(value: Boolean) {
+        context.settingsDataStore.edit { it[Keys.BACKUP_WIFI_ONLY] = value }
+    }
+
+    suspend fun setBackupChargingOnly(value: Boolean) {
+        context.settingsDataStore.edit { it[Keys.BACKUP_CHARGING_ONLY] = value }
+    }
+
+    suspend fun setBackupMinBattery(value: Int) {
+        context.settingsDataStore.edit { it[Keys.BACKUP_MIN_BATTERY] = value.coerceIn(0, 100) }
+    }
+
+    suspend fun setBackupRetention(daily: Int, weekly: Int, monthly: Int) {
+        context.settingsDataStore.edit {
+            it[Keys.BACKUP_RETENTION_DAILY] = daily.coerceIn(0, 60)
+            it[Keys.BACKUP_RETENTION_WEEKLY] = weekly.coerceIn(0, 52)
+            it[Keys.BACKUP_RETENTION_MONTHLY] = monthly.coerceIn(0, 36)
+        }
+    }
+
+    suspend fun setBackupCloudEnabled(value: Boolean) {
+        context.settingsDataStore.edit { it[Keys.BACKUP_CLOUD_ENABLED] = value }
+    }
+
+    suspend fun setBackupCloudProvider(value: String) {
+        context.settingsDataStore.edit { it[Keys.BACKUP_CLOUD_PROVIDER] = value.trim() }
+    }
+
     companion object {
         const val DEFAULT_NAME = "JARVIS"
         const val DEFAULT_RECORD_SECONDS = 3
@@ -586,5 +683,11 @@ class SettingsRepository @Inject constructor(
         const val MAX_TTS_RATE = 1.4f
         const val MIN_TTS_PITCH = 0.7f
         const val MAX_TTS_PITCH = 1.3f
+        const val DEFAULT_BACKUP_HOUR = 23
+        const val DEFAULT_BACKUP_MINUTE = 30
+        const val DEFAULT_BACKUP_MIN_BATTERY = 20
+        const val DEFAULT_RETENTION_DAILY = 7
+        const val DEFAULT_RETENTION_WEEKLY = 4
+        const val DEFAULT_RETENTION_MONTHLY = 6
     }
 }

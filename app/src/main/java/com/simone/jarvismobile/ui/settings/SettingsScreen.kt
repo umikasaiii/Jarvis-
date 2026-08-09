@@ -61,6 +61,7 @@ fun SettingsScreen(
     onOpenNavigation: () -> Unit = {},
     onOpenMaps: () -> Unit = {},
     onOpenFavorites: () -> Unit = {},
+    onOpenBackup: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val name by viewModel.assistantName.collectAsStateWithLifecycle()
@@ -556,6 +557,20 @@ fun SettingsScreen(
         }
 
         TranslatorSettingsSection(onOpenTranslator = onOpenTranslator)
+
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Backup e sincronizzazione", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Backup serale automatico, locale e cifrato (AES-256), dei soli dati di " +
+                        "JARVIS. Funziona offline; il cloud è una copia opzionale.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                OutlinedButton(onClick = onOpenBackup, modifier = Modifier.fillMaxWidth()) {
+                    Text("Apri Backup e sincronizzazione")
+                }
+            }
+        }
 
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {

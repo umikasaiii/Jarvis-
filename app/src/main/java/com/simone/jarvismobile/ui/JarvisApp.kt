@@ -55,6 +55,7 @@ import com.simone.jarvismobile.ui.commands.CommandsScreen
 import com.simone.jarvismobile.ui.dashboard.DashboardScreen
 import com.simone.jarvismobile.ui.diagnostics.DiagnosticsScreen
 import com.simone.jarvismobile.ui.automation.AutomationsScreen
+import com.simone.jarvismobile.ui.backup.BackupScreen
 import com.simone.jarvismobile.ui.home.JarvisChatWindow
 import com.simone.jarvismobile.ui.livetranslate.LiveTranslatorScreen
 import com.simone.jarvismobile.ui.documents.DocumentArchiveScreen
@@ -75,7 +76,7 @@ private enum class Tab(val label: String, val icon: ImageVector) {
     IMPOSTAZIONI("Impostazioni", Icons.Filled.Settings),
 }
 
-private enum class Overlay { CHAT, MODELS, MEMORY, DIAGNOSTICS, AUTOMATIONS, TRANSLATOR, DOCUMENTS, NAVIGATION, MAPS, FAVORITES }
+private enum class Overlay { CHAT, MODELS, MEMORY, DIAGNOSTICS, AUTOMATIONS, TRANSLATOR, DOCUMENTS, NAVIGATION, MAPS, FAVORITES, BACKUP }
 
 /**
  * Top-level navigation. The dashboard shell is always present; the written chat
@@ -222,6 +223,7 @@ fun JarvisApp(
                         onOpenNavigation = { overlay = Overlay.NAVIGATION },
                         onOpenMaps = { overlay = Overlay.MAPS },
                         onOpenFavorites = { overlay = Overlay.FAVORITES },
+                        onOpenBackup = { overlay = Overlay.BACKUP },
                     )
                 }
             }
@@ -277,7 +279,7 @@ fun JarvisApp(
             overlay == Overlay.DIAGNOSTICS || overlay == Overlay.AUTOMATIONS ||
             overlay == Overlay.TRANSLATOR || overlay == Overlay.DOCUMENTS ||
             overlay == Overlay.NAVIGATION || overlay == Overlay.MAPS ||
-            overlay == Overlay.FAVORITES
+            overlay == Overlay.FAVORITES || overlay == Overlay.BACKUP
         ) {
             BackHandler { overlay = null }
             Box(Modifier.fillMaxSize().background(Color(0xFF071119))) {
@@ -294,6 +296,7 @@ fun JarvisApp(
                     )
                     Overlay.MAPS -> MapsScreen(onBack = { overlay = null })
                     Overlay.FAVORITES -> FavoritesScreen(onBack = { overlay = null })
+                    Overlay.BACKUP -> BackupScreen(onBack = { overlay = null })
                     else -> Unit
                 }
             }

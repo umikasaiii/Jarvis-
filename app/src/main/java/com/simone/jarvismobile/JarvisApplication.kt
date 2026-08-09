@@ -5,9 +5,14 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.Build
 import com.simone.jarvismobile.audio.ListeningService
+import com.simone.jarvismobile.backup.BackupScheduler
 import com.simone.jarvismobile.background.JarvisNotifications
 import com.simone.jarvismobile.widget.JarvisWidgetUpdater
 import dagger.hilt.android.HiltAndroidApp
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
@@ -18,6 +23,9 @@ import javax.inject.Inject
 class JarvisApplication : Application() {
 
     @Inject lateinit var widgetUpdater: JarvisWidgetUpdater
+    @Inject lateinit var backupScheduler: BackupScheduler
+
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     override fun onCreate() {
         super.onCreate()
@@ -25,6 +33,8 @@ class JarvisApplication : Application() {
         JarvisNotifications.createChannels(this)
         // Keep the home-screen control widget's status in sync with the assistant.
         widgetUpdater.start()
+        // Re-book the nightly backup from saved settings (survives reboots/reinstalls).
+        appScope.launch { runCatching { backupScheduler.sync() } }
     }
 
     private fun createListeningChannel() {
