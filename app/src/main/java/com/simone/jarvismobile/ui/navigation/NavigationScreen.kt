@@ -19,6 +19,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.LocationSearching
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -39,12 +40,24 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.simone.jarvismobile.core.navigation.GpsFix
+import com.simone.jarvismobile.core.navigation.ManeuverType
+import com.simone.jarvismobile.core.navigation.NavigationProgress
+import com.simone.jarvismobile.core.navigation.LatLng as CoreLatLng
 import com.simone.jarvismobile.navigation.GpsStatus
 import org.maplibre.android.MapLibre
 import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
+import org.maplibre.android.style.layers.LineLayer
+import org.maplibre.android.style.layers.PropertyFactory
+import org.maplibre.android.style.sources.GeoJsonSource
+import org.maplibre.geojson.LineString
+import org.maplibre.geojson.Point
+import java.util.Locale
+
+private const val ROUTE_SOURCE = "jarvis-route-src"
+private const val ROUTE_LAYER = "jarvis-route-layer"
 
 private val Ink = Color(0xFF0A0E14)
 private val Panel = Color(0xE6121A26)
@@ -71,6 +84,9 @@ fun NavigationScreen(
     val fix by viewModel.fix.collectAsStateWithLifecycle()
     val gpsStatus by viewModel.gpsStatus.collectAsStateWithLifecycle()
     val covering by viewModel.coveringRegion.collectAsStateWithLifecycle()
+    val route by viewModel.route.collectAsStateWithLifecycle()
+    val progress by viewModel.progress.collectAsStateWithLifecycle()
+    var styleReady by remember { mutableStateOf(false) }
 
     var granted by remember { mutableStateOf(viewModel.hasLocationPermission()) }
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -95,6 +111,11 @@ fun NavigationScreen(
         mapView.onResume()
         mapView.getMapAsync { m ->
             m.uiSettings.isRotateGesturesEnabled = true
+            // Long-press sets a destination and starts an offline route to it.
+            m.addOnMapLongClickListener { p ->
+                viewModel.navigateTo(CoreLatLng(p.latitude, p.longitude))
+                true
+            }
             map = m
         }
         onDispose {
@@ -118,7 +139,32 @@ fun NavigationScreen(
         } else {
             base
         }
-        m.setStyle(Style.Builder().fromJson(styleJson))
+        styleReady = false
+        m.setStyle(Style.Builder().fromJson(styleJson)) { style ->
+            if (style.getSource(ROUTE_SOURCE) == null) {
+                style.addSource(GeoJsonSource(ROUTE_SOURCE))
+                style.addLayer(
+                    LineLayer(ROUTE_LAYER, ROUTE_SOURCE).withProperties(
+                        PropertyFactory.lineColor(android.graphics.Color.parseColor("#4FD1E0")),
+                        PropertyFactory.lineWidth(7f),
+                    ),
+                )
+            }
+            styleReady = true
+        }
+    }
+
+    // Draw / clear the computed route as a line on the map.
+    LaunchedEffect(route, styleReady, map) {
+        val m = map ?: return@LaunchedEffect
+        if (!styleReady) return@LaunchedEffect
+        val src = m.style?.getSourceAs<GeoJsonSource>(ROUTE_SOURCE) ?: return@LaunchedEffect
+        val r = route
+        if (r == null) {
+            src.setGeoJson("{\"type\":\"FeatureCollection\",\"features\":[]}")
+        } else {
+            src.setGeoJson(LineString.fromLngLats(r.geometry.map { Point.fromLngLat(it.lon, it.lat) }))
+        }
     }
 
     // Start/stop GNSS with the screen; ask for permission if needed.
@@ -154,9 +200,22 @@ fun NavigationScreen(
         }
 
         TopBar(onBack = onBack)
-        BottomHud(fix = fix, gpsStatus = gpsStatus, covered = covering != null)
+        // Top maneuver panel while navigating; otherwise just the back bar.
+        if (route != null) {
+            ManeuverPanel(progress = progress, modifier = Modifier.align(Alignment.TopCenter))
+        } else if (fix != null && covering != null) {
+            HintPanel(modifier = Modifier.align(Alignment.TopCenter))
+        }
+        BottomHud(
+            fix = fix,
+            gpsStatus = gpsStatus,
+            covered = covering != null,
+            progress = if (route != null) progress else null,
+            onStop = { viewModel.stopNavigation() },
+            navigating = route != null,
+        )
 
-        // Controls column (recenter). Mute/overview/stop live in the HUD.
+        // Controls column (recenter).
         IconButton(
             onClick = { following = true },
             modifier = Modifier.align(Alignment.CenterEnd).padding(16.dp)
@@ -191,7 +250,14 @@ private fun TopBar(onBack: () -> Unit) {
 }
 
 @Composable
-private fun BottomHud(fix: GpsFix?, gpsStatus: GpsStatus, covered: Boolean) {
+private fun BottomHud(
+    fix: GpsFix?,
+    gpsStatus: GpsStatus,
+    covered: Boolean,
+    progress: NavigationProgress?,
+    navigating: Boolean,
+    onStop: () -> Unit,
+) {
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Bottom) {
         Box(
             Modifier.fillMaxWidth().padding(12.dp).clip(RoundedCornerShape(16.dp)).background(Panel)
@@ -204,23 +270,95 @@ private fun BottomHud(fix: GpsFix?, gpsStatus: GpsStatus, covered: Boolean) {
             ) {
                 Column {
                     Text("ETA", color = Muted, fontSize = 11.sp)
-                    Text("—", color = Silver, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        progress?.let { formatDuration(it.etaSeconds) } ?: "—",
+                        color = Silver, fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
+                    )
                 }
                 Column {
                     Text("Distanza", color = Muted, fontSize = 11.sp)
-                    Text("—", color = Silver, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-                }
-                Column(horizontalAlignment = Alignment.End) {
-                    Text("GPS", color = Muted, fontSize = 11.sp)
                     Text(
-                        gpsLabel(gpsStatus, fix, covered),
-                        color = if (gpsStatus == GpsStatus.WEAK) Red else Silver,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold,
+                        progress?.let { formatDistance(it.remainingDistanceMeters) } ?: "—",
+                        color = Silver, fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
                     )
+                }
+                if (navigating) {
+                    IconButton(
+                        onClick = onStop,
+                        modifier = Modifier.size(44.dp).clip(CircleShape).background(Red),
+                    ) {
+                        Icon(Icons.Filled.Close, contentDescription = "Ferma", tint = Silver)
+                    }
+                } else {
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text("GPS", color = Muted, fontSize = 11.sp)
+                        Text(
+                            gpsLabel(gpsStatus, fix, covered),
+                            color = if (gpsStatus == GpsStatus.WEAK) Red else Silver,
+                            fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                        )
+                    }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ManeuverPanel(progress: NavigationProgress?, modifier: Modifier) {
+    val maneuver = progress?.nextManeuver
+    Column(modifier.fillMaxWidth().padding(top = 64.dp, start = 12.dp, end = 12.dp)) {
+        Box(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Panel)
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(maneuverGlyph(maneuver?.type), fontSize = 30.sp)
+                androidx.compose.foundation.layout.Spacer(Modifier.size(14.dp))
+                Column {
+                    Text(
+                        progress?.let { formatDistance(it.distanceToManeuverMeters) } ?: "—",
+                        color = Silver, fontSize = 22.sp, fontWeight = FontWeight.Bold,
+                    )
+                    if (maneuver?.roadName?.isNotBlank() == true) {
+                        Text(maneuver.roadName, color = Muted, fontSize = 13.sp)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HintPanel(modifier: Modifier) {
+    Box(
+        modifier.padding(top = 64.dp, start = 12.dp, end = 12.dp)
+            .clip(RoundedCornerShape(14.dp)).background(Panel).padding(horizontal = 14.dp, vertical = 10.dp),
+    ) {
+        Text("Tieni premuto sulla mappa per impostare la destinazione.", color = Muted, fontSize = 13.sp)
+    }
+}
+
+private fun maneuverGlyph(type: ManeuverType?): String = when (type) {
+    ManeuverType.TURN_LEFT, ManeuverType.SLIGHT_LEFT, ManeuverType.SHARP_LEFT, ManeuverType.KEEP_LEFT -> "↰"
+    ManeuverType.TURN_RIGHT, ManeuverType.SLIGHT_RIGHT, ManeuverType.SHARP_RIGHT, ManeuverType.KEEP_RIGHT -> "↱"
+    ManeuverType.UTURN -> "⤺"
+    ManeuverType.ROUNDABOUT -> "⟳"
+    ManeuverType.ARRIVE -> "◎"
+    else -> "↑"
+}
+
+private fun formatDistance(meters: Double): String = when {
+    meters >= 1000 -> String.format(Locale.ITALY, "%.1f km", meters / 1000.0)
+    else -> "${(meters / 10).toInt() * 10} m"
+}
+
+private fun formatDuration(seconds: Double): String {
+    val m = (seconds / 60).toInt()
+    return when {
+        m >= 60 -> "${m / 60} h ${m % 60} min"
+        m >= 1 -> "$m min"
+        else -> "<1 min"
     }
 }
 

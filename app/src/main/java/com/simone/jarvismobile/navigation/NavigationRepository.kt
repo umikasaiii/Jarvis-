@@ -1,13 +1,23 @@
 package com.simone.jarvismobile.navigation
 
+import android.content.Context
 import com.simone.jarvismobile.core.navigation.GpsFix
+import com.simone.jarvismobile.core.navigation.LatLng
+import com.simone.jarvismobile.core.navigation.MapMatcher
 import com.simone.jarvismobile.core.navigation.NavEvent
 import com.simone.jarvismobile.core.navigation.NavState
+import com.simone.jarvismobile.core.navigation.NavigationProgress
 import com.simone.jarvismobile.core.navigation.NavigationStateMachine
+import com.simone.jarvismobile.core.navigation.OffRouteDetector
 import com.simone.jarvismobile.core.navigation.RegionMetadata
 import com.simone.jarvismobile.core.navigation.RegionSelector
+import com.simone.jarvismobile.core.navigation.Route
+import com.simone.jarvismobile.core.navigation.RouteOptions
+import com.simone.jarvismobile.core.navigation.RouteProgressCalculator
+import com.simone.jarvismobile.core.navigation.RoutingProfile
+import com.simone.jarvismobile.core.navigation.RoutingResult
+import com.simone.jarvismobile.core.navigation.VoiceAnnouncer
 import dagger.hilt.android.qualifiers.ApplicationContext
-import android.content.Context
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -19,27 +29,28 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** GNSS acquisition quality, surfaced to the dashboard card and the screen. */
 enum class GpsStatus { NONE, ACQUIRING, WEAK, OK }
 
 /**
- * The navigation session state that the UI and the (future) foreground service
- * share, built on the pure `:core` engine. This stage tracks position, offline
- * map coverage and GPS quality; routing/turn-by-turn arrive with the BRouter and
- * search stages and will drive the same [NavigationStateMachine].
+ * The navigation session shared by the UI and (future) foreground service, built
+ * on the pure `:core` engine: GNSS, offline map coverage, deterministic routing,
+ * map matching, off-route detection, live progress and spoken instructions.
  *
- * Location is only collected while [start]ed, and stopped on [stop], so
- * high-accuracy GPS is never held on when no one is navigating (spec §15).
+ * Location is only collected while [start]ed (battery §15). Routing is fully
+ * offline and never depends on the AI model; instructions come only from the
+ * computed route (§6, §19).
  */
 @Singleton
 class NavigationRepository @Inject constructor(
     @ApplicationContext private val context: Context,
     private val locationProvider: NavigationLocationProvider,
     private val regionStore: InstalledRegionStore,
+    private val routingEngine: OfflineRoutingEngine,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var locationJob: Job? = null
     private val machine = NavigationStateMachine()
+    private val announcer = VoiceAnnouncer()
 
     private val _fix = MutableStateFlow<GpsFix?>(null)
     val fix: StateFlow<GpsFix?> = _fix.asStateFlow()
@@ -53,9 +64,26 @@ class NavigationRepository @Inject constructor(
     private val _navState = MutableStateFlow(NavState.IDLE)
     val navState: StateFlow<NavState> = _navState.asStateFlow()
 
-    /** The installed region covering the current position, or null (uncovered). */
     private val _coveringRegion = MutableStateFlow<RegionMetadata?>(null)
     val coveringRegion: StateFlow<RegionMetadata?> = _coveringRegion.asStateFlow()
+
+    private val _route = MutableStateFlow<Route?>(null)
+    val route: StateFlow<Route?> = _route.asStateFlow()
+
+    private val _progress = MutableStateFlow<NavigationProgress?>(null)
+    val progress: StateFlow<NavigationProgress?> = _progress.asStateFlow()
+
+    /** A transient user-facing message (announcement, recalculating, routing error). */
+    private val _message = MutableStateFlow<String?>(null)
+    val message: StateFlow<String?> = _message.asStateFlow()
+
+    // Active-trip state.
+    @Volatile private var destination: LatLng? = null
+    @Volatile private var options: RouteOptions = RouteOptions()
+    @Volatile private var profile: RoutingProfile = RoutingProfile.CAR
+    @Volatile private var matcher: MapMatcher? = null
+    @Volatile private var progressCalc: RouteProgressCalculator? = null
+    private val offRoute = OffRouteDetector()
 
     suspend fun refreshRegions() {
         _regions.value = regionStore.installed()
@@ -65,13 +93,12 @@ class NavigationRepository @Inject constructor(
     fun hasLocationPermission(): Boolean = locationProvider.hasPermission()
     fun gpsEnabled(): Boolean = locationProvider.gpsEnabled()
 
-    /** Starts GNSS collection at [intervalMs] (screen-visible cadence by default). */
     fun start(intervalMs: Long = 1_000L) {
         if (locationJob?.isActive == true) return
         _gpsStatus.value = GpsStatus.ACQUIRING
         locationJob = scope.launch {
             refreshRegions()
-            locationProvider.fixes(intervalMs).collect { fix -> onFix(fix) }
+            locationProvider.fixes(intervalMs).collect { onFix(it) }
         }
     }
 
@@ -81,14 +108,107 @@ class NavigationRepository @Inject constructor(
         if (_navState.value == NavState.IDLE) _gpsStatus.value = GpsStatus.NONE
     }
 
+    /**
+     * Starts guidance to [dest]: computes an offline route from the current fix,
+     * and on success enters NAVIGATING. On no route (e.g. the region has no routing
+     * data) it posts a message and stays idle — no faked route.
+     */
+    fun startNavigation(dest: LatLng, opts: RouteOptions = RouteOptions(), prof: RoutingProfile = RoutingProfile.CAR) {
+        val from = _fix.value?.location ?: run { _message.value = "Nessuna posizione GPS."; return }
+        destination = dest; options = opts; profile = prof
+        _navState.value = machine.dispatch(NavEvent.SearchStarted)
+        scope.launch {
+            val region = _coveringRegion.value
+            when (val r = routingEngine.calculateRoute(region, from, dest, prof, opts)) {
+                is RoutingResult.Success -> applyRoute(r.route)
+                is RoutingResult.Failure -> {
+                    _navState.value = machine.dispatch(NavEvent.RouteFailed)
+                    _message.value = "Percorso non disponibile offline per questa zona (${r.error})."
+                }
+            }
+        }
+    }
+
+    fun stopNavigation() {
+        destination = null
+        matcher = null
+        progressCalc = null
+        _route.value = null
+        _progress.value = null
+        announcer.reset()
+        offRoute.reset()
+        _navState.value = machine.dispatch(NavEvent.Stop)
+    }
+
+    private fun applyRoute(route: Route) {
+        _route.value = route
+        val m = MapMatcher(route)
+        matcher = m
+        progressCalc = RouteProgressCalculator(route, m)
+        offRoute.reset()
+        announcer.reset()
+        _navState.value = machine.dispatch(NavEvent.RouteFound)
+        _navState.value = machine.dispatch(NavEvent.StartNavigation)
+    }
+
     private fun onFix(fix: GpsFix) {
         _fix.value = fix
         val weak = fix.accuracyMeters > WEAK_ACCURACY_M
         _gpsStatus.value = if (weak) GpsStatus.WEAK else GpsStatus.OK
-        // Feed the state machine's GPS-loss handling so an active route survives a
-        // temporary weak signal instead of aborting (spec §4).
-        if (weak) dispatch(NavEvent.GpsLost) else dispatch(NavEvent.GpsRestored)
+        if (weak) _navState.value = machine.dispatch(NavEvent.GpsLost)
+        else if (_navState.value == NavState.GPS_WEAK) _navState.value = machine.dispatch(NavEvent.GpsRestored)
         recomputeCoverage()
+
+        // Live guidance while navigating.
+        val route = _route.value
+        val m = matcher
+        val calc = progressCalc
+        if (_navState.value == NavState.NAVIGATING && route != null && m != null && calc != null) {
+            val match = m.match(fix)
+            val prog = calc.progress(match, fix)
+            _progress.value = prog
+
+            // Arrival.
+            if (prog.remainingDistanceMeters <= ARRIVE_THRESHOLD_M) {
+                _navState.value = machine.dispatch(NavEvent.Arrived)
+                _message.value = announcer.arrival()
+                return
+            }
+
+            // Spoken instruction (text now; TTS wiring in the voice stage).
+            prog.nextManeuver?.let { mv ->
+                val idx = route.maneuvers.indexOf(mv)
+                announcer.onProgress(idx, mv, prog.distanceToManeuverMeters, (fix.speedMps ?: 0f).toDouble())
+                    ?.let { _message.value = it }
+            }
+
+            // Off-route → recalculate offline.
+            if (offRoute.update(match, fix)) {
+                _navState.value = machine.dispatch(NavEvent.OffRouteConfirmed)
+                _message.value = announcer.recalculating()
+                recalculate(fix.location)
+            }
+        }
+    }
+
+    private fun recalculate(from: LatLng) {
+        val dest = destination ?: return
+        scope.launch {
+            when (val r = routingEngine.recalculateRoute(_coveringRegion.value, from, dest, profile, options)) {
+                is RoutingResult.Success -> {
+                    _route.value = r.route
+                    val m = MapMatcher(r.route)
+                    matcher = m
+                    progressCalc = RouteProgressCalculator(r.route, m)
+                    offRoute.reset()
+                    announcer.reset()
+                    _navState.value = machine.dispatch(NavEvent.RecalculationDone)
+                }
+                is RoutingResult.Failure -> {
+                    _message.value = "Ricalcolo non riuscito (${r.error})."
+                }
+            }
+        }
     }
 
     private fun recomputeCoverage() {
@@ -96,12 +216,8 @@ class NavigationRepository @Inject constructor(
         _coveringRegion.value = if (f == null) null else RegionSelector.regionFor(f.location, _regions.value)
     }
 
-    private fun dispatch(event: NavEvent) {
-        _navState.value = machine.dispatch(event)
-    }
-
     private companion object {
-        /** Above this reported accuracy the fix is treated as a weak signal. */
         const val WEAK_ACCURACY_M = 40f
+        const val ARRIVE_THRESHOLD_M = 25.0
     }
 }
