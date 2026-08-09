@@ -87,7 +87,7 @@ class JarvisVoiceWidget : GlanceAppWidget() {
                 contentAlignment = Alignment.Center,
             ) {
                 Image(
-                    provider = ImageProvider(R.drawable.orb),
+                    provider = ImageProvider(R.drawable.jarvis_dragon),
                     contentDescription = "JARVIS voce",
                     modifier = GlanceModifier.size(56.dp),
                 )
@@ -147,7 +147,7 @@ class JarvisControlWidget : GlanceAppWidget() {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Image(
-                    provider = ImageProvider(R.drawable.orb),
+                    provider = ImageProvider(R.drawable.jarvis_dragon),
                     contentDescription = "JARVIS",
                     modifier = GlanceModifier.size(48.dp)
                         .clickable(actionStartActivity(JarvisIntents.voiceIntent(context))),

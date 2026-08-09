@@ -63,9 +63,9 @@ object JarvisNotifications {
         return builder
     }
 
-    /** The orb avatar shown as the notification large icon, or null if absent. */
+    /** The JARVIS dragon avatar shown as the notification large icon. */
     private fun largeIcon(context: Context) =
-        runCatching { BitmapFactory.decodeResource(context.resources, R.drawable.orb) }.getOrNull()
+        runCatching { BitmapFactory.decodeResource(context.resources, R.drawable.jarvis_dragon) }.getOrNull()
 
     fun createChannels(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return

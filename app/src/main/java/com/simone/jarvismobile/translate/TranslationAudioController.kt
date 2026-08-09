@@ -10,6 +10,8 @@ import android.util.Log
 import com.simone.jarvismobile.core.translate.TranslationLanguage
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -56,10 +58,15 @@ class TranslationAudioController @Inject constructor(
     }
     private var focusRequest: AudioFocusRequest? = null
 
-    /** Creates the engine once; safe to call repeatedly. */
-    suspend fun ensureReady(): Boolean {
-        if (_ready.value && tts != null) return true
-        val engine = createEngine() ?: return false
+    /**
+     * Creates the engine once; safe to call repeatedly. TextToSpeech must be
+     * created and driven from a thread with a Looper — the main thread — or on
+     * many devices its callbacks never fire and nothing is heard. The translation
+     * loop runs on Dispatchers.Default, so every engine touch hops to Main here.
+     */
+    suspend fun ensureReady(): Boolean = withContext(Dispatchers.Main) {
+        if (_ready.value && tts != null) return@withContext true
+        val engine = createEngine() ?: return@withContext false
         tts = engine
         engine.setAudioAttributes(
             AudioAttributes.Builder()
@@ -76,7 +83,7 @@ class TranslationAudioController @Inject constructor(
             override fun onStop(utteranceId: String, interrupted: Boolean) = finish(utteranceId)
         })
         _ready.value = true
-        return true
+        true
     }
 
     private fun finish(utteranceId: String) {
@@ -115,25 +122,25 @@ class TranslationAudioController @Inject constructor(
             return
         }
         val engine = tts ?: return
-        // Setting the language returns a code: a missing/unsupported voice is the
-        // usual reason a translation is shown but never heard. Surface it and try
-        // to fetch the data, but still attempt to speak (some engines synthesise
-        // anyway / download on demand).
-        val langResult = runCatching { engine.setLanguage(locale(language)) }
-            .getOrDefault(TextToSpeech.LANG_NOT_SUPPORTED)
-        if (langResult == TextToSpeech.LANG_MISSING_DATA || langResult == TextToSpeech.LANG_NOT_SUPPORTED) {
-            _lastDetail.value = "voce ${language.code} non installata"
-            Log.w(TAG, "tts_language_unavailable ${language.code} code=$langResult")
-        } else {
-            _lastDetail.value = "ok ${language.code}"
-        }
-
         val id = UUID.randomUUID().toString()
         val done = CompletableDeferred<Unit>()
         pending[id] = done
         requestFocus()
         _speaking.value = true
-        val ok = engine.speak(trimmed, TextToSpeech.QUEUE_FLUSH, null, id) == TextToSpeech.SUCCESS
+        // All engine calls on Main (see ensureReady): setLanguage returns a code
+        // — a missing/unsupported voice is the usual reason a translation is shown
+        // but never heard — and speak is queued from the same thread.
+        val ok = withContext(Dispatchers.Main) {
+            val langResult = runCatching { engine.setLanguage(locale(language)) }
+                .getOrDefault(TextToSpeech.LANG_NOT_SUPPORTED)
+            if (langResult == TextToSpeech.LANG_MISSING_DATA || langResult == TextToSpeech.LANG_NOT_SUPPORTED) {
+                _lastDetail.value = "voce ${language.code} non installata"
+                Log.w(TAG, "tts_language_unavailable ${language.code} code=$langResult")
+            } else {
+                _lastDetail.value = "ok ${language.code}"
+            }
+            engine.speak(trimmed, TextToSpeech.QUEUE_FLUSH, null, id) == TextToSpeech.SUCCESS
+        }
         if (!ok) {
             Log.w(TAG, "tts_speak_rejected ${language.code}")
             finish(id)
