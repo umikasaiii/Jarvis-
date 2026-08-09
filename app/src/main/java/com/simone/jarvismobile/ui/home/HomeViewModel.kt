@@ -8,8 +8,11 @@ import com.simone.jarvismobile.audio.ChatMessage
 import com.simone.jarvismobile.audio.SessionCoordinator
 import com.simone.jarvismobile.audio.TtsState
 import com.simone.jarvismobile.background.AssistantTaskQueue
+import android.net.Uri
+import com.simone.jarvismobile.core.document.DocumentRecord
 import com.simone.jarvismobile.core.state.ConversationState
 import com.simone.jarvismobile.data.SettingsRepository
+import com.simone.jarvismobile.document.DocumentImportManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -29,8 +32,13 @@ class HomeViewModel @Inject constructor(
     application: Application,
     private val coordinator: SessionCoordinator,
     private val taskQueue: AssistantTaskQueue,
+    private val documentImporter: DocumentImportManager,
     settings: SettingsRepository,
 ) : AndroidViewModel(application) {
+
+    /** Imported documents / conversation attachments, for the chat cards. */
+    val documents: StateFlow<List<DocumentRecord>> = documentImporter.documents
+    val duplicatePrompt: StateFlow<DocumentImportManager.DuplicatePrompt?> = documentImporter.duplicate
 
     val state: StateFlow<ConversationState> = coordinator.state
     val routeState: StateFlow<AudioRouteState> = coordinator.routeState
@@ -57,7 +65,23 @@ class HomeViewModel @Inject constructor(
         // background (no-ops if nothing is configured).
         viewModelScope.launch { coordinator.ensureModelReady() }
         viewModelScope.launch { coordinator.ensureMemoryReady() }
+        viewModelScope.launch { documentImporter.refresh() }
     }
+
+    /** A file was picked from the system picker: import it (off the main thread). */
+    fun onDocumentPicked(uri: Uri, saveToVault: Boolean) {
+        documentImporter.import(uri, saveToVault)
+    }
+
+    fun onRemoveDocument(id: String) = documentImporter.remove(id)
+    fun onCancelDocument(id: String) = documentImporter.cancel(id)
+
+    fun onDuplicateUseExisting() = documentImporter.useExisting()
+    fun onDuplicateImportAnyway(prompt: DocumentImportManager.DuplicatePrompt) {
+        documentImporter.dismissDuplicate()
+        documentImporter.import(Uri.parse(prompt.uri), prompt.saveToVault, force = true)
+    }
+    fun onDismissDuplicate() = documentImporter.dismissDuplicate()
 
     fun hasRecordPermission(): Boolean = coordinator.hasRecordPermission()
 

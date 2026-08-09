@@ -18,6 +18,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Arrangement
@@ -48,6 +50,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -74,6 +77,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.imageResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
@@ -85,7 +89,10 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.simone.jarvismobile.R
 import com.simone.jarvismobile.audio.ChatMessage
+import com.simone.jarvismobile.core.document.DocumentRecord
+import com.simone.jarvismobile.core.document.DocumentStatus
 import com.simone.jarvismobile.core.state.ConversationState
+import com.simone.jarvismobile.document.DocumentImportManager
 import kotlin.math.roundToInt
 
 private const val MAX_VISIBLE_MESSAGES = 40
@@ -165,8 +172,24 @@ fun JarvisChatWindow(
     val partial by viewModel.partial.collectAsStateWithLifecycle()
     val messages by viewModel.messages.collectAsStateWithLifecycle()
     val sending by viewModel.sending.collectAsStateWithLifecycle()
+    val documents by viewModel.documents.collectAsStateWithLifecycle()
+    val duplicate by viewModel.duplicatePrompt.collectAsStateWithLifecycle()
 
     var textInput by remember { mutableStateOf("") }
+    var showAttachSheet by remember { mutableStateOf(false) }
+    // Whether the next picked file is saved into the vault or only attached.
+    var pendingSaveToVault by remember { mutableStateOf(false) }
+
+    // The import reads the bytes immediately and copies them to app-private
+    // storage, so the picker's transient read grant is enough — no persistable
+    // permission is taken and nothing outside the picked files is reachable.
+    val documentPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments(),
+    ) { uris -> uris.forEach { viewModel.onDocumentPicked(it, pendingSaveToVault) } }
+
+    val imagePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments(),
+    ) { uris -> uris.forEach { viewModel.onDocumentPicked(it, pendingSaveToVault) } }
 
     val context = LocalContext.current
     var micGranted by remember {
@@ -252,12 +275,21 @@ fun JarvisChatWindow(
                 onOpenDiagnostics = onOpenDiagnostics,
             )
 
+            if (documents.isNotEmpty()) {
+                AttachmentRow(
+                    documents = documents,
+                    onRemove = viewModel::onRemoveDocument,
+                    onCancel = viewModel::onCancelDocument,
+                )
+            }
+
             ChatComposer(
                 text = textInput,
                 onTextChange = { textInput = it },
                 status = status,
                 sending = sending,
                 onMic = ::onMicTap,
+                onAttach = { showAttachSheet = true },
                 micDescription = when {
                     state == ConversationState.Speaking -> "Interrompi e parla"
                     !state.isRestingLike() -> "Ferma"
@@ -276,7 +308,202 @@ fun JarvisChatWindow(
                 },
             )
         }
+
+        if (showAttachSheet) {
+            AttachmentSheet(
+                onDismiss = { showAttachSheet = false },
+                onPickDocument = { save ->
+                    pendingSaveToVault = save
+                    showAttachSheet = false
+                    documentPicker.launch(DOCUMENT_MIME_TYPES)
+                },
+                onPickImage = {
+                    pendingSaveToVault = false
+                    showAttachSheet = false
+                    imagePicker.launch(arrayOf("image/*"))
+                },
+            )
+        }
+
+        duplicate?.let { prompt ->
+            DuplicateDialog(
+                prompt = prompt,
+                onUseExisting = viewModel::onDuplicateUseExisting,
+                onImportAnyway = { viewModel.onDuplicateImportAnyway(prompt) },
+                onDismiss = viewModel::onDismissDuplicate,
+            )
+        }
     }
+}
+
+private val DOCUMENT_MIME_TYPES = arrayOf(
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "text/plain",
+    "text/markdown",
+    "application/json",
+    "text/csv",
+    "text/*",
+)
+
+// --- document attachments --------------------------------------------------
+
+/** The "+" that opens the attach menu, sized like the other composer controls. */
+@Composable
+private fun AttachButton(onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .size(44.dp)
+            .clip(CircleShape)
+            .background(Color(0x22FFFFFF))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text("+", color = Cyan, fontSize = 26.sp, fontWeight = FontWeight.Light)
+    }
+}
+
+/** Horizontally scrollable strip of attachment cards above the composer. */
+@Composable
+private fun AttachmentRow(
+    documents: List<DocumentRecord>,
+    onRemove: (String) -> Unit,
+    onCancel: (String) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        documents.take(12).forEach { doc ->
+            AttachmentCard(
+                doc = doc,
+                onRemove = { onRemove(doc.id) },
+                onCancel = { onCancel(doc.id) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun AttachmentCard(doc: DocumentRecord, onRemove: () -> Unit, onCancel: () -> Unit) {
+    val busy = doc.status != DocumentStatus.READY && doc.status != DocumentStatus.FAILED
+    Row(
+        modifier = Modifier
+            .widthIn(max = 220.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(Color(0xCC161A20))
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(fileGlyph(doc), fontSize = 18.sp)
+        Column(modifier = Modifier.widthIn(max = 150.dp)) {
+            Text(
+                doc.displayName,
+                color = Color(0xFFEAEEF3),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                statusLabel(doc),
+                color = if (doc.status == DocumentStatus.FAILED) Coral else Cyan,
+                fontSize = 11.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Text(
+            "✕",
+            color = Muted,
+            fontSize = 15.sp,
+            modifier = Modifier
+                .clip(CircleShape)
+                .clickable { if (busy) onCancel() else onRemove() }
+                .padding(4.dp),
+        )
+    }
+}
+
+private fun fileGlyph(doc: DocumentRecord): String =
+    when (doc.fileName.substringAfterLast('.', "").lowercase()) {
+        "pdf" -> "📕"
+        "doc", "docx" -> "📘"
+        "csv", "tsv" -> "📊"
+        "json" -> "🗂️"
+        "md", "markdown" -> "📝"
+        "png", "jpg", "jpeg", "webp" -> "🖼️"
+        else -> "📄"
+    }
+
+private fun statusLabel(doc: DocumentRecord): String = when (doc.status) {
+    DocumentStatus.SELECTED -> "In coda…"
+    DocumentStatus.COPYING -> "Copia…"
+    DocumentStatus.PARSING -> "Analisi…"
+    DocumentStatus.INDEXING -> "Indicizzazione…"
+    DocumentStatus.READY -> if (doc.vaultPath != null) "Pronto · archivio" else "Pronto"
+    DocumentStatus.FAILED -> "Non riuscito"
+}
+
+/** The attach menu: document / image / save-into-archive. */
+@Composable
+private fun AttachmentSheet(
+    onDismiss: () -> Unit,
+    onPickDocument: (saveToVault: Boolean) -> Unit,
+    onPickImage: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Annulla") } },
+        title = { Text("Aggiungi alla chat") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                SheetOption("📄  Allega documento", "PDF, DOCX, TXT, MD, JSON, CSV") { onPickDocument(false) }
+                SheetOption("🖼️  Allega immagine", "Salvata come allegato") { onPickImage() }
+                SheetOption("📚  Importa nell'archivio", "Copia nel vault e indicizza") { onPickDocument(true) }
+            }
+        },
+    )
+}
+
+@Composable
+private fun SheetOption(title: String, subtitle: String, onClick: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 10.dp, horizontal = 8.dp),
+    ) {
+        Text(title, color = Color(0xFFEAEEF3), fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+        Text(subtitle, color = Muted, fontSize = 12.sp)
+    }
+}
+
+@Composable
+private fun DuplicateDialog(
+    prompt: DocumentImportManager.DuplicatePrompt,
+    onUseExisting: () -> Unit,
+    onImportAnyway: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = { TextButton(onClick = onUseExisting) { Text("Usa esistente") } },
+        dismissButton = { TextButton(onClick = onImportAnyway) { Text("Importa comunque") } },
+        title = { Text("Documento già presente") },
+        text = {
+            Text(
+                "«${prompt.displayName}» è già nell'archivio come «${prompt.existing.displayName}». " +
+                    "Vuoi usare quello esistente o importarlo di nuovo?",
+            )
+        },
+    )
 }
 
 // --- layer 1: background ---------------------------------------------------
@@ -550,13 +777,15 @@ private fun ChatComposer(
     sending: Boolean,
     micDescription: String,
     onMic: () -> Unit,
+    onAttach: () -> Unit,
     onSend: () -> Unit,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        AttachButton(onClick = onAttach)
         MicrophoneButton(
             status = status,
             enabled = !sending,

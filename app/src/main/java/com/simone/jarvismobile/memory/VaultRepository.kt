@@ -231,6 +231,36 @@ class VaultRepository @Inject constructor(
         }.getOrDefault(false)
     }
 
+    /**
+     * Copies an imported document into a nested folder of the vault (e.g.
+     * `20_KNOWLEDGE/Documents/`), creating the folders as needed, and returns the
+     * vault-relative path of the copy — or null if there is no vault or the
+     * provider refuses the write. The user's original file is never touched; this
+     * only writes a *copy* under a name the caller has already made safe.
+     */
+    suspend fun writeVaultDocument(
+        subDirs: List<String>,
+        fileName: String,
+        bytes: ByteArray,
+        mimeType: String,
+    ): String? = withContext(Dispatchers.IO) {
+        val tree = tree() ?: return@withContext null
+        runCatching {
+            var dir: DocumentFile = tree
+            for (part in subDirs) {
+                dir = dir.findFile(part)?.takeIf { it.isDirectory }
+                    ?: dir.createDirectory(part)
+                    ?: return@withContext null
+            }
+            val existing = dir.findFile(fileName)
+            val file = existing ?: dir.createFile(mimeType.ifBlank { "application/octet-stream" }, fileName)
+                ?: return@withContext null
+            context.contentResolver.openOutputStream(file.uri, "w")?.use { it.write(bytes) }
+                ?: return@withContext null
+            (subDirs + fileName).joinToString("/")
+        }.getOrNull()
+    }
+
     private suspend fun tree(): DocumentFile? {
         val uriStr = settings.vaultUri.first()
         if (uriStr.isBlank()) return null

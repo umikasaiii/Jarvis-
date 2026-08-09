@@ -99,6 +99,7 @@ class SessionCoordinator @Inject constructor(
     private val conversationMemory: ConversationMemoryStore,
     private val liveTranslator: LiveTranslatorManager,
     private val liveTranslatorRepo: LiveTranslatorRepository,
+    private val documents: com.simone.jarvismobile.document.DocumentImportManager,
 ) {
 
     /** Long-lived scope for fire-and-forget persistence; lives as long as the app. */
@@ -797,12 +798,22 @@ class SessionCoordinator @Inject constructor(
         // library holds nothing relevant, nothing is injected and the system
         // prompt's "say you don't know" rule applies unaided.
         val evidence = runCatching { knowledgeEvidence(transcript) }.getOrNull()
+        // Imported documents/attachments are searched on the same pre-generation
+        // path as the offline library, so an answer about "this PDF" is grounded
+        // in cited passages rather than improvised.
+        val docEvidence = runCatching { documents.documentEvidence(transcript) }.getOrNull()
 
         val message = buildString {
             if (conversationHint.isNotBlank()) {
                 append("[Risultati verificati dal sistema da usare nella risposta: ")
                 append(conversationHint.replace('\n', ' ').takeLast(COMPOUND_CONTEXT_CHARS))
                 append("]\n")
+            }
+            if (docEvidence != null) {
+                append("[Documenti importati pertinenti. Rispondi USANDO SOLO questo, ")
+                append("e cita la fonte (nome file/pagina) fra parentesi. Se non basta, dillo.]\n")
+                append(docEvidence)
+                append('\n')
             }
             if (evidence != null) {
                 append("[Documentazione offline pertinente. Rispondi USANDO SOLO questo, ")

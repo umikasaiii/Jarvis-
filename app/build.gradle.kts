@@ -141,6 +141,10 @@ dependencies {
     // existing deep links/broadcasts, never their own controllers.
     implementation("androidx.glance:glance-appwidget:1.1.1")
 
+    // Offline PDF text extraction for the document-import pipeline (Apache PDFBox
+    // Android port). Fully on-device; DOCX is parsed with java.util.zip, no dep.
+    implementation("com.tom-roush:pdfbox-android:2.0.27.0")
+
     // Unit tests.
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
