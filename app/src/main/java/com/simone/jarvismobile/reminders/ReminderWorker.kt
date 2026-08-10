@@ -34,14 +34,17 @@ class ReminderWorker(
         val time = inputData.getString(KEY_TIME).orEmpty()
         val whenText = listOf(date, time).filter(String::isNotBlank).joinToString(" · ")
         val notificationId = NOTIFICATION_BASE + entryId.hashCode().and(0x0fff)
+        // Tapping the notification opens the Attività (agenda) screen it refers to.
         val open = PendingIntent.getActivity(
             applicationContext,
             entryId.hashCode(),
             Intent(applicationContext, MainActivity::class.java)
-                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                .putExtra(MainActivity.EXTRA_OPEN_AGENDA, true)
+                .putExtra(MainActivity.EXTRA_AGENDA_ENTRY_ID, entryId),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        // Quick actions handled from the shade: tick it off, or postpone an hour.
+        // One shade action: tick it off without opening the app.
         val notification = JarvisNotifications.styled(
             context = applicationContext,
             channelId = JarvisNotifications.CHANNEL_REMINDERS,
@@ -54,8 +57,7 @@ class ReminderWorker(
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .addAction(0, "Segna come fatto", actionPending(entryId, title, date, time, notificationId, ReminderActionReceiver.ACTION_DONE, 1))
-            .addAction(0, "Riprogramma", actionPending(entryId, title, date, time, notificationId, ReminderActionReceiver.ACTION_SNOOZE, 2))
+            .addAction(0, "Segna come completato", actionPending(entryId, notificationId, ReminderActionReceiver.ACTION_DONE, 1))
             .build()
         try {
             NotificationManagerCompat.from(applicationContext).notify(notificationId, notification)
@@ -67,9 +69,6 @@ class ReminderWorker(
 
     private fun actionPending(
         entryId: String,
-        title: String,
-        date: String,
-        time: String,
         notificationId: Int,
         action: String,
         requestOffset: Int,
@@ -77,9 +76,6 @@ class ReminderWorker(
         val intent = Intent(applicationContext, ReminderActionReceiver::class.java)
             .setAction(action)
             .putExtra(ReminderActionReceiver.EXTRA_ENTRY_ID, entryId)
-            .putExtra(ReminderActionReceiver.EXTRA_TITLE, title)
-            .putExtra(ReminderActionReceiver.EXTRA_DATE, date)
-            .putExtra(ReminderActionReceiver.EXTRA_TIME, time)
             .putExtra(ReminderActionReceiver.EXTRA_NOTIF_ID, notificationId)
         return PendingIntent.getBroadcast(
             applicationContext,

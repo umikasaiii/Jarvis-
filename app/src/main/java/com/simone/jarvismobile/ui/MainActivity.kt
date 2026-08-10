@@ -50,6 +50,7 @@ class MainActivity : ComponentActivity() {
 
     private val openChatRequests = MutableStateFlow(0)
     private val startListeningRequests = MutableStateFlow(0)
+    private val openAgendaRequests = MutableStateFlow(0)
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
@@ -67,18 +68,21 @@ class MainActivity : ComponentActivity() {
             intent?.getBooleanExtra(EXTRA_OPEN_CHAT, false) == true
         if (openChat) openChatRequests.value += 1
         if (startListening) startListeningRequests.value += 1
+        if (isAgendaRequest(intent)) openAgendaRequests.value += 1
 
         requestNeededPermissions()
 
         setContent {
             val openChatRequest by openChatRequests.collectAsState()
             val startListeningRequest by startListeningRequests.collectAsState()
+            val openAgendaRequest by openAgendaRequests.collectAsState()
             JarvisTheme {
                 Box(Modifier.fillMaxSize()) {
                     JarvisApp(
                         initiallyOpenChat = openChat,
                         openChatRequest = openChatRequest,
                         startListeningRequest = startListeningRequest,
+                        openAgendaRequest = openAgendaRequest,
                     )
                     // Brief full-screen opening artwork, then a quick fade to the app.
                     // Purely a transition: a short, fixed window, never a load gate.
@@ -111,7 +115,12 @@ class MainActivity : ComponentActivity() {
             openChatRequests.value += 1
         }
         if (startListening) startListeningRequests.value += 1
+        if (isAgendaRequest(intent)) openAgendaRequests.value += 1
     }
+
+    /** Agenda: the reminder notification's tap target. */
+    private fun isAgendaRequest(intent: Intent?): Boolean =
+        intent?.getBooleanExtra(EXTRA_OPEN_AGENDA, false) == true || jarvisHost(intent) == "agenda"
 
     override fun onResume() {
         super.onResume()
@@ -148,6 +157,8 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_OPEN_CHAT = "open_chat"
+        const val EXTRA_OPEN_AGENDA = "open_agenda"
+        const val EXTRA_AGENDA_ENTRY_ID = "agenda_entry_id"
         /** How long the opening artwork stays before fading — a transition, not a wait. */
         private const val SPLASH_MS = 650L
 

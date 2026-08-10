@@ -88,6 +88,7 @@ fun JarvisApp(
     initiallyOpenChat: Boolean = false,
     openChatRequest: Int = 0,
     startListeningRequest: Int = 0,
+    openAgendaRequest: Int = 0,
 ) {
     var tab by remember { mutableStateOf(Tab.HOME) }
     var overlay by remember { mutableStateOf(if (initiallyOpenChat) Overlay.CHAT else null) }
@@ -100,6 +101,14 @@ fun JarvisApp(
 
     LaunchedEffect(openChatRequest) {
         if (openChatRequest > 0) overlay = Overlay.CHAT
+    }
+
+    // The reminder notification's tap opens the Attività (agenda) screen.
+    LaunchedEffect(openAgendaRequest) {
+        if (openAgendaRequest > 0) {
+            overlay = null
+            tab = Tab.NOTIFICHE
+        }
     }
 
     // A spoken "avvia traduzione live …" starts the session in the background and

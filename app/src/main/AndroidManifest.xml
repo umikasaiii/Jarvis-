@@ -202,13 +202,12 @@
             </intent-filter>
         </receiver>
 
-        <!-- Reminder shade actions: mark done / postpone an hour. -->
+        <!-- Reminder shade action: mark the item completed. -->
         <receiver
             android:name=".reminders.ReminderActionReceiver"
             android:exported="false">
             <intent-filter>
                 <action android:name="com.simone.jarvismobile.action.REMINDER_DONE" />
-                <action android:name="com.simone.jarvismobile.action.REMINDER_SNOOZE" />
             </intent-filter>
         </receiver>
 
