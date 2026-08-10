@@ -157,6 +157,12 @@ object CommandMatcher {
         // --- Recall the free-text notes -----------------------------------
         if (RECALL_RE.containsMatchIn(t)) return call("list_memories")
 
+        // --- Edit a saved memory ("cambia l'appunto X in Y") --------------
+        updateMemoryCall(raw)?.let { return it }
+
+        // --- Delete a saved memory ("dimentica …") ------------------------
+        forgetMemoryCall(raw)?.let { return it }
+
         // --- Remember (checked before the calculator) ---------------------
         rememberContent(raw)?.let { note ->
             val kind = MemoryStructure.classify(note)
@@ -418,6 +424,27 @@ object CommandMatcher {
 
     /** Public so callers can reuse the reminder-body extraction. */
     fun rememberBody(raw: String): String? = rememberContent(raw)
+
+    /** "cambia l'appunto sul gelato in mi piace il cioccolato" → update_memory. */
+    fun updateMemoryCall(raw: String): Match? {
+        val m = UPDATE_MEMORY_RE.find(raw.trim()) ?: return null
+        val old = m.groupValues[1].trim().trim('.', ',', ' ', '«', '»', '"')
+        val new = m.groupValues[2].trim().trim('.', ',', ' ', '«', '»', '"')
+        if (old.length < 2 || new.length < 2) return null
+        return call("update_memory", "old" to old, "new" to new)
+    }
+
+    /** "dimentica che mi piace il ketchup", "elimina l'appunto sul gelato". */
+    fun forgetMemoryCall(raw: String): Match? {
+        val body = forgetBody(raw) ?: return null
+        return call("forget_memory", "text" to body)
+    }
+
+    private fun forgetBody(raw: String): String? {
+        val m = FORGET_MEMORY_RE.find(raw.trim()) ?: return null
+        val body = (m.groupValues[1].ifBlank { m.groupValues[2] }).trim().trim('.', ',', ' ', '«', '»', '"')
+        return body.takeIf { it.length >= 2 }
+    }
 
     /**
      * Turns a reminder body into an agenda entry.
@@ -735,6 +762,27 @@ object CommandMatcher {
             """\bi miei appunti\b|\bcosa mi ricordi\b|\bche (cose|appunti) hai\b|""" +
             """\bcosa\s+(sai|ricordi)\s+di\s+me\b|\bcosa\s+ti\s+ho\s+detto\s+di\s+me\b|""" +
             """\b(cosa|che\s+cosa|che\s+\w+)\s+mi\s+piace\b""",
+    )
+
+    /**
+     * Delete a memory. "dimentica/scorda" are inherently about memory, so they
+     * take the rest as the target; the generic verbs (cancella/elimina/togli/
+     * rimuovi) require a memory cue ("l'appunto", "il ricordo", "dalla memoria")
+     * so they don't hijack an agenda or alarm deletion.
+     */
+    private val FORGET_MEMORY_RE = Regex(
+        """^(?:dimentica(?:ti)?|scorda(?:ti)?)\s+(?:che\s+|di\s+|del\s+|dello\s+|della\s+|il\s+|lo\s+|la\s+)?(.+)$""" +
+            """|^(?:cancella|elimina|togli|rimuovi)\s+(?:dalla memoria|dagli appunti|l['’]appunto|il ricordo)""" +
+            """\s*(?:su\w*\s+|che\s+|di\s+|del\s+|dello\s+|della\s+)?(.+)$""",
+        RegexOption.IGNORE_CASE,
+    )
+
+    /** Edit a memory: "cambia/aggiorna/modifica/correggi/sostituisci <vecchio> in/con <nuovo>". */
+    private val UPDATE_MEMORY_RE = Regex(
+        """^(?:cambia|aggiorna|modifica|correggi|sostituisci)\s+""" +
+            """(?:l['’]appunto\s+(?:su\w+\s+)?|il ricordo\s+(?:su\w+\s+)?|la memoria\s+|che\s+)?""" +
+            """(.+?)\s+(?:in|con)\s+(.+)$""",
+        RegexOption.IGNORE_CASE,
     )
 
     /** "quanto manca alle 16?", "fra quanto è l'appuntamento?" */

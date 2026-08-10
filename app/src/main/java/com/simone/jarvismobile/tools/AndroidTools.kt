@@ -243,6 +243,86 @@ class RememberTool(private val memory: MemoryIndex) : Tool {
 }
 
 /**
+ * Deletes a saved memory by the words it contains ("dimentica che mi piace il
+ * ketchup"). Confirming and fail-closed: it removes a memory only when exactly
+ * one matches, and shows what will go first — a delete can't be undone.
+ */
+class ForgetMemoryTool(private val memory: MemoryIndex) : Tool {
+    override val name = "forget_memory"
+    override val description = "Elimina un appunto dalla memoria in base al testo."
+    override val policy = ToolPolicy.CONFIRMING_WRITE
+    override val sensitivity = SensitivityLevel.PERSONAL
+    override val requiresNetwork = false
+    override val timeoutMs = 8_000L
+
+    override fun validate(arguments: JsonObject): String? {
+        val text = arguments.str("text") ?: return "manca il campo 'text'"
+        if (text.trim().length < 2) return "testo troppo corto"
+        return null
+    }
+
+    override fun confirmationPrompt(arguments: JsonObject): String? =
+        arguments.str("text")?.take(160)?.let { "Confermi di eliminare dalla memoria l'appunto su «$it»?" }
+
+    override suspend fun execute(arguments: JsonObject): ToolResult {
+        val text = arguments.str("text") ?: return ToolResult.Failure("missing_text")
+        val matches = runCatching { memory.findMemories(text) }.getOrDefault(emptyList())
+        return when {
+            matches.isEmpty() -> ok("spoken" to "Non ho trovato nessun appunto su «$text».")
+            matches.size > 1 ->
+                ok("spoken" to "Ho più appunti che parlano di «$text»: dimmi più preciso quale eliminare.")
+            else -> {
+                val removed = runCatching { memory.deleteByText(text) }.getOrNull()
+                if (removed != null) ok("spoken" to "Eliminato: ${removed.text}.")
+                else ok("spoken" to "Non sono riuscito a eliminarlo.")
+            }
+        }
+    }
+}
+
+/**
+ * Edits a saved memory: finds the one matching [old] and replaces its text with
+ * [new] ("cambia l'appunto sul gelato in mi piace il cioccolato"). Confirming and
+ * fail-closed on ambiguity.
+ */
+class UpdateMemoryTool(private val memory: MemoryIndex) : Tool {
+    override val name = "update_memory"
+    override val description = "Modifica un appunto della memoria."
+    override val policy = ToolPolicy.CONFIRMING_WRITE
+    override val sensitivity = SensitivityLevel.PERSONAL
+    override val requiresNetwork = false
+    override val timeoutMs = 8_000L
+
+    override fun validate(arguments: JsonObject): String? {
+        val old = arguments.str("old") ?: return "manca il campo 'old'"
+        val new = arguments.str("new") ?: return "manca il campo 'new'"
+        if (old.trim().length < 2 || new.trim().length < 2) return "testo troppo corto"
+        return null
+    }
+
+    override fun confirmationPrompt(arguments: JsonObject): String? {
+        val old = arguments.str("old")?.take(120) ?: return null
+        val new = arguments.str("new")?.take(120) ?: return null
+        return "Confermi di cambiare l'appunto su «$old» in «$new»?"
+    }
+
+    override suspend fun execute(arguments: JsonObject): ToolResult {
+        val old = arguments.str("old") ?: return ToolResult.Failure("missing_old")
+        val new = arguments.str("new") ?: return ToolResult.Failure("missing_new")
+        val matches = runCatching { memory.findMemories(old) }.getOrDefault(emptyList())
+        return when {
+            matches.isEmpty() -> ok("spoken" to "Non ho trovato nessun appunto su «$old».")
+            matches.size > 1 -> ok("spoken" to "Ho più appunti su «$old»: specifica quale.")
+            else -> {
+                val updated = runCatching { memory.updateByText(old, new) }.getOrNull()
+                if (updated != null) ok("spoken" to "Aggiornato: ${updated.text}.")
+                else ok("spoken" to "Non sono riuscito a modificarlo.")
+            }
+        }
+    }
+}
+
+/**
  * Reads the saved reminders back from the vault. Deterministic on purpose: the
  * answer to "cosa devo fare?" comes from the file, never from the model, so it
  * can't be invented.

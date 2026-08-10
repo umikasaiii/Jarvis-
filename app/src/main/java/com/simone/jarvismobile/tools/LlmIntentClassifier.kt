@@ -161,6 +161,12 @@ class LlmIntentClassifier @Inject constructor(
                 }
             }
 
+            "forget_memory" -> CommandMatcher.forgetMemoryCall(utterance)
+                ?: Match.Ask("Quale appunto devo eliminare?", "forget_memory", "text")
+
+            "update_memory" -> CommandMatcher.updateMemoryCall(utterance)
+                ?: Match.Ask("Cosa devo modificare, e come?", "update_memory", "old")
+
             "search_knowledge" -> Match.Run(call("search_knowledge", "query" to utterance.trim()))
 
             "list_agenda" -> CommandMatcher.agendaCall(utterance)
@@ -217,6 +223,7 @@ class LlmIntentClassifier @Inject constructor(
 
         Intenti ammessi: get_time, battery_status, set_timer, set_alarm,
         flashlight, add_reminder, list_agenda, complete_agenda, time_until, remember,
+        forget_memory, update_memory,
         list_memories, calculate, open_app, open_settings,
         create_calendar_event, prepare_call, compose_sms, navigate,
         play_media, media_control, list_notifications, search_vault,
@@ -237,6 +244,10 @@ class LlmIntentClassifier @Inject constructor(
         manuali o voci di enciclopedia importati offline: come si fa una cosa,
         come funziona, cosa significa.
         Usa "list_memories" SOLO per elencare gli appunti liberi, non gli impegni.
+        Usa "forget_memory" quando l'utente vuole eliminare/dimenticare un appunto
+        salvato ("dimentica che…", "elimina l'appunto su…").
+        Usa "update_memory" quando vuole modificare un appunto già salvato
+        ("cambia l'appunto… in…", "correggi che…").
         Usa "create_calendar_event" solo se l'utente chiede esplicitamente Google
         Calendar o il calendario del telefono. Il calendario predefinito è quello
         personale e offline di JARVIS, gestito da "add_reminder".
@@ -274,6 +285,12 @@ class LlmIntentClassifier @Inject constructor(
         Risposta: list_agenda|98
         Richiesta: cosa hai annotato?
         Risposta: list_memories
+        Richiesta: dimentica che mi piace il ketchup
+        Risposta: forget_memory|97
+        Richiesta: elimina l'appunto sul gelato
+        Risposta: forget_memory|96
+        Richiesta: cambia l'appunto sul gelato in mi piace il cioccolato
+        Risposta: update_memory|96
         Richiesta: come si cambia la gomma della moto?
         Risposta: search_knowledge
         Richiesta: cosa dice il manuale sulla catena?
@@ -340,6 +357,7 @@ class LlmIntentClassifier @Inject constructor(
         val KNOWN_INTENTS = setOf(
             "get_time", "battery_status", "set_timer", "set_alarm", "flashlight",
             "add_reminder", "list_agenda", "complete_agenda", "time_until", "remember",
+            "forget_memory", "update_memory",
             "list_memories", "search_knowledge", "calculate", "open_app", "open_settings",
             "create_calendar_event", "prepare_call", "compose_sms", "navigate",
             "play_media", "media_control", "list_notifications", "search_vault",

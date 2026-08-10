@@ -31,6 +31,28 @@ class CommandMatcherTest {
     }
 
     @Test
+    fun forgetCommandDeletesAMemoryByText() {
+        val m = CommandMatcher.match("dimentica che mi piace il ketchup") as Match.Run
+        assertEquals("forget_memory", m.call.name)
+        assertEquals("mi piace il ketchup", m.call.arguments["text"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun deleteNoteCommandNeedsAMemoryCue() {
+        val m = CommandMatcher.match("elimina l'appunto sul gelato") as Match.Run
+        assertEquals("forget_memory", m.call.name)
+        assertEquals("gelato", m.call.arguments["text"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun editCommandUpdatesAMemory() {
+        val m = CommandMatcher.match("cambia l'appunto sul gelato in mi piace il cioccolato") as Match.Run
+        assertEquals("update_memory", m.call.name)
+        assertEquals("gelato", m.call.arguments["old"]?.jsonPrimitive?.content)
+        assertEquals("mi piace il cioccolato", m.call.arguments["new"]?.jsonPrimitive?.content)
+    }
+
+    @Test
     fun recallQuestionsAreAnsweredFromSavedNotes() {
         // These must read the vault deterministically, never let the model invent.
         for (q in listOf(

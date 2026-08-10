@@ -67,6 +67,8 @@ object ToolsModule {
             ListAgendaTool(agenda),
             CompleteAgendaTool(agenda),
             RememberTool(memory),
+            ForgetMemoryTool(memory),
+            UpdateMemoryTool(memory),
             ListMemoriesTool(memory),
             SearchKnowledgeTool(knowledge),
             OpenAppTool(context),

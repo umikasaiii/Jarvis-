@@ -161,6 +161,30 @@ class MemoryIndex @Inject constructor(
         return removed
     }
 
+    /** Records whose text contains [needle] — for voice/chat edit & delete. */
+    suspend fun findMemories(needle: String): List<MemoryRecord> {
+        val n = needle.trim()
+        if (n.length < 2) return emptyList()
+        return listRecords().filter { it.text.contains(n, ignoreCase = true) }
+    }
+
+    /**
+     * Deletes the single record matching [needle]. Fails closed (null) on no
+     * match or on ambiguity, so a vague "dimentica…" never removes the wrong one.
+     */
+    suspend fun deleteByText(needle: String): MemoryRecord? {
+        val match = findMemories(needle).singleOrNull() ?: return null
+        return delete(match.id)
+    }
+
+    /** Replaces the text of the single record matching [needle]; fails closed. */
+    suspend fun updateByText(needle: String, newText: String): MemoryRecord? {
+        val clean = newText.trim()
+        if (clean.length < 2) return null
+        val match = findMemories(needle).singleOrNull() ?: return null
+        return update(match.id, clean, match.kind)
+    }
+
     /** Drops the index (e.g. after the vault is disconnected). */
     fun clear() {
         chunks = emptyList()
