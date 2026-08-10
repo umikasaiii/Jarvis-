@@ -132,17 +132,32 @@ fun MemoryScreen(
             }
         }
 
-        Text("Ricordi permanenti", style = MaterialTheme.typography.titleMedium)
+        Text("Archivio ricordi", style = MaterialTheme.typography.titleMedium)
         if (records.isEmpty()) {
-            Text("Nessun ricordo permanente nel vault.", style = MaterialTheme.typography.bodyMedium)
+            Text("Nessun ricordo salvato.", style = MaterialTheme.typography.bodyMedium)
         } else {
-            records.forEach { record ->
-                MemoryRecordCard(
-                    record = record,
-                    enabled = !busy,
-                    onSave = viewModel::update,
-                    onDelete = viewModel::delete,
+            // Notes-app style: grouped by category (the record's main topic, or
+            // "Generale" when it has none), categories alphabetical with "Generale"
+            // last, and the newest note first inside each category.
+            val byCategory = records
+                .groupBy { it.topics.firstOrNull()?.replaceFirstChar { c -> c.uppercase() } ?: "Generale" }
+                .toSortedMap(compareBy({ it == "Generale" }, { it }))
+            byCategory.forEach { (category, list) ->
+                Text(
+                    category,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFF3FD8F0),
+                    modifier = Modifier.padding(top = 4.dp),
                 )
+                list.sortedByDescending { it.updatedAt }.forEach { record ->
+                    MemoryRecordCard(
+                        record = record,
+                        enabled = !busy,
+                        onSave = viewModel::update,
+                        onDelete = viewModel::delete,
+                    )
+                }
             }
         }
 
