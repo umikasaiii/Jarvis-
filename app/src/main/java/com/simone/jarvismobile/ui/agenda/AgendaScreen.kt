@@ -299,7 +299,7 @@ fun AgendaScreen(viewModel: AgendaViewModel = hiltViewModel()) {
                         )
                     }
                     val label = buildString {
-                        newTaskDate?.let { append(Agenda.humanDate(it, today)) }
+                        newTaskDate?.let { append(Agenda.fullDate(it, today)) }
                         newTaskTime?.let {
                             if (isNotEmpty()) append(" · ")
                             append(Agenda.humanTime(it))
@@ -485,7 +485,7 @@ private fun TaskRow(
             }
             if (entry.date != null) {
                 Text(
-                    Agenda.humanDate(entry.date, today).replaceFirstChar { it.uppercase() } +
+                    Agenda.fullDate(entry.date, today).replaceFirstChar { it.uppercase() } +
                         (entry.time?.let { " · " + Agenda.humanTime(it) } ?: ""),
                     color = dot,
                     fontSize = 11.sp,
@@ -740,7 +740,7 @@ private fun TaskDetailDialog(
                     Icon(Icons.Filled.CalendarMonth, null, tint = if (date != null) Cyan else Muted)
                     Spacer(Modifier.width(12.dp))
                     Text(
-                        date?.let { Agenda.humanDate(it, today) } ?: "Aggiungi scadenza",
+                        date?.let { Agenda.fullDate(it, today) } ?: "Aggiungi scadenza",
                         color = if (date != null) Ink else Muted,
                     )
                     if (date != null) {

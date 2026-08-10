@@ -80,6 +80,17 @@ class AgendaTest {
     }
 
     @Test
+    fun `full date is specified for lists`() {
+        assertEquals("oggi", Agenda.fullDate(today, today))
+        assertEquals("domani", Agenda.fullDate(today.plusDays(1), today))
+        // Where humanDate would say the vague "dopodomani" / "domenica", fullDate
+        // spells out the weekday, day and month so a list is unambiguous.
+        assertEquals("sabato 8 agosto", Agenda.fullDate(today.plusDays(2), today))
+        assertEquals("giovedì 20 agosto", Agenda.fullDate(LocalDate.of(2026, 8, 20), today))
+        assertEquals("senza data", Agenda.fullDate(null, today))
+    }
+
+    @Test
     fun `spoken line has day and time`() {
         val e = AgendaEntry(today.plusDays(1), LocalTime.of(15, 0), "tagliare i capelli")
         assertEquals("domani alle 15:00, tagliare i capelli", Agenda.speak(e, today))

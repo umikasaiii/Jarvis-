@@ -85,6 +85,19 @@ object Agenda {
         else -> "${date.dayOfMonth} ${MONTHS[date.monthValue - 1]}"
     }
 
+    /**
+     * A fully specified date for lists — "oggi", "domani", or otherwise the
+     * unambiguous "martedì 11 agosto" (weekday + day + month). Used by the
+     * Attività screen, where a vague "dopodomani" or a bare "venerdì" doesn't
+     * tell you which day it actually is.
+     */
+    fun fullDate(date: LocalDate?, today: LocalDate): String = when {
+        date == null -> "senza data"
+        date == today -> "oggi"
+        date == today.plusDays(1) -> "domani"
+        else -> "${WEEKDAYS[date.dayOfWeek.value - 1]} ${date.dayOfMonth} ${MONTHS[date.monthValue - 1]}"
+    }
+
     /** "15:00" or empty when the entry has no time. */
     fun humanTime(time: LocalTime?): String =
         if (time == null) "" else "%02d:%02d".format(time.hour, time.minute)

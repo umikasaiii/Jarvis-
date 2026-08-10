@@ -4,6 +4,8 @@ import com.simone.jarvismobile.agenda.AgendaRepository
 import com.simone.jarvismobile.core.agenda.Agenda
 import com.simone.jarvismobile.core.agenda.AgendaEntry
 import com.simone.jarvismobile.core.agenda.DayPeriod
+import com.simone.jarvismobile.core.agenda.ReminderAlert
+import com.simone.jarvismobile.core.agenda.ReminderAlertType
 import com.simone.jarvismobile.core.tools.SensitivityLevel
 import com.simone.jarvismobile.core.tools.Tool
 import com.simone.jarvismobile.core.tools.ToolPolicy
@@ -52,7 +54,14 @@ class AddReminderTool(private val agenda: AgendaRepository) : Tool {
             ?: return ToolResult.Failure("missing_date")
         val time = arguments.text("time")?.let { runCatching { LocalTime.parse(it) }.getOrNull() }
 
-        val entry = AgendaEntry(date = date, time = time, text = text)
+        // A reminder is a promise to be told: attach a notification by default,
+        // so the user never has to ask for it. An appointment fires at its hour;
+        // a dated task with no hour fires the morning of. The user can remove the
+        // alert by hand from the agenda if they don't want it.
+        val defaultAlert = ReminderAlert(
+            if (time != null) ReminderAlertType.AT_TIME else ReminderAlertType.MORNING_OF,
+        )
+        val entry = AgendaEntry(date = date, time = time, text = text, alerts = listOf(defaultAlert))
         val saved = runCatching { agenda.add(entry) }.getOrDefault(false)
         if (!saved) return ToolResult.Failure("agenda_write_failed")
 
@@ -63,7 +72,7 @@ class AddReminderTool(private val agenda: AgendaRepository) : Tool {
             "date" to date.toString(),
             "time" to (time?.toString() ?: ""),
             "text" to text,
-            "spoken" to "Segnato: $text, $whenSaid. Vuoi che ti avvisi?",
+            "spoken" to "Segnato: $text, $whenSaid. Ti avviserò; puoi togliere la notifica dall'agenda.",
         )
     }
 }
@@ -166,11 +175,16 @@ class ListAgendaTool(private val agenda: AgendaRepository) : Tool {
     }
 }
 
-/** Completes an existing task only after showing the exact target to the user. */
+/**
+ * Completes an existing task straight away. Ticking an item off is a low-risk,
+ * fully reversible write (it can be re-opened), and [AgendaRepository.markDone]
+ * already fails closed on ambiguity — so "segna X come completato" is honoured at
+ * once, without a second confirmation the user found redundant.
+ */
 class CompleteAgendaTool(private val agenda: AgendaRepository) : Tool {
     override val name = "complete_agenda"
     override val description = "Segna come completata un'attività del calendario personale."
-    override val policy = ToolPolicy.CONFIRMING_WRITE
+    override val policy = ToolPolicy.LOW_RISK_WRITE
     override val sensitivity = SensitivityLevel.PERSONAL
     override val requiresNetwork = false
     override val timeoutMs = 5_000L
@@ -180,10 +194,6 @@ class CompleteAgendaTool(private val agenda: AgendaRepository) : Tool {
         if (text.length < 2) return "testo troppo corto"
         return null
     }
-
-    override fun confirmationPrompt(arguments: JsonObject): String? = arguments.text("text")
-        ?.take(160)
-        ?.let { "Confermi di segnare come completata l'attività “$it”?" }
 
     override suspend fun execute(arguments: JsonObject): ToolResult {
         val text = arguments.text("text") ?: return ToolResult.Failure("missing_text")

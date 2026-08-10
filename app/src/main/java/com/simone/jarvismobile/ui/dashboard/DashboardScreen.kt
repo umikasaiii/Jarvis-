@@ -921,7 +921,7 @@ private fun TimelineEntry(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            Text(Agenda.humanDate(entry.date, LocalDate.now()), color = Muted, fontSize = 10.sp)
+            Text(Agenda.fullDate(entry.date, LocalDate.now()), color = Muted, fontSize = 10.sp)
             Spacer(Modifier.height(2.dp))
             StatusBadge(done = entry.done)
         }
