@@ -31,6 +31,29 @@ class MemoryRecordTest {
     }
 
     @Test
+    fun `category survives the markdown round trip`() {
+        val records = listOf(
+            MemoryRecord(
+                id = "mem-c",
+                text = "Mi piace la pizza ai funghi",
+                createdAt = 40,
+                category = "Cibo e gusti",
+            ),
+        )
+        assertEquals(records, MemoryRecordCodec.parse(MemoryRecordCodec.render(records)))
+    }
+
+    @Test
+    fun `category normalize maps free answers to canonical buckets`() {
+        assertEquals("Cibo e gusti", MemoryCategories.normalize("Cibo e gusti"))
+        assertEquals("Cibo e gusti", MemoryCategories.normalize("cibo"))
+        assertEquals("Cibo e gusti", MemoryCategories.normalize("Alimentazione."))
+        assertEquals("Salute", MemoryCategories.normalize("medicina"))
+        assertEquals("Altro", MemoryCategories.normalize("qualcosa di strano"))
+        assertEquals("Altro", MemoryCategories.normalize(""))
+    }
+
+    @Test
     fun `legacy lines get deterministic ids and structured fields`() {
         val raw = """
             # Memoria di JARVIS

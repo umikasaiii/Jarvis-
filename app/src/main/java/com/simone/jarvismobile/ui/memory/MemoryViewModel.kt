@@ -107,6 +107,20 @@ class MemoryViewModel @Inject constructor(
         }
     }
 
+    /** Sorts uncategorised records into macro-categories with the on-device model. */
+    fun reclassify() {
+        viewModelScope.launch {
+            _busy.value = true
+            val changed = runCatching { memory.categorizeUncategorized() }.getOrDefault(0)
+            _message.value = when {
+                changed > 0 -> "Classificati $changed ricordi."
+                else -> "Nessuna categoria assegnata: assicurati che un modello sia caricato."
+            }
+            refreshRecords()
+            _busy.value = false
+        }
+    }
+
     fun clearTemporary() {
         viewModelScope.launch {
             conversationMemory.clear()

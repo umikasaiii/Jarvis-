@@ -32,6 +32,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.simone.jarvismobile.core.memory.MemoryKind
 import com.simone.jarvismobile.core.memory.MemoryRecord
 
+private const val UNCATEGORIZED = "Senza categoria"
+
 /** Memory V2: temporary recap plus editable, structured Obsidian memories. */
 @Composable
 fun MemoryScreen(
@@ -132,16 +134,27 @@ fun MemoryScreen(
             }
         }
 
-        Text("Archivio ricordi", style = MaterialTheme.typography.titleMedium)
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text("Archivio ricordi", style = MaterialTheme.typography.titleMedium)
+            if (records.any { it.category.isBlank() }) {
+                OutlinedButton(onClick = viewModel::reclassify, enabled = !busy) {
+                    Text(if (busy) "…" else "Classifica con l'AI")
+                }
+            }
+        }
         if (records.isEmpty()) {
             Text("Nessun ricordo salvato.", style = MaterialTheme.typography.bodyMedium)
         } else {
-            // Notes-app style: grouped by category (the record's main topic, or
-            // "Generale" when it has none), categories alphabetical with "Generale"
-            // last, and the newest note first inside each category.
+            // Notes-app style: grouped by the AI macro-category ("Senza categoria"
+            // for notes not yet classified — the button above sorts them), groups
+            // alphabetical with the uncategorised bucket last, newest note first.
             val byCategory = records
-                .groupBy { it.topics.firstOrNull()?.replaceFirstChar { c -> c.uppercase() } ?: "Generale" }
-                .toSortedMap(compareBy({ it == "Generale" }, { it }))
+                .groupBy { it.category.ifBlank { UNCATEGORIZED } }
+                .toSortedMap(compareBy({ it == UNCATEGORIZED }, { it }))
             byCategory.forEach { (category, list) ->
                 Text(
                     category,

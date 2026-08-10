@@ -128,7 +128,11 @@ class VaultRepository @Inject constructor(
      * provider compatibility (the memory file stays small). Returns false if there
      * is no vault or the provider is read-only.
      */
-    suspend fun addMemory(text: String, requestedKind: MemoryKind? = null): MemoryRecord? =
+    suspend fun addMemory(
+        text: String,
+        requestedKind: MemoryKind? = null,
+        category: String = "",
+    ): MemoryRecord? =
         memoryMutex.withLock {
             val body = text.replace(Regex("""\s+"""), " ").trim()
             if (body.isBlank() || MemoryStructure.containsCredential(body)) return@withLock null
@@ -145,6 +149,7 @@ class VaultRepository @Inject constructor(
                 topics = fields.topics,
                 people = fields.people,
                 dates = fields.dates,
+                category = category,
             )
             val records = readMemoryRecordsUnlocked()
             if (!writeMemory(records + record)) return@withLock null
@@ -167,6 +172,16 @@ class VaultRepository @Inject constructor(
                 people = fields.people,
                 dates = fields.dates,
             )
+            val next = records.map { if (it.id == id) updated else it }
+            if (writeMemory(next)) updated else null
+        }
+
+    /** Sets just the macro-category on one record (AI re-classification). */
+    suspend fun setMemoryCategory(id: String, category: String): MemoryRecord? =
+        memoryMutex.withLock {
+            val records = readMemoryRecordsUnlocked()
+            val current = records.firstOrNull { it.id == id } ?: return@withLock null
+            val updated = current.copy(category = category)
             val next = records.map { if (it.id == id) updated else it }
             if (writeMemory(next)) updated else null
         }

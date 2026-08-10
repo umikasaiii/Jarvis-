@@ -30,7 +30,58 @@ data class MemoryRecord(
     val topics: List<String> = emptyList(),
     val people: List<String> = emptyList(),
     val dates: List<String> = emptyList(),
+    /** AI-assigned macro-category (one of [MemoryCategories.CANONICAL]) or "". */
+    val category: String = "",
 )
+
+/**
+ * The fixed set of macro-categories the on-device model sorts memories into, so
+ * the archive groups like a notes app ("mi piace il gelato" and "la pizza ai
+ * funghi" both land in «Cibo e gusti»). Kept small and stable, and pure so it
+ * can be unit-tested; the Android layer only runs the model and normalises its
+ * answer through [normalize].
+ */
+object MemoryCategories {
+    const val OTHER = "Altro"
+
+    val CANONICAL: List<String> = listOf(
+        "Cibo e gusti",
+        "Casa",
+        "Lavoro e studio",
+        "Salute",
+        "Famiglia e amici",
+        "Soldi e acquisti",
+        "Viaggi e luoghi",
+        "Tempo libero",
+        "Tecnologia",
+        "Impegni e date",
+        OTHER,
+    )
+
+    // Keyword → canonical, so a model that answers "cibo", "alimentazione" or
+    // "Cibo e gusti." all map to the same bucket. First match wins.
+    private val KEYWORDS: List<Pair<Regex, String>> = listOf(
+        Regex("""cib|gust|maial|piace|mangi|aliment|bevand|cucin|ristor""") to "Cibo e gusti",
+        Regex("""cas|domestic|arred|stanz|giardin""") to "Casa",
+        Regex("""lavor|studi|scuol|universit|ufficio|carrier|progett""") to "Lavoro e studio",
+        Regex("""salut|medic|farmac|allerg|dott|malatt|dieta|sport|palestr""") to "Salute",
+        Regex("""famigl|amic|persona|parent|figl|moglie|marit|fidanzat""") to "Famiglia e amici",
+        Regex("""sold|acquist|spes|budget|prezz|pagament|banc|conto""") to "Soldi e acquisti",
+        Regex("""viagg|luog|citt|vacanz|hotel|volo|destinazion""") to "Viaggi e luoghi",
+        Regex("""tempo\s*liber|hobby|svag|film|serie|music|libr|gioc""") to "Tempo libero",
+        Regex("""tecnolog|comput|telefon|app|software|dispositiv|internet""") to "Tecnologia",
+        Regex("""impegn|dat|appuntament|scadenz|promemori|calendari""") to "Impegni e date",
+    )
+
+    /** Maps a model's free answer to a canonical category, defaulting to [OTHER]. */
+    fun normalize(raw: String): String {
+        val cleaned = raw.trim().trim('"', '`', '.', ':', ' ').lowercase()
+        if (cleaned.isEmpty()) return OTHER
+        CANONICAL.firstOrNull { it.lowercase() == cleaned }?.let { return it }
+        KEYWORDS.firstOrNull { it.first.containsMatchIn(cleaned) }?.let { return it.second }
+        return OTHER
+    }
+}
 
 /**
  * Human-readable Markdown codec for permanent memories.

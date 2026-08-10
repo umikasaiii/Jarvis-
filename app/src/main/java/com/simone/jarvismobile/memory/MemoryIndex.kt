@@ -35,6 +35,7 @@ class MemoryIndex @Inject constructor(
     private val vault: VaultRepository,
     private val conversationMemory: ConversationMemoryStore,
     private val embeddings: EmbeddingRepository,
+    private val categoryClassifier: MemoryCategoryClassifier,
 ) {
     /** Honest, observable state of the index for the UI. */
     data class Status(
@@ -113,9 +114,33 @@ class MemoryIndex @Inject constructor(
             val now = System.currentTimeMillis()
             return MemoryRecord("temporary-$now", text.trim(), MemoryKind.TEMPORARY, now)
         }
-        val saved = vault.addMemory(text, resolved)
+        // Let the on-device model sort it into a macro-category; best-effort, so a
+        // missing/loading model just leaves it uncategorised (the archive falls
+        // back to the keyword topic) and never blocks the save.
+        val category = runCatching { categoryClassifier.classify(text) }.getOrDefault("")
+        val saved = vault.addMemory(text, resolved, category)
         if (saved != null) rebuild()
         return saved
+    }
+
+    /**
+     * Re-runs the AI categorisation over records that have no category yet, so an
+     * existing archive gets sorted without re-saving each note by hand. Returns
+     * how many were updated.
+     */
+    suspend fun categorizeUncategorized(): Int {
+        val pending = vault.readMemoryRecords().filter { it.category.isBlank() }
+        var changed = 0
+        for (record in pending) {
+            val category = runCatching { categoryClassifier.classify(record.text) }.getOrDefault("")
+            if (category.isNotBlank() &&
+                vault.setMemoryCategory(record.id, category) != null
+            ) {
+                changed++
+            }
+        }
+        if (changed > 0) rebuild()
+        return changed
     }
 
     suspend fun update(recordId: String, text: String, kind: MemoryKind): MemoryRecord? {
