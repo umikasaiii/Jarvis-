@@ -38,6 +38,18 @@ object AutomationCodec {
     private val BATTERY = Regex("""^batteria\s*<\s*(\d{1,2})\s*%$""", RegexOption.IGNORE_CASE)
     private val CHARGING = Regex("""^in\s+carica$""", RegexOption.IGNORE_CASE)
 
+    // Device-event triggers. Order matters at parse time: the more specific
+    // "rete wifi:" / "bluetooth:" are tried before the plain "wifi …".
+    private val MORNING = Regex("""^primo sblocco dopo\s+(\d{1,2}):(\d{2})$""", RegexOption.IGNORE_CASE)
+    private val UNLOCK = Regex("""^allo sblocco$""", RegexOption.IGNORE_CASE)
+    private val HEADPHONES = Regex("""^cuffie connesse$""", RegexOption.IGNORE_CASE)
+    private val BLUETOOTH = Regex("""^bluetooth:\s*(.+)$""", RegexOption.IGNORE_CASE)
+    private val WIFI_NETWORK = Regex("""^rete wifi:\s*(.+)$""", RegexOption.IGNORE_CASE)
+    private val AIRPLANE = Regex("""^modalità aereo\s+(attiva|disattiva)$""", RegexOption.IGNORE_CASE)
+    private val WIFI_POWER = Regex("""^wifi\s+(acceso|spento)$""", RegexOption.IGNORE_CASE)
+    private val MOBILE_DATA = Regex("""^dati\s+(attivi|disattivi)$""", RegexOption.IGNORE_CASE)
+    private val HOME = Regex("""^arrivo a casa$""", RegexOption.IGNORE_CASE)
+
     private val ACTION = Regex("""^(notifica|voce|agenda|comando)\s*:\s*(.+)$""", RegexOption.IGNORE_CASE)
 
     fun parseFile(text: String): List<Automation> =
@@ -102,6 +114,26 @@ object AutomationCodec {
             return if (percent in 1..99) Trigger.BatteryBelow(percent) else null
         }
         if (CHARGING.matches(t)) return Trigger.ChargingStarted
+
+        MORNING.find(t)?.let { m ->
+            val time = time(m.groupValues[1], m.groupValues[2]) ?: return null
+            return Trigger.MorningUnlock(time)
+        }
+        if (UNLOCK.matches(t)) return Trigger.ScreenUnlocked
+        if (HEADPHONES.matches(t)) return Trigger.HeadphonesConnected
+        // Specific network/device forms before the plain on/off ones.
+        WIFI_NETWORK.find(t)?.let { m ->
+            val ssid = m.groupValues[1].trim()
+            return if (ssid.isNotEmpty()) Trigger.WifiNetwork(ssid) else null
+        }
+        BLUETOOTH.find(t)?.let { m ->
+            val device = m.groupValues[1].trim()
+            return if (device.isNotEmpty()) Trigger.BluetoothConnected(device) else null
+        }
+        AIRPLANE.find(t)?.let { m -> return Trigger.AirplaneMode(m.groupValues[1].equals("attiva", true)) }
+        WIFI_POWER.find(t)?.let { m -> return Trigger.WifiPower(m.groupValues[1].equals("acceso", true)) }
+        MOBILE_DATA.find(t)?.let { m -> return Trigger.MobileData(m.groupValues[1].equals("attivi", true)) }
+        if (HOME.matches(t)) return Trigger.ArrivedHome
         return null
     }
 
@@ -122,6 +154,15 @@ object AutomationCodec {
         }
         is Trigger.BatteryBelow -> "batteria < ${trigger.percent}%"
         Trigger.ChargingStarted -> "in carica"
+        is Trigger.MorningUnlock -> "primo sblocco dopo %02d:%02d".format(trigger.after.hour, trigger.after.minute)
+        Trigger.ScreenUnlocked -> "allo sblocco"
+        Trigger.HeadphonesConnected -> "cuffie connesse"
+        is Trigger.BluetoothConnected -> "bluetooth: ${trigger.device}"
+        is Trigger.AirplaneMode -> "modalità aereo ${if (trigger.on) "attiva" else "disattiva"}"
+        is Trigger.WifiPower -> "wifi ${if (trigger.on) "acceso" else "spento"}"
+        is Trigger.MobileData -> "dati ${if (trigger.on) "attivi" else "disattivi"}"
+        is Trigger.WifiNetwork -> "rete wifi: ${trigger.ssid}"
+        Trigger.ArrivedHome -> "arrivo a casa"
     }
 
     // --- actions -----------------------------------------------------------

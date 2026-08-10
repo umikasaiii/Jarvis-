@@ -197,6 +197,16 @@ private fun triggerLabel(trigger: Trigger): String = when (trigger) {
     }
     is Trigger.BatteryBelow -> "Batteria sotto il ${trigger.percent}%"
     Trigger.ChargingStarted -> "Quando metto in carica"
+    is Trigger.MorningUnlock ->
+        "Primo sblocco dopo le %02d:%02d".format(trigger.after.hour, trigger.after.minute)
+    Trigger.ScreenUnlocked -> "Allo sblocco del telefono"
+    Trigger.HeadphonesConnected -> "Quando collego le cuffie"
+    is Trigger.BluetoothConnected -> "Quando si connette ${trigger.device}"
+    is Trigger.AirplaneMode -> "Modalità aereo ${if (trigger.on) "attivata" else "disattivata"}"
+    is Trigger.WifiPower -> "Wi-Fi ${if (trigger.on) "acceso" else "spento"}"
+    is Trigger.MobileData -> "Dati mobili ${if (trigger.on) "attivati" else "disattivati"}"
+    is Trigger.WifiNetwork -> "Connesso alla rete «${trigger.ssid}»"
+    Trigger.ArrivedHome -> "Quando arrivo a casa"
 }
 
 private fun actionLabel(action: Action): String = when (action) {

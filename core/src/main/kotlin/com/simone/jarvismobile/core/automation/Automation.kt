@@ -8,10 +8,13 @@ import java.util.UUID
 /**
  * When an automation fires.
  *
- * The set is deliberately small and all of it works offline with no background
- * microphone and no extra permission. Anything that would need a always-on
- * listener, location, or reading other apps' data is out by design
- * (docs/PRIVACY.md).
+ * Everything here works offline with no background microphone. The time and
+ * power triggers need no extra permission; the device-event triggers below
+ * (airplane/Wi-Fi/data/headphones/unlock) are delivered only to a live process,
+ * so they fire through an opt-in foreground "Automazioni attive" service, not a
+ * hidden background listener. The two location-based ones ([WifiNetwork] reading
+ * the SSID, [ArrivedHome]) additionally need the Location permission and are
+ * opt-in, off by default (docs/PRIVACY.md).
  */
 sealed interface Trigger {
 
@@ -35,6 +38,33 @@ sealed interface Trigger {
 
     /** The charger has just been plugged in. */
     data object ChargingStarted : Trigger
+
+    /** The first screen unlock of the day after [after] (a controlled "buongiorno"). */
+    data class MorningUnlock(val after: LocalTime) : Trigger
+
+    /** Any screen unlock (device present). */
+    data object ScreenUnlocked : Trigger
+
+    /** A wired or Bluetooth headset has just connected. */
+    data object HeadphonesConnected : Trigger
+
+    /** A named Bluetooth device has just connected. */
+    data class BluetoothConnected(val device: String) : Trigger
+
+    /** Airplane mode has just been turned [on] or off. */
+    data class AirplaneMode(val on: Boolean) : Trigger
+
+    /** Wi-Fi radio has just been turned [on] or off. */
+    data class WifiPower(val on: Boolean) : Trigger
+
+    /** Mobile data has just been turned [on] or off (best-effort on some ROMs). */
+    data class MobileData(val on: Boolean) : Trigger
+
+    /** Connected to a specific Wi-Fi network. Reading the [ssid] needs Location. */
+    data class WifiNetwork(val ssid: String) : Trigger
+
+    /** Arrived at the saved home location (geofence). Needs Location. */
+    data object ArrivedHome : Trigger
 }
 
 /**

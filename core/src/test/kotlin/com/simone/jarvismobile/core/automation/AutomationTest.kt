@@ -10,6 +10,57 @@ import kotlin.test.assertTrue
 
 class AutomationTest {
 
+    // --- device-event triggers ---------------------------------------------
+
+    @Test
+    fun `every device-event trigger round-trips through the codec`() {
+        val triggers = listOf(
+            Trigger.MorningUnlock(LocalTime.of(7, 30)),
+            Trigger.ScreenUnlocked,
+            Trigger.HeadphonesConnected,
+            Trigger.BluetoothConnected("AirPods di Simone"),
+            Trigger.AirplaneMode(on = true),
+            Trigger.AirplaneMode(on = false),
+            Trigger.WifiPower(on = true),
+            Trigger.WifiPower(on = false),
+            Trigger.MobileData(on = true),
+            Trigger.MobileData(on = false),
+            Trigger.WifiNetwork("Casa-5GHz"),
+            Trigger.ArrivedHome,
+        )
+        triggers.forEach { trigger ->
+            val rendered = AutomationCodec.renderTrigger(trigger)
+            assertEquals(trigger, AutomationCodec.parseTrigger(rendered), "round trip: $rendered")
+        }
+    }
+
+    @Test
+    fun `specific network and device forms are not shadowed by the plain ones`() {
+        assertEquals(
+            Trigger.WifiNetwork("Ufficio"),
+            AutomationCodec.parseTrigger("rete wifi: Ufficio"),
+        )
+        assertEquals(
+            Trigger.BluetoothConnected("Cuffie XM5"),
+            AutomationCodec.parseTrigger("bluetooth: Cuffie XM5"),
+        )
+        assertEquals(Trigger.WifiPower(on = true), AutomationCodec.parseTrigger("wifi acceso"))
+    }
+
+    @Test
+    fun `a device-event rule survives the full file round trip`() {
+        val rule = Automation(
+            id = "beef0002",
+            name = "casa",
+            trigger = Trigger.WifiNetwork("Casa-5GHz"),
+            action = Action.Speak("bentornato"),
+        )
+        val back = AutomationCodec.parseFile(AutomationCodec.renderFile(listOf(rule)))
+        assertEquals(1, back.size)
+        assertEquals(rule.trigger, back.first().trigger)
+        assertEquals(rule.action, back.first().action)
+    }
+
     // --- the Markdown file --------------------------------------------------
 
     @Test

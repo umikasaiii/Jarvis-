@@ -43,8 +43,12 @@ class AutomationScheduler @Inject constructor(
                     if (rule.lastFired == null && trigger.at.isAfter(now)) {
                         desired[workName(rule.id)] = trigger.at
                     }
-                // Battery/charger are evaluated on the system broadcast, not here.
-                is Trigger.BatteryBelow, Trigger.ChargingStarted -> Unit
+                // Battery/charger and every device event are evaluated when the
+                // system delivers them, not on a schedule, so they are not booked here.
+                is Trigger.BatteryBelow, Trigger.ChargingStarted,
+                is Trigger.MorningUnlock, Trigger.ScreenUnlocked, Trigger.HeadphonesConnected,
+                is Trigger.BluetoothConnected, is Trigger.AirplaneMode, is Trigger.WifiPower,
+                is Trigger.MobileData, is Trigger.WifiNetwork, Trigger.ArrivedHome -> Unit
             }
         }
 
