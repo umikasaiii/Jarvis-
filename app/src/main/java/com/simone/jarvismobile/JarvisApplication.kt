@@ -24,6 +24,8 @@ class JarvisApplication : Application() {
 
     @Inject lateinit var widgetUpdater: JarvisWidgetUpdater
     @Inject lateinit var backupScheduler: BackupScheduler
+    @Inject lateinit var automationServiceController:
+        com.simone.jarvismobile.automation.AutomationServiceController
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -35,6 +37,9 @@ class JarvisApplication : Application() {
         widgetUpdater.start()
         // Re-book the nightly backup from saved settings (survives reboots/reinstalls).
         appScope.launch { runCatching { backupScheduler.sync() } }
+        // Start the automations observer if the user turned it on (app launch is a
+        // foreground-enough context to start its foreground service).
+        appScope.launch { runCatching { automationServiceController.syncFromSettings() } }
     }
 
     private fun createListeningChannel() {

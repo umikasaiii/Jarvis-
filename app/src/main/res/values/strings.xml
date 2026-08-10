@@ -16,6 +16,10 @@
     <string name="listening_title">JARVIS è in ascolto</string>
     <string name="listening_text">Sessione avviata da te. Il microfono è attivo.</string>
 
+    <string name="automation_service_channel_name">Automazioni attive</string>
+    <string name="automation_service_channel_desc">Notifica minima richiesta da Android mentre JARVIS osserva gli eventi del telefono per le automazioni scelte da te. Nessun microfono, nessuna posizione.</string>
+    <string name="automation_service_title">JARVIS · automazioni attive</string>
+
     <string name="processing_channel_name">Elaborazione JARVIS</string>
     <string name="processing_channel_desc">Avanzamento delle risposte locali che continuano in background.</string>
     <string name="responses_channel_name">Risposte JARVIS</string>

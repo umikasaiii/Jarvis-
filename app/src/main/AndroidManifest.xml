@@ -13,6 +13,9 @@
     <!-- Long local inference promoted by WorkManager while the UI is closed. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <!-- Opt-in "Automazioni attive" observer: no built-in type fits "watch device
+         events", so it declares the special-use type. It does no polling. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
     <!-- Notifications for the foreground service (Android 13+). -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -138,6 +141,20 @@
             android:name=".navigation.NavigationService"
             android:exported="false"
             android:foregroundServiceType="location" />
+
+        <!-- Opt-in observer that lets device-event automations fire with the app
+             closed. specialUse: it watches system broadcasts (unlock, headset,
+             airplane/Wi-Fi) that are delivered only to a live process. No polling,
+             no mic, no location. A minimal, silent notification is required by the
+             platform. -->
+        <service
+            android:name=".automation.AutomationEventService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Osserva gli eventi del telefono per le automazioni scelte dall'utente" />
+        </service>
 
         <receiver
             android:name=".background.CancelTaskReceiver"

@@ -30,6 +30,7 @@ class SettingsViewModel @Inject constructor(
     private val agenda: AgendaRepository,
     private val knowledge: KnowledgeRepository,
     private val neural: NeuralTtsRepository,
+    private val automationService: com.simone.jarvismobile.automation.AutomationServiceController,
 ) : ViewModel() {
 
     val assistantName: StateFlow<String> = settings.assistantName
@@ -132,6 +133,7 @@ class SettingsViewModel @Inject constructor(
 
     fun setAutomationServiceEnabled(value: Boolean) = viewModelScope.launch {
         settings.setAutomationServiceEnabled(value)
+        automationService.apply(value)
     }
     fun setAutoExpressive(value: Boolean) = viewModelScope.launch { settings.setAutoExpressive(value) }
     fun setExpressiveIntensity(value: String) = viewModelScope.launch { settings.setExpressiveIntensity(value) }
