@@ -57,6 +57,7 @@ class DocumentImportManager @Inject constructor(
     private val dao: DocumentDao,
     private val vault: VaultRepository,
     private val settings: SettingsRepository,
+    private val categoryClassifier: com.simone.jarvismobile.memory.MemoryCategoryClassifier,
 ) {
     /** A duplicate the user must resolve before it is (re-)imported. */
     data class DuplicatePrompt(
@@ -261,6 +262,22 @@ class DocumentImportManager @Inject constructor(
                 language = parsed.metadata.language,
             )
 
+            // Sort the document into the same AI macro-categories as memory, from
+            // its title + a sample of the (possibly OCR'd) text, so the archive
+            // groups files, photos and documents like notes. Stored as a "cat:" tag
+            // — no schema change — and best-effort (empty when no model is loaded).
+            val category = runCatching {
+                val sample = listOfNotNull(parsed.metadata.title, parsed.text.take(600))
+                    .joinToString(". ")
+                categoryClassifier.classify(sample)
+            }.getOrDefault("")
+            if (category.isNotBlank()) {
+                record = record.copy(
+                    tags = (record.tags.filterNot { it.startsWith(DOCUMENT_CATEGORY_TAG) } + "$DOCUMENT_CATEGORY_TAG$category")
+                        .distinct(),
+                )
+            }
+
             // Auto-index unless the user turned it off: then it stays a ready
             // attachment (kept and citable by name, but not searched).
             if (!settings.docAutoIndex.first()) {
@@ -370,3 +387,13 @@ class DocumentImportManager @Inject constructor(
         val VAULT_IMPORT_DIRS = listOf("20_KNOWLEDGE", "Documents")
     }
 }
+
+/** Tag prefix under which a document's AI macro-category is stored. */
+const val DOCUMENT_CATEGORY_TAG = "cat:"
+
+/** The AI macro-category of a document, or "Senza categoria" when unclassified. */
+fun DocumentRecord.category(): String =
+    tags.firstOrNull { it.startsWith(DOCUMENT_CATEGORY_TAG) }
+        ?.removePrefix(DOCUMENT_CATEGORY_TAG)
+        ?.takeIf { it.isNotBlank() }
+        ?: "Senza categoria"

@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.ui.text.font.FontWeight
+import com.simone.jarvismobile.document.category
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
@@ -66,13 +68,27 @@ fun DocumentArchiveScreen(
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(vertical = 12.dp),
                 )
+                // Grouped by the AI macro-category (files, photos and documents
+                // sorted like notes); the unclassified bucket sorts last.
+                val byCategory = documents.groupBy { it.category() }
+                    .toSortedMap(compareBy({ it == "Senza categoria" }, { it }))
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(documents, key = { it.id }) { doc ->
-                        DocumentArchiveRow(
-                            doc = doc,
-                            onRemove = { viewModel.remove(doc.id) },
-                            onCancel = { viewModel.cancel(doc.id) },
-                        )
+                    byCategory.forEach { (category, docs) ->
+                        item(key = "hdr-$category") {
+                            Text(
+                                category,
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(top = 8.dp),
+                            )
+                        }
+                        items(docs, key = { it.id }) { doc ->
+                            DocumentArchiveRow(
+                                doc = doc,
+                                onRemove = { viewModel.remove(doc.id) },
+                                onCancel = { viewModel.cancel(doc.id) },
+                            )
+                        }
                     }
                 }
             }
