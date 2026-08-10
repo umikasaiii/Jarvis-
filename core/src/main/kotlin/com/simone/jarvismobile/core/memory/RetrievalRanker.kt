@@ -43,7 +43,7 @@ class RetrievalRanker(
     private fun score(terms: Set<String>, chunk: MemoryChunk): Double {
         val titleTokens = tokenize(chunk.title)
         val bodyTokens = tokenizeList(chunk.text)
-        val tagTokens = chunk.tags.map { it.lowercase() }.toSet()
+        val tagTokens = chunk.tags.map { MemoryText.normalize(it) }.toSet()
 
         val titleMatch = terms.count { it in titleTokens } * titleWeight
         val tagMatch = terms.count { it in tagTokens } * tagWeight
@@ -70,6 +70,7 @@ class RetrievalRanker(
         s.lowercase()
             .split(NON_WORD)
             .filter { it.length >= 2 && it !in STOPWORDS }
+            .map { MemoryText.normalize(it) }
 
     companion object {
         private val NON_WORD = Regex("""[^\p{L}\p{Nd}]+""")

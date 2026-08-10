@@ -66,6 +66,26 @@ class RetrievalRankerTest {
     }
 
     @Test
+    fun `a synonym in the query still finds the note`() {
+        val car = MemoryChunk(
+            notePath = "garage.md",
+            title = "Auto",
+            text = "La mia automobile va in officina a marzo.",
+            tags = listOf("mezzi"),
+        )
+        val ranked = ranker.rank("quando ho comprato la macchina", listOf(car))
+        assertTrue(ranked.isNotEmpty())
+        assertEquals("garage.md", ranked.first().chunk.notePath)
+    }
+
+    @Test
+    fun `inflected query term matches the note`() {
+        val note = MemoryChunk("gatti.md", "Animali", "Ho due gatti in casa.")
+        val ranked = ranker.rank("come stanno i gatto", listOf(note))
+        assertTrue(ranked.isNotEmpty())
+    }
+
+    @Test
     fun `recency breaks ties toward newer notes`() {
         val a = MemoryChunk("new.md", "Nota", "argomento comune progetto", ageDays = 1.0)
         val b = MemoryChunk("old.md", "Nota", "argomento comune progetto", ageDays = 300.0)
