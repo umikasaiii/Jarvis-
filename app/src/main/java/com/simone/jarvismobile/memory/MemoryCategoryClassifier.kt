@@ -48,6 +48,14 @@ class MemoryCategoryClassifier @Inject constructor(
         Categoria: Soldi e acquisti
         Appunto: mia sorella si chiama Anna
         Categoria: Famiglia e amici
+        Appunto: voglio guardare Oppenheimer
+        Categoria: Da guardare
+        Appunto: vorrei visitare Kyoto un giorno
+        Categoria: Da visitare
+        Appunto: devo comprare il pane e il latte
+        Categoria: Da comprare
+        Appunto: ricordati di chiamare l'idraulico
+        Categoria: Da fare
 
         Appunto: ${text.replace('\n', ' ').take(MAX_CHARS)}
         Categoria:

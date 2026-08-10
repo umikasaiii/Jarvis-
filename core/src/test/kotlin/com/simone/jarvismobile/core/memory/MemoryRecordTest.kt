@@ -54,6 +54,16 @@ class MemoryRecordTest {
     }
 
     @Test
+    fun `list categories win over generic ones`() {
+        assertEquals("Da comprare", MemoryCategories.normalize("Da comprare"))
+        assertEquals("Da comprare", MemoryCategories.normalize("devo comprare il pane"))
+        assertEquals("Da guardare", MemoryCategories.normalize("un film da guardare"))
+        assertEquals("Da visitare", MemoryCategories.normalize("posto da visitare"))
+        assertEquals("Da fare", MemoryCategories.normalize("cose da fare"))
+        assertTrue(MemoryCategories.CANONICAL.containsAll(MemoryCategories.LISTS))
+    }
+
+    @Test
     fun `legacy lines get deterministic ids and structured fields`() {
         val raw = """
             # Memoria di JARVIS

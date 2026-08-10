@@ -29,6 +29,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.simone.jarvismobile.core.memory.MemoryCategories
 import com.simone.jarvismobile.core.memory.MemoryKind
 import com.simone.jarvismobile.core.memory.MemoryRecord
 
@@ -146,16 +147,18 @@ fun MemoryScreen(
                 }
             }
         }
-        if (records.isEmpty()) {
-            Text("Nessun ricordo salvato.", style = MaterialTheme.typography.bodyMedium)
-        } else {
-            // Notes-app style: grouped by the AI macro-category ("Senza categoria"
-            // for notes not yet classified — the button above sorts them), groups
-            // alphabetical with the uncategorised bucket last, newest note first.
-            val byCategory = records
-                .groupBy { it.category.ifBlank { UNCATEGORIZED } }
-                .toSortedMap(compareBy({ it == UNCATEGORIZED }, { it }))
-            byCategory.forEach { (category, list) ->
+        run {
+            // Notes-app style, grouped by category. The four running "lists"
+            // (Da guardare / Da visitare / Da fare / Da comprare) are ALWAYS shown,
+            // even empty, so they stay ready to fill; then the other AI categories
+            // alphabetical, and the not-yet-classified bucket last. Newest first.
+            val byCategory = records.groupBy { it.category.ifBlank { UNCATEGORIZED } }
+            val listCats = MemoryCategories.LISTS
+            val otherCats = (byCategory.keys - listCats.toSet() - UNCATEGORIZED).sorted()
+            val ordered = listCats + otherCats +
+                listOfNotNull(UNCATEGORIZED.takeIf(byCategory::containsKey))
+            ordered.forEach { category ->
+                val list = byCategory[category].orEmpty().sortedByDescending { it.updatedAt }
                 Text(
                     category,
                     style = MaterialTheme.typography.labelLarge,
@@ -163,13 +166,17 @@ fun MemoryScreen(
                     color = Color(0xFF3FD8F0),
                     modifier = Modifier.padding(top = 4.dp),
                 )
-                list.sortedByDescending { it.updatedAt }.forEach { record ->
-                    MemoryRecordCard(
-                        record = record,
-                        enabled = !busy,
-                        onSave = viewModel::update,
-                        onDelete = viewModel::delete,
-                    )
+                if (list.isEmpty()) {
+                    Text("Ancora niente qui.", style = MaterialTheme.typography.bodySmall)
+                } else {
+                    list.forEach { record ->
+                        MemoryRecordCard(
+                            record = record,
+                            enabled = !busy,
+                            onSave = viewModel::update,
+                            onDelete = viewModel::delete,
+                        )
+                    }
                 }
             }
         }

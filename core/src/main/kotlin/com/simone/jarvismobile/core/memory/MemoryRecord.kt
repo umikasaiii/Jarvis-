@@ -44,7 +44,18 @@ data class MemoryRecord(
 object MemoryCategories {
     const val OTHER = "Altro"
 
-    val CANONICAL: List<String> = listOf(
+    // Standing "list" categories — the running to-do style lists the user asked
+    // to always have available (things to watch, places to visit, things to do,
+    // things to buy). They come first so a "da comprare …" note lands here rather
+    // than in the generic «Soldi e acquisti».
+    val LISTS: List<String> = listOf(
+        "Da guardare",
+        "Da visitare",
+        "Da fare",
+        "Da comprare",
+    )
+
+    val CANONICAL: List<String> = LISTS + listOf(
         "Cibo e gusti",
         "Casa",
         "Lavoro e studio",
@@ -59,8 +70,13 @@ object MemoryCategories {
     )
 
     // Keyword → canonical, so a model that answers "cibo", "alimentazione" or
-    // "Cibo e gusti." all map to the same bucket. First match wins.
+    // "Cibo e gusti." all map to the same bucket. First match wins, so the list
+    // categories are checked before the topical ones.
     private val KEYWORDS: List<Pair<Regex, String>> = listOf(
+        Regex("""da\s+guardar|guardar|da\s+veder|\bfilm\b|serie\s*tv|episod|puntat|documentari""") to "Da guardare",
+        Regex("""da\s+visitar|visitar|posto\s+da\s+veder|luogo\s+da|da\s+andare\s+a\s+veder""") to "Da visitare",
+        Regex("""da\s+fare|cose?\s+da\s+fare|faccend|commission""") to "Da fare",
+        Regex("""da\s+comprar|comprar|acquistar|da\s+prender|lista\s+(della\s+)?spesa|\bspesa\b""") to "Da comprare",
         Regex("""cib|gust|maial|piace|mangi|aliment|bevand|cucin|ristor""") to "Cibo e gusti",
         Regex("""cas|domestic|arred|stanz|giardin""") to "Casa",
         Regex("""lavor|studi|scuol|universit|ufficio|carrier|progett""") to "Lavoro e studio",
