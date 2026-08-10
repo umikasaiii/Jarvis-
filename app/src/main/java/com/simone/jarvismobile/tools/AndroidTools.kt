@@ -223,11 +223,21 @@ class RememberTool(private val memory: MemoryIndex) : Tool {
             MemoryKind.entries.firstOrNull { it.name.equals(raw, ignoreCase = true) }
         } ?: MemoryStructure.classify(text)
         val saved = runCatching { memory.remember(text, kind) }.getOrNull()
-        return if (saved != null) {
-            val where = if (kind == MemoryKind.TEMPORARY) "per questa conversazione" else "nel vault"
-            ok("text" to text, "kind" to kind.name, "spoken" to "Ho annotato $where: $text")
-        } else {
-            ToolResult.Failure("no_vault")
+        return when {
+            saved != null -> {
+                val where = if (kind == MemoryKind.TEMPORARY) "per questa conversazione" else "nel vault"
+                ok("text" to text, "kind" to kind.name, "spoken" to "Ho annotato $where: $text")
+            }
+            // Honest failure: never claim a save that didn't happen. Tell the user
+            // whether there's simply no vault, or the vault refused the write.
+            !memory.isConfigured() -> ok(
+                "spoken" to "Non ho un vault Obsidian collegato, quindi non posso salvarlo. " +
+                    "Collegalo in Impostazioni › Memoria.",
+            )
+            else -> ok(
+                "spoken" to "Non sono riuscito a salvarlo: il vault non ha accettato la scrittura. " +
+                    "Controlla i permessi della cartella in Impostazioni › Memoria.",
+            )
         }
     }
 }

@@ -137,7 +137,11 @@ class VaultRepository @Inject constructor(
                 dates = fields.dates,
             )
             val records = readMemoryRecordsUnlocked()
-            if (writeJarvisFile(MEMORY_FILE, MemoryRecordCodec.render(records + record))) record else null
+            if (!writeJarvisFile(MEMORY_FILE, MemoryRecordCodec.render(records + record))) return@withLock null
+            // Verify the write actually landed before reporting success. Some SAF
+            // providers return a valid stream yet drop the bytes; without this the
+            // app said "Ho annotato nel vault" for a note that was never on disk.
+            if (readMemoryRecordsUnlocked().any { it.id == record.id }) record else null
         }
 
     suspend fun updateMemory(id: String, text: String, kind: MemoryKind): MemoryRecord? =
@@ -187,7 +191,7 @@ class VaultRepository @Inject constructor(
         val tree = DocumentFile.fromTreeUri(context, Uri.parse(uriStr)) ?: return@withContext emptyList()
         runCatching {
             val folder = tree.findFile(MEMORY_DIR)?.takeIf { it.isDirectory } ?: return@withContext emptyList()
-            val file = folder.findFile(MEMORY_FILE) ?: return@withContext emptyList()
+            val file = folder.childByName(MEMORY_FILE) ?: return@withContext emptyList()
             val text = context.contentResolver.openInputStream(file.uri)
                 ?.bufferedReader()?.use { it.readText() } ?: return@withContext emptyList()
             MemoryRecordCodec.parse(text)
@@ -206,10 +210,18 @@ class VaultRepository @Inject constructor(
         val tree = tree() ?: return@withContext null
         runCatching {
             val folder = tree.findFile(MEMORY_DIR)?.takeIf { it.isDirectory } ?: return@withContext null
-            val file = folder.findFile(fileName) ?: return@withContext null
+            val file = folder.childByName(fileName) ?: return@withContext null
             context.contentResolver.openInputStream(file.uri)?.bufferedReader()?.use { it.readText() }
         }.getOrNull()
     }
+
+    /**
+     * Finds a child by name, tolerating case differences some SAF providers
+     * introduce, so a write and the following read resolve to the SAME file
+     * instead of the write landing in one node and the read seeing an empty other.
+     */
+    private fun DocumentFile.childByName(name: String): DocumentFile? =
+        findFile(name) ?: listFiles().firstOrNull { it.name.equals(name, ignoreCase = true) }
 
     /**
      * Writes (creating if needed) a file inside `JARVIS/`, replacing its contents.
@@ -221,7 +233,7 @@ class VaultRepository @Inject constructor(
             val folder = tree.findFile(MEMORY_DIR)?.takeIf { it.isDirectory }
                 ?: tree.createDirectory(MEMORY_DIR)
                 ?: return@withContext false
-            val file = folder.findFile(fileName)
+            val file = folder.childByName(fileName)
                 ?: folder.createFile("text/markdown", fileName)
                 ?: return@withContext false
             context.contentResolver.openOutputStream(file.uri, "w")?.use {
