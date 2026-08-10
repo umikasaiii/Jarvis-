@@ -1,5 +1,6 @@
 package com.simone.jarvismobile.ui.backup
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.simone.jarvismobile.backup.BackupRepository
@@ -7,6 +8,7 @@ import com.simone.jarvismobile.backup.BackupScheduler
 import com.simone.jarvismobile.backup.BackupState
 import com.simone.jarvismobile.backup.CloudBackupProvider
 import com.simone.jarvismobile.backup.CloudSyncManager
+import com.simone.jarvismobile.backup.ExternalBackupStore
 import com.simone.jarvismobile.backup.NoCloudProvider
 import com.simone.jarvismobile.core.backup.BackupManifest
 import com.simone.jarvismobile.data.SettingsRepository
@@ -31,6 +33,8 @@ data class BackupUi(
     val retentionMonthly: Int = 6,
     val cloudEnabled: Boolean = false,
     val provider: String = NoCloudProvider.ID,
+    /** Name of the chosen destination folder, or null for internal-only. */
+    val destinationName: String? = null,
     val loaded: Boolean = false,
 )
 
@@ -49,6 +53,7 @@ class BackupViewModel @Inject constructor(
     private val scheduler: BackupScheduler,
     private val cloud: CloudSyncManager,
     private val settings: SettingsRepository,
+    private val external: ExternalBackupStore,
 ) : ViewModel() {
 
     val state: StateFlow<BackupState> = repository.state
@@ -85,8 +90,23 @@ class BackupViewModel @Inject constructor(
             retentionMonthly = settings.backupRetentionMonthly.first(),
             cloudEnabled = settings.backupCloudEnabled.first(),
             provider = settings.backupCloudProvider.first().ifBlank { NoCloudProvider.ID },
+            destinationName = external.folderName(),
             loaded = true,
         )
+    }
+
+    /** The user picked a destination folder in the system file picker. */
+    fun setDestination(uri: Uri) = viewModelScope.launch {
+        external.setFolder(uri)
+        load()
+        _message.value = "Destinazione impostata. I prossimi backup verranno salvati lì."
+        refreshBackups()
+    }
+
+    fun clearDestination() = viewModelScope.launch {
+        external.clearFolder()
+        load()
+        refreshBackups()
     }
 
     private suspend fun <T> reloadAfter(block: suspend () -> T): T {

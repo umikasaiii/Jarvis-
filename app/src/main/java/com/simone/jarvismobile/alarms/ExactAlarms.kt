@@ -92,6 +92,8 @@ class ExactAlarms @Inject constructor(
         const val ACTION_FIRE = "com.simone.jarvismobile.ALARM_FIRE"
         const val EXTRA_KIND = "kind"
         const val EXTRA_ID = "id"
+        /** The bare agenda entry id, so a reminder can be ticked off / opened. */
+        const val EXTRA_ENTRY_ID = "entry_id"
         const val EXTRA_TITLE = "title"
         const val EXTRA_SUBTEXT = "subtext"
         const val KIND_REMINDER = "reminder"

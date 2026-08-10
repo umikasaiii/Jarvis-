@@ -105,6 +105,9 @@ class SettingsRepository @Inject constructor(
         val BACKUP_RETENTION_MONTHLY = intPreferencesKey("backup_retention_monthly")
         val BACKUP_CLOUD_ENABLED = booleanPreferencesKey("backup_cloud_enabled")
         val BACKUP_CLOUD_PROVIDER = stringPreferencesKey("backup_cloud_provider")
+        // User-picked destination folder (SAF tree URI). Survives uninstall and
+        // doubles as the restore source when it already holds backups.
+        val BACKUP_FOLDER_URI = stringPreferencesKey("backup_folder_uri")
 
         // --- external neural voice (Phase 4b) ---------------------------
         val TTS_ENGINE_ID = stringPreferencesKey("tts_engine_id")
@@ -763,6 +766,14 @@ class SettingsRepository @Inject constructor(
     val backupCloudProvider: Flow<String> =
         context.settingsDataStore.data.map { it[Keys.BACKUP_CLOUD_PROVIDER] ?: "" }
 
+    /**
+     * SAF tree URI of the folder the user chose to keep backups in, or empty for
+     * "internal app storage only". When set, each backup is mirrored there and a
+     * restore reads from it, so backups survive an uninstall.
+     */
+    val backupFolderUri: Flow<String> =
+        context.settingsDataStore.data.map { it[Keys.BACKUP_FOLDER_URI] ?: "" }
+
     suspend fun setBackupEnabled(value: Boolean) {
         context.settingsDataStore.edit { it[Keys.BACKUP_ENABLED] = value }
     }
@@ -800,6 +811,14 @@ class SettingsRepository @Inject constructor(
 
     suspend fun setBackupCloudProvider(value: String) {
         context.settingsDataStore.edit { it[Keys.BACKUP_CLOUD_PROVIDER] = value.trim() }
+    }
+
+    suspend fun setBackupFolderUri(uri: String) {
+        context.settingsDataStore.edit { it[Keys.BACKUP_FOLDER_URI] = uri }
+    }
+
+    suspend fun clearBackupFolderUri() {
+        context.settingsDataStore.edit { it.remove(Keys.BACKUP_FOLDER_URI) }
     }
 
     companion object {

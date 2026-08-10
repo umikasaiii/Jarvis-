@@ -1,5 +1,7 @@
 package com.simone.jarvismobile.ui.backup
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -51,6 +53,12 @@ fun BackupScreen(
     val message by viewModel.message.collectAsStateWithLifecycle()
 
     var showManage by remember { mutableStateOf(false) }
+
+    // System folder picker (Storage Access Framework). The returned tree URI is
+    // where backups will be saved and, later, restored from.
+    val folderPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree(),
+    ) { uri -> if (uri != null) viewModel.setDestination(uri) }
 
     Column(
         modifier = Modifier
@@ -148,6 +156,42 @@ fun BackupScreen(
                         "ultimi giornalieri, settimanali e mensili.",
                     style = MaterialTheme.typography.bodySmall,
                 )
+            }
+        }
+
+        // --- Destinazione (cartella locale) --------------------------------
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Destinazione backup", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    if (ui.destinationName != null) {
+                        "Cartella scelta: ${ui.destinationName}"
+                    } else {
+                        "Attualmente: solo memoria interna dell'app. " +
+                            "I backup vengono persi se disinstalli JARVIS."
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Text(
+                    "Scegli una cartella del telefono (o SD): i backup vengono salvati lì, " +
+                        "sopravvivono alla disinstallazione e il ripristino li rilegge dalla " +
+                        "stessa cartella se sono presenti. Restano sempre cifrati.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                OutlinedButton(
+                    onClick = { folderPicker.launch(null) },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(if (ui.destinationName != null) "Cambia cartella" else "Scegli cartella")
+                }
+                if (ui.destinationName != null) {
+                    TextButton(
+                        onClick = viewModel::clearDestination,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Usa solo memoria interna")
+                    }
+                }
             }
         }
 

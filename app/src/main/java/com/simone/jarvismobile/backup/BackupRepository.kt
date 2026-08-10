@@ -57,6 +57,7 @@ class BackupRepository @Inject constructor(
     private val crypto: BackupCrypto,
     private val vault: VaultRepository,
     private val settings: SettingsRepository,
+    private val external: ExternalBackupStore,
 ) {
     private val root: File get() = File(context.filesDir, "backups").apply { mkdirs() }
 
@@ -131,7 +132,15 @@ class BackupRepository @Inject constructor(
             )
             File(dir, MANIFEST).writeText(ManifestCodec.encode(manifest))
 
+            // Mirror the fresh snapshot to the user's chosen destination folder
+            // (if any) so it survives an uninstall and can be restored from there.
+            runCatching { external.mirror(dir) }
+
             applyRetention()
+            // Apply the same grandfather-father-son retention to the destination
+            // folder, over its OWN contents — never over the internal set, or a
+            // first backup after a reinstall would wipe the surviving copies.
+            runCatching { pruneExternal() }
             refreshState()
             Log.i(TAG, "backup_done id=$id entries=${entries.size} size=$total")
             manifest
@@ -145,19 +154,27 @@ class BackupRepository @Inject constructor(
     }
 
     suspend fun listBackups(): List<BackupManifest> = withContext(Dispatchers.IO) {
-        root.listFiles()?.filter { it.isDirectory }?.mapNotNull { readManifest(it.name) }
-            ?.sortedByDescending { it.createdAt }.orEmpty()
+        val internalManifests = root.listFiles()?.filter { it.isDirectory }?.mapNotNull { readManifest(it.name) }.orEmpty()
+        // Merge in backups that live only in the destination folder (e.g. after a
+        // reinstall, when internal storage was wiped), preferring the internal copy.
+        val externalManifests = runCatching { external.listManifests() }.getOrDefault(emptyList())
+        val byId = LinkedHashMap<String, BackupManifest>()
+        (internalManifests + externalManifests).forEach { byId.putIfAbsent(it.id, it) }
+        byId.values.sortedByDescending { it.createdAt }
     }
 
     /** Verifies a backup's encrypted archive against the manifest hash. */
     suspend fun verify(id: String): Boolean = withContext(Dispatchers.IO) {
+        if (readManifest(id) == null) runCatching { external.importInto(root, id) }
         val manifest = readManifest(id) ?: return@withContext false
         val enc = File(File(root, id), "backup.enc")
         enc.exists() && sha256File(enc).equals(manifest.archiveSha256, ignoreCase = true)
     }
 
     suspend fun delete(id: String) = withContext(Dispatchers.IO) {
-        File(root, id).deleteRecursively(); refreshState()
+        File(root, id).deleteRecursively()
+        runCatching { external.remove(id) }
+        refreshState()
     }
 
     /**
@@ -167,12 +184,20 @@ class BackupRepository @Inject constructor(
      * the app restarts.
      */
     suspend fun restore(id: String, paths: Set<String>? = null): Boolean = withContext(Dispatchers.IO) {
+        // The backup may live only in the destination folder (e.g. after a
+        // reinstall) — pull it into internal storage so the normal path can read it.
+        if (readManifest(id) == null) runCatching { external.importInto(root, id) }
         val manifest = readManifest(id) ?: return@withContext false
         runBackup() // pre-restore safety snapshot
         var ok = true
         val wanted = manifest.entries.filter { it.kind == EntryKind.FILE && (paths == null || it.relPath in paths) }
         for (entry in wanted) {
             val sourceBackup = entry.storedInBackupId.ifBlank { id }
+            // Incremental backups reference earlier archives for unchanged files;
+            // those too may only exist in the destination folder.
+            if (!File(File(root, sourceBackup), "backup.enc").exists()) {
+                runCatching { external.importInto(root, sourceBackup) }
+            }
             val bytes = extract(sourceBackup, entry.relPath)
             if (bytes == null) { ok = false; continue }
             if (!writeTarget(entry.relPath, bytes)) ok = false
@@ -268,6 +293,18 @@ class BackupRepository @Inject constructor(
         val refs = (root.listFiles()?.filter { it.isDirectory }?.mapNotNull { readManifest(it.name) }.orEmpty())
             .map { BackupRef(it.id, it.createdAt) }
         Retention.prune(refs, policy).forEach { File(root, it).deleteRecursively() }
+    }
+
+    /** Retention over the destination folder's own contents (see runBackup). */
+    private suspend fun pruneExternal() {
+        if (!external.isConfigured()) return
+        val policy = RetentionPolicy(
+            daily = settings.backupRetentionDaily.first(),
+            weekly = settings.backupRetentionWeekly.first(),
+            monthly = settings.backupRetentionMonthly.first(),
+        )
+        val refs = external.listManifests().map { BackupRef(it.id, it.createdAt) }
+        Retention.prune(refs, policy).forEach { external.remove(it) }
     }
 
     private fun refreshState() {

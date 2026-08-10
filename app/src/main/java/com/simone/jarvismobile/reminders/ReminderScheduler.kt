@@ -73,6 +73,7 @@ class ReminderScheduler @Inject constructor(
             extras = mapOf(
                 ExactAlarms.EXTRA_KIND to ExactAlarms.KIND_REMINDER,
                 ExactAlarms.EXTRA_ID to "${entry.id}_${reminder.alertKey}",
+                ExactAlarms.EXTRA_ENTRY_ID to entry.id,
                 ExactAlarms.EXTRA_TITLE to entry.text,
                 ExactAlarms.EXTRA_SUBTEXT to whenText,
             ),

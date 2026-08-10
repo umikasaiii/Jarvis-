@@ -15,6 +15,7 @@ import com.simone.jarvismobile.agenda.AgendaRepository
 import com.simone.jarvismobile.automation.AutomationRepository
 import com.simone.jarvismobile.automation.AutomationRunner
 import com.simone.jarvismobile.background.JarvisNotifications
+import com.simone.jarvismobile.reminders.ReminderActionReceiver
 import com.simone.jarvismobile.ui.MainActivity
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
@@ -45,9 +46,10 @@ class AlarmReceiver : BroadcastReceiver() {
 
         when (kind) {
             ExactAlarms.KIND_REMINDER -> {
-                notify(
+                notifyReminder(
                     context = context,
                     id = id,
+                    entryId = intent.getStringExtra(ExactAlarms.EXTRA_ENTRY_ID).orEmpty(),
                     title = "Promemoria JARVIS",
                     text = intent.getStringExtra(ExactAlarms.EXTRA_TITLE).orEmpty(),
                     subText = intent.getStringExtra(ExactAlarms.EXTRA_SUBTEXT).orEmpty(),
@@ -79,7 +81,20 @@ class AlarmReceiver : BroadcastReceiver() {
         }
     }
 
-    private fun notify(context: Context, id: String, title: String, text: String, subText: String) {
+    /**
+     * The reminder that actually reaches the user. Tapping the body opens the
+     * Attività (agenda) screen for this entry; the single shade action ticks it
+     * off without opening the app. No "Apri chat" — a reminder is about the task,
+     * not the assistant.
+     */
+    private fun notifyReminder(
+        context: Context,
+        id: String,
+        entryId: String,
+        title: String,
+        text: String,
+        subText: String,
+    ) {
         if (text.isBlank()) return
         if (
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
@@ -90,32 +105,49 @@ class AlarmReceiver : BroadcastReceiver() {
         ) {
             return
         }
+        val notificationId = NOTIFICATION_BASE + id.hashCode().and(0x0fff)
+        // Tap → the Attività screen this reminder refers to.
         val open = PendingIntent.getActivity(
             context,
             id.hashCode(),
             Intent(context, MainActivity::class.java)
-                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                .putExtra(MainActivity.EXTRA_OPEN_AGENDA, true)
+                .putExtra(MainActivity.EXTRA_AGENDA_ENTRY_ID, entryId),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        // Route through the shared JARVIS styling so the dragon avatar (large
-        // icon), monochrome status-bar icon and accent are identical everywhere.
-        val notification = JarvisNotifications.styled(
+        // Route through the shared JARVIS styling so the monochrome status-bar
+        // icon and accent are identical everywhere. No chat action here.
+        val builder = JarvisNotifications.styled(
             context = context,
             channelId = JarvisNotifications.CHANNEL_REMINDERS,
             title = title,
             text = text,
             contentIntent = open,
             expandableText = text,
-            withChatAction = true,
+            withChatAction = false,
         )
             .setSubText(subText.takeIf { it.isNotBlank() })
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .build()
+        // "Segna come completato" — mark it done straight from the shade. Only
+        // when we know which entry to tick (older alarms carried no entry id).
+        if (entryId.isNotBlank()) {
+            val done = Intent(context, ReminderActionReceiver::class.java)
+                .setAction(ReminderActionReceiver.ACTION_DONE)
+                .putExtra(ReminderActionReceiver.EXTRA_ENTRY_ID, entryId)
+                .putExtra(ReminderActionReceiver.EXTRA_NOTIF_ID, notificationId)
+            val donePending = PendingIntent.getBroadcast(
+                context,
+                id.hashCode() + 1,
+                done,
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            )
+            builder.addAction(0, "Segna come completato", donePending)
+        }
         runCatching {
-            NotificationManagerCompat.from(context)
-                .notify(NOTIFICATION_BASE + id.hashCode().and(0x0fff), notification)
+            NotificationManagerCompat.from(context).notify(notificationId, builder.build())
         }
     }
 
