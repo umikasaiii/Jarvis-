@@ -68,6 +68,9 @@ class SettingsViewModel @Inject constructor(
     val wakeWord: StateFlow<String> = settings.wakeWord
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsRepository.DEFAULT_NAME)
 
+    val automationServiceEnabled: StateFlow<Boolean> = settings.automationServiceEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
     val autoExpressive: StateFlow<Boolean> = settings.autoExpressive
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
 
@@ -126,6 +129,10 @@ class SettingsViewModel @Inject constructor(
     }
     fun setWakeWordEnabled(value: Boolean) = viewModelScope.launch { settings.setWakeWordEnabled(value) }
     fun setWakeWord(value: String) = viewModelScope.launch { settings.setWakeWord(value) }
+
+    fun setAutomationServiceEnabled(value: Boolean) = viewModelScope.launch {
+        settings.setAutomationServiceEnabled(value)
+    }
     fun setAutoExpressive(value: Boolean) = viewModelScope.launch { settings.setAutoExpressive(value) }
     fun setExpressiveIntensity(value: String) = viewModelScope.launch { settings.setExpressiveIntensity(value) }
     fun setExpressiveManualStyle(value: String) = viewModelScope.launch { settings.setExpressiveManualStyle(value) }

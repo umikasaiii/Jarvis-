@@ -53,6 +53,7 @@ class SettingsRepository @Inject constructor(
         val SPEAK_BACKGROUND_RESPONSES = booleanPreferencesKey("speak_background_responses")
         val WAKE_WORD_ENABLED = booleanPreferencesKey("wake_word_enabled")
         val WAKE_WORD = stringPreferencesKey("wake_word")
+        val AUTOMATION_SERVICE = booleanPreferencesKey("automation_service_enabled")
         val AUTO_EXPRESSIVE = booleanPreferencesKey("tts_auto_expressive")
         val EXPRESSIVE_INTENSITY = stringPreferencesKey("tts_expressive_intensity")
         val EXPRESSIVE_MANUAL_STYLE = stringPreferencesKey("tts_expressive_manual_style")
@@ -334,6 +335,19 @@ class SettingsRepository @Inject constructor(
 
     suspend fun setWakeWordEnabled(value: Boolean) {
         context.settingsDataStore.edit { it[Keys.WAKE_WORD_ENABLED] = value }
+    }
+
+    /**
+     * Whether the opt-in "Automazioni attive" foreground service runs. It lets
+     * device-event automations (unlock, headphones, airplane/Wi-Fi/data…) fire
+     * with the app closed, at the cost of one minimal persistent notification.
+     * Off by default (docs/PRIVACY.md).
+     */
+    val automationServiceEnabled: Flow<Boolean> =
+        context.settingsDataStore.data.map { it[Keys.AUTOMATION_SERVICE] ?: false }
+
+    suspend fun setAutomationServiceEnabled(value: Boolean) {
+        context.settingsDataStore.edit { it[Keys.AUTOMATION_SERVICE] = value }
     }
 
     suspend fun setWakeWord(value: String) {

@@ -18,9 +18,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -73,6 +77,7 @@ fun SettingsScreen(
     val followUpEnabled by viewModel.followUpEnabled.collectAsStateWithLifecycle()
     val wakeWordEnabled by viewModel.wakeWordEnabled.collectAsStateWithLifecycle()
     val wakeWord by viewModel.wakeWord.collectAsStateWithLifecycle()
+    val automationServiceEnabled by viewModel.automationServiceEnabled.collectAsStateWithLifecycle()
     val autoExpressive by viewModel.autoExpressive.collectAsStateWithLifecycle()
     val expressiveIntensity by viewModel.expressiveIntensity.collectAsStateWithLifecycle()
     val expressiveManualStyle by viewModel.expressiveManualStyle.collectAsStateWithLifecycle()
@@ -127,6 +132,7 @@ fun SettingsScreen(
     ) {
         Text("Impostazioni", style = MaterialTheme.typography.headlineSmall)
 
+        CollapsibleSection("Assistente e personalità", initiallyExpanded = true) {
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Assistente", style = MaterialTheme.typography.titleMedium)
@@ -224,6 +230,9 @@ fun SettingsScreen(
             }
         }
 
+        }
+
+        CollapsibleSection("Voce di JARVIS") {
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Voce offline", style = MaterialTheme.typography.titleMedium)
@@ -346,6 +355,9 @@ fun SettingsScreen(
         // --- Voce JARVIS (external neural TTS) --------------------------------
         VoiceSection(viewModel)
 
+        }
+
+        CollapsibleSection("Memoria e conoscenza") {
         // --- Offline library ------------------------------------------------
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -396,6 +408,9 @@ fun SettingsScreen(
             }
         }
 
+        }
+
+        CollapsibleSection("Audio e conversazione") {
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(
@@ -598,10 +613,16 @@ fun SettingsScreen(
             }
         }
 
+        }
+
+        CollapsibleSection("Widget, notifiche e documenti") {
         InterfaceSettingsSection()
 
         DocumentSettingsSection(onOpenArchive = onOpenDocuments)
 
+        }
+
+        CollapsibleSection("Navigazione e traduttore") {
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Navigazione offline", style = MaterialTheme.typography.titleMedium)
@@ -625,6 +646,38 @@ fun SettingsScreen(
 
         TranslatorSettingsSection(onOpenTranslator = onOpenTranslator)
 
+        }
+
+        CollapsibleSection("Automazioni in background") {
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                ) {
+                    Text("Automazioni attive in background", style = MaterialTheme.typography.titleMedium)
+                    Switch(
+                        checked = automationServiceEnabled,
+                        onCheckedChange = viewModel::setAutomationServiceEnabled,
+                    )
+                }
+                Text(
+                    "Se attivo, le automazioni legate a eventi del telefono (sblocco, cuffie, " +
+                        "modalità aereo, Wi-Fi, dati) possono scattare anche ad app chiusa. " +
+                        "Android richiede una notifica fissa: JARVIS la tiene al minimo, " +
+                        "silenziosa e senza icona nella barra di stato. Consumo basso: nessun " +
+                        "GPS, nessun microfono, si attiva solo quando l'evento accade.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                OutlinedButton(onClick = onOpenAutomations, modifier = Modifier.fillMaxWidth()) {
+                    Text("Gestisci le automazioni")
+                }
+            }
+        }
+        }
+
+        CollapsibleSection("Backup") {
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Backup e sincronizzazione", style = MaterialTheme.typography.titleMedium)
@@ -639,6 +692,9 @@ fun SettingsScreen(
             }
         }
 
+        }
+
+        CollapsibleSection("Altro e sistema") {
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("In arrivo (fasi successive)", style = MaterialTheme.typography.titleMedium)
@@ -662,6 +718,8 @@ fun SettingsScreen(
         OutlinedButton(onClick = viewModel::resetAudio, modifier = Modifier.fillMaxWidth()) {
             Text("Reset audio")
         }
+        }
+
         OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
             Text("Indietro")
         }
@@ -672,6 +730,35 @@ fun SettingsScreen(
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth(),
         )
+    }
+}
+
+/**
+ * A collapsible group of settings. The header toggles the content open/closed so
+ * the long settings list stays tidy; each section remembers its own state.
+ */
+@Composable
+private fun CollapsibleSection(
+    title: String,
+    initiallyExpanded: Boolean = false,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    var expanded by rememberSaveable(title) { mutableStateOf(initiallyExpanded) }
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = !expanded }
+                .padding(vertical = 12.dp, horizontal = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+        ) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(if (expanded) "▾" else "▸", style = MaterialTheme.typography.titleMedium)
+        }
+        AnimatedVisibility(visible = expanded) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) { content() }
+        }
     }
 }
 
