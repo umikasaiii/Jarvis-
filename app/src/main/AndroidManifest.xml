@@ -193,6 +193,15 @@
             </intent-filter>
         </receiver>
 
+        <!-- "Non avvisarmi più di questo" action on a proactive suggestion. -->
+        <receiver
+            android:name=".proactive.ProactiveActionReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.simone.jarvismobile.action.PROACTIVE_MUTE" />
+            </intent-filter>
+        </receiver>
+
         <receiver
             android:name=".automation.PowerEventReceiver"
             android:exported="false">

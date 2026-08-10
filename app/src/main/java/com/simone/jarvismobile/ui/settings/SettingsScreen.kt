@@ -677,6 +677,10 @@ fun SettingsScreen(
         }
         }
 
+        CollapsibleSection("Proattività") {
+        ProactiveSettingsSection()
+        }
+
         CollapsibleSection("Backup") {
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -808,6 +812,77 @@ private fun TranslatorSettingsSection(
             }
             OutlinedButton(onClick = onOpenTranslator, modifier = Modifier.fillMaxWidth()) {
                 Text("Apri il Traduttore Live")
+            }
+        }
+    }
+}
+
+/**
+ * «Proattività»: JARVIS che parla per primo, con giudizio. Master switch, budget,
+ * ore di silenzio e un interruttore per categoria; i tipi silenziati dal messaggio
+ * si riattivano da qui. Self-contained (its own ViewModel).
+ */
+@Composable
+private fun ProactiveSettingsSection(
+    viewModel: ProactiveSettingsViewModel = hiltViewModel(),
+) {
+    val enabled by viewModel.enabled.collectAsStateWithLifecycle()
+    val maxPerDay by viewModel.maxPerDay.collectAsStateWithLifecycle()
+    val quietStart by viewModel.quietStart.collectAsStateWithLifecycle()
+    val quietEnd by viewModel.quietEnd.collectAsStateWithLifecycle()
+    val disabled by viewModel.disabledKinds.collectAsStateWithLifecycle()
+    val muted by viewModel.mutedKinds.collectAsStateWithLifecycle()
+
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            SwitchRow("Proattività", enabled, viewModel::setEnabled)
+            Text(
+                "Quando ha senso, JARVIS ti avvisa per primo (riepiloghi, promemoria utili) " +
+                    "con giudizio: mai più del limite al giorno, mai nelle ore di silenzio, " +
+                    "e ogni tipo è disattivabile. Tutto sul dispositivo, nessun permesso nuovo.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+
+            var maxSlider by remember(maxPerDay) { mutableStateOf(maxPerDay.toFloat()) }
+            Text("Massimo al giorno: ${maxSlider.toInt()}")
+            Slider(
+                value = maxSlider,
+                onValueChange = { maxSlider = it },
+                onValueChangeFinished = { viewModel.setMaxPerDay(maxSlider.toInt()) },
+                valueRange = 1f..6f,
+                steps = 4,
+                enabled = enabled,
+            )
+
+            var startSlider by remember(quietStart) { mutableStateOf(quietStart.toFloat()) }
+            var endSlider by remember(quietEnd) { mutableStateOf(quietEnd.toFloat()) }
+            Text("Silenzio dalle %02d:00 alle %02d:00".format(startSlider.toInt(), endSlider.toInt()))
+            Slider(
+                value = startSlider,
+                onValueChange = { startSlider = it },
+                onValueChangeFinished = { viewModel.setQuietHours(startSlider.toInt(), endSlider.toInt()) },
+                valueRange = 0f..23f,
+                enabled = enabled,
+            )
+            Slider(
+                value = endSlider,
+                onValueChange = { endSlider = it },
+                onValueChangeFinished = { viewModel.setQuietHours(startSlider.toInt(), endSlider.toInt()) },
+                valueRange = 0f..23f,
+                enabled = enabled,
+            )
+
+            HorizontalDivider()
+            Text("Tipi di intervento", style = MaterialTheme.typography.titleSmall)
+            viewModel.categories.forEach { (kind, label) ->
+                val on = kind.name !in disabled
+                SwitchRow(label, on) { viewModel.setCategoryEnabled(kind, it) }
+                if (kind.name in muted && on) {
+                    Text(
+                        "Silenziato da un messaggio.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
             }
         }
     }

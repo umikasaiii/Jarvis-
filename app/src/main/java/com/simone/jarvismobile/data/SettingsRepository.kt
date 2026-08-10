@@ -10,6 +10,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
@@ -54,6 +55,14 @@ class SettingsRepository @Inject constructor(
         val WAKE_WORD_ENABLED = booleanPreferencesKey("wake_word_enabled")
         val WAKE_WORD = stringPreferencesKey("wake_word")
         val AUTOMATION_SERVICE = booleanPreferencesKey("automation_service_enabled")
+
+        // --- Proattività ------------------------------------------------
+        val PROACTIVE_ENABLED = booleanPreferencesKey("proactive_enabled")
+        val PROACTIVE_MAX_PER_DAY = intPreferencesKey("proactive_max_per_day")
+        val PROACTIVE_QUIET_START = intPreferencesKey("proactive_quiet_start_hour")
+        val PROACTIVE_QUIET_END = intPreferencesKey("proactive_quiet_end_hour")
+        val PROACTIVE_DISABLED_KINDS = stringSetPreferencesKey("proactive_disabled_kinds")
+        val PROACTIVE_MUTED_KINDS = stringSetPreferencesKey("proactive_muted_kinds")
         val AUTO_EXPRESSIVE = booleanPreferencesKey("tts_auto_expressive")
         val EXPRESSIVE_INTENSITY = stringPreferencesKey("tts_expressive_intensity")
         val EXPRESSIVE_MANUAL_STYLE = stringPreferencesKey("tts_expressive_manual_style")
@@ -348,6 +357,59 @@ class SettingsRepository @Inject constructor(
 
     suspend fun setAutomationServiceEnabled(value: Boolean) {
         context.settingsDataStore.edit { it[Keys.AUTOMATION_SERVICE] = value }
+    }
+
+    // --- Proattività -----------------------------------------------------
+    // JARVIS speaking first, on your rules, with judgment (budget + quiet hours)
+    // and per-category / per-message control. Off by default; everything explicit.
+
+    val proactiveEnabled: Flow<Boolean> =
+        context.settingsDataStore.data.map { it[Keys.PROACTIVE_ENABLED] ?: false }
+
+    val proactiveMaxPerDay: Flow<Int> =
+        context.settingsDataStore.data.map { (it[Keys.PROACTIVE_MAX_PER_DAY] ?: DEFAULT_PROACTIVE_MAX).coerceIn(1, 10) }
+
+    val proactiveQuietStart: Flow<Int> =
+        context.settingsDataStore.data.map { (it[Keys.PROACTIVE_QUIET_START] ?: 22).coerceIn(0, 23) }
+
+    val proactiveQuietEnd: Flow<Int> =
+        context.settingsDataStore.data.map { (it[Keys.PROACTIVE_QUIET_END] ?: 8).coerceIn(0, 23) }
+
+    val proactiveDisabledKinds: Flow<Set<String>> =
+        context.settingsDataStore.data.map { it[Keys.PROACTIVE_DISABLED_KINDS] ?: emptySet() }
+
+    val proactiveMutedKinds: Flow<Set<String>> =
+        context.settingsDataStore.data.map { it[Keys.PROACTIVE_MUTED_KINDS] ?: emptySet() }
+
+    suspend fun setProactiveEnabled(value: Boolean) {
+        context.settingsDataStore.edit { it[Keys.PROACTIVE_ENABLED] = value }
+    }
+
+    suspend fun setProactiveMaxPerDay(value: Int) {
+        context.settingsDataStore.edit { it[Keys.PROACTIVE_MAX_PER_DAY] = value.coerceIn(1, 10) }
+    }
+
+    suspend fun setProactiveQuietHours(startHour: Int, endHour: Int) {
+        context.settingsDataStore.edit {
+            it[Keys.PROACTIVE_QUIET_START] = startHour.coerceIn(0, 23)
+            it[Keys.PROACTIVE_QUIET_END] = endHour.coerceIn(0, 23)
+        }
+    }
+
+    /** Toggles a category on/off (the settings switch). */
+    suspend fun setProactiveKindDisabled(kind: String, disabled: Boolean) {
+        context.settingsDataStore.edit { prefs ->
+            val current = prefs[Keys.PROACTIVE_DISABLED_KINDS] ?: emptySet()
+            prefs[Keys.PROACTIVE_DISABLED_KINDS] = if (disabled) current + kind else current - kind
+        }
+    }
+
+    /** "Non avvisarmi più di questo" tapped on a suggestion, and its undo. */
+    suspend fun setProactiveKindMuted(kind: String, muted: Boolean) {
+        context.settingsDataStore.edit { prefs ->
+            val current = prefs[Keys.PROACTIVE_MUTED_KINDS] ?: emptySet()
+            prefs[Keys.PROACTIVE_MUTED_KINDS] = if (muted) current + kind else current - kind
+        }
     }
 
     suspend fun setWakeWord(value: String) {
@@ -738,5 +800,6 @@ class SettingsRepository @Inject constructor(
         const val DEFAULT_RETENTION_DAILY = 7
         const val DEFAULT_RETENTION_WEEKLY = 4
         const val DEFAULT_RETENTION_MONTHLY = 6
+        const val DEFAULT_PROACTIVE_MAX = 3
     }
 }

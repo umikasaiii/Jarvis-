@@ -21,6 +21,7 @@ object JarvisNotifications {
     const val CHANNEL_PROCESSING = "jarvis_processing"
     const val CHANNEL_RESPONSES = "jarvis_responses"
     const val CHANNEL_REMINDERS = "jarvis_reminders"
+    const val CHANNEL_SUGGESTIONS = "jarvis_suggestions"
 
     /** JARVIS cyan, used as the notification accent where Android allows it. */
     private const val ACCENT = 0xFF4FD1E0.toInt()
@@ -97,6 +98,13 @@ object JarvisNotifications {
                     NotificationManager.IMPORTANCE_HIGH,
                 ).apply {
                     description = context.getString(R.string.reminders_channel_desc)
+                },
+                NotificationChannel(
+                    CHANNEL_SUGGESTIONS,
+                    context.getString(R.string.suggestions_channel_name),
+                    NotificationManager.IMPORTANCE_LOW, // present but never intrusive
+                ).apply {
+                    description = context.getString(R.string.suggestions_channel_desc)
                 },
             ),
         )

@@ -26,6 +26,7 @@ class JarvisApplication : Application() {
     @Inject lateinit var backupScheduler: BackupScheduler
     @Inject lateinit var automationServiceController:
         com.simone.jarvismobile.automation.AutomationServiceController
+    @Inject lateinit var proactiveScheduler: com.simone.jarvismobile.proactive.ProactiveScheduler
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -40,6 +41,8 @@ class JarvisApplication : Application() {
         // Start the automations observer if the user turned it on (app launch is a
         // foreground-enough context to start its foreground service).
         appScope.launch { runCatching { automationServiceController.syncFromSettings() } }
+        // Re-book the proactive check if the user has proactivity on.
+        appScope.launch { runCatching { proactiveScheduler.sync() } }
     }
 
     private fun createListeningChannel() {

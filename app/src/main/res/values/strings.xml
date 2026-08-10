@@ -20,6 +20,9 @@
     <string name="automation_service_channel_desc">Notifica minima richiesta da Android mentre JARVIS osserva gli eventi del telefono per le automazioni scelte da te. Nessun microfono, nessuna posizione.</string>
     <string name="automation_service_title">JARVIS · automazioni attive</string>
 
+    <string name="suggestions_channel_name">Suggerimenti</string>
+    <string name="suggestions_channel_desc">Interventi proattivi di JARVIS (riepiloghi, promemoria utili). Puoi silenziare ogni tipo dal messaggio stesso.</string>
+
     <string name="processing_channel_name">Elaborazione JARVIS</string>
     <string name="processing_channel_desc">Avanzamento delle risposte locali che continuano in background.</string>
     <string name="responses_channel_name">Risposte JARVIS</string>
