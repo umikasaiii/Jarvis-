@@ -30,6 +30,8 @@ class SettingsRepository @Inject constructor(
 ) {
     private object Keys {
         val NAME = stringPreferencesKey("assistant_name")
+        val PERSONA = stringPreferencesKey("persona_prompt")
+        val AUTO_MEMORY_CAPTURE = booleanPreferencesKey("auto_memory_capture")
         val RECORD_SECONDS = intPreferencesKey("record_seconds")
         val USE_BLUETOOTH = booleanPreferencesKey("use_bluetooth")
         val FOLLOW_UP = booleanPreferencesKey("follow_up_enabled")
@@ -177,6 +179,34 @@ class SettingsRepository @Inject constructor(
 
     val assistantName: Flow<String> =
         context.settingsDataStore.data.map { it[Keys.NAME] ?: DEFAULT_NAME }
+
+    /**
+     * Free-text personality instruction prepended to the system prompt. It shapes
+     * tone and character (e.g. "asciutto, ironico, mai servile"), so it takes
+     * effect on the next conversation (the live one keeps its seeded prompt). Kept
+     * short on purpose: a long persona eats the small model's context.
+     */
+    val personaPrompt: Flow<String> =
+        context.settingsDataStore.data.map { it[Keys.PERSONA] ?: DEFAULT_PERSONA }
+
+    /**
+     * Whether JARVIS offers to remember durable personal facts it hears in normal
+     * conversation ("mi chiamo…", "sono allergico a…"). It only ever *offers*; the
+     * save still goes through an explicit confirmation. On by default.
+     */
+    val autoMemoryCapture: Flow<Boolean> =
+        context.settingsDataStore.data.map { it[Keys.AUTO_MEMORY_CAPTURE] ?: true }
+
+    suspend fun setPersonaPrompt(value: String) {
+        context.settingsDataStore.edit {
+            val trimmed = value.trim().take(600)
+            if (trimmed.isBlank()) it.remove(Keys.PERSONA) else it[Keys.PERSONA] = trimmed
+        }
+    }
+
+    suspend fun setAutoMemoryCapture(value: Boolean) {
+        context.settingsDataStore.edit { it[Keys.AUTO_MEMORY_CAPTURE] = value }
+    }
 
     val recordSeconds: Flow<Int> =
         context.settingsDataStore.data.map { (it[Keys.RECORD_SECONDS] ?: DEFAULT_RECORD_SECONDS).coerceIn(1, 8) }
@@ -673,6 +703,11 @@ class SettingsRepository @Inject constructor(
 
     companion object {
         const val DEFAULT_NAME = "JARVIS"
+        /** A deliberately opinionated default so JARVIS has a character out of the box. */
+        const val DEFAULT_PERSONA =
+            "Hai un carattere asciutto e sicuro, con un tocco di ironia british alla Tony Stark. " +
+                "Dai del tu, vai dritto al punto, niente frasi di circostanza o servili. " +
+                "Sei competente e leale; se qualcosa non si può fare lo dici con garbo, senza girarci intorno."
         const val DEFAULT_RECORD_SECONDS = 3
         const val DEFAULT_TTS_VOLUME = 1.0f
         /** Engine the pre-Piper preference keys belonged to. */

@@ -35,6 +35,12 @@ class SettingsViewModel @Inject constructor(
     val assistantName: StateFlow<String> = settings.assistantName
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsRepository.DEFAULT_NAME)
 
+    val personaPrompt: StateFlow<String> = settings.personaPrompt
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsRepository.DEFAULT_PERSONA)
+
+    val autoMemoryCapture: StateFlow<Boolean> = settings.autoMemoryCapture
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
+
     val recordSeconds: StateFlow<Int> = settings.recordSeconds
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsRepository.DEFAULT_RECORD_SECONDS)
 
@@ -99,6 +105,12 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun setAssistantName(value: String) = viewModelScope.launch { settings.setAssistantName(value) }
+
+    fun setPersonaPrompt(value: String) = viewModelScope.launch { settings.setPersonaPrompt(value) }
+
+    fun resetPersonaPrompt() = viewModelScope.launch { settings.setPersonaPrompt(SettingsRepository.DEFAULT_PERSONA) }
+
+    fun setAutoMemoryCapture(value: Boolean) = viewModelScope.launch { settings.setAutoMemoryCapture(value) }
     fun setRecordSeconds(value: Int) = viewModelScope.launch { settings.setRecordSeconds(value) }
     fun setUseBluetooth(value: Boolean) = viewModelScope.launch { settings.setUseBluetooth(value) }
     fun setFollowUpEnabled(value: Boolean) = viewModelScope.launch { settings.setFollowUpEnabled(value) }

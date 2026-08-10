@@ -145,6 +145,20 @@ class SessionCoordinator @Inject constructor(
      */
     @Volatile private var assistantName: String = SettingsRepository.DEFAULT_NAME
 
+    /**
+     * The user's configurable personality instruction, prepended to the base
+     * system prompt in [buildSystem]. Cached like [assistantName] because the
+     * prompt is built off the main thread without suspending; refreshed when the
+     * chat is (re)opened and on "Nuova conversazione".
+     */
+    @Volatile private var persona: String = SettingsRepository.DEFAULT_PERSONA
+
+    /** Whether to offer to remember durable facts heard in conversation. */
+    @Volatile private var autoMemoryCapture: Boolean = true
+
+    /** Facts already offered this conversation, so JARVIS never re-asks the same one. */
+    private val offeredFacts = java.util.Collections.synchronizedSet(HashSet<String>())
+
     /** The last slot question asked, so it is never repeated verbatim. */
     @Volatile private var lastAskedSlot: String? = null
 
@@ -213,6 +227,8 @@ class SessionCoordinator @Inject constructor(
         assistantName = runCatching { settings.assistantName.first() }
             .getOrDefault(SettingsRepository.DEFAULT_NAME)
             .ifBlank { SettingsRepository.DEFAULT_NAME }
+        persona = runCatching { settings.personaPrompt.first() }.getOrDefault(SettingsRepository.DEFAULT_PERSONA)
+        autoMemoryCapture = runCatching { settings.autoMemoryCapture.first() }.getOrDefault(true)
         if (chatRestored) return
         chatRestored = true
         conversationMemory.ensureLoaded()
@@ -487,6 +503,12 @@ class SessionCoordinator @Inject constructor(
                         (if (why.isBlank()) "." else " ($why).")
                 }
             }
+
+            // A plain sentence that states a durable fact about the user ("mi
+            // chiamo…", "sono allergico a…") is worth remembering. JARVIS only
+            // OFFERS — the save still goes through the confirming-write path — so a
+            // misread can never silently write the vault.
+            offerFactCapture(transcript)?.let { return it }
         }
 
         // Pending yes/no or slot answers must remain a single conversational
@@ -887,8 +909,45 @@ class SessionCoordinator @Inject constructor(
      * The engine's multi-turn memory is a KV cache that dies with the process, so
      * this recap is the only way the conversation can continue an hour later.
      */
+    /**
+     * If [transcript] is a durable personal fact and capture is on, returns an
+     * offer to remember it (arming the confirming-write path so a "sì" saves it);
+     * otherwise null so the turn continues normally. Deduplicated against what is
+     * already in the vault and against facts already offered this conversation.
+     */
+    private suspend fun offerFactCapture(transcript: String): String? {
+        if (!autoMemoryCapture) return null
+        val candidate = com.simone.jarvismobile.core.memory.FactCapture.detect(transcript) ?: return null
+        val key = candidate.fact.lowercase()
+        if (!offeredFacts.add(key)) return null // already offered this session
+        if (!runCatching { memory.isConfigured() }.getOrDefault(false)) return null
+        val known = runCatching { memory.listRecords() }.getOrDefault(emptyList())
+        if (known.any { it.text.equals(candidate.fact, ignoreCase = true) }) return null
+
+        pendingConfirmation = com.simone.jarvismobile.core.protocol.ToolCall(
+            id = java.util.UUID.randomUUID().toString(),
+            name = "remember",
+            arguments = kotlinx.serialization.json.JsonObject(
+                mapOf(
+                    "text" to kotlinx.serialization.json.JsonPrimitive(candidate.fact),
+                    "kind" to kotlinx.serialization.json.JsonPrimitive(candidate.kind.name),
+                ),
+            ),
+            requiresConfirmation = true,
+        )
+        val marker = if (candidate.kind == com.simone.jarvismobile.core.memory.MemoryKind.SENSITIVE) {
+            " (lo segno come dato sensibile 🔒)"
+        } else {
+            ""
+        }
+        return "Vuoi che me lo ricordi$marker? Posso salvare: «${candidate.fact}»."
+    }
+
     private fun buildSystem(notes: List<String>): String = buildString {
         append(systemPrompt.trim())
+        persona.trim().takeIf { it.isNotEmpty() }?.let {
+            append("\n\nPERSONALITÀ (adotta questo carattere in ogni risposta):\n").append(it)
+        }
         append("\n\nTi chiami ").append(assistantName)
         append(". Se Simone ti chiede il tuo nome, rispondi con questo.")
 
@@ -1435,6 +1494,7 @@ class SessionCoordinator @Inject constructor(
         injectedContexts.clear()
         lastConversationSlot = null
         bargeInRequested = false
+        offeredFacts.clear()
         _messages.value = emptyList()
         _transcript.value = ""
         _reply.value = ""
@@ -1442,6 +1502,9 @@ class SessionCoordinator @Inject constructor(
         scope.launch {
             chatStore.clear()
             conversationMemory.clear()
+            // Pick up a persona / capture change made in Impostazioni.
+            persona = runCatching { settings.personaPrompt.first() }.getOrDefault(SettingsRepository.DEFAULT_PERSONA)
+            autoMemoryCapture = runCatching { settings.autoMemoryCapture.first() }.getOrDefault(true)
         }
     }
 

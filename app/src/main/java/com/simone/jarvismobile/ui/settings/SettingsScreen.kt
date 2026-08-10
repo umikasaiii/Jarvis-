@@ -65,6 +65,8 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val name by viewModel.assistantName.collectAsStateWithLifecycle()
+    val persona by viewModel.personaPrompt.collectAsStateWithLifecycle()
+    val autoMemoryCapture by viewModel.autoMemoryCapture.collectAsStateWithLifecycle()
     val neuralVoice by viewModel.neuralTts.collectAsStateWithLifecycle()
     val seconds by viewModel.recordSeconds.collectAsStateWithLifecycle()
     val useBluetooth by viewModel.useBluetooth.collectAsStateWithLifecycle()
@@ -86,6 +88,7 @@ fun SettingsScreen(
     val speakBackground by viewModel.speakBackgroundResponses.collectAsStateWithLifecycle()
 
     var nameField by remember(name) { mutableStateOf(name) }
+    var personaField by remember(persona) { mutableStateOf(persona) }
     var wakeField by remember(wakeWord) { mutableStateOf(wakeWord) }
     var sliderValue by remember(seconds) { mutableStateOf(seconds.toFloat()) }
     var morningSlider by remember(reminderMorningHour) { mutableStateOf(reminderMorningHour.toFloat()) }
@@ -152,6 +155,70 @@ fun SettingsScreen(
                 Text(
                     "Usa il gesto o tasto dell'assistente configurato da MagicOS. " +
                         "JARVIS apre una schermata visibile e ascolta solo allora; non usa un microfono nascosto.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+
+        // --- Personalità -----------------------------------------------------
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Personalità di JARVIS", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Come deve comportarsi e che tono usare. Vale dalla conversazione successiva " +
+                        "(quella in corso mantiene il carattere con cui è iniziata). Tienilo breve: " +
+                        "un testo troppo lungo toglie spazio alla memoria del modello.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    PERSONA_PRESETS.forEach { (label, text) ->
+                        OutlinedButton(onClick = { personaField = text }) {
+                            Text(label, style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
+                }
+                OutlinedTextField(
+                    value = personaField,
+                    onValueChange = { personaField = it },
+                    label = { Text("Istruzione di personalità") },
+                    minLines = 3,
+                    maxLines = 6,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = { viewModel.setPersonaPrompt(personaField) },
+                        modifier = Modifier.weight(1f),
+                    ) { Text("Salva personalità") }
+                    TextButton(onClick = { viewModel.resetPersonaPrompt() }) { Text("Predefinita") }
+                }
+                Text(
+                    "Suggerimento: dopo aver salvato, tocca «Nuova conversazione» per applicarla subito.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+
+        // --- Memoria contestuale --------------------------------------------
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                ) {
+                    Text("Ricorda i fatti utili", style = MaterialTheme.typography.titleMedium)
+                    Switch(checked = autoMemoryCapture, onCheckedChange = viewModel::setAutoMemoryCapture)
+                }
+                Text(
+                    "Quando dici qualcosa di stabile su di te («mi chiamo…», «abito a…», " +
+                        "«sono allergico a…»), JARVIS ti propone di salvarlo nella memoria. " +
+                        "Chiede sempre conferma prima di scrivere; non salva mai password o " +
+                        "codici, e i dati di salute restano marcati come sensibili 🔒. " +
+                        "Serve un vault Obsidian collegato.",
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
@@ -735,6 +802,27 @@ private fun DocumentSettingsSection(
         }
     }
 }
+
+/** Ready-made personalities the user can start from and then tweak. */
+private val PERSONA_PRESETS: List<Pair<String, String>> = listOf(
+    "Ironico (Stark)" to (
+        "Hai un carattere asciutto e sicuro, con un tocco di ironia british alla Tony Stark. " +
+            "Dai del tu, vai dritto al punto, niente frasi di circostanza o servili. " +
+            "Sei competente e leale; se qualcosa non si può fare lo dici con garbo, senza girarci intorno."
+        ),
+    "Formale" to (
+        "Ti esprimi in modo cortese e professionale, con frasi complete e precise. " +
+            "Dai del Lei, eviti battute e resti misurato, ma sempre chiaro e diretto."
+        ),
+    "Essenziale" to (
+        "Rispondi nel modo più breve possibile: una o due frasi, nessun preambolo, " +
+            "nessuna ripetizione della domanda. Vai solo al risultato."
+        ),
+    "Amichevole" to (
+        "Sei caldo, incoraggiante e alla mano, come un amico competente. Dai del tu, " +
+            "usi un tono positivo e rassicurante, ma resti concreto e onesto."
+        ),
+)
 
 @Composable
 private fun SwitchRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
