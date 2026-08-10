@@ -4,7 +4,6 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
-import android.graphics.BitmapFactory
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import com.simone.jarvismobile.R
@@ -13,7 +12,7 @@ import com.simone.jarvismobile.widget.JarvisIntents
 /**
  * The one place JARVIS notifications are shaped. Channels (Risposte, Promemoria,
  * Sistema/background) live here, and [styled] applies the shared JARVIS look —
- * monochrome small icon, "JARVIS" title, orb large icon, dark accent and, where
+ * the monochrome JARVIS small icon, "JARVIS" title, dark accent and, where
  * relevant, the Apri chat / Parla / Stop actions — so every surface is
  * consistent and no launch logic is duplicated (it reuses [JarvisIntents]).
  */
@@ -49,7 +48,8 @@ object JarvisNotifications {
             .setColorized(false)
             .setContentTitle(title)
             .setContentText(text)
-        largeIcon(context)?.let(builder::setLargeIcon)
+        // No large icon: the notification shows only the JARVIS glyph (small icon),
+        // not a second image on the right.
         contentIntent?.let { builder.setContentIntent(it).setAutoCancel(true) }
         expandableText?.let { builder.setStyle(NotificationCompat.BigTextStyle().bigText(it)) }
         if (withChatAction) {
@@ -63,14 +63,6 @@ object JarvisNotifications {
         }
         return builder
     }
-
-    /**
-     * The JARVIS orb shown as the notification large icon (the one colourful,
-     * per-notification image Android allows). The small status-bar icon stays
-     * monochrome by system requirement — it cannot carry this artwork.
-     */
-    private fun largeIcon(context: Context) =
-        runCatching { BitmapFactory.decodeResource(context.resources, R.drawable.jarvis_orb) }.getOrNull()
 
     fun createChannels(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return

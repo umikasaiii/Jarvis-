@@ -8,12 +8,12 @@
         <item name="android:navigationBarColor">@color/jarvis_background</item>
     </style>
 
-    <!-- Opening screen: the HUD orb centred on black. Pure transition — MainActivity
-         installs the splash with no keep-on-screen condition, so it clears the
-         instant the first Compose frame is ready and never lingers. -->
+    <!-- The full-screen HUD artwork is shown by a brief Compose splash inside the
+         app (MainActivity), so the system splash is just black with no icon: no
+         double flash, and it clears the instant the app draws. -->
     <style name="Theme.JarvisMobile.Splash" parent="Theme.SplashScreen">
         <item name="windowSplashScreenBackground">@color/splash_background</item>
-        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_orb</item>
+        <item name="windowSplashScreenAnimatedIcon">@android:color/transparent</item>
         <item name="postSplashScreenTheme">@style/Theme.JarvisMobile</item>
     </style>
 </resources>

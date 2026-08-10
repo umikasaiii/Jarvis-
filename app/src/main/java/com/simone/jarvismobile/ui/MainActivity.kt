@@ -11,9 +11,26 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import com.simone.jarvismobile.R
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.delay
 import com.simone.jarvismobile.audio.SessionCoordinator
 import com.simone.jarvismobile.ui.theme.JarvisTheme
 import dagger.hilt.android.AndroidEntryPoint
@@ -57,11 +74,30 @@ class MainActivity : ComponentActivity() {
             val openChatRequest by openChatRequests.collectAsState()
             val startListeningRequest by startListeningRequests.collectAsState()
             JarvisTheme {
-                JarvisApp(
-                    initiallyOpenChat = openChat,
-                    openChatRequest = openChatRequest,
-                    startListeningRequest = startListeningRequest,
-                )
+                Box(Modifier.fillMaxSize()) {
+                    JarvisApp(
+                        initiallyOpenChat = openChat,
+                        openChatRequest = openChatRequest,
+                        startListeningRequest = startListeningRequest,
+                    )
+                    // Brief full-screen opening artwork, then a quick fade to the app.
+                    // Purely a transition: a short, fixed window, never a load gate.
+                    var showSplash by remember { mutableStateOf(true) }
+                    LaunchedEffect(Unit) {
+                        delay(SPLASH_MS)
+                        showSplash = false
+                    }
+                    AnimatedVisibility(visible = showSplash, exit = fadeOut(tween(320))) {
+                        Image(
+                            painter = painterResource(R.drawable.splash_full),
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color.Black),
+                        )
+                    }
+                }
             }
         }
     }
@@ -112,6 +148,8 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_OPEN_CHAT = "open_chat"
+        /** How long the opening artwork stays before fading — a transition, not a wait. */
+        private const val SPLASH_MS = 650L
 
         /**
          * Pure mirror of the deep-link host rule (a `jarvis://<host>` URI yields
