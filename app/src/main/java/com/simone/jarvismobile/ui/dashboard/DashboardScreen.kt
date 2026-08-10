@@ -1,6 +1,7 @@
 package com.simone.jarvismobile.ui.dashboard
 
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -441,6 +442,7 @@ fun DashboardScreen(
             AgendaBlock(
                 today = today,
                 week = upcoming,
+                allEntries = allEntries,
                 timeline = timeline,
                 selectedDate = selectedDate,
                 dayEntries = Agenda.sorted(allEntries.filter { it.date == selectedDate }),
@@ -717,6 +719,7 @@ private fun DemoBadge(text: String = "DEMO") {
 private fun AgendaBlock(
     today: List<AgendaEntry>,
     week: List<AgendaEntry>,
+    allEntries: List<AgendaEntry>,
     timeline: List<AgendaEntry>,
     selectedDate: LocalDate,
     dayEntries: List<AgendaEntry>,
@@ -728,8 +731,49 @@ private fun AgendaBlock(
     val isToday = selectedDate == todayDate
     val doneOnDay = dayEntries.count { it.done }
 
+    // Which calendar week the strip shows. 0 = the week containing today; the
+    // arrows step it back/forward. A real Monday→Sunday week, not "7 days from
+    // today", so it lines up with a paper calendar and rolls over on its own.
+    var weekOffset by remember { mutableStateOf(0) }
+    val thisMonday = todayDate.minusDays((todayDate.dayOfWeek.value - 1).toLong())
+    val weekStart = thisMonday.plusWeeks(weekOffset.toLong())
+    val weekEnd = weekStart.plusDays(6)
+
     GlassCard {
         CardHeader(Icons.Filled.CalendarMonth, "AGENDA", reserveEnd = false)
+
+        // Week navigator: ‹  10 – 16 agosto  ›
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+        ) {
+            IconButton(onClick = { weekOffset-- }, modifier = Modifier.size(30.dp)) {
+                Icon(
+                    Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                    contentDescription = "Settimana precedente",
+                    tint = Cyan,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+            Text(
+                weekRangeLabel(weekStart, weekEnd),
+                color = Ink,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.weight(1f),
+            )
+            IconButton(onClick = { weekOffset++ }, modifier = Modifier.size(30.dp)) {
+                Icon(
+                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = "Settimana successiva",
+                    tint = Cyan,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+        }
+        Spacer(Modifier.height(4.dp))
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -771,18 +815,18 @@ private fun AgendaBlock(
                 )
             }
 
-            // Week strip: seven days from today; the selected day is ringed.
+            // Week strip: Monday→Sunday of the shown week; selected day ringed.
             Row(
                 modifier = Modifier.weight(1f),
                 horizontalArrangement = Arrangement.spacedBy(3.dp),
             ) {
                 for (i in 0 until 7) {
-                    val date = todayDate.plusDays(i.toLong())
+                    val date = weekStart.plusDays(i.toLong())
                     WeekDayPip(
                         date = date,
                         isToday = date == todayDate,
                         isSelected = date == selectedDate,
-                        hasEntries = week.any { it.date == date },
+                        hasEntries = allEntries.any { it.date == date },
                         onClick = { onDayClick(date) },
                         modifier = Modifier.weight(1f),
                     )
@@ -818,6 +862,18 @@ private fun AgendaBlock(
                 )
             }
         }
+    }
+}
+
+/** "10 – 16 agosto", or "28 lug – 3 ago" when the week straddles two months. */
+private fun weekRangeLabel(start: LocalDate, end: LocalDate): String {
+    fun cap(s: String) = s.replaceFirstChar { it.uppercase() }
+    return if (start.month == end.month) {
+        "${start.dayOfMonth} – ${end.dayOfMonth} " +
+            cap(start.month.getDisplayName(TextStyle.FULL, Locale.ITALIAN))
+    } else {
+        "${start.dayOfMonth} ${start.month.getDisplayName(TextStyle.SHORT, Locale.ITALIAN)} – " +
+            "${end.dayOfMonth} ${end.month.getDisplayName(TextStyle.SHORT, Locale.ITALIAN)}"
     }
 }
 

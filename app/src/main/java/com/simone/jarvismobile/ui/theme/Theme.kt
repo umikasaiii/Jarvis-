@@ -1,6 +1,5 @@
 package com.simone.jarvismobile.ui.theme
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -30,7 +29,13 @@ private val LightColors = lightColorScheme(
 
 @Composable
 fun JarvisTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    // JARVIS is a dark-only HUD: the whole UI (Scaffold, dashboard, orb) is
+    // painted on a near-black background with hardcoded light-on-dark colours.
+    // Following the system light theme only broke the screens that rely on
+    // Material defaults (Impostazioni, Backup): black text on the app's dark
+    // background, invisible. So the theme is always dark, whatever the phone is
+    // set to — onSurface/onBackground stay light everywhere.
+    darkTheme: Boolean = true,
     content: @Composable () -> Unit,
 ) {
     MaterialTheme(
