@@ -725,8 +725,17 @@ object CommandMatcher {
             """\bho\s+(qualcosa|impegni|appuntamenti)\b""",
     )
 
-    /** "cosa hai segnato", "i miei appunti" → the free-text notes, not the calendar. */
-    private val RECALL_RE = Regex("""\bcosa\s+(hai|ho)\s+(segnato|annotato|scritto)\b|\bi miei appunti\b|\bcosa mi ricordi\b|\bche (cose|appunti) hai\b""")
+    /**
+     * "cosa hai segnato", "cosa ho salvato (nei vault)", "cosa mi piace",
+     * "cosa sai di me", "i miei appunti" → the saved notes, answered from the
+     * file itself so recall is never invented by the model.
+     */
+    private val RECALL_RE = Regex(
+        """\bcosa\s+(hai|ho)\s+(segnato|annotato|scritto|salvato|memorizzato)\b|""" +
+            """\bi miei appunti\b|\bcosa mi ricordi\b|\bche (cose|appunti) hai\b|""" +
+            """\bcosa\s+(sai|ricordi)\s+di\s+me\b|\bcosa\s+ti\s+ho\s+detto\s+di\s+me\b|""" +
+            """\b(cosa|che\s+cosa|che\s+\w+)\s+mi\s+piace\b""",
+    )
 
     /** "quanto manca alle 16?", "fra quanto è l'appuntamento?" */
     private val TIME_UNTIL_RE = Regex(

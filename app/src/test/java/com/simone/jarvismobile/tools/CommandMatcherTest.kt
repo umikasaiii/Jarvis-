@@ -31,6 +31,21 @@ class CommandMatcherTest {
     }
 
     @Test
+    fun recallQuestionsAreAnsweredFromSavedNotes() {
+        // These must read the vault deterministically, never let the model invent.
+        for (q in listOf(
+            "Cosa ho salvato nei vault?",
+            "Cosa mi piace?",
+            "Che cibo mi piace?",
+            "Cosa sai di me?",
+        )) {
+            val match = CommandMatcher.match(q)
+            assertTrue("no match for: $q", match is Match.Run)
+            assertEquals(q, "list_memories", (match as Match.Run).call.name)
+        }
+    }
+
+    @Test
     fun shortenedAgendaFollowUpRunsAgendaTool() {
         val match = CommandMatcher.match("Ne ho uno in programma?")
         assertTrue(match is Match.Run)

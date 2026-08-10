@@ -181,8 +181,11 @@ object AssistantReplyCleaner {
     private val leadingLabel = Regex(
         """(?i)^\s*(?:risposta|jarvis|assistente|tu)\s*:\s*""",
     )
+    // A line that starts a fake user turn — the model role-playing both sides.
+    // "Tu:" is the user's own label in this app, so a mid-reply "Tu: …" is a
+    // hallucinated continuation and everything from it is dropped.
     private val continuedUserTurn = Regex(
-        """(?im)^\s*(?:simone|utente)\s*:\s*""",
+        """(?im)^\s*(?:simone|utente|tu)\s*:\s*""",
     )
 
     fun clean(raw: String): String {

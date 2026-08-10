@@ -93,5 +93,10 @@ class UtteranceAnalysisTest {
             ),
         )
         assertEquals("La risposta utile.", AssistantReplyCleaner.clean("Risposta: La risposta utile."))
+        // A mid-reply "Tu:" line is the model role-playing the user; drop it.
+        assertEquals(
+            "Mi piace il gelato.",
+            AssistantReplyCleaner.clean("Mi piace il gelato.\nTu: Posso salvare: «Mi piace il gelato»."),
+        )
     }
 }
