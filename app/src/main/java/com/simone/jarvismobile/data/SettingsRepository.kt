@@ -42,6 +42,8 @@ class SettingsRepository @Inject constructor(
         val ADV_MODEL_NAME = stringPreferencesKey("llm_adv_model_name")
         val VAULT_URI = stringPreferencesKey("vault_tree_uri")
         val KNOWLEDGE_URI = stringPreferencesKey("knowledge_tree_uri")
+        val EMBEDDING_MODEL_PATH = stringPreferencesKey("embedding_model_path")
+        val EMBEDDING_VOCAB_PATH = stringPreferencesKey("embedding_vocab_path")
         val RESPONSE_NOTIFICATIONS = booleanPreferencesKey("response_notifications")
         val SHOW_RESPONSE_PREVIEW = booleanPreferencesKey("show_response_preview")
         val REMINDER_NOTIFICATIONS = booleanPreferencesKey("reminder_notifications")
@@ -126,6 +128,29 @@ class SettingsRepository @Inject constructor(
     suspend fun setKnowledgeUri(value: String) {
         context.settingsDataStore.edit {
             if (value.isBlank()) it.remove(Keys.KNOWLEDGE_URI) else it[Keys.KNOWLEDGE_URI] = value
+        }
+    }
+
+    /**
+     * Paths (in app-private storage) of the imported sentence-embedding model and
+     * its vocab, for semantic memory retrieval. Empty when none imported, in which
+     * case retrieval stays lexical.
+     */
+    val embeddingModelPath: Flow<String> =
+        context.settingsDataStore.data.map { it[Keys.EMBEDDING_MODEL_PATH] ?: "" }
+
+    val embeddingVocabPath: Flow<String> =
+        context.settingsDataStore.data.map { it[Keys.EMBEDDING_VOCAB_PATH] ?: "" }
+
+    suspend fun setEmbeddingModelPath(value: String) {
+        context.settingsDataStore.edit {
+            if (value.isBlank()) it.remove(Keys.EMBEDDING_MODEL_PATH) else it[Keys.EMBEDDING_MODEL_PATH] = value
+        }
+    }
+
+    suspend fun setEmbeddingVocabPath(value: String) {
+        context.settingsDataStore.edit {
+            if (value.isBlank()) it.remove(Keys.EMBEDDING_VOCAB_PATH) else it[Keys.EMBEDDING_VOCAB_PATH] = value
         }
     }
 

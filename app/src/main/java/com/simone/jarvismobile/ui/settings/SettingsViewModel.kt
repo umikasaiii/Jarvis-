@@ -31,7 +31,35 @@ class SettingsViewModel @Inject constructor(
     private val knowledge: KnowledgeRepository,
     private val neural: NeuralTtsRepository,
     private val automationService: com.simone.jarvismobile.automation.AutomationServiceController,
+    private val embeddings: com.simone.jarvismobile.memory.EmbeddingRepository,
 ) : ViewModel() {
+
+    val embeddingStatus: StateFlow<com.simone.jarvismobile.memory.EmbeddingRepository.Status> =
+        embeddings.status.stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5_000),
+            com.simone.jarvismobile.memory.EmbeddingRepository.Status(),
+        )
+    val embeddingModelPath: StateFlow<String> = settings.embeddingModelPath
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
+    val embeddingVocabPath: StateFlow<String> = settings.embeddingVocabPath
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
+
+    fun importEmbeddingModel(uri: android.net.Uri) = viewModelScope.launch {
+        val path = embeddings.importFile(uri, "model.onnx")
+        if (path != null) { settings.setEmbeddingModelPath(path); embeddings.invalidate() }
+    }
+
+    fun importEmbeddingVocab(uri: android.net.Uri) = viewModelScope.launch {
+        val path = embeddings.importFile(uri, "vocab.txt")
+        if (path != null) { settings.setEmbeddingVocabPath(path); embeddings.invalidate() }
+    }
+
+    fun clearEmbeddingModel() = viewModelScope.launch {
+        settings.setEmbeddingModelPath("")
+        settings.setEmbeddingVocabPath("")
+        embeddings.invalidate()
+    }
 
     val assistantName: StateFlow<String> = settings.assistantName
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsRepository.DEFAULT_NAME)

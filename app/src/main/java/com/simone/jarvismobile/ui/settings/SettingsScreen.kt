@@ -408,6 +408,7 @@ fun SettingsScreen(
             }
         }
 
+        SemanticMemorySection()
         }
 
         CollapsibleSection("Audio e conversazione") {
@@ -812,6 +813,57 @@ private fun TranslatorSettingsSection(
             }
             OutlinedButton(onClick = onOpenTranslator, modifier = Modifier.fillMaxWidth()) {
                 Text("Apri il Traduttore Live")
+            }
+        }
+    }
+}
+
+/**
+ * «Memoria semantica»: import of an optional on-device embedding model so recall
+ * works by meaning, not just words. Without a model, retrieval stays lexical.
+ */
+@Composable
+private fun SemanticMemorySection(
+    viewModel: SettingsViewModel = hiltViewModel(),
+) {
+    val status by viewModel.embeddingStatus.collectAsStateWithLifecycle()
+    val modelPath by viewModel.embeddingModelPath.collectAsStateWithLifecycle()
+    val vocabPath by viewModel.embeddingVocabPath.collectAsStateWithLifecycle()
+    val modelLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) viewModel.importEmbeddingModel(uri)
+    }
+    val vocabLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) viewModel.importEmbeddingVocab(uri)
+    }
+
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Memoria semantica", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Ritrova i tuoi ricordi per significato, non solo per parole. Importa un " +
+                    "modello di embedding ONNX più il suo vocab.txt (nulla è incluso, tutto " +
+                    "resta sul dispositivo). Senza modello, la ricerca resta per parole.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Text(
+                when {
+                    status.ready -> "Pronto · dimensione ${status.dimension}"
+                    modelPath.isBlank() || vocabPath.isBlank() -> "Manca il modello o il vocabolario."
+                    status.error != null -> "Modello non caricato: file non compatibile."
+                    else -> "Importato · verrà caricato alla prossima ricerca."
+                },
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            OutlinedButton(onClick = { modelLauncher.launch(arrayOf("*/*")) }, modifier = Modifier.fillMaxWidth()) {
+                Text(if (modelPath.isBlank()) "Importa modello (.onnx)" else "Cambia modello (.onnx)")
+            }
+            OutlinedButton(onClick = { vocabLauncher.launch(arrayOf("*/*")) }, modifier = Modifier.fillMaxWidth()) {
+                Text(if (vocabPath.isBlank()) "Importa vocab.txt" else "Cambia vocab.txt")
+            }
+            if (modelPath.isNotBlank() || vocabPath.isNotBlank()) {
+                TextButton(onClick = viewModel::clearEmbeddingModel, modifier = Modifier.fillMaxWidth()) {
+                    Text("Rimuovi il modello")
+                }
             }
         }
     }

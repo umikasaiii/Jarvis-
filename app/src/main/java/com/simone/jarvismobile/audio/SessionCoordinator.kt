@@ -779,7 +779,7 @@ class SessionCoordinator @Inject constructor(
         conversationHint: String = "",
     ): String {
         lastAskedSlot = null
-        val retrieved = runCatching { memory.retrieve(transcript, MEMORY_TOP_K) }.getOrDefault(emptyList())
+        val retrieved = runCatching { memory.retrieveSmart(transcript, MEMORY_TOP_K) }.getOrDefault(emptyList())
         val notes = retrieved.map { it.chunk.text.replace('\n', ' ').trim().take(600) }
 
         val slot = router.selectSlot(needsReasoning)

@@ -7,6 +7,8 @@ import com.simone.jarvismobile.core.memory.MemoryKind
 import com.simone.jarvismobile.core.memory.MemoryChunk
 import com.simone.jarvismobile.core.memory.MemoryRecord
 import com.simone.jarvismobile.core.memory.MemoryRecordCodec
+import com.simone.jarvismobile.core.memory.HybridCandidate
+import com.simone.jarvismobile.core.memory.HybridRanker
 import com.simone.jarvismobile.core.memory.RankedChunk
 import com.simone.jarvismobile.core.memory.RetrievalRanker
 import kotlinx.coroutines.Dispatchers
@@ -32,6 +34,7 @@ import javax.inject.Singleton
 class MemoryIndex @Inject constructor(
     private val vault: VaultRepository,
     private val conversationMemory: ConversationMemoryStore,
+    private val embeddings: EmbeddingRepository,
 ) {
     /** Honest, observable state of the index for the UI. */
     data class Status(
@@ -173,6 +176,46 @@ class MemoryIndex @Inject constructor(
         return (ranked + recentMemories)
             .distinctBy { it.chunk.notePath to it.chunk.text }
             .take(limit)
+    }
+
+    /**
+     * Like [retrieve], but blends semantic similarity with the lexical score when a
+     * sentence-embedding model is imported (retrieval "by meaning"). With no model,
+     * or on any embedding error, it is exactly [retrieve] — the lexical path is the
+     * safety net, so this can never do worse than before.
+     */
+    suspend fun retrieveSmart(query: String, limit: Int = 4): List<RankedChunk> {
+        if (query.isBlank()) return emptyList()
+        runCatching { embeddings.ensureLoaded() }
+        if (!embeddings.isReady()) return retrieve(query, limit)
+
+        val temporary = conversationMemory.snapshot.value.facts.mapIndexed { index, fact ->
+            MemoryChunk(
+                notePath = "private://conversation/$index",
+                title = "Memoria breve",
+                text = fact,
+                tags = conversationMemory.snapshot.value.topics,
+                folder = "conversation",
+            )
+        }
+        val local = chunks + temporary
+        if (local.isEmpty()) return emptyList()
+
+        val lexical = ranker.rank(query, local, local.size).associate { it.chunk to it.score }
+        val semantic = embeddings.semanticScores(query, local.map { it.text })
+            ?: return retrieve(query, limit)
+        val candidates = local.mapIndexed { index, chunk ->
+            HybridCandidate(
+                ref = index.toString(),
+                lexicalScore = lexical[chunk] ?: 0.0,
+                semanticScore = semantic[chunk.text] ?: 0.0,
+            )
+        }
+        val fused = HybridRanker.fuse(candidates, limit)
+        val ranked = fused.mapNotNull { result ->
+            local.getOrNull(result.ref.toIntOrNull() ?: -1)?.let { RankedChunk(it, result.score) }
+        }
+        return ranked.ifEmpty { retrieve(query, limit) }
     }
 
     private fun isExplicitMemory(notePath: String): Boolean =
