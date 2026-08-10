@@ -33,6 +33,7 @@ class ReminderWorker(
         val date = inputData.getString(KEY_DATE).orEmpty()
         val time = inputData.getString(KEY_TIME).orEmpty()
         val whenText = listOf(date, time).filter(String::isNotBlank).joinToString(" · ")
+        val notificationId = NOTIFICATION_BASE + entryId.hashCode().and(0x0fff)
         val open = PendingIntent.getActivity(
             applicationContext,
             entryId.hashCode(),
@@ -40,7 +41,7 @@ class ReminderWorker(
                 .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        // Shared JARVIS styling: dragon avatar large icon + monochrome small icon.
+        // Quick actions handled from the shade: tick it off, or postpone an hour.
         val notification = JarvisNotifications.styled(
             context = applicationContext,
             channelId = JarvisNotifications.CHANNEL_REMINDERS,
@@ -48,20 +49,44 @@ class ReminderWorker(
             text = title,
             contentIntent = open,
             expandableText = title,
-            withChatAction = true,
         )
             .setSubText(whenText)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .addAction(0, "Segna come fatto", actionPending(entryId, title, date, time, notificationId, ReminderActionReceiver.ACTION_DONE, 1))
+            .addAction(0, "Riprogramma", actionPending(entryId, title, date, time, notificationId, ReminderActionReceiver.ACTION_SNOOZE, 2))
             .build()
         try {
-            NotificationManagerCompat.from(applicationContext)
-                .notify(NOTIFICATION_BASE + entryId.hashCode().and(0x0fff), notification)
+            NotificationManagerCompat.from(applicationContext).notify(notificationId, notification)
         } catch (_: SecurityException) {
             // The permission can be revoked between the check and notify().
         }
         return Result.success()
+    }
+
+    private fun actionPending(
+        entryId: String,
+        title: String,
+        date: String,
+        time: String,
+        notificationId: Int,
+        action: String,
+        requestOffset: Int,
+    ): PendingIntent {
+        val intent = Intent(applicationContext, ReminderActionReceiver::class.java)
+            .setAction(action)
+            .putExtra(ReminderActionReceiver.EXTRA_ENTRY_ID, entryId)
+            .putExtra(ReminderActionReceiver.EXTRA_TITLE, title)
+            .putExtra(ReminderActionReceiver.EXTRA_DATE, date)
+            .putExtra(ReminderActionReceiver.EXTRA_TIME, time)
+            .putExtra(ReminderActionReceiver.EXTRA_NOTIF_ID, notificationId)
+        return PendingIntent.getBroadcast(
+            applicationContext,
+            entryId.hashCode() + requestOffset,
+            intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
     }
 
     companion object {
