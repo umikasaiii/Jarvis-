@@ -98,7 +98,9 @@ fun AgendaScreen(viewModel: AgendaViewModel = hiltViewModel()) {
     val today = LocalDate.now()
 
     var newTask by remember { mutableStateOf("") }
-    var completedOpen by remember { mutableStateOf(false) }
+    // Show the completed archive expanded by default — it was collapsed, which
+    // made finished tasks look like they had vanished.
+    var completedOpen by remember { mutableStateOf(true) }
     var editing by remember { mutableStateOf<AgendaEntry?>(null) }
     var subtaskParent by remember { mutableStateOf<AgendaEntry?>(null) }
     var newListDialog by remember { mutableStateOf(false) }

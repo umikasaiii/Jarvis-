@@ -59,7 +59,10 @@ class AgendaViewModel @Inject constructor(
         val parents = inTab.filter { it.parentId == null }
         TaskView(
             open = parents.filterNot { it.done }.map { it to childrenByParent[it.id].orEmpty() },
-            done = parents.filter { it.done },
+            // Completed archive ordered from the one ticked first onward. Items
+            // completed before completion dates were recorded (null) go last.
+            done = parents.filter { it.done }
+                .sortedWith(compareBy(nullsLast<java.time.LocalDate>()) { it.completedAt }),
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TaskView())
 
