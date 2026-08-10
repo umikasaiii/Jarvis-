@@ -48,9 +48,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -109,6 +111,39 @@ class SessionCoordinator @Inject constructor(
 
     private val machine = ConversationStateMachine()
     val state: StateFlow<ConversationState> = machine.state
+
+    init {
+        // Auto-recover from a transient error/resting state back to Idle. Without
+        // this the orb stayed red on ERRORE after, say, a wake-triggered session
+        // that heard no further speech, and the foreground wake word (which only
+        // runs while Idle) stopped responding until a manual press. A new session
+        // — or any other transition — cancels the pending reset via collectLatest,
+        // so this never interrupts a real conversation.
+        scope.launch {
+            machine.state.collectLatest { st ->
+                if (!st.isAutoRecoverable()) return@collectLatest
+                delay(ERROR_AUTO_RESET_MS)
+                if (machine.state.value == st) {
+                    _lastError.value = null
+                    machine.dispatch(ConversationEvent.Reset) // -> Idle
+                }
+            }
+        }
+    }
+
+    /**
+     * Transient resting states the orb should leave on its own after a moment, so
+     * hands-free listening resumes. States that need a user decision
+     * (PermissionRequired, ModelUnavailable, VaultUnavailable) or a hard stop
+     * (FatalError) are deliberately excluded — they wait for an explicit action.
+     */
+    private fun ConversationState.isAutoRecoverable(): Boolean = when (this) {
+        is ConversationState.RecoverableError,
+        ConversationState.BluetoothUnavailable,
+        ConversationState.NetworkUnavailable,
+        ConversationState.Cancelled -> true
+        else -> false
+    }
 
     val llmLoadState: StateFlow<LlmLoadState> = llm.loadState
     val loadedModelName: StateFlow<String?> = llm.loadedModelName
@@ -1654,6 +1689,13 @@ class SessionCoordinator @Inject constructor(
     companion object {
         const val DEFAULT_RECORD_MS = 3_000L
         const val FIXED_REPLY = "Sistema audio operativo. Sono pronto."
+
+        /**
+         * How long the orb shows a transient error before it clears itself back to
+         * Idle — long enough to see «ERRORE» and hear a short spoken hint, short
+         * enough that the wake word resumes quickly.
+         */
+        private const val ERROR_AUTO_RESET_MS = 4_000L
 
         /** Id range used by AssistantTaskWorker for "response ready" notifications. */
         private const val RESPONSE_NOTIFICATION_MIN = 3_000

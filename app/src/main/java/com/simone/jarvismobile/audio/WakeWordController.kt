@@ -76,6 +76,11 @@ class WakeWordController @Inject constructor(
                 _listeningForWake.value = false
                 if (heard && foreground.value && coordinator.state.value == ConversationState.Idle) {
                     Log.i(TAG, "wake_word_detected")
+                    // Let the wake recognizer fully release the shared recognition
+                    // service before the session grabs it, or the session's STT can
+                    // hit ERROR_RECOGNIZER_BUSY and the orb flashes an error.
+                    engine.cancel()
+                    delay(RELEASE_MS)
                     runCatching { coordinator.runSession() }
                 }
                 delay(GAP_MS)
@@ -94,5 +99,7 @@ class WakeWordController @Inject constructor(
         const val TAG = "JarvisWake"
         const val IDLE_POLL_MS = 500L
         const val GAP_MS = 250L
+        /** Grace for the shared recognizer to free up after a wake hit. */
+        const val RELEASE_MS = 350L
     }
 }

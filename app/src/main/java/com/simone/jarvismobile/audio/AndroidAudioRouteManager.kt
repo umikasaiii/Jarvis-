@@ -9,6 +9,7 @@ import android.os.Build
 import android.util.Log
 import androidx.annotation.RequiresApi
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -82,6 +83,14 @@ class AndroidAudioRouteManager @Inject constructor(
             @Suppress("DEPRECATION")
             audioManager.isBluetoothScoOn = input.kind.isBluetooth()
             input.kind.isBluetooth()
+        }
+
+        // Selecting a Bluetooth headset brings up the SCO voice link asynchronously.
+        // Capturing immediately would read the first moments from the phone mic (or
+        // nothing), which looks like "the AirPods aren't heard". Give SCO a brief
+        // moment to come up before the recorder starts.
+        if (applied && input.kind.isBluetooth()) {
+            delay(SCO_SETTLE_MS)
         }
 
         val output = currentOutputEndpoint()
@@ -217,6 +226,8 @@ class AndroidAudioRouteManager @Inject constructor(
 
     private companion object {
         const val TAG = "JarvisAudioRoute"
+        /** Grace for the Bluetooth SCO voice link to come up before capturing. */
+        const val SCO_SETTLE_MS = 350L
     }
 }
 
