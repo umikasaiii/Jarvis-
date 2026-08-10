@@ -111,7 +111,14 @@ class AddTaskTool(private val agenda: AgendaRepository) : Tool {
         val list = arguments.text("list") ?: AgendaEntry.DEFAULT_LIST
         val starred = arguments.text("starred") == "true"
 
-        val entry = AgendaEntry(date = date, time = time, text = text, list = list, starred = starred)
+        // A dated task notifies by default (at its hour, or the morning of),
+        // like a reminder; an undated Google-Tasks item has nothing to fire on.
+        val alerts = if (date != null) {
+            listOf(ReminderAlert(if (time != null) ReminderAlertType.AT_TIME else ReminderAlertType.MORNING_OF))
+        } else {
+            emptyList()
+        }
+        val entry = AgendaEntry(date = date, time = time, text = text, list = list, starred = starred, alerts = alerts)
         val saved = runCatching { agenda.add(entry) }.getOrDefault(false)
         if (!saved) return ToolResult.Failure("agenda_write_failed")
 

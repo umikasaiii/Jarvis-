@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.simone.jarvismobile.agenda.AgendaRepository
 import com.simone.jarvismobile.core.agenda.AgendaEntry
+import com.simone.jarvismobile.core.agenda.ReminderAlert
+import com.simone.jarvismobile.core.agenda.ReminderAlertType
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -86,7 +88,16 @@ class AgendaViewModel @Inject constructor(
         val list = _selectedList.value.takeIf { it != starredTab } ?: AgendaEntry.DEFAULT_LIST
         // A time with no date means "today at HH:MM" — the same as Google Tasks.
         val date = due ?: time?.let { LocalDate.now() }
-        val entry = AgendaEntry(date = date, time = time, text = clean, list = list, starred = starred)
+        // A dated task gets a notification by default, just like a reminder added
+        // by voice/chat: at its hour if timed, otherwise the morning of. An
+        // undated task has nothing to fire on, so it stays silent. The bell can
+        // be removed by hand from the dashboard.
+        val alerts = if (date != null) {
+            listOf(ReminderAlert(if (time != null) ReminderAlertType.AT_TIME else ReminderAlertType.MORNING_OF))
+        } else {
+            emptyList()
+        }
+        val entry = AgendaEntry(date = date, time = time, text = clean, list = list, starred = starred, alerts = alerts)
         if (!agenda.add(entry)) _message.value = "Non sono riuscito a salvare l'attività."
     }
 
