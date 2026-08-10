@@ -1,6 +1,8 @@
 package com.simone.jarvismobile.ui.automation
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -10,10 +12,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -93,6 +98,8 @@ fun AutomationsScreen(
             }
         }
 
+        EventBuilderCard(viewModel)
+
         if (message.isNotBlank()) {
             val ok = message.startsWith("Creata") || message.startsWith("Eliminata") ||
                 message.startsWith("Eseguita")
@@ -143,6 +150,154 @@ fun AutomationsScreen(
 
         OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) { Text("Indietro") }
     }
+}
+
+/** The event a device automation reacts to. Some carry a parameter (time/device/percent). */
+private enum class EventKind(val label: String) {
+    SCREEN_UNLOCK("Allo sblocco del telefono"),
+    MORNING("Primo sblocco al mattino"),
+    HEADPHONES("Quando collego le cuffie"),
+    BLUETOOTH("Quando si connette un Bluetooth"),
+    AIRPLANE_ON("Modalità aereo attivata"),
+    AIRPLANE_OFF("Modalità aereo disattivata"),
+    WIFI_ON("Wi-Fi acceso"),
+    WIFI_OFF("Wi-Fi spento"),
+    DATA_ON("Dati mobili attivati"),
+    DATA_OFF("Dati mobili disattivati"),
+    BATTERY("Batteria sotto una soglia"),
+    CHARGING("Quando metto in carica"),
+}
+
+private enum class ActionKind(val label: String) {
+    NOTIFY("Notifica"), SPEAK("A voce"), AGENDA("In agenda"), TOOL("Comando"),
+}
+
+/**
+ * Structured builder for device-event automations (choose event → action). Those
+ * events have no spoken grammar, so they are picked here rather than typed. The
+ * rule still lands in `Automazioni.md` and fires only while the "Automazioni
+ * attive" service is on (Impostazioni).
+ */
+@Composable
+private fun EventBuilderCard(viewModel: AutomationsViewModel) {
+    var event by remember { mutableStateOf(EventKind.SCREEN_UNLOCK) }
+    var eventMenu by remember { mutableStateOf(false) }
+    var actionKind by remember { mutableStateOf(ActionKind.NOTIFY) }
+    var actionText by remember { mutableStateOf("") }
+    var device by remember { mutableStateOf("") }
+    var morningHour by remember { mutableStateOf(7f) }
+    var percent by remember { mutableStateOf(20f) }
+
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("Crea per evento del telefono", style = MaterialTheme.typography.titleMedium, color = Ink)
+            Text(
+                "Per eventi come sblocco, cuffie, aereo o Wi-Fi. Richiede «Automazioni attive» " +
+                    "in Impostazioni per scattare ad app chiusa.",
+                style = MaterialTheme.typography.bodySmall,
+                color = Muted,
+            )
+
+            Text("Quando…", style = MaterialTheme.typography.titleSmall)
+            Box(Modifier.fillMaxWidth()) {
+                OutlinedButton(onClick = { eventMenu = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text(event.label)
+                }
+                DropdownMenu(expanded = eventMenu, onDismissRequest = { eventMenu = false }) {
+                    EventKind.entries.forEach { option ->
+                        DropdownMenuItem(
+                            text = { Text(option.label) },
+                            onClick = { event = option; eventMenu = false },
+                        )
+                    }
+                }
+            }
+
+            when (event) {
+                EventKind.MORNING -> {
+                    Text("Non prima delle %02d:00".format(morningHour.toInt()))
+                    Slider(
+                        value = morningHour,
+                        onValueChange = { morningHour = it },
+                        valueRange = 4f..12f,
+                        steps = 7,
+                    )
+                }
+                EventKind.BLUETOOTH -> OutlinedTextField(
+                    value = device,
+                    onValueChange = { device = it },
+                    label = { Text("Nome del dispositivo (vuoto = qualsiasi)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                EventKind.BATTERY -> {
+                    Text("Sotto il ${percent.toInt()}%")
+                    Slider(
+                        value = percent,
+                        onValueChange = { percent = it },
+                        valueRange = 5f..95f,
+                    )
+                }
+                else -> Unit
+            }
+
+            Text("…fai", style = MaterialTheme.typography.titleSmall)
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                ActionKind.entries.forEach { kind ->
+                    OutlinedButton(onClick = { actionKind = kind }) {
+                        Text(if (actionKind == kind) "● ${kind.label}" else kind.label)
+                    }
+                }
+            }
+            OutlinedTextField(
+                value = actionText,
+                onValueChange = { actionText = it },
+                label = { Text(if (actionKind == ActionKind.TOOL) "Comando (es. accendi la torcia)" else "Testo") },
+                modifier = Modifier.fillMaxWidth(),
+                maxLines = 2,
+            )
+
+            val ready = actionText.isNotBlank()
+            Button(
+                onClick = {
+                    viewModel.createBuilt(
+                        buildTrigger(event, morningHour.toInt(), device, percent.toInt()),
+                        buildAction(actionKind, actionText.trim()),
+                    )
+                    actionText = ""
+                    device = ""
+                },
+                enabled = ready,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Crea automazione") }
+        }
+    }
+}
+
+private fun buildTrigger(event: EventKind, morningHour: Int, device: String, percent: Int): Trigger =
+    when (event) {
+        EventKind.SCREEN_UNLOCK -> Trigger.ScreenUnlocked
+        EventKind.MORNING -> Trigger.MorningUnlock(java.time.LocalTime.of(morningHour.coerceIn(0, 23), 0))
+        EventKind.HEADPHONES -> Trigger.HeadphonesConnected
+        EventKind.BLUETOOTH -> Trigger.BluetoothConnected(device.trim())
+        EventKind.AIRPLANE_ON -> Trigger.AirplaneMode(on = true)
+        EventKind.AIRPLANE_OFF -> Trigger.AirplaneMode(on = false)
+        EventKind.WIFI_ON -> Trigger.WifiPower(on = true)
+        EventKind.WIFI_OFF -> Trigger.WifiPower(on = false)
+        EventKind.DATA_ON -> Trigger.MobileData(on = true)
+        EventKind.DATA_OFF -> Trigger.MobileData(on = false)
+        EventKind.BATTERY -> Trigger.BatteryBelow(percent.coerceIn(1, 99))
+        EventKind.CHARGING -> Trigger.ChargingStarted
+    }
+
+private fun buildAction(kind: ActionKind, text: String): Action = when (kind) {
+    ActionKind.NOTIFY -> Action.Notify(text)
+    ActionKind.SPEAK -> Action.Speak(text)
+    ActionKind.AGENDA -> Action.AddAgenda(text)
+    ActionKind.TOOL -> Action.Tool(text)
 }
 
 @Composable

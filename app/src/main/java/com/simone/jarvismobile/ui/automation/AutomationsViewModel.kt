@@ -54,6 +54,23 @@ class AutomationsViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Creates a rule from a structured [trigger] + [action] chosen in the UI —
+     * the way device-event automations (unlock, headphones, airplane…) are made,
+     * since those have no spoken grammar. Goes through the same [repository] as a
+     * phrased rule, so it lands in `Automazioni.md` identically.
+     */
+    fun createBuilt(trigger: com.simone.jarvismobile.core.automation.Trigger, action: com.simone.jarvismobile.core.automation.Action) =
+        viewModelScope.launch {
+            val rule = Automation(name = action.payload.take(60).ifBlank { "regola" }, trigger = trigger, action = action)
+            _message.value = if (repository.add(rule)) {
+                "Creata: ${AutomationCodec.describe(rule)}"
+            } else {
+                val why = repository.lastError.value
+                "Non sono riuscito a salvare la regola" + (if (why.isBlank()) "." else " ($why).")
+            }
+        }
+
     fun toggle(automation: Automation) = viewModelScope.launch {
         repository.setEnabled(automation.id, !automation.enabled)
     }
