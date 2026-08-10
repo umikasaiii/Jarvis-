@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -34,6 +35,14 @@ class VaultRepository @Inject constructor(
     private val settings: SettingsRepository,
 ) {
     private val memoryMutex = Mutex()
+
+    /**
+     * A reliable app-private copy of the memory records. The Obsidian vault can
+     * refuse writes (a read-only SAF grant, a provider that drops bytes), which
+     * used to make "ricorda …" silently fail; this local file always works, and
+     * the vault is kept as a best-effort mirror folded back in on every read.
+     */
+    private val localMemoryFile: File get() = File(context.filesDir, LOCAL_MEMORY_FILE)
 
     /** A raw Markdown note read from the vault. */
     data class RawNote(val path: String, val content: String)
@@ -123,7 +132,8 @@ class VaultRepository @Inject constructor(
         memoryMutex.withLock {
             val body = text.replace(Regex("""\s+"""), " ").trim()
             if (body.isBlank() || MemoryStructure.containsCredential(body)) return@withLock null
-            if (!isConfigured()) return@withLock null
+            // No vault required: the local store always accepts the write, and the
+            // vault is mirrored when present. So "ricorda …" works offline too.
             val now = System.currentTimeMillis()
             val fields = MemoryStructure.extract(body)
             val record = MemoryRecord(
@@ -137,10 +147,8 @@ class VaultRepository @Inject constructor(
                 dates = fields.dates,
             )
             val records = readMemoryRecordsUnlocked()
-            if (!writeJarvisFile(MEMORY_FILE, MemoryRecordCodec.render(records + record))) return@withLock null
-            // Verify the write actually landed before reporting success. Some SAF
-            // providers return a valid stream yet drop the bytes; without this the
-            // app said "Ho annotato nel vault" for a note that was never on disk.
+            if (!writeMemory(records + record)) return@withLock null
+            // Verify the write actually landed before reporting success.
             if (readMemoryRecordsUnlocked().any { it.id == record.id }) record else null
         }
 
@@ -160,46 +168,58 @@ class VaultRepository @Inject constructor(
                 dates = fields.dates,
             )
             val next = records.map { if (it.id == id) updated else it }
-            if (writeJarvisFile(MEMORY_FILE, MemoryRecordCodec.render(next))) updated else null
+            if (writeMemory(next)) updated else null
         }
 
     suspend fun deleteMemory(id: String): MemoryRecord? = memoryMutex.withLock {
         val records = readMemoryRecordsUnlocked()
         val removed = records.firstOrNull { it.id == id } ?: return@withLock null
-        if (writeJarvisFile(MEMORY_FILE, MemoryRecordCodec.render(records.filterNot { it.id == id }))) {
-            removed
-        } else {
-            null
-        }
+        if (writeMemory(records.filterNot { it.id == id })) removed else null
     }
 
     suspend fun readMemoryRecords(): List<MemoryRecord> = memoryMutex.withLock {
         readMemoryRecordsUnlocked()
     }
 
-    private suspend fun readMemoryRecordsUnlocked(): List<MemoryRecord> =
-        MemoryRecordCodec.parse(readJarvisFile(MEMORY_FILE).orEmpty())
+    private suspend fun readMemoryRecordsUnlocked(): List<MemoryRecord> {
+        val local = MemoryRecordCodec.parse(readLocalMemory())
+        val fromVault = MemoryRecordCodec.parse(readJarvisFile(MEMORY_FILE).orEmpty())
+        // Merge so neither side loses a record: the vault wins for ids in both (an
+        // Obsidian edit sticks), local-only records survive a vault that can't write.
+        val byId = LinkedHashMap<String, MemoryRecord>()
+        local.forEach { byId[it.id] = it }
+        fromVault.forEach { byId[it.id] = it }
+        return byId.values.toList()
+    }
+
+    /** Writes the whole record set to the reliable local file, mirroring to vault. */
+    private suspend fun writeMemory(records: List<MemoryRecord>): Boolean {
+        val rendered = MemoryRecordCodec.render(records)
+        val localOk = writeLocalMemory(rendered)
+        if (isConfigured()) writeJarvisFile(MEMORY_FILE, rendered) // best-effort mirror
+        return localOk
+    }
+
+    private suspend fun readLocalMemory(): String = withContext(Dispatchers.IO) {
+        runCatching { if (localMemoryFile.exists()) localMemoryFile.readText() else "" }.getOrDefault("")
+    }
+
+    private suspend fun writeLocalMemory(content: String): Boolean = withContext(Dispatchers.IO) {
+        runCatching { localMemoryFile.writeText(content); true }.getOrDefault(false)
+    }
 
     /**
      * Reads back the saved "ricorda …" lines from `JARVIS/Memoria.md`, newest
      * first. Used to answer "cosa devo fare?" from the file itself rather than
      * from the model, so recall can never be invented.
      */
-    suspend fun listMemories(limit: Int = 10): List<String> = withContext(Dispatchers.IO) {
-        val uriStr = settings.vaultUri.first()
-        if (uriStr.isBlank()) return@withContext emptyList()
-        val tree = DocumentFile.fromTreeUri(context, Uri.parse(uriStr)) ?: return@withContext emptyList()
-        runCatching {
-            val folder = tree.findFile(MEMORY_DIR)?.takeIf { it.isDirectory } ?: return@withContext emptyList()
-            val file = folder.childByName(MEMORY_FILE) ?: return@withContext emptyList()
-            val text = context.contentResolver.openInputStream(file.uri)
-                ?.bufferedReader()?.use { it.readText() } ?: return@withContext emptyList()
-            MemoryRecordCodec.parse(text)
-                .map { it.text }
-                .takeLast(limit)
-                .reversed()
-        }.getOrDefault(emptyList())
-    }
+    suspend fun listMemories(limit: Int = 10): List<String> =
+        // From the merged local+vault store, newest first — so recall works even
+        // when the vault refuses reads/writes, and is never invented by the model.
+        readMemoryRecords()
+            .sortedByDescending { it.createdAt }
+            .take(limit)
+            .map { it.text }
 
     /**
      * Reads a single file inside the `JARVIS/` folder of the vault, or null when
@@ -296,5 +316,7 @@ class VaultRepository @Inject constructor(
     private companion object {
         const val MEMORY_DIR = "JARVIS"
         const val MEMORY_FILE = "Memoria.md"
+        /** App-private mirror of the memory records; reliable when the vault isn't. */
+        const val LOCAL_MEMORY_FILE = "memoria.md"
     }
 }

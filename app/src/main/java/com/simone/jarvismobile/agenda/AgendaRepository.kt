@@ -205,37 +205,35 @@ class AgendaRepository @Inject constructor(
 
     // --- storage ---------------------------------------------------------
 
+    /**
+     * Reads the agenda by MERGING a reliable local copy with the vault file.
+     *
+     * The local copy (a plain app-private file, never subject to SAF quirks) is
+     * the safety net: it used to be cleared once a vault was connected, so when a
+     * vault reported a successful write but silently dropped the bytes, the next
+     * read came back empty and a following add overwrote the file with only the
+     * new entry — losing every earlier task. Now local is kept forever and folded
+     * in on every read: the vault's copy wins for entries present in both (so an
+     * Obsidian edit sticks), and entries that exist only locally are preserved
+     * (so a flaky vault can never lose an on-device add).
+     */
     private suspend fun readRaw(): String {
-        vault.readJarvisFile(AGENDA_FILE)?.let { fromVault ->
-            // A vault was connected after some entries were stored locally:
-            // fold them in once so nothing is lost, then keep using the vault.
-            val local = readLocal()
-            if (local.isNotBlank()) {
-                val merged = Agenda.sorted(
-                    (Agenda.parseFile(fromVault) + Agenda.parseFile(local)).distinct(),
-                )
-                if (vault.writeJarvisFile(AGENDA_FILE, Agenda.renderFile(merged))) {
-                    clearLocal()
-                    return Agenda.renderFile(merged)
-                }
-            }
-            return fromVault
-        }
-        // No file in the vault yet. If a vault exists, seed it with whatever is local.
-        if (vault.isConfigured()) {
-            val local = readLocal()
-            if (local.isNotBlank() && vault.writeJarvisFile(AGENDA_FILE, local)) {
-                clearLocal()
-                return local
-            }
-            return ""
-        }
-        return readLocal()
+        val localEntries = Agenda.parseFile(readLocal())
+        if (!vault.isConfigured()) return Agenda.renderFile(localEntries)
+        val vaultEntries = Agenda.parseFile(vault.readJarvisFile(AGENDA_FILE).orEmpty())
+        val byId = LinkedHashMap<String, AgendaEntry>()
+        localEntries.forEach { byId[it.id] = it }
+        vaultEntries.forEach { byId[it.id] = it } // vault overrides on shared ids
+        return Agenda.renderFile(byId.values.toList())
     }
 
     private suspend fun writeRaw(content: String): Boolean {
-        if (vault.isConfigured() && vault.writeJarvisFile(AGENDA_FILE, content)) return true
-        return writeLocal(content)
+        // Local first and always — it is the source that cannot silently fail.
+        val localOk = writeLocal(content)
+        // Mirror into the vault so Obsidian still sees the file; best-effort, and
+        // never the sole copy, so its flakiness can't lose data.
+        if (vault.isConfigured()) vault.writeJarvisFile(AGENDA_FILE, content)
+        return localOk
     }
 
     private suspend fun readLocal(): String = withContext(Dispatchers.IO) {
@@ -244,11 +242,6 @@ class AgendaRepository @Inject constructor(
 
     private suspend fun writeLocal(content: String): Boolean = withContext(Dispatchers.IO) {
         runCatching { localFile.writeText(content); true }.getOrDefault(false)
-    }
-
-    private suspend fun clearLocal() = withContext(Dispatchers.IO) {
-        runCatching { localFile.delete() }
-        Unit
     }
 
     private companion object {

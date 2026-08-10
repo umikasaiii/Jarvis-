@@ -225,7 +225,7 @@ class RememberTool(private val memory: MemoryIndex) : Tool {
         val saved = runCatching { memory.remember(text, kind) }.getOrNull()
         return when {
             saved != null -> {
-                val where = if (kind == MemoryKind.TEMPORARY) "per questa conversazione" else "nel vault"
+                val where = if (kind == MemoryKind.TEMPORARY) "per questa conversazione" else "in memoria"
                 ok("text" to text, "kind" to kind.name, "spoken" to "Ho annotato $where: $text")
             }
             // Honest failure: never claim a save that didn't happen. Tell the user
