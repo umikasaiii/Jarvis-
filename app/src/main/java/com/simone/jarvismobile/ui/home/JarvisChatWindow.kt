@@ -48,9 +48,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -88,6 +91,7 @@ import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.simone.jarvismobile.R
+import com.simone.jarvismobile.audio.ChatFocus
 import com.simone.jarvismobile.audio.ChatMessage
 import com.simone.jarvismobile.core.document.DocumentRecord
 import com.simone.jarvismobile.core.document.DocumentStatus
@@ -177,6 +181,8 @@ fun JarvisChatWindow(
 
     var textInput by remember { mutableStateOf("") }
     var showAttachSheet by remember { mutableStateOf(false) }
+    // Chat mode: normal, or focus the answer on saved memory / imported documents.
+    var chatFocus by remember { mutableStateOf(ChatFocus.ALL) }
     // Whether the next picked file is saved into the vault or only attached.
     var pendingSaveToVault by remember { mutableStateOf(false) }
 
@@ -283,6 +289,8 @@ fun JarvisChatWindow(
                 )
             }
 
+            ChatModePicker(current = chatFocus, onSelect = { chatFocus = it })
+
             ChatComposer(
                 text = textInput,
                 onTextChange = { textInput = it },
@@ -301,7 +309,7 @@ fun JarvisChatWindow(
                     } else {
                         val msg = textInput.trim()
                         if (msg.isNotEmpty()) {
-                            viewModel.onSendText(msg)
+                            viewModel.onSendText(msg, chatFocus)
                             textInput = ""
                         }
                     }
@@ -768,6 +776,52 @@ private fun MessageBubble(message: ChatMessage, assistantName: String, maxWidth:
 }
 
 // --- composer --------------------------------------------------------------
+
+private fun ChatFocus.label(): String = when (this) {
+    ChatFocus.ALL -> "Tutto"
+    ChatFocus.MEMORY -> "Focus memoria"
+    ChatFocus.KNOWLEDGE -> "Focus wiki / documenti"
+}
+
+/**
+ * The openable chat-mode chip: a tap reveals the three modes (everything, only
+ * memory, only imported documents/library). The choice restricts where the next
+ * question is answered from.
+ */
+@Composable
+private fun ChatModePicker(current: ChatFocus, onSelect: (ChatFocus) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        Row(
+            modifier = Modifier
+                .clip(RoundedCornerShape(50))
+                .clickable { open = true }
+                .padding(horizontal = 10.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.Filled.Tune,
+                contentDescription = "Modalità chat",
+                tint = if (current == ChatFocus.ALL) Muted else CyanBright,
+                modifier = Modifier.size(16.dp),
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                current.label(),
+                fontSize = 12.sp,
+                color = if (current == ChatFocus.ALL) Muted else CyanBright,
+            )
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            ChatFocus.entries.forEach { focus ->
+                DropdownMenuItem(
+                    text = { Text(focus.label()) },
+                    onClick = { onSelect(focus); open = false },
+                )
+            }
+        }
+    }
+}
 
 @Composable
 private fun ChatComposer(

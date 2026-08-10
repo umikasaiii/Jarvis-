@@ -1044,7 +1044,10 @@ class SessionCoordinator @Inject constructor(
     }
 
     private suspend fun processText(text: String, taskId: String?): String? {
-        val message = text.trim()
+        // The chat mode picker prefixes the input with a focus tag; split it back
+        // out so the user only ever sees their own words.
+        val (focus, raw) = ChatFocus.parse(text)
+        val message = raw.trim()
         if (message.isBlank()) return null
         return sessionMutex.withLock {
             _lastError.value = null
@@ -1053,7 +1056,11 @@ class SessionCoordinator @Inject constructor(
                 appendMessage(fromUser = true, text = message, taskId = taskId)
                 _transcript.value = message
                 _diagnostic.value = "chat scritta"
-                val answer = generateAnswer(message)
+                val answer = if (focus == ChatFocus.ALL) {
+                    generateAnswer(message)
+                } else {
+                    focusedAnswer(message, focus)
+                }
                 _reply.value = answer
                 appendMessage(fromUser = false, text = answer, taskId = taskId)
                 answer
@@ -1068,6 +1075,53 @@ class SessionCoordinator @Inject constructor(
                 _sending.value = false
             }
         }
+    }
+
+    /**
+     * Answers a question restricted to ONE source (the chat mode picker): the
+     * user's memory, or the imported documents / offline library. It gathers only
+     * that source, then — if a model is loaded — has it answer USING ONLY those
+     * passages (never inventing); with no model it returns the passages plainly.
+     * An empty source yields an honest "nothing found", not a guess.
+     */
+    private suspend fun focusedAnswer(query: String, focus: ChatFocus): String {
+        val source = when (focus) {
+            ChatFocus.MEMORY -> {
+                val hits = runCatching { memory.retrieveSmart(query, MEMORY_TOP_K) }.getOrDefault(emptyList())
+                hits.joinToString("\n") { "• ${it.chunk.text.replace('\n', ' ').trim().take(500)}" }
+            }
+            ChatFocus.KNOWLEDGE -> {
+                val lib = runCatching { knowledgeEvidence(query) }.getOrNull().orEmpty()
+                val docs = runCatching { documents.documentEvidence(query) }.getOrNull().orEmpty()
+                listOf(docs, lib).filter { it.isNotBlank() }.joinToString("\n\n")
+            }
+            ChatFocus.ALL -> ""
+        }.trim()
+
+        if (source.isBlank()) {
+            return when (focus) {
+                ChatFocus.MEMORY ->
+                    "Non ho trovato nulla nella tua memoria su questo."
+                else ->
+                    "Non ho trovato nulla nei tuoi documenti o nella conoscenza importata. " +
+                        "Aggiungine dalla sezione Documenti."
+            }
+        }
+
+        val heading = if (focus == ChatFocus.MEMORY) "Dalla tua memoria:" else "Dai tuoi documenti:"
+        if (llm.loadState.value != LlmLoadState.LOADED) return "$heading\n$source"
+
+        val prompt = buildString {
+            append("Rispondi alla domanda dell'utente USANDO SOLO le informazioni qui sotto. ")
+            append("Non aggiungere nulla che non sia scritto qui; se non bastano, dillo con semplicità.")
+            if (focus == ChatFocus.KNOWLEDGE) append(" Cita la fonte fra parentesi quando puoi.")
+            append("\n\nInformazioni:\n").append(source)
+            append("\n\nDomanda: ").append(query)
+            append("\nRisposta:")
+        }
+        return runCatching { llm.generate(prompt) }.getOrNull()
+            ?.let(AssistantReplyCleaner::clean)?.ifBlank { null }
+            ?: "$heading\n$source"
     }
 
     /**

@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.simone.jarvismobile.audio.AudioRouteState
+import com.simone.jarvismobile.audio.ChatFocus
 import com.simone.jarvismobile.audio.ChatMessage
 import com.simone.jarvismobile.audio.SessionCoordinator
 import com.simone.jarvismobile.audio.TtsState
@@ -116,8 +117,12 @@ class HomeViewModel @Inject constructor(
         coordinator.newConversation()
     }
 
-    /** Sends a typed message (written-chat alternative to voice). */
-    fun onSendText(text: String) {
-        viewModelScope.launch { taskQueue.enqueueResponse(text) }
+    /**
+     * Sends a typed message (written-chat alternative to voice). [focus] is the
+     * chat mode: normal, or restricted to memory / imported documents. It rides
+     * along as a tag on the queued text and is stripped before the message shows.
+     */
+    fun onSendText(text: String, focus: ChatFocus = ChatFocus.ALL) {
+        viewModelScope.launch { taskQueue.enqueueResponse(focus.tag(text)) }
     }
 }
