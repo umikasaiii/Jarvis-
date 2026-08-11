@@ -199,11 +199,11 @@ fun MemoryScreen(
             initialKind = MemoryKind.PERMANENT,
             initialCategory = "",
             allowTemporary = true,
-            showCategory = false,
+            showCategory = true,
             showDelete = false,
             enabled = !busy,
             onDismiss = { showAdd = false },
-            onSave = { text, kind, _ -> viewModel.add(text, kind); showAdd = false },
+            onSave = { text, kind, category -> viewModel.add(text, kind, category); showAdd = false },
             onDelete = {},
         )
     }

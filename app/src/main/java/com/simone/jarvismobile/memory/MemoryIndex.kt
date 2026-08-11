@@ -113,7 +113,12 @@ class MemoryIndex @Inject constructor(
      * Saves a user "remember this" note into the vault and refreshes the index so
      * it is retrievable straight away. Returns false if there is no writable vault.
      */
-    suspend fun remember(text: String, kind: MemoryKind? = null): MemoryRecord? {
+    suspend fun remember(
+        text: String,
+        kind: MemoryKind? = null,
+        category: String = "",
+        autoCategorize: Boolean = true,
+    ): MemoryRecord? {
         val resolved = kind ?: com.simone.jarvismobile.core.memory.MemoryStructure.classify(text)
         if (resolved == MemoryKind.TEMPORARY) {
             val ok = conversationMemory.addTemporary(text)
@@ -121,19 +126,25 @@ class MemoryIndex @Inject constructor(
             val now = System.currentTimeMillis()
             return MemoryRecord("temporary-$now", text.trim(), MemoryKind.TEMPORARY, now)
         }
-        // Save immediately with no category — the on-device model classification is
+        // Save immediately. A category picked by hand is honoured as-is. When none
+        // was given, the note stays uncategorised unless [autoCategorize] is on
+        // (the default for voice/chat saves), in which case it is sorted into a
+        // macro-category in the background — the on-device model classification is
         // an LLM generation that can take several seconds, and awaiting it here made
-        // the save time out ("L'operazione ha impiegato troppo tempo"). Persist first,
-        // then sort into a macro-category in the background; a missing/loading model
-        // just leaves it uncategorised (the archive falls back to the keyword topic).
-        val saved = vault.addMemory(text, resolved) ?: return null
+        // the save time out ("L'operazione ha impiegato troppo tempo"). A missing/
+        // loading model just leaves it uncategorised. Manual "+" adds pass
+        // autoCategorize=false so an unselected category means exactly "Senza
+        // categoria", ready for the AI button.
+        val saved = vault.addMemory(text, resolved, category) ?: return null
         rebuild()
-        bgScope.launch {
-            val category = runCatching { categoryClassifier.classify(text) }.getOrDefault("")
-            if (category.isNotBlank() &&
-                runCatching { vault.setMemoryCategory(saved.id, category) }.getOrNull() != null
-            ) {
-                rebuild()
+        if (category.isBlank() && autoCategorize) {
+            bgScope.launch {
+                val guessed = runCatching { categoryClassifier.classify(text) }.getOrDefault("")
+                if (guessed.isNotBlank() &&
+                    runCatching { vault.setMemoryCategory(saved.id, guessed) }.getOrNull() != null
+                ) {
+                    rebuild()
+                }
             }
         }
         return saved

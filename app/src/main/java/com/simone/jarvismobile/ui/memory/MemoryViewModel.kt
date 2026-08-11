@@ -71,10 +71,13 @@ class MemoryViewModel @Inject constructor(
         }
     }
 
-    fun add(text: String, kind: MemoryKind) {
+    fun add(text: String, kind: MemoryKind, category: String = "") {
         viewModelScope.launch {
             _busy.value = true
-            val saved = memory.remember(text, kind)
+            // Manual add: honour the picked category exactly; if none, leave it
+            // uncategorised (no AI) so the "Classifica con l'AI" button stays the
+            // explicit way to sort it.
+            val saved = memory.remember(text, kind, category, autoCategorize = false)
             _message.value = when {
                 saved != null && kind == MemoryKind.TEMPORARY -> "Aggiunto alla memoria breve."
                 saved != null -> "Ricordo salvato in memoria."
