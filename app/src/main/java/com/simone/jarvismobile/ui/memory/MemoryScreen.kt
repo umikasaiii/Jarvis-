@@ -2,15 +2,28 @@ package com.simone.jarvismobile.ui.memory
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.style.TextOverflow
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenu
@@ -203,6 +216,11 @@ fun MemoryScreen(
     }
 }
 
+/**
+ * A memory shown like a phone-notes card: a coloured accent bar, a one-line
+ * title, and a date + preview. Tapping it expands the full editor (text, type,
+ * category, delete). Collapsed by default so the archive reads like a note list.
+ */
 @Composable
 private fun MemoryRecordCard(
     record: MemoryRecord,
@@ -211,46 +229,116 @@ private fun MemoryRecordCard(
     onSetCategory: (String, String) -> Unit,
     onDelete: (String) -> Unit,
 ) {
+    var expanded by remember(record.id) { mutableStateOf(false) }
     var text by remember(record.id, record.updatedAt) { mutableStateOf(record.text) }
     var kind by remember(record.id, record.updatedAt) { mutableStateOf(record.kind) }
     var confirmDelete by remember(record.id) { mutableStateOf(false) }
 
+    val accent = if (record.kind == MemoryKind.SENSITIVE) {
+        MaterialTheme.colorScheme.error
+    } else {
+        accentForCategory(record.category)
+    }
+
     Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(
-                if (record.kind == MemoryKind.SENSITIVE) "Sensibile" else "Permanente",
-                color = if (record.kind == MemoryKind.SENSITIVE) MaterialTheme.colorScheme.error else Color(0xFF3FD8F0),
-                style = MaterialTheme.typography.labelLarge,
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .height(IntrinsicSize.Min)
+                .clickable { expanded = !expanded },
+        ) {
+            Box(
+                Modifier
+                    .width(4.dp)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(accent),
             )
-            OutlinedTextField(
-                value = text,
-                onValueChange = { text = it },
-                modifier = Modifier.fillMaxWidth(),
-                minLines = 2,
-            )
-            KindSelector(kind, onSelect = { kind = it }, includeTemporary = false)
-            CategorySelector(
-                current = record.category,
-                enabled = enabled,
-                onSelect = { onSetCategory(record.id, it) },
-            )
-            StructuredFields(record.topics, record.people, record.dates)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
-                    onClick = { onSave(record.id, text, kind) },
-                    enabled = enabled && text.isNotBlank(),
-                    modifier = Modifier.weight(1f),
-                ) { Text("Salva") }
-                OutlinedButton(
-                    onClick = {
-                        if (confirmDelete) onDelete(record.id) else confirmDelete = true
-                    },
+            Column(
+                Modifier.padding(start = 12.dp, end = 14.dp, top = 12.dp, bottom = 12.dp).fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(
+                    noteTitle(record.text) + if (record.kind == MemoryKind.SENSITIVE) "  🔒" else "",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    listOfNotNull(formatNoteDate(record.updatedAt).ifBlank { null }, notePreview(record.text))
+                        .joinToString("   "),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color(0xFF7C8B95),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        AnimatedVisibility(visible = expanded) {
+            Column(
+                Modifier.padding(start = 16.dp, end = 14.dp, bottom = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 2,
+                )
+                KindSelector(kind, onSelect = { kind = it }, includeTemporary = false)
+                CategorySelector(
+                    current = record.category,
                     enabled = enabled,
-                    modifier = Modifier.weight(1f),
-                ) { Text(if (confirmDelete) "Conferma elimina" else "Elimina") }
+                    onSelect = { onSetCategory(record.id, it) },
+                )
+                StructuredFields(record.topics, record.people, record.dates)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = { onSave(record.id, text, kind) },
+                        enabled = enabled && text.isNotBlank(),
+                        modifier = Modifier.weight(1f),
+                    ) { Text("Salva") }
+                    OutlinedButton(
+                        onClick = {
+                            if (confirmDelete) onDelete(record.id) else confirmDelete = true
+                        },
+                        enabled = enabled,
+                        modifier = Modifier.weight(1f),
+                    ) { Text(if (confirmDelete) "Conferma elimina" else "Elimina") }
+                }
             }
         }
     }
+}
+
+/** First line, trimmed to a note-title length. */
+private fun noteTitle(text: String): String {
+    val firstLine = text.trim().lineSequence().firstOrNull()?.trim().orEmpty()
+    return when {
+        firstLine.isBlank() -> "(vuoto)"
+        firstLine.length <= 48 -> firstLine
+        else -> firstLine.take(48).trimEnd() + "…"
+    }
+}
+
+/** The remainder of the note after the title, as a one-line preview, or null. */
+private fun notePreview(text: String): String? {
+    val clean = text.trim().replace(Regex("""\s+"""), " ")
+    return if (clean.length <= 48) null else clean.substring(48).trim().take(70).ifBlank { null }
+}
+
+private fun formatNoteDate(ms: Long): String =
+    if (ms <= 0L) "" else SimpleDateFormat("d MMM", Locale.ITALIAN).format(Date(ms))
+
+/** A stable accent colour per category, so notes read like colour-tagged cards. */
+private fun accentForCategory(category: String): Color {
+    val palette = listOf(
+        Color(0xFF3FD8F0), Color(0xFF7C5CFF), Color(0xFF2ECC71), Color(0xFFF1C40F),
+        Color(0xFFE67E22), Color(0xFFEB5AA6), Color(0xFF12D9FF), Color(0xFF9B59B6),
+    )
+    val key = category.ifBlank { UNCATEGORIZED }
+    return palette[(key.hashCode() and 0x7fffffff) % palette.size]
 }
 
 /** A tap-to-change category chip on a memory card, over the canonical list. */
