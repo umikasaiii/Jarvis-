@@ -11,6 +11,7 @@ import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -47,7 +48,24 @@ class AndroidOnDeviceSpeechEngine @Inject constructor(
             SpeechRecognizer.isRecognitionAvailable(context)
         }
 
-    override suspend fun transcribe(languageTag: String): SttResult = withContext(Dispatchers.Main) {
+    /**
+     * On a cold start the recognition service is not yet bound, so the very first
+     * `startListening` frequently returns a transient client/busy error before it
+     * warms up — the orb "went to error a few times, then started". Retry those
+     * transient errors once (after a short settle) with a fresh recognizer, so the
+     * first press just works. A real no-speech / permission / unavailable result
+     * is returned as-is.
+     */
+    override suspend fun transcribe(languageTag: String): SttResult {
+        val first = attempt(languageTag)
+        if (first is SttResult.Failure && first.code in TRANSIENT_CODES) {
+            delay(300)
+            return attempt(languageTag)
+        }
+        return first
+    }
+
+    private suspend fun attempt(languageTag: String): SttResult = withContext(Dispatchers.Main) {
         _partial.value = ""
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             !runCatching { SpeechRecognizer.isOnDeviceRecognitionAvailable(context) }.getOrDefault(false)
@@ -136,5 +154,11 @@ class AndroidOnDeviceSpeechEngine @Inject constructor(
     private companion object {
         const val TAG = "JarvisStt"
         const val RECOGNITION_TIMEOUT_MS = 20_000L
+        // Transient recognizer errors worth one retry on a cold start:
+        // ERROR_CLIENT (5), ERROR_RECOGNIZER_BUSY (8), ERROR_SERVER (4), and the
+        // create/exception paths — never NoSpeech, permission or unavailable.
+        val TRANSIENT_CODES = setOf(
+            "stt_error_5", "stt_error_8", "stt_error_4", "stt_exception",
+        )
     }
 }
