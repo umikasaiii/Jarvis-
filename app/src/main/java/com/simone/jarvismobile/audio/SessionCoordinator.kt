@@ -47,7 +47,9 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -288,6 +290,15 @@ class SessionCoordinator @Inject constructor(
 
     private val sessionMutex = Mutex()
 
+    /**
+     * The coroutine running the current voice turn, owned by the coordinator's own
+     * [scope] (not the caller's) so [cancel] can actually stop it. Launching from a
+     * viewModelScope meant a stop only cancelled the recognizer while this coroutine
+     * stayed suspended inside stt.transcribe() holding [sessionMutex] — so the next
+     * press hit "already_running" and the orb froze on "Pronto".
+     */
+    @Volatile private var sessionJob: Job? = null
+
     /** A tool call awaiting the user's spoken/typed confirmation, if any. */
     @Volatile private var pendingConfirmation: com.simone.jarvismobile.core.protocol.ToolCall? = null
 
@@ -315,6 +326,20 @@ class SessionCoordinator @Inject constructor(
      * the one shared engine would fight over the microphone.
      */
     @Volatile private var translatorTakingOver = false
+
+    /**
+     * Entry point for the orb/tile/wake word. Launches the turn on the
+     * coordinator's own scope and remembers the job, first waiting for any
+     * previous turn to fully unwind (so its [sessionMutex] is released) — this is
+     * what lets a stopped session restart instead of freezing on "Pronto".
+     */
+    fun startSession() {
+        val previous = sessionJob
+        sessionJob = scope.launch {
+            runCatching { previous?.cancelAndJoin() }
+            runSession()
+        }
+    }
 
     /** Runs one conversation turn. Safe to call repeatedly; ignores overlap. */
     suspend fun runSession() {
@@ -1684,6 +1709,11 @@ class SessionCoordinator @Inject constructor(
         audioCapture.cancel()
         tts.stop()
         router.cancel()
+        // Stop the running turn itself, not just the recognizer, so it unwinds out
+        // of stt.transcribe() and releases sessionMutex — otherwise the next press
+        // sees the mutex still locked and the orb stays on "Pronto".
+        sessionJob?.cancel()
+        sessionJob = null
         machine.dispatch(ConversationEvent.CancelRequested)
     }
 

@@ -95,7 +95,7 @@ class HomeViewModel @Inject constructor(
      * microphone use stays visible.
      */
     fun onTalkPressed() {
-        viewModelScope.launch { coordinator.runSession() }
+        coordinator.startSession()
     }
 
     fun onCancel() {
