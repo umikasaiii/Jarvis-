@@ -13,9 +13,11 @@ import com.simone.jarvismobile.tools.AlarmTool
 import com.simone.jarvismobile.tools.BatteryTool
 import com.simone.jarvismobile.tools.FlashlightTool
 import com.simone.jarvismobile.tools.ListAgendaTool
+import com.simone.jarvismobile.tools.ForgetMemoryTool
 import com.simone.jarvismobile.tools.ListMemoriesTool
 import com.simone.jarvismobile.tools.SearchKnowledgeTool
 import com.simone.jarvismobile.tools.RememberTool
+import com.simone.jarvismobile.tools.UpdateMemoryTool
 import com.simone.jarvismobile.tools.TimeTool
 import com.simone.jarvismobile.tools.TimeUntilTool
 import com.simone.jarvismobile.tools.TimerTool
