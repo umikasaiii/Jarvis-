@@ -11,9 +11,12 @@ import com.simone.jarvismobile.core.memory.HybridCandidate
 import com.simone.jarvismobile.core.memory.HybridRanker
 import com.simone.jarvismobile.core.memory.RankedChunk
 import com.simone.jarvismobile.core.memory.RetrievalRanker
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -54,6 +57,10 @@ class MemoryIndex @Inject constructor(
     @Volatile private var lastBuiltAt: Long = 0L
     private val ranker = RetrievalRanker()
     private val buildMutex = Mutex()
+
+    /** Background scope for best-effort work (AI categorisation) that must never
+     * block a save on the tool's short timeout. */
+    private val bgScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     /** Builds the index only if a vault is set and it has not been built yet. */
     suspend fun ensureBuilt() {
@@ -114,12 +121,21 @@ class MemoryIndex @Inject constructor(
             val now = System.currentTimeMillis()
             return MemoryRecord("temporary-$now", text.trim(), MemoryKind.TEMPORARY, now)
         }
-        // Let the on-device model sort it into a macro-category; best-effort, so a
-        // missing/loading model just leaves it uncategorised (the archive falls
-        // back to the keyword topic) and never blocks the save.
-        val category = runCatching { categoryClassifier.classify(text) }.getOrDefault("")
-        val saved = vault.addMemory(text, resolved, category)
-        if (saved != null) rebuild()
+        // Save immediately with no category — the on-device model classification is
+        // an LLM generation that can take several seconds, and awaiting it here made
+        // the save time out ("L'operazione ha impiegato troppo tempo"). Persist first,
+        // then sort into a macro-category in the background; a missing/loading model
+        // just leaves it uncategorised (the archive falls back to the keyword topic).
+        val saved = vault.addMemory(text, resolved) ?: return null
+        rebuild()
+        bgScope.launch {
+            val category = runCatching { categoryClassifier.classify(text) }.getOrDefault("")
+            if (category.isNotBlank() &&
+                runCatching { vault.setMemoryCategory(saved.id, category) }.getOrNull() != null
+            ) {
+                rebuild()
+            }
+        }
         return saved
     }
 

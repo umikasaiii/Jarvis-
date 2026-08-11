@@ -78,29 +78,17 @@ fun MemoryScreen(
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Text("Memoria V2", style = MaterialTheme.typography.headlineSmall)
+        Text("Memoria", style = MaterialTheme.typography.headlineSmall)
 
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("Vault: ${vaultName ?: "—"}", style = MaterialTheme.typography.titleMedium)
-                Text("Stato: ${statusLabel(status)}")
+                Text("${records.size} ricordi salvati", style = MaterialTheme.typography.titleMedium)
                 Text(
-                    "${status.noteCount} note · ${status.chunkCount} frammenti · ${records.size} ricordi",
+                    "Tutto è salvato sul dispositivo. Un vault Obsidian è facoltativo: se collegato, i " +
+                        "ricordi vengono anche rispecchiati lì.",
                     style = MaterialTheme.typography.bodySmall,
                 )
                 status.lastError?.let { Text("Errore: $it", color = MaterialTheme.colorScheme.error) }
-            }
-        }
-
-        Button(
-            onClick = { pickVault.launch(null) },
-            enabled = !busy,
-            modifier = Modifier.fillMaxWidth(),
-        ) { Text(if (status.configured) "Cambia cartella vault" else "Scegli cartella vault") }
-
-        if (status.configured) {
-            OutlinedButton(onClick = viewModel::reindex, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
-                Text(if (busy) "Sincronizzazione…" else "Sincronizza da Obsidian")
             }
         }
 
@@ -137,17 +125,16 @@ fun MemoryScreen(
                 KindSelector(newKind, onSelect = { newKind = it }, includeTemporary = true)
                 if (newKind == MemoryKind.SENSITIVE) {
                     Text(
-                        "Il contenuto sarà marcato sensibile nel vault. Password, PIN, OTP e token non vengono salvati.",
+                        "Il contenuto sarà marcato come sensibile. Password, PIN, OTP e token non vengono salvati.",
                         color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
                 Button(
                     onClick = { viewModel.add(newText, newKind); newText = "" },
-                    enabled = newText.isNotBlank() && !busy &&
-                        (newKind == MemoryKind.TEMPORARY || status.configured),
+                    enabled = newText.isNotBlank() && !busy,
                     modifier = Modifier.fillMaxWidth(),
-                ) { Text(if (newKind == MemoryKind.TEMPORARY) "Aggiungi alla conversazione" else "Salva nel vault") }
+                ) { Text(if (newKind == MemoryKind.TEMPORARY) "Aggiungi alla conversazione" else "Salva in memoria") }
             }
         }
 
@@ -200,15 +187,36 @@ fun MemoryScreen(
 
         message?.let { Text(it, color = Color(0xFF3FD8F0), fontWeight = FontWeight.Medium) }
 
-        if (status.configured) {
-            OutlinedButton(onClick = viewModel::disconnect, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
-                Text("Disconnetti vault")
+        // Optional Obsidian mirror — the memory works fully without it.
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Vault Obsidian (facoltativo)", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    if (status.configured) "Collegato: ${vaultName ?: "—"}" else "Nessun vault collegato",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Button(
+                    onClick = { pickVault.launch(null) },
+                    enabled = !busy,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text(if (status.configured) "Cambia cartella vault" else "Collega un vault") }
+                if (status.configured) {
+                    OutlinedButton(onClick = viewModel::reindex, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                        Text(if (busy) "Sincronizzazione…" else "Sincronizza da Obsidian")
+                    }
+                    OutlinedButton(
+                        onClick = viewModel::disconnect,
+                        enabled = !busy,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Disconnetti vault") }
+                }
             }
         }
+
         OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) { Text("Indietro") }
 
         Text(
-            "Tutto resta sul dispositivo · Obsidian è la fonte di verità · nessun salvataggio segreto",
+            "Tutto resta sul dispositivo · nessun salvataggio segreto",
             style = MaterialTheme.typography.bodySmall,
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth(),
@@ -387,11 +395,4 @@ private fun MemoryKind.label(): String = when (this) {
     MemoryKind.TEMPORARY -> "Temporaneo"
     MemoryKind.PERMANENT -> "Permanente"
     MemoryKind.SENSITIVE -> "Sensibile"
-}
-
-private fun statusLabel(s: com.simone.jarvismobile.memory.MemoryIndex.Status): String = when {
-    s.building -> "Sincronizzazione in corso…"
-    !s.configured -> "Nessun vault collegato"
-    s.chunkCount > 0 -> "Pronta"
-    else -> "Collegato (vuoto)"
 }

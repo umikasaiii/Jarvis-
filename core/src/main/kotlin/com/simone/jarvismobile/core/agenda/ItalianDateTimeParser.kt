@@ -78,6 +78,18 @@ object ItalianDateTimeParser {
             Regex("""\b(stamattina|mattina|mattino)\b""").containsMatchIn(lower) -> period = DayPeriod.MATTINA
         }
 
+        // "questa mattina" / "questo pomeriggio" / "stasera" mean today. Strip the
+        // whole demonstrative phrase from the title so a leftover "questa" doesn't
+        // end up in the reminder text (e.g. "questa mattina alle 10 fare l'ordine"
+        // must become "fare l'ordine", never "questa fare l'ordine").
+        val demonstrative = Regex(
+            """(?<!\p{L})quest['oa]?\s+(?:mattina|mattino|pomeriggio|sera|serata|notte)(?!\p{L})""",
+        )
+        if (demonstrative.containsMatchIn(rest)) {
+            date = now.toLocalDate()
+            rest = demonstrative.replace(rest, " ")
+        }
+
         // --- Explicit clock time -------------------------------------------
         Regex("""\b(?:alle|ore|all')\s*(\d{1,2})[:.](\d{2})\b""").find(lower)?.let { m ->
             val h = m.groupValues[1].toInt()

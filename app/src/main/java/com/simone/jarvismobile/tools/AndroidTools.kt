@@ -183,12 +183,14 @@ class FlashlightTool(private val context: Context) : Tool {
 }
 
 /**
- * Saves a note into the Obsidian vault (Phase 5 memory). Writing to the user's
- * notes is a real write, so it is classified above read-only.
+ * Saves a note into JARVIS's own local memory (Phase 5). Writing to the user's
+ * notes is a real write, so it is classified above read-only. Local-first: the
+ * save always lands in app-private storage and is mirrored to an Obsidian vault
+ * only when one happens to be connected.
  */
 class RememberTool(private val memory: MemoryIndex) : Tool {
     override val name = "remember"
-    override val description = "Salva un appunto nella memoria (vault Obsidian)."
+    override val description = "Salva un appunto nella memoria."
     override val policy = ToolPolicy.CONFIRMING_WRITE
     override val sensitivity = SensitivityLevel.PERSONAL
     override val requiresNetwork = false
@@ -211,8 +213,8 @@ class RememberTool(private val memory: MemoryIndex) : Tool {
         } ?: MemoryStructure.classify(text)
         val target = when (kind) {
             MemoryKind.TEMPORARY -> "nella memoria breve di questa conversazione"
-            MemoryKind.PERMANENT -> "in JARVIS/Memoria.md nel vault Obsidian"
-            MemoryKind.SENSITIVE -> "come dato sensibile in JARVIS/Memoria.md"
+            MemoryKind.PERMANENT -> "in memoria"
+            MemoryKind.SENSITIVE -> "in memoria, come dato sensibile"
         }
         return "Confermi di salvare “$text” $target?"
     }
@@ -223,20 +225,14 @@ class RememberTool(private val memory: MemoryIndex) : Tool {
             MemoryKind.entries.firstOrNull { it.name.equals(raw, ignoreCase = true) }
         } ?: MemoryStructure.classify(text)
         val saved = runCatching { memory.remember(text, kind) }.getOrNull()
-        return when {
-            saved != null -> {
-                val where = if (kind == MemoryKind.TEMPORARY) "per questa conversazione" else "in memoria"
-                ok("text" to text, "kind" to kind.name, "spoken" to "Ho annotato $where: $text")
-            }
-            // Honest failure: never claim a save that didn't happen. Tell the user
-            // whether there's simply no vault, or the vault refused the write.
-            !memory.isConfigured() -> ok(
-                "spoken" to "Non ho un vault Obsidian collegato, quindi non posso salvarlo. " +
-                    "Collegalo in Impostazioni › Memoria.",
-            )
-            else -> ok(
-                "spoken" to "Non sono riuscito a salvarlo: il vault non ha accettato la scrittura. " +
-                    "Controlla i permessi della cartella in Impostazioni › Memoria.",
+        return if (saved != null) {
+            val where = if (kind == MemoryKind.TEMPORARY) "per questa conversazione" else "in memoria"
+            ok("text" to text, "kind" to kind.name, "spoken" to "Ho annotato $where: $text")
+        } else {
+            // Local-first, so a save should always land; getting here means the
+            // local write itself failed. Never claim a save that didn't happen.
+            ok(
+                "spoken" to "Non sono riuscito a salvarlo in memoria. Riprova tra un momento.",
             )
         }
     }
