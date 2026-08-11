@@ -49,20 +49,24 @@ class AndroidOnDeviceSpeechEngine @Inject constructor(
         }
 
     /**
-     * On a cold start the recognition service is not yet bound, so the very first
-     * `startListening` frequently returns a transient client/busy error before it
-     * warms up — the orb "went to error a few times, then started". Retry those
-     * transient errors once (after a short settle) with a fresh recognizer, so the
-     * first press just works. A real no-speech / permission / unavailable result
-     * is returned as-is.
+     * On a cold start the recognition service is not yet bound, so the first few
+     * `startListening` calls return a transient client/busy/server error before it
+     * warms up — the orb "went to error a few times, then started". A single retry
+     * wasn't enough: the service can need most of a second to bind. So retry the
+     * transient errors several times with a growing settle (0 → 250 → 500 → 900 →
+     * 1400 ms) and a fresh recognizer each time, so the first press just works. A
+     * real no-speech / permission / unavailable / language result is returned as-is
+     * the moment it appears — those are never retried.
      */
     override suspend fun transcribe(languageTag: String): SttResult {
-        val first = attempt(languageTag)
-        if (first is SttResult.Failure && first.code in TRANSIENT_CODES) {
-            delay(300)
-            return attempt(languageTag)
+        var lastTransient: SttResult.Failure? = null
+        for (settle in RETRY_BACKOFF_MS) {
+            if (settle > 0) delay(settle)
+            val r = attempt(languageTag)
+            if (r !is SttResult.Failure || r.code !in TRANSIENT_CODES) return r
+            lastTransient = r
         }
-        return first
+        return lastTransient ?: SttResult.Failure("stt_unknown")
     }
 
     private suspend fun attempt(languageTag: String): SttResult = withContext(Dispatchers.Main) {
@@ -154,11 +158,17 @@ class AndroidOnDeviceSpeechEngine @Inject constructor(
     private companion object {
         const val TAG = "JarvisStt"
         const val RECOGNITION_TIMEOUT_MS = 20_000L
-        // Transient recognizer errors worth one retry on a cold start:
-        // ERROR_CLIENT (5), ERROR_RECOGNIZER_BUSY (8), ERROR_SERVER (4), and the
-        // create/exception paths — never NoSpeech, permission or unavailable.
+        // Settle delays before each attempt. The first is immediate; the rest grow
+        // to give the recognition service time to bind on a cold start. Up to five
+        // attempts total, ~3 s of retries in the worst case.
+        val RETRY_BACKOFF_MS = listOf(0L, 250L, 500L, 900L, 1400L)
+        // Transient recognizer errors worth retrying on a cold start:
+        // ERROR_CLIENT (5), ERROR_RECOGNIZER_BUSY (8), ERROR_SERVER (4),
+        // ERROR_SERVER_DISCONNECTED (11), and the create/exception paths —
+        // never NoSpeech, permission, language or unavailable.
         val TRANSIENT_CODES = setOf(
-            "stt_error_5", "stt_error_8", "stt_error_4", "stt_exception",
+            "stt_error_5", "stt_error_8", "stt_error_4", "stt_error_11",
+            "stt_exception", "stt_unknown",
         )
     }
 }
