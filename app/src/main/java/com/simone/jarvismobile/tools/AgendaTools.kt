@@ -72,7 +72,7 @@ class AddReminderTool(private val agenda: AgendaRepository) : Tool {
             "date" to date.toString(),
             "time" to (time?.toString() ?: ""),
             "text" to text,
-            "spoken" to "Segnato: $text, $whenSaid. Ti avviserò; puoi togliere la notifica dall'agenda.",
+            "spoken" to "Segnato: $text, $whenSaid.",
         )
     }
 }

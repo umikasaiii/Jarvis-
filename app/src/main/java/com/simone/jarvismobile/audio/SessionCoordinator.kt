@@ -1086,29 +1086,28 @@ class SessionCoordinator @Inject constructor(
      */
     private suspend fun focusedAnswer(query: String, focus: ChatFocus): String {
         val source = when (focus) {
+            // Memoria + documenti importati.
             ChatFocus.MEMORY -> {
                 val hits = runCatching { memory.retrieveSmart(query, MEMORY_TOP_K) }.getOrDefault(emptyList())
-                hits.joinToString("\n") { "• ${it.chunk.text.replace('\n', ' ').trim().take(500)}" }
-            }
-            ChatFocus.KNOWLEDGE -> {
-                val lib = runCatching { knowledgeEvidence(query) }.getOrNull().orEmpty()
+                val mem = hits.joinToString("\n") { "• ${it.chunk.text.replace('\n', ' ').trim().take(500)}" }
                 val docs = runCatching { documents.documentEvidence(query) }.getOrNull().orEmpty()
-                listOf(docs, lib).filter { it.isNotBlank() }.joinToString("\n\n")
+                listOf(mem, docs).filter { it.isNotBlank() }.joinToString("\n\n")
             }
+            // Solo la conoscenza offline (wiki/guide), non i documenti personali.
+            ChatFocus.KNOWLEDGE -> runCatching { knowledgeEvidence(query) }.getOrNull().orEmpty()
             ChatFocus.ALL -> ""
         }.trim()
 
         if (source.isBlank()) {
             return when (focus) {
                 ChatFocus.MEMORY ->
-                    "Non ho trovato nulla nella tua memoria su questo."
+                    "Non ho trovato nulla nella tua memoria o nei tuoi documenti su questo."
                 else ->
-                    "Non ho trovato nulla nei tuoi documenti o nella conoscenza importata. " +
-                        "Aggiungine dalla sezione Documenti."
+                    "Non ho trovato nulla nella conoscenza offline importata."
             }
         }
 
-        val heading = if (focus == ChatFocus.MEMORY) "Dalla tua memoria:" else "Dai tuoi documenti:"
+        val heading = if (focus == ChatFocus.MEMORY) "Dalla tua memoria:" else "Dalla conoscenza:"
         if (llm.loadState.value != LlmLoadState.LOADED) return "$heading\n$source"
 
         val prompt = buildString {

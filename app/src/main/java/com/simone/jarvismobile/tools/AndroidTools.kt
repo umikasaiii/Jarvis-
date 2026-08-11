@@ -338,9 +338,8 @@ class ListMemoriesTool(private val memory: MemoryIndex) : Tool {
     override fun validate(arguments: JsonObject): String? = null
 
     override suspend fun execute(arguments: JsonObject): ToolResult {
-        if (!memory.isConfigured()) {
-            return ok("spoken" to "Non ho un vault collegato. Aprilo in Impostazioni › Memoria.")
-        }
+        // Local-first: the archive works without a vault, so never gate on one —
+        // just read whatever is saved (locally and, if present, in the vault).
         val items = runCatching { memory.listMemories(10) }.getOrDefault(emptyList())
         val spoken = when {
             items.isEmpty() -> "Non ho nessun appunto salvato."

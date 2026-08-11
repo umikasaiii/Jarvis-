@@ -614,8 +614,13 @@ object CommandMatcher {
     private val TASK_LIST_RE = Regex(
         """\b(?:(?:alla|nella|in|della|dalla|sulla)\s+)?lista\s+([\p{L}][\p{L}0-9]*)""",
     )
-    /** Marks the task as starred ("speciale", "preferita"). */
-    private val TASK_STAR_RE = Regex("""\b(special[ei]|preferit\w+)\b""")
+    /**
+     * Marks the task as starred. Only an explicit "speciale/speciali" flag — the
+     * adjective "preferita/preferito" was catching preference statements ("la mia
+     * pizza preferita è …") and even questions and turning them into starred
+     * tasks instead of memories.
+     */
+    private val TASK_STAR_RE = Regex("""\b(special[ei])\b""")
     /** Leading scaffolding stripped from the task title. */
     private val TASK_LEAD_RE = Regex(
         """^(?:(?:aggiung\w*|crea\w*|mett\w*|segna\w*|inserisc\w*|nuov[ao]|un[' ]?|una)\s+)*""" +

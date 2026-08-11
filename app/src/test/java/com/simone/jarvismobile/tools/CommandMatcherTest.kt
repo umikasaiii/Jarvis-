@@ -31,6 +31,20 @@ class CommandMatcherTest {
     }
 
     @Test
+    fun preferenceStatementIsAMemoryNotAStarredTask() {
+        val m = CommandMatcher.match("Ricorda che la mia pizza preferita è la boscaiola") as Match.Run
+        assertEquals("remember", m.call.name)
+        assertTrue(m.call.arguments["text"]?.jsonPrimitive?.content?.contains("boscaiola") == true)
+    }
+
+    @Test
+    fun explicitSpecialeStillMakesAStarredTask() {
+        val m = CommandMatcher.match("aggiungi attività speciale chiamare Luca") as Match.Run
+        assertEquals("add_task", m.call.name)
+        assertEquals("true", m.call.arguments["starred"]?.jsonPrimitive?.content)
+    }
+
+    @Test
     fun forgetCommandDeletesAMemoryByText() {
         val m = CommandMatcher.match("dimentica che mi piace il ketchup") as Match.Run
         assertEquals("forget_memory", m.call.name)

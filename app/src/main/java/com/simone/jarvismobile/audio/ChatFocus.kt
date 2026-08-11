@@ -3,8 +3,8 @@ package com.simone.jarvismobile.audio
 /**
  * Where a typed chat question should be answered from, chosen with the mode
  * picker in the chat. [ALL] is the normal assistant (tools + model + every
- * source); [MEMORY] answers only from the user's saved memory; [KNOWLEDGE]
- * answers only from imported documents and the offline library.
+ * source); [MEMORY] answers only from the user's saved memory and imported
+ * documents; [KNOWLEDGE] answers only from the offline library (wiki/guides).
  *
  * The mode travels with the message through the existing persisted response
  * queue as a short prefix tag, so no database column has to change. The tag is

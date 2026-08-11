@@ -779,8 +779,8 @@ private fun MessageBubble(message: ChatMessage, assistantName: String, maxWidth:
 
 private fun ChatFocus.label(): String = when (this) {
     ChatFocus.ALL -> "Tutto"
-    ChatFocus.MEMORY -> "Focus memoria"
-    ChatFocus.KNOWLEDGE -> "Focus wiki / documenti"
+    ChatFocus.MEMORY -> "Focus memoria / doc"
+    ChatFocus.KNOWLEDGE -> "Focus wiki"
 }
 
 /**
