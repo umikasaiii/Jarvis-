@@ -2,56 +2,65 @@ package com.simone.jarvismobile.ui.memory
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.text.style.TextOverflow
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.simone.jarvismobile.core.memory.MemoryCategories
 import com.simone.jarvismobile.core.memory.MemoryKind
 import com.simone.jarvismobile.core.memory.MemoryRecord
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 private const val UNCATEGORIZED = "Senza categoria"
+private val MUTED = Color(0xFF7C8B95)
 
-/** Memory V2: temporary recap plus editable, structured Obsidian memories. */
+/**
+ * Memoria, laid out like a phone notes app: a title, colour-tagged note tiles in
+ * a two-column grid grouped by category, and a "+" button that opens an editor.
+ * Everything is stored on the device; an Obsidian vault is an optional mirror.
+ */
 @Composable
 fun MemoryScreen(
     onBack: () -> Unit,
@@ -64,97 +73,48 @@ fun MemoryScreen(
     val busy by viewModel.busy.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
 
-    var newText by remember { mutableStateOf("") }
-    var newKind by remember { mutableStateOf(MemoryKind.PERMANENT) }
+    var showAdd by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf<MemoryRecord?>(null) }
 
     val pickVault = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocumentTree(),
     ) { uri -> uri?.let(viewModel::onVaultPicked) }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        Text("Memoria", style = MaterialTheme.typography.headlineSmall)
-
-        Card(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("${records.size} ricordi salvati", style = MaterialTheme.typography.titleMedium)
-                Text(
-                    "Tutto è salvato sul dispositivo. Un vault Obsidian è facoltativo: se collegato, i " +
-                        "ricordi vengono anche rispecchiati lì.",
-                    style = MaterialTheme.typography.bodySmall,
-                )
-                status.lastError?.let { Text("Errore: $it", color = MaterialTheme.colorScheme.error) }
+    Scaffold(
+        floatingActionButton = {
+            FloatingActionButton(onClick = { showAdd = true }) {
+                Text("+", style = MaterialTheme.typography.headlineMedium)
             }
-        }
-
-        Card(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Memoria breve", style = MaterialTheme.typography.titleMedium)
-                Text(
-                    "Privata e temporanea: riassume conversazioni lunghe senza una seconda generazione AI. " +
-                        "Si cancella con “Nuova conversazione”.",
-                    style = MaterialTheme.typography.bodySmall,
-                )
-                if (shortTerm.isEmpty) {
-                    Text("Nessun riepilogo temporaneo.")
-                } else {
-                    shortTerm.facts.forEach { Text("• $it") }
-                    StructuredFields(shortTerm.topics, shortTerm.people, shortTerm.dates)
-                    OutlinedButton(onClick = viewModel::clearTemporary, enabled = !busy) {
-                        Text("Cancella memoria breve")
-                    }
-                }
-            }
-        }
-
-        Card(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Nuovo ricordo", style = MaterialTheme.typography.titleMedium)
-                OutlinedTextField(
-                    value = newText,
-                    onValueChange = { newText = it },
-                    label = { Text("Testo esatto da ricordare") },
-                    minLines = 2,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                KindSelector(newKind, onSelect = { newKind = it }, includeTemporary = true)
-                if (newKind == MemoryKind.SENSITIVE) {
-                    Text(
-                        "Il contenuto sarà marcato come sensibile. Password, PIN, OTP e token non vengono salvati.",
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-                Button(
-                    onClick = { viewModel.add(newText, newKind); newText = "" },
-                    enabled = newText.isNotBlank() && !busy,
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text(if (newKind == MemoryKind.TEMPORARY) "Aggiungi alla conversazione" else "Salva in memoria") }
-            }
-        }
-
-        Row(
-            Modifier.fillMaxWidth(),
-            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
+        },
+    ) { inner ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(inner)
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Text("Archivio ricordi", style = MaterialTheme.typography.titleMedium)
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("Memoria", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                Text(
+                    "${records.size} ricordi · tutto sul dispositivo",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MUTED,
+                )
+            }
+
+            message?.let { Text(it, color = Color(0xFF3FD8F0), fontWeight = FontWeight.Medium) }
+            status.lastError?.let { Text("Errore: $it", color = MaterialTheme.colorScheme.error) }
+
             if (records.any { it.category.isBlank() }) {
-                OutlinedButton(onClick = viewModel::reclassify, enabled = !busy) {
-                    Text(if (busy) "…" else "Classifica con l'AI")
+                OutlinedButton(onClick = viewModel::reclassify, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                    Text(if (busy) "Classificazione…" else "Classifica con l'AI")
                 }
             }
-        }
-        run {
-            // Notes-app style, grouped by category. The four running "lists"
-            // (Da guardare / Da visitare / Da fare / Da comprare) are ALWAYS shown,
-            // even empty, so they stay ready to fill; then the other AI categories
-            // alphabetical, and the not-yet-classified bucket last. Newest first.
+
+            // Notes grouped by category. The four running lists are always shown,
+            // then the AI categories alphabetical, then the not-yet-sorted bucket.
             val byCategory = records.groupBy { it.category.ifBlank { UNCATEGORIZED } }
             val listCats = MemoryCategories.LISTS
             val otherCats = (byCategory.keys - listCats.toSet() - UNCATEGORIZED).sorted()
@@ -162,178 +122,247 @@ fun MemoryScreen(
                 listOfNotNull(UNCATEGORIZED.takeIf(byCategory::containsKey))
             ordered.forEach { category ->
                 val list = byCategory[category].orEmpty().sortedByDescending { it.updatedAt }
-                Text(
-                    category,
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color(0xFF3FD8F0),
-                    modifier = Modifier.padding(top = 4.dp),
-                )
+                CategoryHeader(category, accentForCategory(category), list.size)
                 if (list.isEmpty()) {
-                    Text("Ancora niente qui.", style = MaterialTheme.typography.bodySmall)
+                    Text("Ancora niente qui.", style = MaterialTheme.typography.bodySmall, color = MUTED)
                 } else {
-                    list.forEach { record ->
-                        MemoryRecordCard(
-                            record = record,
-                            enabled = !busy,
-                            onSave = viewModel::update,
-                            onSetCategory = viewModel::setCategory,
-                            onDelete = viewModel::delete,
-                        )
+                    NoteGrid(list, enabled = !busy, onOpen = { editing = it })
+                }
+            }
+
+            HorizontalDivider(Modifier.padding(vertical = 4.dp))
+
+            // Short-term recap — compact, below the notes.
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Memoria breve", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "Privata e temporanea: riassume conversazioni lunghe. " +
+                            "Si cancella con “Nuova conversazione”.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MUTED,
+                    )
+                    if (shortTerm.isEmpty) {
+                        Text("Nessun riepilogo temporaneo.", style = MaterialTheme.typography.bodySmall)
+                    } else {
+                        shortTerm.facts.forEach { Text("• $it") }
+                        StructuredFields(shortTerm.topics, shortTerm.people, shortTerm.dates)
+                        OutlinedButton(onClick = viewModel::clearTemporary, enabled = !busy) {
+                            Text("Cancella memoria breve")
+                        }
                     }
                 }
             }
-        }
 
-        message?.let { Text(it, color = Color(0xFF3FD8F0), fontWeight = FontWeight.Medium) }
-
-        // Optional Obsidian mirror — the memory works fully without it.
-        Card(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Vault Obsidian (facoltativo)", style = MaterialTheme.typography.titleMedium)
-                Text(
-                    if (status.configured) "Collegato: ${vaultName ?: "—"}" else "Nessun vault collegato",
-                    style = MaterialTheme.typography.bodySmall,
-                )
-                Button(
-                    onClick = { pickVault.launch(null) },
-                    enabled = !busy,
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text(if (status.configured) "Cambia cartella vault" else "Collega un vault") }
-                if (status.configured) {
-                    OutlinedButton(onClick = viewModel::reindex, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
-                        Text(if (busy) "Sincronizzazione…" else "Sincronizza da Obsidian")
-                    }
-                    OutlinedButton(
-                        onClick = viewModel::disconnect,
+            // Optional Obsidian mirror — the memory works fully without it.
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Vault Obsidian (facoltativo)", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        if (status.configured) "Collegato: ${vaultName ?: "—"}" else "Nessun vault collegato",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MUTED,
+                    )
+                    Button(
+                        onClick = { pickVault.launch(null) },
                         enabled = !busy,
                         modifier = Modifier.fillMaxWidth(),
-                    ) { Text("Disconnetti vault") }
+                    ) { Text(if (status.configured) "Cambia cartella vault" else "Collega un vault") }
+                    if (status.configured) {
+                        OutlinedButton(onClick = viewModel::reindex, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                            Text(if (busy) "Sincronizzazione…" else "Sincronizza da Obsidian")
+                        }
+                        OutlinedButton(
+                            onClick = viewModel::disconnect,
+                            enabled = !busy,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("Disconnetti vault") }
+                    }
                 }
             }
+
+            OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) { Text("Indietro") }
+            Text(
+                "Tutto resta sul dispositivo · nessun salvataggio segreto",
+                style = MaterialTheme.typography.bodySmall,
+                color = MUTED,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
+    }
 
-        OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) { Text("Indietro") }
+    if (showAdd) {
+        NoteDialog(
+            title = "Nuovo ricordo",
+            initialText = "",
+            initialKind = MemoryKind.PERMANENT,
+            initialCategory = "",
+            allowTemporary = true,
+            showCategory = false,
+            showDelete = false,
+            enabled = !busy,
+            onDismiss = { showAdd = false },
+            onSave = { text, kind, _ -> viewModel.add(text, kind); showAdd = false },
+            onDelete = {},
+        )
+    }
 
-        Text(
-            "Tutto resta sul dispositivo · nessun salvataggio segreto",
-            style = MaterialTheme.typography.bodySmall,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth(),
+    editing?.let { rec ->
+        NoteDialog(
+            title = "Ricordo",
+            initialText = rec.text,
+            initialKind = rec.kind,
+            initialCategory = rec.category,
+            allowTemporary = false,
+            showCategory = true,
+            showDelete = true,
+            enabled = !busy,
+            topics = rec.topics,
+            people = rec.people,
+            dates = rec.dates,
+            onDismiss = { editing = null },
+            onSave = { text, kind, category ->
+                viewModel.update(rec.id, text, kind)
+                if (category != rec.category) viewModel.setCategory(rec.id, category)
+                editing = null
+            },
+            onDelete = { viewModel.delete(rec.id); editing = null },
         )
     }
 }
 
-/**
- * A memory shown like a phone-notes card: a coloured accent bar, a one-line
- * title, and a date + preview. Tapping it expands the full editor (text, type,
- * category, delete). Collapsed by default so the archive reads like a note list.
- */
+/** A small coloured dot + name + count, like a notes-app section label. */
 @Composable
-private fun MemoryRecordCard(
-    record: MemoryRecord,
-    enabled: Boolean,
-    onSave: (String, String, MemoryKind) -> Unit,
-    onSetCategory: (String, String) -> Unit,
-    onDelete: (String) -> Unit,
-) {
-    var expanded by remember(record.id) { mutableStateOf(false) }
-    var text by remember(record.id, record.updatedAt) { mutableStateOf(record.text) }
-    var kind by remember(record.id, record.updatedAt) { mutableStateOf(record.kind) }
-    var confirmDelete by remember(record.id) { mutableStateOf(false) }
+private fun CategoryHeader(name: String, accent: Color, count: Int) {
+    Row(
+        modifier = Modifier.padding(top = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Box(Modifier.size(10.dp).clip(CircleShape).background(accent))
+        Text(name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        if (count > 0) Text("$count", style = MaterialTheme.typography.labelMedium, color = MUTED)
+    }
+}
 
+/** Two-column note grid built from simple chunked rows (no extra grid deps). */
+@Composable
+private fun NoteGrid(records: List<MemoryRecord>, enabled: Boolean, onOpen: (MemoryRecord) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        records.chunked(2).forEach { row ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                row.forEach { rec ->
+                    Box(Modifier.weight(1f)) { NoteTile(rec, enabled, onOpen) }
+                }
+                if (row.size == 1) Spacer(Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+/** A colour-tinted note tile showing the note text and its date; tap to edit. */
+@Composable
+private fun NoteTile(record: MemoryRecord, enabled: Boolean, onOpen: (MemoryRecord) -> Unit) {
     val accent = if (record.kind == MemoryKind.SENSITIVE) {
         MaterialTheme.colorScheme.error
     } else {
         accentForCategory(record.category)
     }
-
-    Card(Modifier.fillMaxWidth()) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .height(IntrinsicSize.Min)
-                .clickable { expanded = !expanded },
-        ) {
-            Box(
-                Modifier
-                    .width(4.dp)
-                    .fillMaxHeight()
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(accent),
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 104.dp)
+            .clickable(enabled = enabled) { onOpen(record) },
+        colors = CardDefaults.cardColors(containerColor = accent.copy(alpha = 0.16f)),
+    ) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(
+                record.text.trim() + if (record.kind == MemoryKind.SENSITIVE) "  🔒" else "",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+                maxLines = 6,
+                overflow = TextOverflow.Ellipsis,
             )
-            Column(
-                Modifier.padding(start = 12.dp, end = 14.dp, top = 12.dp, bottom = 12.dp).fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                Text(
-                    noteTitle(record.text) + if (record.kind == MemoryKind.SENSITIVE) "  🔒" else "",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    listOfNotNull(formatNoteDate(record.updatedAt).ifBlank { null }, notePreview(record.text))
-                        .joinToString("   "),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color(0xFF7C8B95),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+            formatNoteDate(record.updatedAt).ifBlank { null }?.let {
+                Text(it, style = MaterialTheme.typography.labelSmall, color = MUTED)
             }
         }
-        AnimatedVisibility(visible = expanded) {
-            Column(
-                Modifier.padding(start = 16.dp, end = 14.dp, bottom = 14.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
+    }
+}
+
+/** The add/edit editor, shown as a dialog rather than a big inline form. */
+@Composable
+private fun NoteDialog(
+    title: String,
+    initialText: String,
+    initialKind: MemoryKind,
+    initialCategory: String,
+    allowTemporary: Boolean,
+    showCategory: Boolean,
+    showDelete: Boolean,
+    enabled: Boolean,
+    topics: List<String> = emptyList(),
+    people: List<String> = emptyList(),
+    dates: List<String> = emptyList(),
+    onDismiss: () -> Unit,
+    onSave: (String, MemoryKind, String) -> Unit,
+    onDelete: () -> Unit,
+) {
+    var text by remember { mutableStateOf(initialText) }
+    var kind by remember { mutableStateOf(initialKind) }
+    var category by remember { mutableStateOf(initialCategory) }
+    var confirmDelete by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(
                     value = text,
                     onValueChange = { text = it },
+                    label = { Text("Testo del ricordo") },
+                    minLines = 3,
                     modifier = Modifier.fillMaxWidth(),
-                    minLines = 2,
                 )
-                KindSelector(kind, onSelect = { kind = it }, includeTemporary = false)
-                CategorySelector(
-                    current = record.category,
-                    enabled = enabled,
-                    onSelect = { onSetCategory(record.id, it) },
-                )
-                StructuredFields(record.topics, record.people, record.dates)
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(
-                        onClick = { onSave(record.id, text, kind) },
-                        enabled = enabled && text.isNotBlank(),
-                        modifier = Modifier.weight(1f),
-                    ) { Text("Salva") }
-                    OutlinedButton(
-                        onClick = {
-                            if (confirmDelete) onDelete(record.id) else confirmDelete = true
-                        },
-                        enabled = enabled,
-                        modifier = Modifier.weight(1f),
-                    ) { Text(if (confirmDelete) "Conferma elimina" else "Elimina") }
+                KindSelector(kind, onSelect = { kind = it }, includeTemporary = allowTemporary)
+                if (kind == MemoryKind.SENSITIVE) {
+                    Text(
+                        "Marcato come sensibile. Password, PIN, OTP e token non vengono salvati.",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
                 }
+                if (showCategory) {
+                    CategorySelector(category, enabled) { category = it }
+                }
+                StructuredFields(topics, people, dates)
             }
-        }
-    }
-}
-
-/** First line, trimmed to a note-title length. */
-private fun noteTitle(text: String): String {
-    val firstLine = text.trim().lineSequence().firstOrNull()?.trim().orEmpty()
-    return when {
-        firstLine.isBlank() -> "(vuoto)"
-        firstLine.length <= 48 -> firstLine
-        else -> firstLine.take(48).trimEnd() + "…"
-    }
-}
-
-/** The remainder of the note after the title, as a one-line preview, or null. */
-private fun notePreview(text: String): String? {
-    val clean = text.trim().replace(Regex("""\s+"""), " ")
-    return if (clean.length <= 48) null else clean.substring(48).trim().take(70).ifBlank { null }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { if (text.isNotBlank()) onSave(text, kind, category) },
+                enabled = enabled && text.isNotBlank(),
+            ) { Text("Salva") }
+        },
+        dismissButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (showDelete) {
+                    TextButton(
+                        onClick = { if (confirmDelete) onDelete() else confirmDelete = true },
+                        enabled = enabled,
+                    ) {
+                        Text(
+                            if (confirmDelete) "Conferma" else "Elimina",
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
+                TextButton(onClick = onDismiss) { Text("Annulla") }
+            }
+        },
+    )
 }
 
 private fun formatNoteDate(ms: Long): String =
@@ -349,7 +378,7 @@ private fun accentForCategory(category: String): Color {
     return palette[(key.hashCode() and 0x7fffffff) % palette.size]
 }
 
-/** A tap-to-change category chip on a memory card, over the canonical list. */
+/** A tap-to-change category chip, over the canonical list. */
 @Composable
 private fun CategorySelector(current: String, enabled: Boolean, onSelect: (String) -> Unit) {
     var open by remember { mutableStateOf(false) }

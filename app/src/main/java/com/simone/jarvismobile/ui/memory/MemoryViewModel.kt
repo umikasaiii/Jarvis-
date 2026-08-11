@@ -77,8 +77,8 @@ class MemoryViewModel @Inject constructor(
             val saved = memory.remember(text, kind)
             _message.value = when {
                 saved != null && kind == MemoryKind.TEMPORARY -> "Aggiunto alla memoria breve."
-                saved != null -> "Ricordo salvato in Obsidian."
-                else -> "Non salvato: controlla vault, testo e dati riservati."
+                saved != null -> "Ricordo salvato in memoria."
+                else -> "Non salvato: controlla il testo (niente dati riservati)."
             }
             refreshRecords()
             _busy.value = false
