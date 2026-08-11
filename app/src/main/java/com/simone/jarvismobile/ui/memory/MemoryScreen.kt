@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -33,6 +34,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -115,6 +117,8 @@ fun MemoryScreen(
 
             // Notes grouped by category. The four running lists are always shown,
             // then the AI categories alphabetical, then the not-yet-sorted bucket.
+            // Each section is collapsible — its open/closed state is kept per name.
+            val collapsed = remember { mutableStateMapOf<String, Boolean>() }
             val byCategory = records.groupBy { it.category.ifBlank { UNCATEGORIZED } }
             val listCats = MemoryCategories.LISTS
             val otherCats = (byCategory.keys - listCats.toSet() - UNCATEGORIZED).sorted()
@@ -122,11 +126,20 @@ fun MemoryScreen(
                 listOfNotNull(UNCATEGORIZED.takeIf(byCategory::containsKey))
             ordered.forEach { category ->
                 val list = byCategory[category].orEmpty().sortedByDescending { it.updatedAt }
-                CategoryHeader(category, accentForCategory(category), list.size)
-                if (list.isEmpty()) {
-                    Text("Ancora niente qui.", style = MaterialTheme.typography.bodySmall, color = MUTED)
-                } else {
-                    NoteGrid(list, enabled = !busy, onOpen = { editing = it })
+                val open = collapsed[category] != true
+                CategoryHeader(
+                    name = category,
+                    accent = accentForCategory(category),
+                    count = list.size,
+                    expanded = open,
+                    onToggle = { collapsed[category] = open },
+                )
+                if (open) {
+                    if (list.isEmpty()) {
+                        Text("Ancora niente qui.", style = MaterialTheme.typography.bodySmall, color = MUTED)
+                    } else {
+                        NoteGrid(list, enabled = !busy, onOpen = { editing = it })
+                    }
                 }
             }
 
@@ -232,17 +245,32 @@ fun MemoryScreen(
     }
 }
 
-/** A small coloured dot + name + count, like a notes-app section label. */
+/**
+ * A tappable notes-app section label: a coloured dot, the name, its count, and a
+ * chevron that flips as the section is opened or closed.
+ */
 @Composable
-private fun CategoryHeader(name: String, accent: Color, count: Int) {
+private fun CategoryHeader(
+    name: String,
+    accent: Color,
+    count: Int,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+) {
     Row(
-        modifier = Modifier.padding(top = 6.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = onToggle)
+            .padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Box(Modifier.size(10.dp).clip(CircleShape).background(accent))
         Text(name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         if (count > 0) Text("$count", style = MaterialTheme.typography.labelMedium, color = MUTED)
+        Spacer(Modifier.weight(1f))
+        Text(if (expanded) "▾" else "▸", style = MaterialTheme.typography.titleMedium, color = MUTED)
     }
 }
 
