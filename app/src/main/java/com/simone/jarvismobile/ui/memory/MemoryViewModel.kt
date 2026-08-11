@@ -98,6 +98,16 @@ class MemoryViewModel @Inject constructor(
         }
     }
 
+    /** Moves a record to a category picked by hand in the archive. */
+    fun setCategory(id: String, category: String) {
+        viewModelScope.launch {
+            _busy.value = true
+            runCatching { memory.setCategory(id, category) }
+            refreshRecords()
+            _busy.value = false
+        }
+    }
+
     fun delete(id: String) {
         viewModelScope.launch {
             _busy.value = true

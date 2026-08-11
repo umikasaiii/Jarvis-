@@ -3,6 +3,7 @@ package com.simone.jarvismobile.ui.memory
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -12,6 +13,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -174,6 +177,7 @@ fun MemoryScreen(
                             record = record,
                             enabled = !busy,
                             onSave = viewModel::update,
+                            onSetCategory = viewModel::setCategory,
                             onDelete = viewModel::delete,
                         )
                     }
@@ -204,6 +208,7 @@ private fun MemoryRecordCard(
     record: MemoryRecord,
     enabled: Boolean,
     onSave: (String, String, MemoryKind) -> Unit,
+    onSetCategory: (String, String) -> Unit,
     onDelete: (String) -> Unit,
 ) {
     var text by remember(record.id, record.updatedAt) { mutableStateOf(record.text) }
@@ -224,6 +229,11 @@ private fun MemoryRecordCard(
                 minLines = 2,
             )
             KindSelector(kind, onSelect = { kind = it }, includeTemporary = false)
+            CategorySelector(
+                current = record.category,
+                enabled = enabled,
+                onSelect = { onSetCategory(record.id, it) },
+            )
             StructuredFields(record.topics, record.people, record.dates)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
@@ -238,6 +248,25 @@ private fun MemoryRecordCard(
                     enabled = enabled,
                     modifier = Modifier.weight(1f),
                 ) { Text(if (confirmDelete) "Conferma elimina" else "Elimina") }
+            }
+        }
+    }
+}
+
+/** A tap-to-change category chip on a memory card, over the canonical list. */
+@Composable
+private fun CategorySelector(current: String, enabled: Boolean, onSelect: (String) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        OutlinedButton(onClick = { open = true }, enabled = enabled) {
+            Text("Categoria: " + current.ifBlank { "Senza categoria" })
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            MemoryCategories.CANONICAL.forEach { category ->
+                DropdownMenuItem(
+                    text = { Text(category) },
+                    onClick = { open = false; onSelect(category) },
+                )
             }
         }
     }

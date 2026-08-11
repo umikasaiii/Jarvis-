@@ -161,6 +161,13 @@ class MemoryIndex @Inject constructor(
         return removed
     }
 
+    /** Moves one record to a category chosen by hand in the memory screen. */
+    suspend fun setCategory(recordId: String, category: String): MemoryRecord? {
+        val updated = vault.setMemoryCategory(recordId, category)
+        if (updated != null) rebuild()
+        return updated
+    }
+
     /** Records whose text contains [needle] — for voice/chat edit & delete. */
     suspend fun findMemories(needle: String): List<MemoryRecord> {
         val n = needle.trim()
