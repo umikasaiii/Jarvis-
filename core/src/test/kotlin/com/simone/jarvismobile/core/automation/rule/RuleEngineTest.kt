@@ -313,6 +313,7 @@ class RuleEngineTest {
             ActionRegistry.CREATE_REMINDER,
             ActionRegistry.RUN_TOOL,
             ActionRegistry.SAVE_PARKING_LOCATION,
+            ActionRegistry.SET_JARVIS_MODE,
         )
         assertEquals(
             withHandlers,

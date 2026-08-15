@@ -38,6 +38,18 @@ class TriggerMatchingTest {
     }
 
     @Test
+    fun `a mode rule fires only for its own mode, case-insensitively`() {
+        val rule = AutomationRule(
+            id = "m1",
+            name = "notte",
+            triggers = listOf(TriggerSpec(TriggerRegistry.JARVIS_MODE_ENTER, mapOf("mode" to "SLEEP"))),
+            actions = listOf(ActionSpec(ActionRegistry.SPEAK, mapOf("message" to "buonanotte"))),
+        )
+        assertTrue(TriggerMatching.ruleListens(rule, TriggerEvent(TriggerRegistry.JARVIS_MODE_ENTER, now, dedupKey = "sleep")))
+        assertFalse(TriggerMatching.ruleListens(rule, TriggerEvent(TriggerRegistry.JARVIS_MODE_ENTER, now, dedupKey = "WORK")))
+    }
+
+    @Test
     fun `a non-place trigger matches on type alone`() {
         val rule = AutomationRule(
             id = "r2",

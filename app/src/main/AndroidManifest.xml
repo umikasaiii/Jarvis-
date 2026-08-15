@@ -20,6 +20,11 @@
     <!-- Notifications for the foreground service (Android 13+). -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Lets JARVIS modes set Do-Not-Disturb (SLEEP = Zen: silence noise, keep
+         alarms and priority calls). The user still grants DND access in system
+         settings; without it a mode sets only the ringer and says so. -->
+    <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
+
     <!-- Bluetooth: connect is needed to route audio to AirPods and read device
          names. No location is requested: we do not scan for discovery. -->
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />

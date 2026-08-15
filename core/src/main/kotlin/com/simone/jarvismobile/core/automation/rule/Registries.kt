@@ -216,7 +216,7 @@ object ActionRegistry {
         ActionDefinition(
             SET_JARVIS_MODE, "Cambia modalità JARVIS",
             listOf(ParamSpec("mode", "Modalità", ParamKind.TEXT)),
-            risk = ActionRisk.LOCAL_SAFE, exclusiveResource = RESOURCE_MODE, implemented = false,
+            risk = ActionRisk.LOCAL_SAFE, exclusiveResource = RESOURCE_MODE,
         ),
         ActionDefinition(
             OPEN_APP_SCREEN, "Apri una schermata di JARVIS",

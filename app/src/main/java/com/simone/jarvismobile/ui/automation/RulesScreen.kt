@@ -1,7 +1,9 @@
 package com.simone.jarvismobile.ui.automation
 
 import android.Manifest
+import android.content.Intent
 import android.os.Build
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -30,6 +32,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -39,6 +42,7 @@ import com.simone.jarvismobile.core.automation.rule.AutomationRule
 import com.simone.jarvismobile.core.automation.rule.Condition
 import com.simone.jarvismobile.core.automation.rule.TriggerRegistry
 import com.simone.jarvismobile.core.automation.rule.TriggerSpec
+import com.simone.jarvismobile.core.mode.JarvisModes
 import java.time.DayOfWeek
 
 /**
@@ -56,7 +60,9 @@ fun RulesScreen(
     val places by viewModel.savedPlaces.collectAsStateWithLifecycle()
     val parking by viewModel.savedParking.collectAsStateWithLifecycle()
     val executions by viewModel.recentExecutions.collectAsStateWithLifecycle()
+    val currentMode by viewModel.currentMode.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
+    val context = LocalContext.current
 
     var permTick by remember { mutableStateOf(0) }
     val foreground = remember(permTick) { viewModel.hasForegroundLocation() }
@@ -85,6 +91,43 @@ fun RulesScreen(
 
         if (message.isNotBlank()) {
             Text(message, style = MaterialTheme.typography.bodyMedium)
+        }
+
+        // --- Modalità ---
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                val currentLabel = JarvisModes.profile(currentMode)?.label ?: currentMode
+                Text("Modalità", style = MaterialTheme.typography.titleMedium)
+                Text("Attuale: $currentLabel", style = MaterialTheme.typography.bodySmall)
+                HorizontalDivider()
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    JarvisModes.all.forEach { profile ->
+                        FilterChip(
+                            selected = currentMode.equals(profile.id, ignoreCase = true),
+                            onClick = { viewModel.switchMode(profile.id) },
+                            label = { Text(profile.label) },
+                        )
+                    }
+                }
+                if (!viewModel.hasDndAccess()) {
+                    Text(
+                        "La modalità Notte silenzia le notifiche tenendo sveglie e chiamate " +
+                            "prioritarie: serve l'accesso «Non disturbare».",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    OutlinedButton(
+                        onClick = {
+                            runCatching {
+                                context.startActivity(
+                                    Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)
+                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                                )
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Consenti «Non disturbare»") }
+                }
+            }
         }
 
         // --- Luoghi ---
@@ -290,6 +333,7 @@ private fun RuleBuilderCard(
     var placeId by remember { mutableStateOf<String?>(null) }
     var actionType by remember { mutableStateOf(ActionRegistry.SHOW_NOTIFICATION) }
     var message by remember { mutableStateOf("") }
+    var mode by remember { mutableStateOf("") }
     // Optional "SE" filters.
     var days by remember { mutableStateOf(emptySet<DayOfWeek>()) }
     var onlyCharging by remember { mutableStateOf(false) }
@@ -382,16 +426,34 @@ private fun RuleBuilderCard(
                     onClick = { actionType = ActionRegistry.SPEAK },
                     label = { Text("A voce") },
                 )
+                FilterChip(
+                    selected = actionType == ActionRegistry.SET_JARVIS_MODE,
+                    onClick = { actionType = ActionRegistry.SET_JARVIS_MODE },
+                    label = { Text("Modalità") },
+                )
             }
-            OutlinedTextField(
-                value = message,
-                onValueChange = { message = it },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("Testo") },
-                placeholder = { Text("prendi le vitamine") },
-                maxLines = 3,
-            )
+            if (actionType == ActionRegistry.SET_JARVIS_MODE) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    JarvisModes.all.forEach { profile ->
+                        FilterChip(
+                            selected = mode == profile.id,
+                            onClick = { mode = profile.id },
+                            label = { Text(profile.label) },
+                        )
+                    }
+                }
+            } else {
+                OutlinedTextField(
+                    value = message,
+                    onValueChange = { message = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Testo") },
+                    placeholder = { Text("prendi le vitamine") },
+                    maxLines = 3,
+                )
+            }
 
+            val canCreate = if (actionType == ActionRegistry.SET_JARVIS_MODE) mode.isNotBlank() else message.isNotBlank()
             Button(
                 onClick = {
                     onCreate(
@@ -401,6 +463,7 @@ private fun RuleBuilderCard(
                             placeId = placeId,
                             actionType = actionType,
                             message = message,
+                            mode = mode,
                             days = days,
                             onlyCharging = onlyCharging,
                             timeFrom = timeFrom,
@@ -409,7 +472,7 @@ private fun RuleBuilderCard(
                     )
                     message = ""
                 },
-                enabled = message.isNotBlank(),
+                enabled = canCreate,
                 modifier = Modifier.fillMaxWidth(),
             ) { Text("Crea regola") }
         }
@@ -423,10 +486,11 @@ private fun ruleSummary(rule: AutomationRule, places: List<AutomationPlaceEntity
     val action = rule.actions.firstOrNull()
     val whenText = trigger?.let { triggerLabel(it, places) } ?: "?"
     val doText = action?.let {
-        val body = it.params["message"].orEmpty()
         when (it.type) {
-            ActionRegistry.SPEAK -> "voce: $body"
-            else -> "notifica: $body"
+            ActionRegistry.SPEAK -> "voce: ${it.params["message"].orEmpty()}"
+            ActionRegistry.SET_JARVIS_MODE ->
+                "modalità ${JarvisModes.profile(it.params["mode"])?.label ?: it.params["mode"].orEmpty()}"
+            else -> "notifica: ${it.params["message"].orEmpty()}"
         }
     } ?: "?"
     val ifText = rule.condition?.let { " · se ${conditionLabel(it)}" }.orEmpty()

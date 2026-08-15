@@ -24,6 +24,8 @@ import com.simone.jarvismobile.core.automation.rule.RuleSchedule
 import com.simone.jarvismobile.core.automation.rule.TriggerEvent
 import com.simone.jarvismobile.core.automation.rule.TriggerRegistry
 import com.simone.jarvismobile.core.automation.rule.TriggerSpec
+import com.simone.jarvismobile.core.mode.JarvisModes
+import com.simone.jarvismobile.mode.JarvisModeManager
 import com.simone.jarvismobile.navigation.NavigationLocationProvider
 import java.time.DayOfWeek
 import java.time.LocalDateTime
@@ -56,7 +58,19 @@ class RulesViewModel @Inject constructor(
     private val contextEngine: ContextEngine,
     private val parking: ParkingRepository,
     private val log: ExecutionLogRepository,
+    private val modes: JarvisModeManager,
 ) : ViewModel() {
+
+    val currentMode: StateFlow<String> = modes.mode
+
+    fun hasDndAccess(): Boolean = modes.hasDndAccess()
+
+    /** Manual mode switch from the UI. */
+    fun switchMode(id: String) = viewModelScope.launch {
+        val ok = modes.setMode(id)
+        val label = JarvisModes.profile(id)?.label ?: id
+        _message.value = if (ok) "Modalità: $label." else "Modalità sconosciuta."
+    }
 
     /** Recent firings and non-firings, for the diagnostics card (§21-§22). */
     val recentExecutions: StateFlow<List<ExecutionRecord>> =
@@ -204,15 +218,14 @@ class RulesViewModel @Inject constructor(
             _message.value = draft.triggerError ?: "Completa il quando."
             return@launch
         }
-        val body = draft.message.trim()
-        if (body.isEmpty()) {
-            _message.value = "Scrivi cosa deve dire o notificare."
+        val action = draft.actionSpecOrNull()
+        if (action == null) {
+            _message.value = draft.actionError ?: "Completa il cosa fare."
             return@launch
         }
-        val action = ActionSpec(draft.actionType, mapOf("message" to body))
         val rule = AutomationRule(
             id = UUID.randomUUID().toString().take(8),
-            name = body.take(60),
+            name = draft.ruleName(),
             triggers = listOf(trigger),
             condition = draft.conditionOrNull(),
             actions = listOf(action),
@@ -277,6 +290,7 @@ data class RuleDraft(
     val placeId: String? = null,
     val actionType: String = ActionRegistry.SHOW_NOTIFICATION,
     val message: String = "",
+    val mode: String = "",
     // Optional "SE" filters, combined with AND. Empty = no filter.
     val days: Set<DayOfWeek> = emptySet(),
     val onlyCharging: Boolean = false,
@@ -285,6 +299,26 @@ data class RuleDraft(
 ) {
     var triggerError: String? = null
         private set
+    var actionError: String? = null
+        private set
+
+    /** The action from the chosen type: a message action, or a mode switch. */
+    fun actionSpecOrNull(): ActionSpec? = when (actionType) {
+        ActionRegistry.SET_JARVIS_MODE -> {
+            if (mode.isBlank()) { actionError = "Scegli una modalità."; null }
+            else ActionSpec(ActionRegistry.SET_JARVIS_MODE, mapOf("mode" to mode))
+        }
+        else -> {
+            val body = message.trim()
+            if (body.isEmpty()) { actionError = "Scrivi cosa deve dire o notificare."; null }
+            else ActionSpec(actionType, mapOf("message" to body))
+        }
+    }
+
+    fun ruleName(): String = when (actionType) {
+        ActionRegistry.SET_JARVIS_MODE -> "modalità ${mode.ifBlank { "?" }}"
+        else -> message.take(60).ifBlank { "regola" }
+    }
 
     fun triggerSpec(): TriggerSpec? = when (kind) {
         TriggerKind.DAILY_TIME -> {

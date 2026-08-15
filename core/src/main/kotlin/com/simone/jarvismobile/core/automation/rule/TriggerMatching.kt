@@ -21,6 +21,11 @@ object TriggerMatching {
         TriggerRegistry.PLACE_DWELL,
     )
 
+    private val MODE_TYPES = setOf(
+        TriggerRegistry.JARVIS_MODE_ENTER,
+        TriggerRegistry.JARVIS_MODE_EXIT,
+    )
+
     /** Whether [spec] is a trigger for [event]. */
     fun matches(spec: TriggerSpec, event: TriggerEvent): Boolean {
         if (spec.type != event.type) return false
@@ -28,6 +33,11 @@ object TriggerMatching {
             in PLACE_TYPES -> {
                 val want = spec.param("placeId") ?: return true
                 want == event.dedupKey
+            }
+            in MODE_TYPES -> {
+                // A rule for "entro in SLEEP" must not fire on entering WORK.
+                val want = spec.param("mode") ?: return true
+                want.equals(event.dedupKey, ignoreCase = true)
             }
             else -> true
         }
