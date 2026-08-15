@@ -95,6 +95,7 @@ class SessionCoordinator @Inject constructor(
     private val memory: MemoryIndex,
     private val tools: ToolRunner,
     private val intentClassifier: LlmIntentClassifier,
+    private val agendaIntents: com.simone.jarvismobile.tools.AgendaIntentRouter,
     private val router: LlmRouter,
     private val chatStore: ChatStore,
     private val knowledge: KnowledgeRepository,
@@ -306,6 +307,22 @@ class SessionCoordinator @Inject constructor(
     private data class Pending(val tool: String, val missing: String, val args: Map<String, String>)
 
     @Volatile private var pendingSlot: Pending? = null
+
+    /**
+     * Set when several planner entries matched a delete/move/rename and JARVIS
+     * asked which one. Kept apart from [pendingSlot] because the answer is a
+     * *choice among known candidates*, not a missing argument — and because a
+     * destructive action must not proceed until that choice is made.
+     */
+    private data class PendingPick(val candidateIds: List<String>, val args: Map<String, String>)
+
+    @Volatile private var pendingPick: PendingPick? = null
+
+    /**
+     * The planner entry the conversation is currently about, so "spostalo alle
+     * 16" has something to bind to. Set whenever an entry is acted upon.
+     */
+    @Volatile private var lastAgendaEntryId: String? = null
 
     /**
      * True when JARVIS's own last reply ended with a question. The user's next
@@ -663,9 +680,16 @@ class SessionCoordinator @Inject constructor(
         val recentContext = recentConversationContext(sameMessageContext)
         // A pending confirmation is answered by this utterance (yes / no).
         pendingConfirmation?.let { call ->
-            val answer = transcript.lowercase().trim().trim('.', '!', ',')
-            val firstWord = answer.substringBefore(' ')
-            if (firstWord in CONFIRM_WORDS || CONFIRM_WORDS.any { answer.startsWith(it) }) {
+            val aliases = com.simone.jarvismobile.core.intent.IntentAliases
+            // "cancella" is checked first and only on its own: while a
+            // confirmation is open it means "call this off", not "delete
+            // something". With words after it ("cancella la nota sulla moto") it
+            // is a new request, so it falls through to the normal path below.
+            if (aliases.isCancellationOfPendingAction(transcript)) {
+                pendingConfirmation = null
+                return "Va bene, annullato."
+            }
+            if (aliases.isAffirmative(transcript)) {
                 pendingConfirmation = null
                 _diagnostic.value = "tool confermato: ${call.name}"
                 return when (val outcome = tools.run(call, confirmed = true)) {
@@ -674,13 +698,37 @@ class SessionCoordinator @Inject constructor(
                     is ToolOutcome.NeedsConfirmation -> "Non posso eseguirlo senza conferma."
                 }
             }
-            if (firstWord in DECLINE_WORDS) {
+            if (aliases.isNegative(transcript)) {
                 pendingConfirmation = null
                 return "Va bene, non lo faccio."
             }
             // Neither yes nor no: drop the pending action and treat this as a
             // brand-new request rather than silently executing something.
             pendingConfirmation = null
+        }
+
+        // JARVIS asked WHICH of several planner entries was meant. That question
+        // is answered before anything else is considered: until it is, there is a
+        // half-finished action on the table, possibly a deletion.
+        pendingPick?.let { pick ->
+            if (com.simone.jarvismobile.core.intent.IntentAliases.isCancellationOfPendingAction(transcript) ||
+                com.simone.jarvismobile.core.intent.IntentAliases.isNegative(transcript)
+            ) {
+                pendingPick = null
+                return "Va bene, lascio stare."
+            }
+            pendingPick = null
+            when (
+                val resolved = agendaIntents.resolvePick(pick.args, pick.candidateIds, transcript)
+            ) {
+                is com.simone.jarvismobile.tools.AgendaRouting.Call ->
+                    return runAgendaCall(resolved.call)
+                is com.simone.jarvismobile.tools.AgendaRouting.Disambiguate -> {
+                    pendingPick = PendingPick(resolved.candidateIds, resolved.pending)
+                    return resolved.question
+                }
+                is com.simone.jarvismobile.tools.AgendaRouting.NotFound -> return resolved.spoken
+            }
         }
 
         // The user is answering a question JARVIS asked ("Per quanto tempo?").
@@ -754,6 +802,25 @@ class SessionCoordinator @Inject constructor(
             null -> Unit
         }
 
+        // Structured path: planner CRUD and reschedules ("sposta il dentista a
+        // venerdì", "cancella la riunione delle 18", "spostalo di due ore").
+        // Deterministic and instant — the model is not involved, and the target is
+        // resolved to a real entry id before any tool can touch the calendar.
+        runCatching { agendaIntents.route(transcript, contextEntryId = lastAgendaEntryId) }
+            .getOrNull()
+            ?.let { routing ->
+                when (routing) {
+                    is com.simone.jarvismobile.tools.AgendaRouting.Call ->
+                        return runAgendaCall(routing.call)
+                    is com.simone.jarvismobile.tools.AgendaRouting.Disambiguate -> {
+                        pendingPick = PendingPick(routing.candidateIds, routing.pending)
+                        _diagnostic.value = "disambiguo: ${routing.candidateIds.size} candidati"
+                        return routing.question
+                    }
+                    is com.simone.jarvismobile.tools.AgendaRouting.NotFound -> return routing.spoken
+                }
+            }
+
         // Only plausible but unfamiliar operation wording pays for the optional
         // one-line LLM classifier. Ordinary chat goes directly to one answer.
         val understanding = if (ToolIntentGate.shouldClassify(transcript)) {
@@ -806,6 +873,31 @@ class SessionCoordinator @Inject constructor(
             needsReasoning = fallbackNeedsReasoning || understanding?.needsReasoning == true,
             conversationHint = sameMessageContext,
         )
+    }
+
+    /**
+     * Runs a planner call produced by the structured path and remembers which
+     * entry it was about, so a following "spostalo alle 17" resolves without the
+     * user naming it again. A delete clears that memory instead of keeping a
+     * pointer to something that no longer exists.
+     */
+    private suspend fun runAgendaCall(call: com.simone.jarvismobile.core.protocol.ToolCall): String {
+        val entryId = runCatching {
+            call.arguments["id"]?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }
+        }.getOrNull()
+        _diagnostic.value = "tool (intent): ${call.name}"
+        return when (val outcome = tools.run(call)) {
+            is ToolOutcome.Done -> {
+                lastAgendaEntryId = if (call.name == "delete_agenda") null else entryId
+                outcome.spoken
+            }
+            is ToolOutcome.Failed -> outcome.spoken
+            is ToolOutcome.NeedsConfirmation -> {
+                pendingConfirmation = outcome.call
+                lastAgendaEntryId = entryId
+                outcome.prompt
+            }
+        }
     }
 
     /** Previous turns for resolving pronouns without exposing the whole chat to the classifier. */
@@ -1600,6 +1692,8 @@ class SessionCoordinator @Inject constructor(
         router.resetConversation()
         pendingConfirmation = null
         pendingSlot = null
+        pendingPick = null
+        lastAgendaEntryId = null
         awaitingAnswer = false
         awaitingTranslatorLanguages = false
         activeSystems.clear()

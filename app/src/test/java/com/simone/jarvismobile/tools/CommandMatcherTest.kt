@@ -242,4 +242,51 @@ class CommandMatcherTest {
         assertEquals("set_timer", match.call.name)
         assertEquals("600", match.call.arguments["seconds"]?.jsonPrimitive?.content)
     }
+
+    // --- Routing boundaries with the structured agenda path ---------------
+    // These phrases must NOT be swallowed by the fast path: they belong to
+    // AgendaCommandParser/AgendaIntentRouter, which resolve a real entry id
+    // before anything is deleted or moved.
+
+    @Test
+    fun plannerDeletesAreLeftToTheAgendaPath() {
+        assertNull(CommandMatcher.match("elimina l'appuntamento dal dentista"))
+        assertNull(CommandMatcher.match("cancella dentista di domani"))
+        assertNull(CommandMatcher.match("togli l'impegno delle 18"))
+    }
+
+    @Test
+    fun plannerMovesAreLeftToTheAgendaPath() {
+        assertNull(CommandMatcher.match("sposta il dentista a venerdì"))
+        assertNull(CommandMatcher.match("rimanda la riunione alle 17"))
+        assertNull(CommandMatcher.match("anticipa il dentista alle 15"))
+    }
+
+    @Test
+    fun renamingAnAppointmentIsNotANoteEdit() {
+        // "modifica X in Y" is shaped like a note edit; naming a planner item
+        // must hand it to the agenda path instead.
+        assertNull(CommandMatcher.match("modifica l'appuntamento dal dentista in visita dentistica"))
+    }
+
+    @Test
+    fun noteEditsWithoutPlannerWordsStillWork() {
+        val m = CommandMatcher.match("cambia l'appunto sul gelato in mi piace il cioccolato") as Match.Run
+        assertEquals("update_memory", m.call.name)
+    }
+
+    @Test
+    fun deletingANoteStillGoesToTheMemoryTool() {
+        val m = CommandMatcher.match("cancella l'appunto sulla moto") as Match.Run
+        assertEquals("forget_memory", m.call.name)
+    }
+
+    @Test
+    fun creatingAnAppointmentStillUsesTheFastPath() {
+        val m = CommandMatcher.match(
+            "Aggiungi al calendario dentista domani alle 15",
+            now = LocalDateTime.of(2026, 8, 6, 10, 0),
+        ) as Match.Run
+        assertEquals("add_reminder", m.call.name)
+    }
 }

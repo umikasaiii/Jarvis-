@@ -427,6 +427,11 @@ object CommandMatcher {
 
     /** "cambia l'appunto sul gelato in mi piace il cioccolato" → update_memory. */
     fun updateMemoryCall(raw: String): Match? {
+        // "modifica X in Y" is shaped the same whether X is a note or a calendar
+        // entry. When the sentence names a planner item ("l'appuntamento dal
+        // dentista"), leave it to the agenda path — otherwise a rename of an
+        // appointment would silently edit a note instead.
+        if (PLANNER_NOUN_RE.containsMatchIn(normalize(raw))) return null
         val m = UPDATE_MEMORY_RE.find(raw.trim()) ?: return null
         val old = m.groupValues[1].trim().trim('.', ',', ' ', '«', '»', '"')
         val new = m.groupValues[2].trim().trim('.', ',', ' ', '«', '»', '"')
@@ -780,6 +785,11 @@ object CommandMatcher {
             """|^(?:cancella|elimina|togli|rimuovi)\s+(?:dalla memoria|dagli appunti|l['’]appunto|il ricordo)""" +
             """\s*(?:su\w*\s+|che\s+|di\s+|del\s+|dello\s+|della\s+)?(.+)$""",
         RegexOption.IGNORE_CASE,
+    )
+
+    /** Planner nouns that make a generic edit belong to the calendar, not the notes. */
+    private val PLANNER_NOUN_RE = Regex(
+        """\b(?:appuntament[oi]|event[oi]|impegn[oi]|riunion[ei]|meeting|agenda|calendario)\b""",
     )
 
     /** Edit a memory: "cambia/aggiorna/modifica/correggi/sostituisci <vecchio> in/con <nuovo>". */

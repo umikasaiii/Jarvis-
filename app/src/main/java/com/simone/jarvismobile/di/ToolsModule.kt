@@ -23,13 +23,16 @@ import com.simone.jarvismobile.tools.TimeUntilTool
 import com.simone.jarvismobile.tools.TimerTool
 import com.simone.jarvismobile.tools.CalendarDraftTool
 import com.simone.jarvismobile.tools.CompleteAgendaTool
+import com.simone.jarvismobile.tools.DeleteAgendaTool
 import com.simone.jarvismobile.tools.DialDraftTool
 import com.simone.jarvismobile.tools.ListNotificationsTool
 import com.simone.jarvismobile.tools.MediaControlTool
+import com.simone.jarvismobile.tools.MoveAgendaTool
 import com.simone.jarvismobile.tools.NavigationTool
 import com.simone.jarvismobile.tools.OpenAppTool
 import com.simone.jarvismobile.tools.OpenSettingsTool
 import com.simone.jarvismobile.tools.PlayMediaTool
+import com.simone.jarvismobile.tools.RenameAgendaTool
 import com.simone.jarvismobile.tools.SearchVaultTool
 import com.simone.jarvismobile.tools.SmsDraftTool
 import dagger.Module
@@ -68,6 +71,9 @@ object ToolsModule {
             AddTaskTool(agenda),
             ListAgendaTool(agenda),
             CompleteAgendaTool(agenda),
+            DeleteAgendaTool(agenda),
+            MoveAgendaTool(agenda),
+            RenameAgendaTool(agenda),
             RememberTool(memory),
             ForgetMemoryTool(memory),
             UpdateMemoryTool(memory),
