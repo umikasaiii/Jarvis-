@@ -11,7 +11,9 @@ import com.simone.jarvismobile.core.automation.rule.TriggerRegistry
 import com.simone.jarvismobile.core.mode.JarvisModes
 import com.simone.jarvismobile.core.mode.ModeProfile
 import com.simone.jarvismobile.core.mode.RingerPreference
+import com.simone.jarvismobile.data.SettingsRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -35,13 +37,16 @@ import javax.inject.Singleton
  * What it deliberately does NOT force: it applies Do-Not-Disturb only when the
  * user has granted policy access, and never pretends it did otherwise — a mode
  * that silently failed to silence the phone would be exactly the dishonesty the
- * rest of the engine avoids.
+ * rest of the engine avoids. Nor does DRIVING start any background microphone:
+ * it only pre-arms the existing, opt-in, foreground-only wake word, restoring
+ * whatever the user had set once driving ends.
  */
 @Singleton
 class JarvisModeManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val contextEngine: ContextEngine,
     private val executor: Provider<AutomationExecutor>,
+    private val settings: SettingsRepository,
 ) {
     private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
@@ -96,7 +101,7 @@ class JarvisModeManager @Inject constructor(
         return true
     }
 
-    private fun applyEffects(profile: ModeProfile) {
+    private suspend fun applyEffects(profile: ModeProfile) {
         val audio = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
         runCatching {
             audio?.ringerMode = when (profile.ringer) {
@@ -120,13 +125,46 @@ class JarvisModeManager @Inject constructor(
                 )
             }.onFailure { Log.w(TAG, "dnd_failed ${it.javaClass.simpleName}") }
         }
-        // Wake word and the driving HUD live in their own subsystems; they are the
-        // next hooks (profile.wakeWord is ready for them).
+        applyWakeWordPreArm(profile)
+    }
+
+    /**
+     * DRIVING pre-arms the existing, foreground-only wake word and spoken
+     * background replies, so a phone mounted on the dash with the screen on
+     * starts listening hands-free the moment the app is in view. This does
+     * **not** start any background microphone: [WakeWordController][com.simone.jarvismobile.audio.WakeWordController]
+     * still gates on the app being foregrounded, exactly as before — this only
+     * flips the same toggle the user could flip in Impostazioni. The prior
+     * values are remembered once and restored on leaving DRIVING, so the mode
+     * never permanently overwrites a preference the user set themselves.
+     */
+    private suspend fun applyWakeWordPreArm(profile: ModeProfile) {
+        val wasDriving = prefs.contains(KEY_PRE_DRIVE_WAKE)
+        if (profile.id == JarvisModes.DRIVING) {
+            if (!wasDriving) {
+                val wake = runCatching { settings.wakeWordEnabled.first() }.getOrDefault(false)
+                val speak = runCatching { settings.speakBackgroundResponses.first() }.getOrDefault(false)
+                prefs.edit()
+                    .putBoolean(KEY_PRE_DRIVE_WAKE, wake)
+                    .putBoolean(KEY_PRE_DRIVE_SPEAK, speak)
+                    .apply()
+            }
+            runCatching { settings.setWakeWordEnabled(true) }
+            runCatching { settings.setSpeakBackgroundResponses(true) }
+        } else if (wasDriving) {
+            val wake = prefs.getBoolean(KEY_PRE_DRIVE_WAKE, false)
+            val speak = prefs.getBoolean(KEY_PRE_DRIVE_SPEAK, false)
+            runCatching { settings.setWakeWordEnabled(wake) }
+            runCatching { settings.setSpeakBackgroundResponses(speak) }
+            prefs.edit().remove(KEY_PRE_DRIVE_WAKE).remove(KEY_PRE_DRIVE_SPEAK).apply()
+        }
     }
 
     private companion object {
         const val TAG = "JarvisMode"
         const val PREFS = "jarvis_mode"
         const val KEY = "current_mode"
+        const val KEY_PRE_DRIVE_WAKE = "pre_drive_wake"
+        const val KEY_PRE_DRIVE_SPEAK = "pre_drive_speak"
     }
 }

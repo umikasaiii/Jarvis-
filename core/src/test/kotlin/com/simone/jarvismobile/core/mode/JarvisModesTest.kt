@@ -16,9 +16,11 @@ class JarvisModesTest {
     }
 
     @Test
-    fun `work vibrates, driving listens for the wake word`() {
+    fun `work vibrates, driving listens for the wake word and filters notifications`() {
         assertEquals(RingerPreference.VIBRATE, JarvisModes.profile("work")!!.ringer)
-        assertTrue(JarvisModes.profile(JarvisModes.DRIVING)!!.wakeWord)
+        val driving = JarvisModes.profile(JarvisModes.DRIVING)!!
+        assertTrue(driving.wakeWord)
+        assertTrue(driving.doNotDisturb, "driving must filter chatter, only urgent things through")
         assertFalse(JarvisModes.profile(JarvisModes.HOME)!!.wakeWord)
     }
 

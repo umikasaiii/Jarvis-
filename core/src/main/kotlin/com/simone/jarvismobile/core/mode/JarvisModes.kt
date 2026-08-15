@@ -39,7 +39,10 @@ object JarvisModes {
         ModeProfile(WORK, "Lavoro", RingerPreference.VIBRATE, doNotDisturb = false, wakeWord = false),
         ModeProfile(EVENING, "Sera", RingerPreference.RING, doNotDisturb = false, wakeWord = false),
         ModeProfile(SLEEP, "Notte", RingerPreference.SILENT, doNotDisturb = true, wakeWord = false),
-        ModeProfile(DRIVING, "Guida", RingerPreference.RING, doNotDisturb = false, wakeWord = true),
+        // Filtered notifications while driving: the same priority filter as
+        // SLEEP, so a rule of the road (only urgent things reach you) reuses one
+        // mechanism instead of inventing a second notion of "quiet".
+        ModeProfile(DRIVING, "Guida", RingerPreference.RING, doNotDisturb = true, wakeWord = true),
     )
 
     private val byId = all.associateBy { it.id }
