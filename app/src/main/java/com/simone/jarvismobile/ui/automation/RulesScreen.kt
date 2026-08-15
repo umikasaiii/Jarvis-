@@ -36,8 +36,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.simone.jarvismobile.automation.rule.AutomationPlaceEntity
 import com.simone.jarvismobile.core.automation.rule.ActionRegistry
 import com.simone.jarvismobile.core.automation.rule.AutomationRule
+import com.simone.jarvismobile.core.automation.rule.Condition
 import com.simone.jarvismobile.core.automation.rule.TriggerRegistry
 import com.simone.jarvismobile.core.automation.rule.TriggerSpec
+import java.time.DayOfWeek
 
 /**
  * The generic engine's screen: save a place, build a clock or place rule, watch
@@ -162,7 +164,10 @@ fun RulesScreen(
                             }
                             Switch(checked = rule.enabled, onCheckedChange = { viewModel.toggleRule(rule) })
                         }
-                        OutlinedButton(onClick = { viewModel.deleteRule(rule) }) { Text("Elimina") }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(onClick = { viewModel.testRule(rule) }) { Text("Prova adesso") }
+                            OutlinedButton(onClick = { viewModel.deleteRule(rule) }) { Text("Elimina") }
+                        }
                         HorizontalDivider()
                     }
                 }
@@ -210,6 +215,11 @@ private fun RuleBuilderCard(
     var placeId by remember { mutableStateOf<String?>(null) }
     var actionType by remember { mutableStateOf(ActionRegistry.SHOW_NOTIFICATION) }
     var message by remember { mutableStateOf("") }
+    // Optional "SE" filters.
+    var days by remember { mutableStateOf(emptySet<DayOfWeek>()) }
+    var onlyCharging by remember { mutableStateOf(false) }
+    var timeFrom by remember { mutableStateOf("") }
+    var timeTo by remember { mutableStateOf("") }
 
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -251,6 +261,39 @@ private fun RuleBuilderCard(
                 }
             }
 
+            Text("Solo se… (opzionale)", style = MaterialTheme.typography.labelLarge)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                DAY_LABELS.forEachIndexed { index, label ->
+                    val day = DayOfWeek.of(index + 1)
+                    FilterChip(
+                        selected = day in days,
+                        onClick = { days = if (day in days) days - day else days + day },
+                        label = { Text(label) },
+                    )
+                }
+            }
+            FilterChip(
+                selected = onlyCharging,
+                onClick = { onlyCharging = !onlyCharging },
+                label = { Text("Solo in carica") },
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = timeFrom,
+                    onValueChange = { timeFrom = it },
+                    modifier = Modifier.weight(1f),
+                    label = { Text("Dalle (HH:mm)") },
+                    singleLine = true,
+                )
+                OutlinedTextField(
+                    value = timeTo,
+                    onValueChange = { timeTo = it },
+                    modifier = Modifier.weight(1f),
+                    label = { Text("Alle (HH:mm)") },
+                    singleLine = true,
+                )
+            }
+
             Text("Fai", style = MaterialTheme.typography.labelLarge)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(
@@ -282,6 +325,10 @@ private fun RuleBuilderCard(
                             placeId = placeId,
                             actionType = actionType,
                             message = message,
+                            days = days,
+                            onlyCharging = onlyCharging,
+                            timeFrom = timeFrom,
+                            timeTo = timeTo,
                         ),
                     )
                     message = ""
@@ -292,6 +339,8 @@ private fun RuleBuilderCard(
         }
     }
 }
+
+private val DAY_LABELS = listOf("Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom")
 
 private fun ruleSummary(rule: AutomationRule, places: List<AutomationPlaceEntity>): String {
     val trigger = rule.triggers.firstOrNull()
@@ -304,7 +353,18 @@ private fun ruleSummary(rule: AutomationRule, places: List<AutomationPlaceEntity
             else -> "notifica: $body"
         }
     } ?: "?"
-    return "$whenText → $doText"
+    val ifText = rule.condition?.let { " · se ${conditionLabel(it)}" }.orEmpty()
+    val off = if (rule.enabled) "" else " (disattivata)"
+    return "$whenText → $doText$ifText$off"
+}
+
+private fun conditionLabel(condition: Condition): String = when (condition) {
+    is Condition.All -> condition.of.joinToString(" e ") { conditionLabel(it) }
+    is Condition.DayOfWeekIn -> condition.days.sortedBy { it.value }.joinToString(",") { DAY_LABELS[it.value - 1] }
+    Condition.IsCharging -> "in carica"
+    is Condition.TimeRange -> "${condition.from}–${condition.to}"
+    is Condition.CurrentPlace -> "a ${condition.placeId}"
+    else -> "condizioni"
 }
 
 private fun triggerLabel(spec: TriggerSpec, places: List<AutomationPlaceEntity>): String {

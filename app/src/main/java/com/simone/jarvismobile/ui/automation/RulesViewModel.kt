@@ -3,17 +3,24 @@ package com.simone.jarvismobile.ui.automation
 import android.annotation.SuppressLint
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.simone.jarvismobile.automation.rule.AutomationExecutor
 import com.simone.jarvismobile.automation.rule.AutomationPlaceEntity
 import com.simone.jarvismobile.automation.rule.PlaceGeofenceSource
 import com.simone.jarvismobile.automation.rule.PlaceRepository
 import com.simone.jarvismobile.automation.rule.RuleRepository
 import com.simone.jarvismobile.automation.rule.RuleScheduler
+import com.simone.jarvismobile.context.ContextEngine
 import com.simone.jarvismobile.core.automation.rule.ActionRegistry
 import com.simone.jarvismobile.core.automation.rule.ActionSpec
 import com.simone.jarvismobile.core.automation.rule.AutomationRule
+import com.simone.jarvismobile.core.automation.rule.Condition
+import com.simone.jarvismobile.core.automation.rule.RuleSchedule
+import com.simone.jarvismobile.core.automation.rule.TriggerEvent
 import com.simone.jarvismobile.core.automation.rule.TriggerRegistry
 import com.simone.jarvismobile.core.automation.rule.TriggerSpec
 import com.simone.jarvismobile.navigation.NavigationLocationProvider
+import java.time.DayOfWeek
+import java.time.LocalDateTime
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -39,6 +46,8 @@ class RulesViewModel @Inject constructor(
     private val geofences: PlaceGeofenceSource,
     private val scheduler: RuleScheduler,
     private val navLocation: NavigationLocationProvider,
+    private val executor: AutomationExecutor,
+    private val contextEngine: ContextEngine,
 ) : ViewModel() {
 
     val savedRules: StateFlow<List<AutomationRule>> =
@@ -129,6 +138,7 @@ class RulesViewModel @Inject constructor(
             id = UUID.randomUUID().toString().take(8),
             name = body.take(60),
             triggers = listOf(trigger),
+            condition = draft.conditionOrNull(),
             actions = listOf(action),
         )
         val errors = rules.save(rule)
@@ -152,6 +162,31 @@ class RulesViewModel @Inject constructor(
         runCatching { scheduler.sync() }
     }
 
+    /**
+     * Dry-runs a rule now and reports the gate's verdict — the offline way to
+     * check "scatterebbe? e se no, perché?" without waiting for its real trigger.
+     * Nothing happens for real: [AutomationExecutor.onTrigger] is called with
+     * dryRun = true, so no notification, no speech, no side effect.
+     */
+    fun testRule(rule: AutomationRule) = viewModelScope.launch {
+        val trigger = rule.triggers.firstOrNull() ?: run {
+            _message.value = "La regola non ha un trigger."
+            return@launch
+        }
+        val now = LocalDateTime.now()
+        val dedup = if (trigger.type.startsWith("PLACE_")) trigger.params["placeId"].orEmpty() else ""
+        val event = TriggerEvent(type = trigger.type, at = now, dedupKey = dedup)
+        val evalContext = contextEngine.evaluationContext(now = now)
+        val reports = runCatching { executor.onTrigger(event, evalContext, dryRun = true) }
+            .getOrElse { emptyList() }
+        val report = reports.firstOrNull { it.rule.id == rule.id }
+        _message.value = when {
+            report == null -> "Prova: nessuna valutazione (trigger non corrispondente)."
+            report.decision.fired -> "Prova: scatterebbe adesso. ✓"
+            else -> "Prova: non scatterebbe ora — ${report.reason}"
+        }
+    }
+
     fun clearMessage() { _message.value = "" }
 
     private companion object {
@@ -159,20 +194,25 @@ class RulesViewModel @Inject constructor(
     }
 }
 
-/** The builder's current choices, turned into a [TriggerSpec] on save. */
+/** The builder's current choices, turned into a [TriggerSpec] + condition on save. */
 data class RuleDraft(
     val kind: TriggerKind,
     val time: String = "",
     val placeId: String? = null,
     val actionType: String = ActionRegistry.SHOW_NOTIFICATION,
     val message: String = "",
+    // Optional "SE" filters, combined with AND. Empty = no filter.
+    val days: Set<DayOfWeek> = emptySet(),
+    val onlyCharging: Boolean = false,
+    val timeFrom: String = "",
+    val timeTo: String = "",
 ) {
     var triggerError: String? = null
         private set
 
     fun triggerSpec(): TriggerSpec? = when (kind) {
         TriggerKind.DAILY_TIME -> {
-            val t = com.simone.jarvismobile.core.automation.rule.RuleSchedule.parseTime(time)
+            val t = RuleSchedule.parseTime(time)
             if (t == null) { triggerError = "Ora non valida (usa HH:mm, es. 08:00)."; null }
             else TriggerSpec(TriggerRegistry.RECURRING_TIME, mapOf("time" to "%02d:%02d".format(t.hour, t.minute)))
         }
@@ -180,6 +220,21 @@ data class RuleDraft(
             ?: run { triggerError = "Scegli un luogo."; null }
         TriggerKind.PLACE_LEAVE -> placeId?.let { TriggerSpec(TriggerRegistry.PLACE_EXIT, mapOf("placeId" to it)) }
             ?: run { triggerError = "Scegli un luogo."; null }
+    }
+
+    /** The AND of the enabled filters, or null when the user set none. */
+    fun conditionOrNull(): Condition? {
+        val parts = mutableListOf<Condition>()
+        if (days.isNotEmpty()) parts += Condition.DayOfWeekIn(days)
+        if (onlyCharging) parts += Condition.IsCharging
+        val from = RuleSchedule.parseTime(timeFrom)
+        val to = RuleSchedule.parseTime(timeTo)
+        if (from != null && to != null) parts += Condition.TimeRange(from, to)
+        return when {
+            parts.isEmpty() -> null
+            parts.size == 1 -> parts.first()
+            else -> Condition.All(parts)
+        }
     }
 }
 
