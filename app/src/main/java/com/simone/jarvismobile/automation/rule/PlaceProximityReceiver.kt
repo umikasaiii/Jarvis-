@@ -58,6 +58,13 @@ class PlaceProximityReceiver : BroadcastReceiver() {
                 val event = TriggerEvent(type = type, at = now, dedupKey = placeId)
                 val evalContext = deps.contextEngine().evaluationContext(now = now)
                 deps.ruleExecutor().onTrigger(event, evalContext)
+
+                // Arriving home is the real "found the car" signal for a parking
+                // note left by Modalità Guida (spec §18.7) — clear it here rather
+                // than on a timer, so it never outlives its usefulness.
+                if (entering && placeId == "casa") {
+                    runCatching { deps.parkingRepository().clear() }
+                }
             } catch (e: Throwable) {
                 Log.w(TAG, "proximity_failed ${e.javaClass.simpleName}")
             } finally {
@@ -71,6 +78,7 @@ class PlaceProximityReceiver : BroadcastReceiver() {
     interface ProximityEntryPoint {
         fun contextEngine(): ContextEngine
         fun ruleExecutor(): AutomationExecutor
+        fun parkingRepository(): ParkingRepository
     }
 
     companion object {

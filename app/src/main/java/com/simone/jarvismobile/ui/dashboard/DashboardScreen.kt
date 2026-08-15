@@ -61,6 +61,7 @@ import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.Icon
@@ -124,6 +125,7 @@ private val Blue = Color(0xFF3B9EFF)
 private val Green = Color(0xFF2ECC71)
 private val Amber = Color(0xFFF3B23C)
 private val Violet = Color(0xFF9B7BFF)
+private val Rose = Color(0xFFFF5E5E)
 private val Ink = Color(0xFFE3EFF5)
 private val Muted = Color(0xFF7C8B95)
 
@@ -431,6 +433,25 @@ fun DashboardScreen(
                     footer = "Apri mappa",
                     accent = Cyan,
                     onClick = onOpenNavigation,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+
+            // Modalità Guida: overlay JARVIS su Google Maps reale (spec dedicata).
+            // Full-width like Automazioni — an entry point, not a metric.
+            val drivingVm: com.simone.jarvismobile.ui.driving.DrivingModeEntryViewModel = hiltViewModel()
+            val drivingState by drivingVm.state.collectAsStateWithLifecycle()
+            Row(Modifier.fillMaxWidth()) {
+                StatTile(
+                    icon = Icons.Filled.DirectionsCar,
+                    label = "Modalità Guida",
+                    value = if (drivingState.active) "Attiva" else "Pronta",
+                    unit = if (drivingState.active) "overlay su Maps" else "tocca per avviare",
+                    footer = "JARVIS + Google Maps",
+                    accent = Rose,
+                    onClick = {
+                        drivingVm.toggle { context.startActivity(drivingVm.overlayPermissionIntent()) }
+                    },
                     modifier = Modifier.weight(1f),
                 )
             }

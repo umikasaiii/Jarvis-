@@ -33,4 +33,10 @@
     <string name="action_talk">Parla</string>
     <string name="action_interrupt">Interrompi</string>
     <string name="action_close">Chiudi sessione</string>
+
+    <string name="driving_mode_channel_name">Modalità Guida</string>
+    <string name="driving_mode_channel_desc">Notifica visibile mentre la Modalità Guida è attiva: overlay su Google Maps, JARVIS in ascolto della parola d\'attivazione.</string>
+    <string name="driving_mode_notification_title">JARVIS · Modalità Guida attiva</string>
+    <string name="driving_mode_notification_text">Overlay su Google Maps. Tocca per aprire JARVIS, o ferma qui sotto.</string>
+    <string name="driving_mode_stop_action">Termina</string>
 </resources>

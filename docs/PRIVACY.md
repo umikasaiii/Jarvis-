@@ -16,6 +16,14 @@ hidden recording. No always-on background microphone in the default config.
 | Obsidian notes | User's vault (SAF) | Only fragments, only under opt-in remote profile. |
 | Secrets (tokens) | Android Keystore | Never. |
 | Telemetry | Local only, disableable | Never (no remote telemetry). |
+| Notification content read by Modalità Guida | RAM only, read on demand from the OS notification listener | Never. Not persisted, not logged; disappears the moment Notification Access is revoked. |
+
+Modalità Guida (the driving overlay) is opt-in, foreground-service-backed like the
+main listening session, and introduces no second microphone, notification, or
+media pipeline — it reads the same wake word, STT/TTS, `NotificationListenerService`
+and `MediaSessionManager` the rest of the app already uses. Replying to a message
+through it is a real send (via the notification's own quick-reply action) and is
+confirmed like every other outbound message in this app.
 
 ## Sanctioned online exceptions
 

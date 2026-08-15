@@ -25,6 +25,7 @@ import com.simone.jarvismobile.tools.CalendarDraftTool
 import com.simone.jarvismobile.tools.CompleteAgendaTool
 import com.simone.jarvismobile.tools.DeleteAgendaTool
 import com.simone.jarvismobile.tools.DialDraftTool
+import com.simone.jarvismobile.tools.HideDrivingPanelTool
 import com.simone.jarvismobile.tools.ListNotificationsTool
 import com.simone.jarvismobile.tools.MediaControlTool
 import com.simone.jarvismobile.tools.MoveMemoryTool
@@ -34,8 +35,16 @@ import com.simone.jarvismobile.tools.OpenAppTool
 import com.simone.jarvismobile.tools.OpenSettingsTool
 import com.simone.jarvismobile.tools.PlayMediaTool
 import com.simone.jarvismobile.tools.RenameAgendaTool
+import com.simone.jarvismobile.tools.ReplyMessageTool
 import com.simone.jarvismobile.tools.SearchVaultTool
+import com.simone.jarvismobile.tools.SetDrivingNavigationTool
+import com.simone.jarvismobile.tools.ShowDrivingPanelTool
 import com.simone.jarvismobile.tools.SmsDraftTool
+import com.simone.jarvismobile.tools.StartDrivingModeTool
+import com.simone.jarvismobile.tools.StartDrivingRouteTool
+import com.simone.jarvismobile.tools.StopDrivingModeTool
+import com.simone.jarvismobile.driving.DrivingModeManager
+import com.simone.jarvismobile.driving.DrivingNotificationController
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -60,6 +69,8 @@ object ToolsModule {
         vault: VaultRepository,
         agenda: AgendaRepository,
         knowledge: KnowledgeRepository,
+        drivingMode: DrivingModeManager,
+        drivingNotifications: DrivingNotificationController,
     ): ToolRegistry = ToolRegistry(
         listOf(
             TimeTool(),
@@ -92,6 +103,13 @@ object ToolsModule {
             ListNotificationsTool(context),
             SearchVaultTool(vault),
             CalculateTool(),
+            StartDrivingModeTool(drivingMode),
+            StopDrivingModeTool(drivingMode),
+            SetDrivingNavigationTool(context, drivingMode),
+            StartDrivingRouteTool(context, drivingMode),
+            ShowDrivingPanelTool(drivingMode),
+            HideDrivingPanelTool(drivingMode),
+            ReplyMessageTool(drivingNotifications),
         ),
     )
 }

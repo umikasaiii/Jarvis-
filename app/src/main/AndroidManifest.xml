@@ -20,6 +20,11 @@
     <!-- Notifications for the foreground service (Android 13+). -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Modalità Guida: draws the small overlay windows over Google Maps
+         (docs "Driving Mode"). Requested explicitly via Settings.canDrawOverlays()
+         before the overlay is ever shown; never assumed granted. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
     <!-- Lets JARVIS modes set Do-Not-Disturb (SLEEP = Zen: silence noise, keep
          alarms and priority calls). The user still grants DND access in system
          settings; without it a mode sets only the ringer and says so. -->
@@ -91,6 +96,10 @@
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="geo" />
         </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="google.navigation" />
+        </intent>
         <package android:name="com.whatsapp" />
         <package android:name="com.spotify.music" />
         <package android:name="com.google.android.youtube" />
@@ -154,6 +163,20 @@
             android:name=".navigation.NavigationService"
             android:exported="false"
             android:foregroundServiceType="location" />
+
+        <!-- Modalità Guida overlay (docs "Driving Mode"). specialUse: no built-in
+             FGS type fits "small overlay windows over another app"; the property
+             below is the justification Android 14+ requires. Started only by an
+             explicit user action (Home button, voice command, or a rule the user
+             created) and always shows the persistent notification below. -->
+        <service
+            android:name=".driving.DrivingModeService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Overlay JARVIS su Google Maps durante la Modalità Guida scelta dall'utente" />
+        </service>
 
         <!-- Opt-in observer that lets device-event automations fire with the app
              closed. specialUse: it watches system broadcasts (unlock, headset,

@@ -3,6 +3,7 @@ package com.simone.jarvismobile.di
 import com.simone.jarvismobile.automation.rule.ActionHandler
 import com.simone.jarvismobile.automation.rule.CreateReminderActionHandler
 import com.simone.jarvismobile.automation.rule.NotifyActionHandler
+import com.simone.jarvismobile.automation.rule.OpenDrivingHudActionHandler
 import com.simone.jarvismobile.automation.rule.RunToolActionHandler
 import com.simone.jarvismobile.automation.rule.SaveParkingActionHandler
 import com.simone.jarvismobile.automation.rule.SetJarvisModeActionHandler
@@ -38,5 +39,6 @@ object AutomationEngineModule {
         runTool: RunToolActionHandler,
         parking: SaveParkingActionHandler,
         setMode: SetJarvisModeActionHandler,
-    ): Set<ActionHandler> = setOf(notify, speak, reminder, runTool, parking, setMode)
+        drivingHud: OpenDrivingHudActionHandler,
+    ): Set<ActionHandler> = setOf(notify, speak, reminder, runTool, parking, setMode, drivingHud)
 }

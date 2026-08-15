@@ -324,6 +324,7 @@ class RuleEngineTest {
             ActionRegistry.RUN_TOOL,
             ActionRegistry.SAVE_PARKING_LOCATION,
             ActionRegistry.SET_JARVIS_MODE,
+            ActionRegistry.OPEN_DRIVING_HUD,
         )
         assertEquals(
             withHandlers,

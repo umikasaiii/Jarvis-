@@ -69,6 +69,14 @@ object CommandMatcher {
         val raw = utterance.trim()
         val t = normalize(raw)
 
+        // --- Modalità Guida (checked first: "mostra Spotify"/"mostra dettagli
+        // messaggi" would otherwise be swallowed by the generic app-open or
+        // notification-read patterns below). ------------------------------
+        drivingModeCall(raw)?.let { return it }
+        drivingNavigationCall(raw)?.let { return it }
+        drivingPanelCall(raw)?.let { return it }
+        replyMessageCall(raw)?.let { return it }
+
         // --- Controlled Android surfaces and drafts ---------------------
         // These are checked before conversational intents. Arguments always
         // come from the user's own words; missing details become a follow-up
@@ -365,6 +373,48 @@ object CommandMatcher {
             body.isNullOrBlank() -> Match.Ask("Quale testo devo inserire nell'SMS?", "compose_sms", "body", partial)
             else -> call("compose_sms", "number" to number, "body" to body)
         }
+    }
+
+    /** "attiva/chiudi/termina modalità guida (o moto)". */
+    fun drivingModeCall(raw: String): Match? {
+        val t = normalize(raw)
+        if (DRIVING_MODE_START_RE.containsMatchIn(t)) return call("start_driving_mode")
+        if (DRIVING_MODE_STOP_RE.containsMatchIn(t)) return call("stop_driving_mode")
+        return null
+    }
+
+    /** "imposta navigazione per X" (prepares only) / "avvia percorso" (starts turn-by-turn). */
+    fun drivingNavigationCall(raw: String): Match? {
+        val t = normalize(raw)
+        DRIVING_NAV_SET_RE.find(t)?.let { m ->
+            val destination = m.groupValues[1].trim().trim('.', '?', '!')
+            return if (destination.length >= 2) {
+                call("set_driving_navigation", "destination" to destination)
+            } else {
+                Match.Ask("Verso quale destinazione?", "set_driving_navigation", "destination")
+            }
+        }
+        if (DRIVING_NAV_START_RE.matches(t)) return call("start_driving_route")
+        return null
+    }
+
+    /** Expand/collapse the messages or Spotify panel inside Modalità Guida. */
+    fun drivingPanelCall(raw: String): Match? {
+        val t = normalize(raw)
+        if (DRIVING_PANEL_MESSAGES_SHOW_RE.containsMatchIn(t)) return call("show_driving_panel", "panel" to "messages")
+        if (DRIVING_PANEL_MESSAGES_HIDE_RE.containsMatchIn(t)) return call("hide_driving_panel")
+        if (DRIVING_PANEL_MEDIA_SHOW_RE.containsMatchIn(t)) return call("show_driving_panel", "panel" to "media")
+        if (DRIVING_PANEL_MEDIA_HIDE_RE.containsMatchIn(t)) return call("hide_driving_panel")
+        return null
+    }
+
+    /** "rispondi a Marco: arrivo tra dieci minuti" — the reply text keeps its original case. */
+    fun replyMessageCall(raw: String): Match? {
+        val m = REPLY_MESSAGE_RE.find(raw.trim()) ?: return null
+        val name = m.groupValues[1].trim().trim('.', ',', ' ', '«', '»', '"')
+        val text = m.groupValues[2].trim()
+        if (name.length < 2 || text.isEmpty()) return null
+        return call("reply_message", "name" to name, "text" to text)
     }
 
     /** "portami a Piazza Navona" hands an explicit destination to the map app. */
@@ -728,6 +778,24 @@ object CommandMatcher {
         """(?i)(?:dicendo|con\s+scritto|con\s+testo|testo\s*:|messaggio\s*:|:)\s*(.+)$""",
     )
 
+    // --- Modalità Guida --------------------------------------------------
+    private val DRIVING_MODE_START_RE = Regex("""\battiva\w*\s+modalit[àa]\s+(?:guida|moto)\b""")
+    private val DRIVING_MODE_STOP_RE = Regex(
+        """\b(?:chiudi|termina)\w*\s+modalit[àa]\s+(?:guida|moto)\b|""" +
+            """\besci\w*\s+dalla\s+modalit[àa]\s+(?:guida|moto)\b""",
+    )
+    private val DRIVING_NAV_SET_RE = Regex("""\bimposta\w*\s+(?:la\s+)?navigazione\s+per\s+(.+)$""")
+    private val DRIVING_NAV_START_RE = Regex("""^avvia\w*\s+(?:il\s+)?percorso$""")
+    private val DRIVING_PANEL_MESSAGES_SHOW_RE = Regex("""\bmostra\w*\s+dettagli\s+(?:messaggi|notifiche)\b""")
+    private val DRIVING_PANEL_MESSAGES_HIDE_RE = Regex(
+        """\briduci\w*\s+messaggi\b|\bnascond\w*\s+dettagli\s+messaggi\b""",
+    )
+    private val DRIVING_PANEL_MEDIA_SHOW_RE = Regex(
+        """\bmostra\w*\s+spotify\b|^apri\w*\s+(?:la\s+)?playlist\s+.+$""",
+    )
+    private val DRIVING_PANEL_MEDIA_HIDE_RE = Regex("""\briduci\w*\s+spotify\b|\bchiudi\w*\s+spotify\b""")
+    private val REPLY_MESSAGE_RE = Regex("""^rispondi\s+a\s+(.+?)\s*[:,]\s*(.+)$""", RegexOption.IGNORE_CASE)
+
     private val NAVIGATION_RE = Regex(
         """^naviga\w*\s+(?:a|al|alla|verso|fino\s+a)?\s*(.+)$|""" +
             """^(?:portami|guidami)\s+(?:a|al|alla|verso|fino\s+a)\s+(.+)$|""" +
@@ -735,20 +803,30 @@ object CommandMatcher {
     )
     private val MEDIA_PAUSE_RE = Regex(
         """\b(?:metti|mettere|vai)?\s*(?:in\s+)?pausa\b.{0,18}\b(?:musica|brano|riproduzione|audio|podcast)\b|""" +
-            """\bferma\w*\b.{0,15}\b(?:musica|brano|riproduzione|audio|podcast)\b""",
+            """\bferma\w*\b.{0,15}\b(?:musica|brano|riproduzione|audio|podcast)\b|""" +
+            // Bare "metti pausa" (Modalità Guida, spec §21): anchored to the whole
+            // utterance so a sentence merely containing "pausa" elsewhere is not
+            // mistaken for a media command.
+            """^metti\w*\s+(?:in\s+)?pausa$""",
     )
-    private val MEDIA_NEXT_RE = Regex("""\b(?:brano|canzone|traccia)\s+successiv\w*\b|\b(?:salta|passa)\w*\b.{0,15}\b(?:brano|canzone|traccia)\b""")
+    private val MEDIA_NEXT_RE = Regex(
+        """\b(?:brano|canzone|traccia)\s+successiv\w*\b|\b(?:salta|passa)\w*\b.{0,15}\b(?:brano|canzone|traccia)\b|""" +
+            """\bprossim\w*\s+(?:brano|canzone|traccia)\b""",
+    )
     private val MEDIA_PREVIOUS_RE = Regex("""\b(?:brano|canzone|traccia)\s+precedent\w*\b|\btorna\w*\b.{0,15}\b(?:brano|canzone|traccia)\b""")
-    private val MEDIA_RESUME_RE = Regex("""\b(?:riprendi|continua)\w*\b.{0,15}\b(?:musica|brano|riproduzione)\b""")
+    private val MEDIA_RESUME_RE = Regex(
+        """\b(?:riprendi|continua)\w*\b.{0,15}\b(?:musica|brano|riproduzione)\b|^riprendi\w*$""",
+    )
     private val PLAY_MEDIA_RE = Regex(
         """^(?:riproduci|fammi\s+sentire)\s+(.+)$|""" +
             """^(?:ascolta|metti)\s+(?:la\s+|il\s+|un\s+|una\s+)?(?:musica|canzone|traccia|playlist|album|podcast)\s+(.+)$""",
     )
 
     private val NOTIFICATION_READ_RE = Regex(
-        """\b(?:leggi|elenca|dimmi|mostra)\w*\b.{0,24}\bnotifiche?\b|\b(?:che|quali|quante)\s+notifiche?\b""",
+        """\b(?:leggi|elenca|dimmi|mostra)\w*\b.{0,24}\b(?:notifiche?|messagg\w*)\b|""" +
+            """\b(?:che|quali|quante)\s+(?:notifiche?|messagg\w*)\b|\bchi\s+mi\s+ha\s+scritto\b""",
     )
-    private val NOTIFICATION_APP_RE = Regex("""\bnotifiche?\s+(?:di|da)\s+([\p{L}0-9._ -]+)$""")
+    private val NOTIFICATION_APP_RE = Regex("""\b(?:notifiche?|messagg\w*)\s+(?:di|da)\s+([\p{L}0-9._ -]+)$""")
     private val VAULT_SEARCH_RE = Regex(
         """\b(?:cerca|trova)\w*\s+(?:nel|nello|tra\s+i|nei)\s+(?:vault|miei\s+file|miei\s+appunti|note)\s+(.+)$""",
     )

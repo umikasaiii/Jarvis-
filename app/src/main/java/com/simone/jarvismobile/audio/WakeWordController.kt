@@ -17,15 +17,19 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Drives the wake word — **only while the app is in the foreground**.
+ * Drives the wake word — **only while the app is visibly in front of the user**.
  *
- * The screen calls [setForegroundActive] on resume/pause, so the loop runs only
- * while the app is open and visible. It listens for the configured word
- * (default: the assistant's name) whenever the assistant is resting, and on a
- * hit starts the normal listening session. It never runs in the background and
- * never holds the microphone while a session is active — the moment the
- * conversation leaves a resting state the in-flight wake listen is cancelled, and
- * the wake engine uses its own recognizer so it can never abort that session.
+ * That is true in two situations, each its own explicit, user-controlled flag:
+ * [setForegroundActive] (the home screen, ON_RESUME/ON_PAUSE) and
+ * [setDrivingModeActive] (Modalità Guida, itself a foreground-service-backed,
+ * persistently-notified, opt-in overlay — not a hidden background listener; see
+ * `docs/PRIVACY.md`). The loop runs while *either* is true, listens for the
+ * configured word (default: the assistant's name) whenever the assistant is
+ * resting, and on a hit starts the normal listening session. It never runs with
+ * both flags false and never holds the microphone while a session is active —
+ * the moment the conversation leaves a resting state the in-flight wake listen
+ * is cancelled, and the wake engine uses its own recognizer so it can never
+ * abort that session.
  */
 @Singleton
 class WakeWordController @Inject constructor(
@@ -35,7 +39,9 @@ class WakeWordController @Inject constructor(
 ) {
     private val scope = CoroutineScope(SupervisorJob())
 
-    private val foreground = MutableStateFlow(false)
+    private val homeForeground = MutableStateFlow(false)
+    private val drivingModeActive = MutableStateFlow(false)
+    private val anyForeground: Boolean get() = homeForeground.value || drivingModeActive.value
 
     private val _listeningForWake = MutableStateFlow(false)
     /** True while actively listening for the wake word, for the orb hint. */
@@ -45,8 +51,14 @@ class WakeWordController @Inject constructor(
 
     /** Called by the home screen: true on ON_RESUME, false on ON_PAUSE/dispose. */
     fun setForegroundActive(active: Boolean) {
-        foreground.value = active
-        if (active) start() else stop()
+        homeForeground.value = active
+        if (anyForeground) start() else stop()
+    }
+
+    /** Called by Modalità Guida while its visible overlay session is running. */
+    fun setDrivingModeActive(active: Boolean) {
+        drivingModeActive.value = active
+        if (anyForeground) start() else stop()
     }
 
     private fun start() {
@@ -61,7 +73,7 @@ class WakeWordController @Inject constructor(
             while (isActive) {
                 val enabled = runCatching { settings.wakeWordEnabled.first() }.getOrDefault(false)
                 val ready = enabled &&
-                    foreground.value &&
+                    anyForeground &&
                     engine.isAvailable() &&
                     coordinator.hasRecordPermission() &&
                     coordinator.state.value == ConversationState.Idle
@@ -74,7 +86,7 @@ class WakeWordController @Inject constructor(
                 _listeningForWake.value = true
                 val heard = engine.awaitWakeWord(word)
                 _listeningForWake.value = false
-                if (heard && foreground.value && coordinator.state.value == ConversationState.Idle) {
+                if (heard && anyForeground && coordinator.state.value == ConversationState.Idle) {
                     Log.i(TAG, "wake_word_detected")
                     // Let the wake recognizer fully release the shared recognition
                     // service before the session grabs it, or the session's STT can

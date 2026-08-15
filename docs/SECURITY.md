@@ -20,6 +20,7 @@
 | Notification exposure | Android Notification Access must be granted in system settings; each read is explicitly confirmed, bounded, never persisted and hidden from logs. |
 | Shoulder-surfing / lost device | Optional biometric app lock, session timeout, optional screenshot block on sensitive screens. |
 | Tampered models | SHA-256 verification on import; licenses shown before download; models never auto-downloaded. |
+| Overlay abuse (tapjacking) | Modalità Guida's overlay windows use `FLAG_NOT_FOCUSABLE` only — never `FLAG_NOT_TOUCHABLE` tricks to intercept taps meant for another app — and are sized to just JARVIS's own panels; the large gap over Maps has no window at all, so it is never JARVIS intercepting what looks like a Maps tap. |
 
 ## Controls checklist (§21)
 
@@ -48,6 +49,7 @@ Legend: [x] designed/partially implemented, [ ] planned. See `CLAUDE.md` phase s
 | `ACCESS_FINE_LOCATION` / `_COARSE_LOCATION` | Offline navigation GNSS; place automations | On-device only; no network, no scanning. |
 | `FOREGROUND_SERVICE_LOCATION` | Navigation guidance with the screen off | Declared only while a visible navigation session runs. |
 | `ACCESS_BACKGROUND_LOCATION` | Place automations ("arrivo a &lt;luogo&gt;") fire while the app is closed | Opt-in per place rule; geofence evaluated on-device, no tracking, no network. `CapabilityManager` gates rules on this grant. |
+| `SYSTEM_ALERT_WINDOW` | Modalità Guida's small overlay windows over Google Maps | Requested via `Settings.canDrawOverlays()` only when the user starts Modalità Guida; the mode reports it is missing rather than drawing a fake overlay. |
 
 Not requested: `MANAGE_EXTERNAL_STORAGE`, `QUERY_ALL_PACKAGES`,
 `CALL_PHONE`, `SEND_SMS`, `READ_CONTACTS`, `READ_CALENDAR`,

@@ -224,7 +224,7 @@ object ActionRegistry {
             risk = ActionRisk.LOCAL_SAFE, implemented = false,
         ),
         ActionDefinition(OPEN_DRIVING_HUD, "Apri la modalità guida",
-            risk = ActionRisk.LOCAL_SAFE, exclusiveResource = RESOURCE_MODE, implemented = false),
+            risk = ActionRisk.LOCAL_SAFE, exclusiveResource = RESOURCE_MODE),
         ActionDefinition(
             CREATE_REMINDER, "Crea un promemoria",
             listOf(
