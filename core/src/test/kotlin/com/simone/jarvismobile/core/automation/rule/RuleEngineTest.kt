@@ -298,4 +298,36 @@ class RuleEngineTest {
         val failed = runCatching { rule().copy(cooldownSeconds = -1) }.isFailure
         assertTrue(failed, "a negative cooldown must not be constructible")
     }
+
+    @Test
+    fun onlyActionsWithARealHandlerAreDeclaredImplemented() {
+        // The registry promises the Rule Builder what it can offer. An action
+        // marked implemented but with no handler bound in AutomationEngineModule
+        // would be selectable and then fail at 3am — the same trap the old
+        // ArrivedHome trigger fell into. This pins the two lists together:
+        // adding a handler and flipping the flag must happen in one change.
+        val withHandlers = setOf(
+            ActionRegistry.SHOW_NOTIFICATION,
+            ActionRegistry.SPEAK,
+            ActionRegistry.CREATE_REMINDER,
+            ActionRegistry.RUN_TOOL,
+        )
+        assertEquals(
+            withHandlers,
+            ActionRegistry.available().map { it.type }.toSet(),
+            "available actions must match the handlers bound in AutomationEngineModule",
+        )
+    }
+
+    @Test
+    fun theTriggersOfferedAreOnlyTheOnesWithoutExtraPlumbing() {
+        // Place, activity and notification triggers need subsystems that do not
+        // exist yet; they must not be offerable until they do.
+        val offered = TriggerRegistry.available().map { it.type }.toSet()
+        assertTrue(TriggerRegistry.PLACE_ENTER !in offered)
+        assertTrue(TriggerRegistry.ACTIVITY_ENTER !in offered)
+        assertTrue(TriggerRegistry.NOTIFICATION_MATCH !in offered)
+        assertTrue(TriggerRegistry.DEVICE_CHARGING in offered)
+        assertTrue(TriggerRegistry.RECURRING_TIME in offered)
+    }
 }
