@@ -4,6 +4,7 @@ import com.simone.jarvismobile.automation.rule.ActionHandler
 import com.simone.jarvismobile.automation.rule.CreateReminderActionHandler
 import com.simone.jarvismobile.automation.rule.NotifyActionHandler
 import com.simone.jarvismobile.automation.rule.RunToolActionHandler
+import com.simone.jarvismobile.automation.rule.SaveParkingActionHandler
 import com.simone.jarvismobile.automation.rule.SpeakActionHandler
 import dagger.Module
 import dagger.Provides
@@ -34,5 +35,6 @@ object AutomationEngineModule {
         speak: SpeakActionHandler,
         reminder: CreateReminderActionHandler,
         runTool: RunToolActionHandler,
-    ): Set<ActionHandler> = setOf(notify, speak, reminder, runTool)
+        parking: SaveParkingActionHandler,
+    ): Set<ActionHandler> = setOf(notify, speak, reminder, runTool, parking)
 }

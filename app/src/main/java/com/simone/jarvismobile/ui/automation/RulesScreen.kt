@@ -54,6 +54,7 @@ fun RulesScreen(
 ) {
     val rules by viewModel.savedRules.collectAsStateWithLifecycle()
     val places by viewModel.savedPlaces.collectAsStateWithLifecycle()
+    val parking by viewModel.savedParking.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
 
     var permTick by remember { mutableStateOf(0) }
@@ -136,6 +137,43 @@ fun RulesScreen(
                         }
                     }
                 }
+            }
+        }
+
+        // --- Parcheggio ---
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Parcheggio", style = MaterialTheme.typography.titleMedium)
+                HorizontalDivider()
+                if (!foreground) {
+                    Text(
+                        "Concedi la posizione qui sopra per salvare il parcheggio.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                } else {
+                    Button(
+                        onClick = { viewModel.saveParkingHere() },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Salva dove sono parcheggiato") }
+                    val p = parking
+                    if (p == null) {
+                        Text("Nessun parcheggio salvato.", style = MaterialTheme.typography.bodySmall)
+                    } else {
+                        Text(
+                            "Salvato: ${p.savedAt.take(16).replace('T', ' ')}",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(onClick = { viewModel.distanceToParking() }) { Text("Distanza da qui") }
+                            OutlinedButton(onClick = { viewModel.clearParking() }) { Text("Cancella") }
+                        }
+                    }
+                }
+                Text(
+                    "Più avanti potrai salvarlo in automatico alla chiusura della modalità guida, " +
+                        "solo se non sei in un luogo salvato.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
             }
         }
 

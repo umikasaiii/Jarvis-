@@ -312,6 +312,7 @@ class RuleEngineTest {
             ActionRegistry.SPEAK,
             ActionRegistry.CREATE_REMINDER,
             ActionRegistry.RUN_TOOL,
+            ActionRegistry.SAVE_PARKING_LOCATION,
         )
         assertEquals(
             withHandlers,

@@ -7,9 +7,13 @@ import com.simone.jarvismobile.automation.rule.AutomationExecutor
 import com.simone.jarvismobile.automation.rule.AutomationPlaceEntity
 import com.simone.jarvismobile.automation.rule.PlaceGeofenceSource
 import com.simone.jarvismobile.automation.rule.PlaceRepository
+import com.simone.jarvismobile.automation.rule.ParkingLocationEntity
+import com.simone.jarvismobile.automation.rule.ParkingRepository
 import com.simone.jarvismobile.automation.rule.RuleRepository
 import com.simone.jarvismobile.automation.rule.RuleScheduler
 import com.simone.jarvismobile.context.ContextEngine
+import com.simone.jarvismobile.core.navigation.Geo
+import com.simone.jarvismobile.core.navigation.LatLng
 import com.simone.jarvismobile.core.automation.rule.ActionRegistry
 import com.simone.jarvismobile.core.automation.rule.ActionSpec
 import com.simone.jarvismobile.core.automation.rule.AutomationRule
@@ -48,6 +52,7 @@ class RulesViewModel @Inject constructor(
     private val navLocation: NavigationLocationProvider,
     private val executor: AutomationExecutor,
     private val contextEngine: ContextEngine,
+    private val parking: ParkingRepository,
 ) : ViewModel() {
 
     val savedRules: StateFlow<List<AutomationRule>> =
@@ -55,6 +60,9 @@ class RulesViewModel @Inject constructor(
 
     val savedPlaces: StateFlow<List<AutomationPlaceEntity>> =
         places.observePlaces().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val savedParking: StateFlow<ParkingLocationEntity?> =
+        parking.observe().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     private val _message = kotlinx.coroutines.flow.MutableStateFlow("")
     val message: StateFlow<String> = _message
@@ -113,6 +121,67 @@ class RulesViewModel @Inject constructor(
     fun deletePlace(place: AutomationPlaceEntity) = viewModelScope.launch {
         places.delete(place.id)
         _message.value = "Luogo eliminato: ${place.displayName}."
+    }
+
+    private suspend fun oneShotFix(): com.simone.jarvismobile.core.navigation.GpsFix? =
+        withTimeoutOrNull(POSITION_TIMEOUT_MS) {
+            runCatching { navLocation.fixes(intervalMs = 1_000L).first() }.getOrNull()
+        }
+
+    // --- parking (phase 8, GMS-free) -------------------------------------
+
+    @SuppressLint("MissingPermission")
+    fun saveParkingHere() {
+        if (!navLocation.hasPermission()) {
+            _message.value = "Serve il permesso di posizione."
+            return
+        }
+        if (!navLocation.gpsEnabled()) {
+            _message.value = "Attiva il GPS per salvare il parcheggio."
+            return
+        }
+        viewModelScope.launch {
+            val fix = oneShotFix()
+            if (fix == null) {
+                _message.value = "Posizione non disponibile ora. Riprova all'aperto."
+                return@launch
+            }
+            parking.save(
+                latitude = fix.location.lat,
+                longitude = fix.location.lon,
+                accuracyMeters = fix.accuracyMeters.takeIf { it < Float.MAX_VALUE },
+                label = "manuale",
+            )
+            _message.value = "Parcheggio salvato qui."
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    fun distanceToParking() {
+        val p = savedParking.value ?: run {
+            _message.value = "Nessun parcheggio salvato."
+            return
+        }
+        if (!navLocation.hasPermission()) {
+            _message.value = "Serve il permesso di posizione."
+            return
+        }
+        viewModelScope.launch {
+            val fix = oneShotFix() ?: run {
+                _message.value = "Posizione non disponibile ora."
+                return@launch
+            }
+            val meters = Geo.distanceMeters(
+                LatLng(fix.location.lat, fix.location.lon),
+                LatLng(p.latitude, p.longitude),
+            )
+            _message.value = "Sei a circa ${meters.toInt()} m dal parcheggio."
+        }
+    }
+
+    fun clearParking() = viewModelScope.launch {
+        parking.clear()
+        _message.value = "Parcheggio cancellato."
     }
 
     // --- rules -----------------------------------------------------------

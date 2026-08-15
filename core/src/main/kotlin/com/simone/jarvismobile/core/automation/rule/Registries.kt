@@ -277,8 +277,9 @@ object ActionRegistry {
             risk = ActionRisk.LOCAL_SAFE, exclusiveResource = RESOURCE_WAKE_WORD, implemented = false),
         ActionDefinition(
             SAVE_PARKING_LOCATION, "Salva dove ho parcheggiato",
+            listOf(ParamSpec("label", "Etichetta", ParamKind.TEXT, required = false)),
             risk = ActionRisk.LOCAL_SAFE,
-            requires = Capability.LOCATION_BACKGROUND, implemented = false,
+            requires = Capability.LOCATION_BACKGROUND,
         ),
     )
 
