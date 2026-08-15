@@ -18,15 +18,30 @@ object ProactiveComposer {
     const val EARLY_HOUR = 8
 
     /**
-     * "Buongiorno" plus today's appointments and tasks; just "Buongiorno" when the
-     * day is clear. Meant to be offered at the first morning unlock.
+     * "Buongiorno" plus what the day actually holds — birthdays, appointments,
+     * tasks, a rain warning if one is known — and nothing else. An empty day says
+     * so in one line rather than staying silent or padding it out: the point of an
+     * *adaptive* briefing is that a clear day is exactly as short as it sounds.
+     * Meant to be offered at the first morning unlock.
      */
     fun morningDigest(snapshot: ProactiveSnapshot, today: LocalDate): ProactiveSuggestion {
         val items = snapshot.todayAppointments + snapshot.todayTasks
-        val message = if (items.isEmpty()) {
-            "Buongiorno."
-        } else {
-            "Buongiorno. Oggi: " + items.joinToString(", ") + "."
+        val message = buildString {
+            append("Buongiorno.")
+            if (snapshot.birthdaysToday.isNotEmpty()) {
+                append(" Oggi è il compleanno di ")
+                append(snapshot.birthdaysToday.joinToString(" e "))
+                append(".")
+            }
+            if (items.isNotEmpty()) {
+                append(" Oggi: ")
+                append(items.joinToString(", "))
+                append(".")
+            } else if (snapshot.birthdaysToday.isEmpty()) {
+                append(" Nessun impegno importante oggi.")
+            }
+            // Only ever said when it is actually forecast — unknown/no rain stays silent.
+            if (snapshot.rainToday == true) append(" Oggi è prevista pioggia.")
         }
         return ProactiveSuggestion(
             kind = ProactiveKind.MORNING_DIGEST,

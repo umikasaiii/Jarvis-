@@ -71,6 +71,14 @@ data class ProactiveSnapshot(
     val todayAppointments: List<String> = emptyList(),
     /** Today's due or starred tasks, already formatted. */
     val todayTasks: List<String> = emptyList(),
+    /** Names/entries flagged as today's birthdays, already formatted. */
+    val birthdaysToday: List<String> = emptyList(),
+    /**
+     * True when rain is forecast for today. Null means "unknown" (offline, or the
+     * weather source not configured) — the digest omits the clause rather than
+     * guessing (§ conditions three-valued rule applies here too).
+     */
+    val rainToday: Boolean? = null,
 )
 
 /** The governor's verdict: deliver exactly one suggestion, or stay silent with a reason. */

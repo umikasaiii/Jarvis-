@@ -90,9 +90,11 @@ class ProactiveTest {
 
     // --- composer -----------------------------------------------------------
 
-    @Test fun morningDigestGreetsAloneWhenDayIsClear() {
+    @Test fun morningDigestSaysSoWhenDayIsClear() {
+        // The adaptive spec: a clear day is exactly as short as it sounds, not
+        // silence and not padding.
         val s = ProactiveComposer.morningDigest(ProactiveSnapshot(), today)
-        assertEquals("Buongiorno.", s.message)
+        assertEquals("Buongiorno. Nessun impegno importante oggi.", s.message)
     }
 
     @Test fun morningDigestListsTodaysItems() {
@@ -102,6 +104,25 @@ class ProactiveTest {
         )
         val s = ProactiveComposer.morningDigest(snap, today)
         assertEquals("Buongiorno. Oggi: dentista 15:00, chiamare Marco.", s.message)
+    }
+
+    @Test fun morningDigestCallsOutBirthdaysSeparatelyFromTheAgenda() {
+        val snap = ProactiveSnapshot(birthdaysToday = listOf("Marco"), todayTasks = listOf("chiamare il medico"))
+        val s = ProactiveComposer.morningDigest(snap, today)
+        assertEquals("Buongiorno. Oggi è il compleanno di Marco. Oggi: chiamare il medico.", s.message)
+    }
+
+    @Test fun morningDigestJoinsMultipleBirthdaysAndSkipsTheEmptyDayLine() {
+        val snap = ProactiveSnapshot(birthdaysToday = listOf("Marco", "Giulia"))
+        val s = ProactiveComposer.morningDigest(snap, today)
+        // A birthday IS something on the day, so "nessun impegno" would be false.
+        assertEquals("Buongiorno. Oggi è il compleanno di Marco e Giulia.", s.message)
+    }
+
+    @Test fun morningDigestMentionsRainOnlyWhenForecast() {
+        assertTrue("pioggia" !in ProactiveComposer.morningDigest(ProactiveSnapshot(rainToday = null), today).message)
+        assertTrue("pioggia" !in ProactiveComposer.morningDigest(ProactiveSnapshot(rainToday = false), today).message)
+        assertTrue("pioggia" in ProactiveComposer.morningDigest(ProactiveSnapshot(rainToday = true), today).message)
     }
 
     @Test fun batteryBeforeAlarmOnlyWhenItHelps() {

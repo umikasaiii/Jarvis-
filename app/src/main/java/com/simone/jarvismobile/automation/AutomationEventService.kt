@@ -23,6 +23,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.simone.jarvismobile.R
 import com.simone.jarvismobile.core.automation.Trigger
+import com.simone.jarvismobile.proactive.ProactiveManager
 import com.simone.jarvismobile.ui.MainActivity
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
@@ -31,6 +32,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import java.time.LocalDateTime
 import java.time.LocalTime
 import javax.inject.Inject
 
@@ -50,6 +52,7 @@ class AutomationEventService : Service() {
 
     @Inject lateinit var repository: AutomationRepository
     @Inject lateinit var runner: AutomationRunner
+    @Inject lateinit var proactive: ProactiveManager
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val lastFired = HashMap<String, Long>()
@@ -126,6 +129,13 @@ class AutomationEventService : Service() {
                 prefs().edit().putString(morningKey(rule.id), today).apply()
                 runCatching { runner.run(rule) }
             }
+        }
+        // The adaptive morning briefing: evaluated at the real unlock, not a
+        // periodic guess. ProactiveGovernor's own per-day dedup is the "only once
+        // a day" flag — nothing extra to track here.
+        scope.launch {
+            runCatching { proactive.evaluateOnUnlock(LocalDateTime.now()) }
+                .onFailure { Log.w("JarvisAutomation", "proactive_unlock_failed ${it.javaClass.simpleName}") }
         }
     }
 

@@ -7,6 +7,7 @@ import android.content.IntentFilter
 import android.os.BatteryManager
 import android.util.Log
 import com.simone.jarvismobile.agenda.AgendaRepository
+import com.simone.jarvismobile.audio.SessionCoordinator
 import com.simone.jarvismobile.core.proactive.ProactiveComposer
 import com.simone.jarvismobile.core.proactive.ProactiveDecision
 import com.simone.jarvismobile.core.proactive.ProactiveGovernor
@@ -38,29 +39,58 @@ class ProactiveManager @Inject constructor(
     private val agenda: AgendaRepository,
     private val store: ProactiveStore,
     private val notifier: ProactiveNotifier,
+    private val coordinator: SessionCoordinator,
 ) {
-    suspend fun evaluate(now: LocalDateTime = LocalDateTime.now()) {
+    /** Called periodically by the worker as a coarse fallback (see [evaluateOnUnlock]). */
+    suspend fun evaluate(now: LocalDateTime = LocalDateTime.now()) =
+        run(now, forceMorning = false)
+
+    /**
+     * Called at the real first-unlock-of-the-day event (§ "primo sblocco utile
+     * della giornata"). The morning digest is offered regardless of the coarse
+     * 6-10 window used by [evaluate], because the actual signal here — the
+     * unlock — already *is* the trigger; someone unlocking at 05:40 or 11:15
+     * still gets their one "Buongiorno" for the day. The governor's own per-day
+     * dedup (`MORNING_DIGEST:<date>` in [ProactiveState]) is what stops it from
+     * repeating on every later unlock — there is no separate flag to maintain.
+     */
+    suspend fun evaluateOnUnlock(now: LocalDateTime = LocalDateTime.now()) =
+        run(now, forceMorning = true)
+
+    private suspend fun run(now: LocalDateTime, forceMorning: Boolean) {
         val config = readSettings()
         if (!config.enabled) return
         val today = now.toLocalDate()
-        val candidates = candidatesFor(now, snapshot(today), today)
+        val candidates = candidatesFor(now, snapshot(today), today, forceMorning)
         if (candidates.isEmpty()) return
         val state = store.load().rolledTo(today)
         when (val decision = ProactiveGovernor.decide(candidates, config, state, now)) {
             is ProactiveDecision.Deliver -> {
                 notifier.show(decision.suggestion)
                 store.save(decision.newState)
+                // Spoken too, same opt-in path a new-engine SPEAK action uses — an
+                // adaptive briefing that only JARVIS reads silently isn't a briefing.
+                runCatching { coordinator.speakBackgroundResponse(decision.suggestion.message) }
                 Log.i(TAG, "proactive_deliver ${decision.suggestion.kind}")
             }
             is ProactiveDecision.Skip -> Log.i(TAG, "proactive_skip ${decision.reason}")
         }
     }
 
-    /** Only offer digests in their natural window, so a midday run stays quiet. */
-    private fun candidatesFor(now: LocalDateTime, snap: ProactiveSnapshot, today: LocalDate): List<ProactiveSuggestion> {
+    /**
+     * Digests in their natural window, so a midday periodic run stays quiet — but
+     * [forceMorning] (the real unlock event) always offers the morning digest,
+     * whatever the hour.
+     */
+    private fun candidatesFor(
+        now: LocalDateTime,
+        snap: ProactiveSnapshot,
+        today: LocalDate,
+        forceMorning: Boolean,
+    ): List<ProactiveSuggestion> {
         val out = ArrayList<ProactiveSuggestion>()
         val hour = now.hour
-        if (hour in MORNING_FROM..MORNING_TO) out += ProactiveComposer.morningDigest(snap, today)
+        if (forceMorning || hour in MORNING_FROM..MORNING_TO) out += ProactiveComposer.morningDigest(snap, today)
         if (hour in EVENING_FROM..EVENING_TO) {
             ProactiveComposer.batteryBeforeAlarm(snap, today)?.let { out += it }
             ProactiveComposer.eveningDigest(snap, today)?.let { out += it }
@@ -95,8 +125,15 @@ class ProactiveManager @Inject constructor(
             .sortedBy { it.time }
             .map { "${it.text} ${clock(it.time!!)}" }
         val tasks = entries
-            .filter { !it.done && it.time == null && (it.date == today || it.starred) }
+            .filter { !it.done && it.time == null && (it.date == today || it.starred) && !isBirthday(it.text) }
             .map { (if (it.starred) "⭐ " else "") + it.text }
+        // No dedicated birthday feature exists (§ honesty ledger): this reads
+        // agenda items the user already wrote for today whose text names a
+        // birthday, so "il compleanno di Marco" on today's date surfaces on its
+        // own line instead of blending into the task list.
+        val birthdays = entries
+            .filter { it.date == today && isBirthday(it.text) }
+            .map { birthdayName(it.text) }
 
         return ProactiveSnapshot(
             batteryPercent = percent,
@@ -104,7 +141,16 @@ class ProactiveManager @Inject constructor(
             nextAlarm = nextAlarmTime(),
             todayAppointments = appointments,
             todayTasks = tasks,
+            birthdaysToday = birthdays,
         )
+    }
+
+    private fun isBirthday(text: String): Boolean = text.contains("complean", ignoreCase = true)
+
+    /** Best-effort name after "di"/"of", or the whole line if none is found. */
+    private fun birthdayName(text: String): String {
+        val afterDi = Regex("""complean\w*\s+di\s+(.+)""", RegexOption.IGNORE_CASE).find(text)
+        return afterDi?.groupValues?.get(1)?.trim()?.trim('.', '!') ?: text.trim()
     }
 
     private fun nextAlarmTime(): LocalTime? = runCatching {
