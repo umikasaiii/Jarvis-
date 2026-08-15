@@ -79,12 +79,32 @@ bump from 4 on must ship one**.
 
 ## Status and known gaps
 
-Phases 1–4 are done and CI-verified. **The new engine is not connected to
-anything yet** — nothing calls `AutomationExecutor.onTrigger()`, and the old
-Markdown engine still runs the user's automations.
+Phases 1–4 are done and CI-verified. **Phases 5 and 6 are now done and
+CI-verified**, so the engine is live for the first time:
 
-Still missing: the scheduler wiring that makes the engine live, geofencing and
-the Places screen (needs `ACCESS_BACKGROUND_LOCATION`, verifiable only on a real
-phone), Activity Recognition, parking, the QUANDO/SE/ALLORA Rule Builder,
-diagnostics with dry-run, natural-language AutomationDraft, and the hand-over
-from the old engine.
+- **Phase 5 — scheduler.** `RuleSchedule` (pure, tested) computes the next
+  occurrence of `TIME_AT` / `RECURRING_TIME`; `RuleScheduler` books it as an
+  exact alarm (new `KIND_RULE`, separate from the old engine's), and the
+  `AlarmReceiver` builds a `TriggerEvent` + `EvaluationContext` and calls
+  `AutomationExecutor.onTrigger()` — the first thing ever to drive the engine.
+  Re-armed on cold start and boot.
+- **Phase 6 — geofencing.** `PLACE_ENTER` / `PLACE_EXIT` are now `implemented`.
+  Geofencing is GMS-free (`LocationManager.addProximityAlert`, matching the
+  project's no-Play-Services stance); `PlaceGeofenceSource` arms one fence per
+  saved place, gated on `ACCESS_BACKGROUND_LOCATION`; `PlaceProximityReceiver`
+  feeds the `ContextEngine` and delivers the event. A pure `TriggerMatching`
+  makes a place rule fire only for *its* place (the gate and executor share it),
+  closing the type-only-matching gap. `PLACE_DWELL` stays off (no dwell tick).
+- **Testability.** A `RulesScreen` + `RulesViewModel` (Automazioni › "Regole
+  avanzate") let the user save a place and build a clock/place rule, so the
+  above is exercisable rather than only compiled. It offers only trigger kinds
+  with a live source, so nothing armed there can fail to fire.
+
+The old Markdown engine still runs the user's existing automations; hand-over is
+still deliberately last.
+
+Still missing: Activity Recognition (phase 7) and parking (phase 8) — device-only
+sensor APIs; the full QUANDO/SE/ALLORA Rule Builder with conditions and
+diagnostics/dry-run (phase 9, only a minimal builder exists today);
+natural-language `AutomationDraft`; and the hand-over from the old engine
+(phase 10). Real geofence firing is verifiable only on a phone.
