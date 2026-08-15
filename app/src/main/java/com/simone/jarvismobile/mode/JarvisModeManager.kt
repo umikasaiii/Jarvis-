@@ -9,6 +9,7 @@ import com.simone.jarvismobile.context.ContextEngine
 import com.simone.jarvismobile.core.automation.rule.TriggerEvent
 import com.simone.jarvismobile.core.automation.rule.TriggerRegistry
 import com.simone.jarvismobile.core.mode.JarvisModes
+import com.simone.jarvismobile.core.mode.LocationPrecision
 import com.simone.jarvismobile.core.mode.ModeProfile
 import com.simone.jarvismobile.core.mode.RingerPreference
 import com.simone.jarvismobile.data.SettingsRepository
@@ -17,6 +18,12 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.SharingStarted
 import java.time.LocalDateTime
 import javax.inject.Inject
 import javax.inject.Provider
@@ -49,9 +56,19 @@ class JarvisModeManager @Inject constructor(
     private val settings: SettingsRepository,
 ) {
     private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     private val _mode = MutableStateFlow(prefs.getString(KEY, JarvisModes.HOME) ?: JarvisModes.HOME)
     val mode: StateFlow<String> = _mode.asStateFlow()
+
+    /**
+     * GNSS effort implied by the current mode (§ Location Engine power modes).
+     * Consumed by location callers to size an active fix interval — see
+     * [LocationPrecision] for what this can and cannot mean today.
+     */
+    val locationPrecision: StateFlow<LocationPrecision> = _mode
+        .map { JarvisModes.profile(it)?.locationPrecision ?: LocationPrecision.BALANCED }
+        .stateIn(scope, SharingStarted.Eagerly, LocationPrecision.BALANCED)
 
     init {
         // Seed the context so a "se in modalità X" condition is answerable at once.

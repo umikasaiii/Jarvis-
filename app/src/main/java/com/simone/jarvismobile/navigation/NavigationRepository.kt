@@ -17,6 +17,8 @@ import com.simone.jarvismobile.core.navigation.RouteProgressCalculator
 import com.simone.jarvismobile.core.navigation.RoutingProfile
 import com.simone.jarvismobile.core.navigation.RoutingResult
 import com.simone.jarvismobile.core.navigation.VoiceAnnouncer
+import com.simone.jarvismobile.core.mode.LocationPrecision
+import com.simone.jarvismobile.mode.JarvisModeManager
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -48,6 +50,7 @@ class NavigationRepository @Inject constructor(
     private val routingEngine: OfflineRoutingEngine,
     private val placeSearch: PlaceSearchRepository,
     private val voice: NavigationVoiceController,
+    private val modeManager: JarvisModeManager,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var locationJob: Job? = null
@@ -103,13 +106,27 @@ class NavigationRepository @Inject constructor(
     fun hasLocationPermission(): Boolean = locationProvider.hasPermission()
     fun gpsEnabled(): Boolean = locationProvider.gpsEnabled()
 
-    fun start(intervalMs: Long = 1_000L) {
+    /**
+     * Starts collecting fixes. When [intervalMs] is left at its default, the
+     * interval is sized from the current [JarvisModeManager] mode instead of a
+     * single fixed value — DRIVING asks GPS for fixes more often, HOME/SLEEP
+     * less often — so "Guida → alta precisione" (§ Location Engine power
+     * modes) actually changes something during an active session, the only
+     * place this app ever requests live location at all.
+     */
+    fun start(intervalMs: Long = intervalForCurrentMode()) {
         if (locationJob?.isActive == true) return
         _gpsStatus.value = GpsStatus.ACQUIRING
         locationJob = scope.launch {
             refreshRegions()
             locationProvider.fixes(intervalMs).collect { onFix(it) }
         }
+    }
+
+    private fun intervalForCurrentMode(): Long = when (modeManager.locationPrecision.value) {
+        LocationPrecision.HIGH_PRECISION -> 500L
+        LocationPrecision.BALANCED -> 1_000L
+        LocationPrecision.LOW_POWER -> 2_500L
     }
 
     fun stop() {

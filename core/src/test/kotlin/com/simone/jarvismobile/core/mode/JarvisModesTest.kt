@@ -36,4 +36,12 @@ class JarvisModesTest {
     fun `mode ids are unique`() {
         assertEquals(JarvisModes.all.size, JarvisModes.ids.toSet().size)
     }
+
+    @Test
+    fun `driving asks for the tightest GPS effort, home and sleep the loosest`() {
+        assertEquals(LocationPrecision.HIGH_PRECISION, JarvisModes.profile(JarvisModes.DRIVING)!!.locationPrecision)
+        assertEquals(LocationPrecision.LOW_POWER, JarvisModes.profile(JarvisModes.HOME)!!.locationPrecision)
+        assertEquals(LocationPrecision.LOW_POWER, JarvisModes.profile(JarvisModes.SLEEP)!!.locationPrecision)
+        assertEquals(LocationPrecision.BALANCED, JarvisModes.profile(JarvisModes.WORK)!!.locationPrecision)
+    }
 }
