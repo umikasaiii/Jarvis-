@@ -17,6 +17,26 @@ hidden recording. No always-on background microphone in the default config.
 | Secrets (tokens) | Android Keystore | Never. |
 | Telemetry | Local only, disableable | Never (no remote telemetry). |
 
+## Sanctioned online exceptions
+
+Two features are explicitly allowed to break offline-first, and only these
+two: **weather** (opt-in, Impostazioni › Automazioni) and, later, **live-traffic
+travel-time estimates** for a place. Both share the same shape:
+
+- **Off by default.** Nothing is fetched unless the user turns the setting on.
+- **Only when the network is actually present.** No fetch is forced; a missing
+  connection degrades to "unknown" (never a guess, never a stale value served
+  as current — weather has a 6-hour staleness cutoff for exactly this reason).
+- **Minimal payload.** Weather sends only a rounded coordinate pair (~1.1 km,
+  not the exact fix) and no account, device id, or identifying header — Open-
+  Meteo needs no API key.
+- **No LLM, no vault, no transcript involved.** The network call is a plain
+  HTTP fetch of public forecast/routing data; it never carries anything the
+  user typed or said.
+
+Every other feature — STT, the local LLM, TTS, memory, agenda, automations —
+stays fully offline, unaffected by this opt-in.
+
 ## Privacy profiles (§13)
 
 The user chooses how much may reach a companion PC:

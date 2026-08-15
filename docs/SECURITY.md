@@ -14,7 +14,7 @@
 | Secrets leaking via logs | `LogRedactor` masks tokens/emails/IPs/phones; content is logged only as length+hash placeholders; release builds log technical events only. |
 | Model-driven code execution | The model can only call **registered tools**. No shell, no arbitrary Intents/classes/URLs, no dynamic code loading. `calculate` is a hand-written parser, not `eval`. |
 | Over-broad file access | No `MANAGE_EXTERNAL_STORAGE`/`QUERY_ALL_PACKAGES`. Vault access is a single SAF tree URI the user grants; nothing outside it is read. |
-| Unauthorized network egress | Offline path never touches the network. Remote calls happen only under an opt-in `PrivacyProfile`; router records exactly what would be shared before sending. |
+| Unauthorized network egress | Offline path never touches the network. Remote calls happen only under an opt-in `PrivacyProfile`, or the two explicitly sanctioned exceptions (weather; later live-traffic ETA — see `docs/PRIVACY.md`), each off by default and sending only rounded coordinates, no account/device id. Router records exactly what would be shared before sending. |
 | TLS interception | No trust-all TLS, no certificate bypass. User may install a chosen CA if needed (e.g. self-hosted HA); we never disable verification. |
 | Sensitive action without intent | `CONFIRMING_WRITE` and higher policies require confirmation. `HOME_SECURITY`/`DESTRUCTIVE` are blocked until the biometric UI exists. Calls/SMS/calendar are drafts in system apps and cannot be sent/saved silently. |
 | Notification exposure | Android Notification Access must be granted in system settings; each read is explicitly confirmed, bounded, never persisted and hidden from logs. |
@@ -44,7 +44,7 @@ Legend: [x] designed/partially implemented, [ ] planned. See `CLAUDE.md` phase s
 | `FOREGROUND_SERVICE_MEDIA_PLAYBACK` | Opt-in spoken background answer | Declared only while the visible worker speaks. |
 | `POST_NOTIFICATIONS` | Session, response and agenda notifications | Android 13+. Private preview is off by default. |
 | `BLUETOOTH_CONNECT` | Route to AirPods, read device name | No location, no scanning. |
-| `INTERNET`, `ACCESS_NETWORK_STATE` | Opt-in PC/HA only | Unused on the offline path. |
+| `INTERNET`, `ACCESS_NETWORK_STATE` | Opt-in PC/HA; opt-in weather (Open-Meteo, no API key) | Unused on the offline path; weather sends only a rounded coordinate pair, degrades to "unknown" with no connection. |
 | `ACCESS_FINE_LOCATION` / `_COARSE_LOCATION` | Offline navigation GNSS; place automations | On-device only; no network, no scanning. |
 | `FOREGROUND_SERVICE_LOCATION` | Navigation guidance with the screen off | Declared only while a visible navigation session runs. |
 | `ACCESS_BACKGROUND_LOCATION` | Place automations ("arrivo a &lt;luogo&gt;") fire while the app is closed | Opt-in per place rule; geofence evaluated on-device, no tracking, no network. `CapabilityManager` gates rules on this grant. |
