@@ -55,6 +55,7 @@ fun RulesScreen(
     val rules by viewModel.savedRules.collectAsStateWithLifecycle()
     val places by viewModel.savedPlaces.collectAsStateWithLifecycle()
     val parking by viewModel.savedParking.collectAsStateWithLifecycle()
+    val executions by viewModel.recentExecutions.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
 
     var permTick by remember { mutableStateOf(0) }
@@ -205,6 +206,42 @@ fun RulesScreen(
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             OutlinedButton(onClick = { viewModel.testRule(rule) }) { Text("Prova adesso") }
                             OutlinedButton(onClick = { viewModel.deleteRule(rule) }) { Text("Elimina") }
+                        }
+                        HorizontalDivider()
+                    }
+                }
+            }
+        }
+
+        // --- Diagnostica ---
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Diagnostica", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Ultimi eventi del motore: perché è (o non è) scattato. Le prove col " +
+                        "dry-run compaiono qui come «prova».",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                HorizontalDivider()
+                if (executions.isEmpty()) {
+                    Text(
+                        "Ancora nessun evento. Usa «Prova adesso» o aspetta che una regola scatti.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                } else {
+                    executions.forEach { e ->
+                        val time = e.at?.let { "%02d:%02d".format(it.hour, it.minute) } ?: "--:--"
+                        val status = when {
+                            e.dryRun -> "prova"
+                            e.fired -> "scattata"
+                            else -> "non scattata"
+                        }
+                        Text(
+                            "${e.ruleName.take(32).ifBlank { "regola" }} · $time · $status",
+                            style = MaterialTheme.typography.titleSmall,
+                        )
+                        if (e.reason.isNotBlank()) {
+                            Text(e.reason, style = MaterialTheme.typography.bodySmall)
                         }
                         HorizontalDivider()
                     }

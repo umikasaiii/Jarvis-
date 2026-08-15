@@ -5,6 +5,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.simone.jarvismobile.automation.rule.AutomationExecutor
 import com.simone.jarvismobile.automation.rule.AutomationPlaceEntity
+import com.simone.jarvismobile.automation.rule.ExecutionLogRepository
+import com.simone.jarvismobile.automation.rule.ExecutionRecord
 import com.simone.jarvismobile.automation.rule.PlaceGeofenceSource
 import com.simone.jarvismobile.automation.rule.PlaceRepository
 import com.simone.jarvismobile.automation.rule.ParkingLocationEntity
@@ -53,7 +55,12 @@ class RulesViewModel @Inject constructor(
     private val executor: AutomationExecutor,
     private val contextEngine: ContextEngine,
     private val parking: ParkingRepository,
+    private val log: ExecutionLogRepository,
 ) : ViewModel() {
+
+    /** Recent firings and non-firings, for the diagnostics card (§21-§22). */
+    val recentExecutions: StateFlow<List<ExecutionRecord>> =
+        log.observeRecent(40).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val savedRules: StateFlow<List<AutomationRule>> =
         rules.observeRules().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
