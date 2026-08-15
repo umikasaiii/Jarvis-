@@ -44,6 +44,13 @@ data class ActionDefinition(
     val risk: ActionRisk = ActionRisk.LOCAL_SAFE,
     val requires: Capability = Capability.NONE,
     val implemented: Boolean = true,
+    /**
+     * A state only one rule may own at a time, e.g. the assistant's mode. Two
+     * rules claiming the same resource in the same moment are a conflict, and
+     * the higher-priority one wins (§12); without this the two would fight and
+     * flip the state back and forth.
+     */
+    val exclusiveResource: String? = null,
 )
 
 object TriggerRegistry {
@@ -191,6 +198,10 @@ object ActionRegistry {
     const val STOP_WAKE_WORD_MODE = "STOP_WAKE_WORD_MODE"
     const val SAVE_PARKING_LOCATION = "SAVE_PARKING_LOCATION"
 
+    /** Exclusive state names. Two rules claiming one are resolved by priority. */
+    const val RESOURCE_MODE = "jarvis_mode"
+    const val RESOURCE_WAKE_WORD = "wake_word"
+
     val all: List<ActionDefinition> = listOf(
         ActionDefinition(
             SHOW_NOTIFICATION, "Mostra una notifica",
@@ -205,7 +216,7 @@ object ActionRegistry {
         ActionDefinition(
             SET_JARVIS_MODE, "Cambia modalità JARVIS",
             listOf(ParamSpec("mode", "Modalità", ParamKind.TEXT)),
-            risk = ActionRisk.LOCAL_SAFE,
+            risk = ActionRisk.LOCAL_SAFE, exclusiveResource = RESOURCE_MODE,
         ),
         ActionDefinition(
             OPEN_APP_SCREEN, "Apri una schermata di JARVIS",
@@ -213,7 +224,7 @@ object ActionRegistry {
             risk = ActionRisk.LOCAL_SAFE,
         ),
         ActionDefinition(OPEN_DRIVING_HUD, "Apri la modalità guida",
-            risk = ActionRisk.LOCAL_SAFE, implemented = false),
+            risk = ActionRisk.LOCAL_SAFE, exclusiveResource = RESOURCE_MODE, implemented = false),
         ActionDefinition(
             CREATE_REMINDER, "Crea un promemoria",
             listOf(
@@ -260,8 +271,10 @@ object ActionRegistry {
             ),
             risk = ActionRisk.LOCAL_SAFE, requires = Capability.EXACT_ALARM,
         ),
-        ActionDefinition(START_WAKE_WORD_MODE, "Attiva la parola di attivazione", risk = ActionRisk.LOCAL_SAFE),
-        ActionDefinition(STOP_WAKE_WORD_MODE, "Disattiva la parola di attivazione", risk = ActionRisk.LOCAL_SAFE),
+        ActionDefinition(START_WAKE_WORD_MODE, "Attiva la parola di attivazione",
+            risk = ActionRisk.LOCAL_SAFE, exclusiveResource = RESOURCE_WAKE_WORD),
+        ActionDefinition(STOP_WAKE_WORD_MODE, "Disattiva la parola di attivazione",
+            risk = ActionRisk.LOCAL_SAFE, exclusiveResource = RESOURCE_WAKE_WORD),
         ActionDefinition(
             SAVE_PARKING_LOCATION, "Salva dove ho parcheggiato",
             risk = ActionRisk.LOCAL_SAFE,
@@ -279,6 +292,10 @@ object ActionRegistry {
         val def = definition(spec.type) ?: return listOf("azione sconosciuta: ${spec.type}")
         return validateParams(def.params, spec.params)
     }
+
+    /** Exclusive states the given actions would claim. */
+    fun exclusiveResources(actions: List<ActionSpec>): Set<String> =
+        actions.mapNotNull { definition(it.type)?.exclusiveResource }.toSet()
 
     /** The highest risk among [actions] — what the rule as a whole amounts to. */
     fun riskOf(actions: List<ActionSpec>): ActionRisk = actions
