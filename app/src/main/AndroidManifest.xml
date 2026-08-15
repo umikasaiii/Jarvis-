@@ -236,6 +236,19 @@
             android:name=".automation.rule.PlaceProximityReceiver"
             android:exported="false" />
 
+        <!-- Charger connect/disconnect for the generic engine. POWER_CONNECTED/
+             DISCONNECTED are protected broadcasts the system delivers to a
+             manifest receiver even when the app is stopped. Separate from the old
+             engine's PowerEventReceiver. -->
+        <receiver
+            android:name=".automation.rule.EnginePowerReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.ACTION_POWER_CONNECTED" />
+                <action android:name="android.intent.action.ACTION_POWER_DISCONNECTED" />
+            </intent-filter>
+        </receiver>
+
         <service
             android:name=".tools.JarvisNotificationListener"
             android:exported="true"

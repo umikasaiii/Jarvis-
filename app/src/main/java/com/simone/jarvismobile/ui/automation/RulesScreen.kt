@@ -259,6 +259,7 @@ private fun RuleBuilderCard(
                         }
                     }
                 }
+                TriggerKind.CHARGING, TriggerKind.UNPLUGGED -> Unit
             }
 
             Text("Solo se… (opzionale)", style = MaterialTheme.typography.labelLarge)
@@ -374,6 +375,8 @@ private fun triggerLabel(spec: TriggerSpec, places: List<AutomationPlaceEntity>)
         TriggerRegistry.TIME_AT -> "Il ${spec.params["at"].orEmpty()}"
         TriggerRegistry.PLACE_ENTER -> "Quando arrivo a ${placeName(spec.params["placeId"])}"
         TriggerRegistry.PLACE_EXIT -> "Quando esco da ${placeName(spec.params["placeId"])}"
+        TriggerRegistry.DEVICE_CHARGING -> "Quando metto in carica"
+        TriggerRegistry.DEVICE_UNPLUGGED -> "Quando tolgo dalla carica"
         else -> TriggerRegistry.definition(spec.type)?.label ?: spec.type
     }
 }

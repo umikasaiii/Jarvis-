@@ -220,6 +220,8 @@ data class RuleDraft(
             ?: run { triggerError = "Scegli un luogo."; null }
         TriggerKind.PLACE_LEAVE -> placeId?.let { TriggerSpec(TriggerRegistry.PLACE_EXIT, mapOf("placeId" to it)) }
             ?: run { triggerError = "Scegli un luogo."; null }
+        TriggerKind.CHARGING -> TriggerSpec(TriggerRegistry.DEVICE_CHARGING)
+        TriggerKind.UNPLUGGED -> TriggerSpec(TriggerRegistry.DEVICE_UNPLUGGED)
     }
 
     /** The AND of the enabled filters, or null when the user set none. */
@@ -243,4 +245,6 @@ enum class TriggerKind(val label: String) {
     DAILY_TIME("Ogni giorno a un'ora"),
     PLACE_ARRIVE("Quando arrivo a un luogo"),
     PLACE_LEAVE("Quando esco da un luogo"),
+    CHARGING("Quando metto in carica"),
+    UNPLUGGED("Quando tolgo dalla carica"),
 }
