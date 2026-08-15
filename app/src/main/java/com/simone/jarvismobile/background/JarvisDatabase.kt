@@ -2,6 +2,14 @@ package com.simone.jarvismobile.background
 
 import androidx.room.Database
 import androidx.room.RoomDatabase
+import com.simone.jarvismobile.automation.rule.AutomationExecutionDao
+import com.simone.jarvismobile.automation.rule.AutomationExecutionEntity
+import com.simone.jarvismobile.automation.rule.AutomationPlaceDao
+import com.simone.jarvismobile.automation.rule.AutomationPlaceEntity
+import com.simone.jarvismobile.automation.rule.AutomationRuleDao
+import com.simone.jarvismobile.automation.rule.AutomationRuleEntity
+import com.simone.jarvismobile.automation.rule.ParkingLocationDao
+import com.simone.jarvismobile.automation.rule.ParkingLocationEntity
 import com.simone.jarvismobile.document.DocumentChunkEntity
 import com.simone.jarvismobile.document.DocumentDao
 import com.simone.jarvismobile.document.DocumentEntity
@@ -14,12 +22,22 @@ import com.simone.jarvismobile.navigation.PlaceFtsEntity
     entities = [
         AssistantTask::class, DocumentEntity::class, DocumentChunkEntity::class,
         PlaceFtsEntity::class, NavFavoriteEntity::class, NavHistoryEntity::class,
+        AutomationRuleEntity::class, AutomationPlaceEntity::class,
+        AutomationExecutionEntity::class, ParkingLocationEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = false,
 )
 abstract class JarvisDatabase : RoomDatabase() {
     abstract fun assistantTaskDao(): AssistantTaskDao
     abstract fun documentDao(): DocumentDao
     abstract fun navDao(): NavDao
+
+    // Automation engine. Unlike the tables above, these hold data only the user
+    // can produce — see RuleMigrations for why they must never be migrated
+    // destructively.
+    abstract fun automationRuleDao(): AutomationRuleDao
+    abstract fun automationPlaceDao(): AutomationPlaceDao
+    abstract fun automationExecutionDao(): AutomationExecutionDao
+    abstract fun parkingLocationDao(): ParkingLocationDao
 }
