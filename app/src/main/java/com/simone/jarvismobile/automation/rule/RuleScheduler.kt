@@ -80,6 +80,7 @@ class RuleScheduler @Inject constructor(
     private fun workName(id: String) = "$PREFIX$id"
 
     companion object {
+        private const val TAG = "JarvisAutomation"
         private const val PREFIX = "jarvis_rule_"
         private const val PREFS = "jarvis_rule_schedule"
         private const val KEY_SCHEDULED = "scheduled_rules"
