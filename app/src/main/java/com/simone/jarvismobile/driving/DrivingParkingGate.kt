@@ -41,8 +41,8 @@ class DrivingParkingGate @Inject constructor(
         if (nearKnownPlace) return
         runCatching {
             parking.save(
-                latitude = here.latitude,
-                longitude = here.longitude,
+                latitude = here.lat,
+                longitude = here.lon,
                 accuracyMeters = if (fix.hasAccuracy()) fix.accuracy else null,
                 label = "Modalità Guida",
             )
