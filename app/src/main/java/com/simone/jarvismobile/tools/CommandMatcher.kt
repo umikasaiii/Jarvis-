@@ -157,6 +157,11 @@ object CommandMatcher {
         // --- Recall the free-text notes -----------------------------------
         if (RECALL_RE.containsMatchIn(t)) return call("list_memories")
 
+        // --- Re-file a saved note ("sposta l'appunto sulla moto in Lavoro") --
+        // Before the edit rule, which would otherwise read "… in Lavoro" as a
+        // rewrite of the note's text.
+        moveMemoryCall(raw)?.let { return it }
+
         // --- Edit a saved memory ("cambia l'appunto X in Y") --------------
         updateMemoryCall(raw)?.let { return it }
 
@@ -424,6 +429,34 @@ object CommandMatcher {
 
     /** Public so callers can reuse the reminder-body extraction. */
     fun rememberBody(raw: String): String? = rememberContent(raw)
+
+    /**
+     * "sposta l'appunto sulla moto in Lavoro" → move_memory.
+     *
+     * Requires an explicit note cue ("l'appunto", "la nota", "il memo"), so a
+     * planner reschedule is never mistaken for a re-filing. When the note itself
+     * isn't named ("sposta questa nota in Lavoro") JARVIS asks which one rather
+     * than picking a note on its own.
+     */
+    fun moveMemoryCall(raw: String): Match? {
+        val m = MOVE_MEMORY_RE.find(normalize(raw)) ?: return null
+        val needle = m.groupValues[1].trim()
+            .replace(Regex("""^(?:su\w*|di|del|dello|della|che)\s+"""), "")
+            .trim('.', ',', ' ', '\'', '«', '»', '"')
+        val category = m.groupValues[2].trim()
+            .replace(Regex("""^(?:la\s+)?categoria\s+|^(?:la\s+)?cartella\s+"""), "")
+            .trim('.', ',', ' ', '«', '»', '"')
+        if (category.length < 2) return null
+        if (needle.length < 2) {
+            return Match.Ask(
+                "Quale appunto devo spostare in $category?",
+                "move_memory",
+                "text",
+                mapOf("category" to category),
+            )
+        }
+        return call("move_memory", "text" to needle, "category" to category)
+    }
 
     /** "cambia l'appunto sul gelato in mi piace il cioccolato" → update_memory. */
     fun updateMemoryCall(raw: String): Match? {
@@ -785,6 +818,17 @@ object CommandMatcher {
             """|^(?:cancella|elimina|togli|rimuovi)\s+(?:dalla memoria|dagli appunti|l['’]appunto|il ricordo)""" +
             """\s*(?:su\w*\s+|che\s+|di\s+|del\s+|dello\s+|della\s+)?(.+)$""",
         RegexOption.IGNORE_CASE,
+    )
+
+    /**
+     * Re-file a note: a move verb, an explicit note cue, optionally the words
+     * that identify the note, then the destination category.
+     */
+    private val MOVE_MEMORY_RE = Regex(
+        """(?:spost|mett|archivi|classific|sistem)\w*\s+""" +
+            """(?:l['’]appunt[oi]|(?:la\s+|questa\s+)?not[ae]|(?:il\s+|questo\s+)?memo|""" +
+            """quest[oa]\s+appunt[oi]|il\s+ricordo)\s*""" +
+            """(.*?)\s*(?:\bin\b|\bnella\b|\bnel\b|\bsotto\b)\s+(.+)$""",
     )
 
     /** Planner nouns that make a generic edit belong to the calendar, not the notes. */

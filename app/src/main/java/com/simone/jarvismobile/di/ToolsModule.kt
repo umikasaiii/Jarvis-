@@ -27,6 +27,7 @@ import com.simone.jarvismobile.tools.DeleteAgendaTool
 import com.simone.jarvismobile.tools.DialDraftTool
 import com.simone.jarvismobile.tools.ListNotificationsTool
 import com.simone.jarvismobile.tools.MediaControlTool
+import com.simone.jarvismobile.tools.MoveMemoryTool
 import com.simone.jarvismobile.tools.MoveAgendaTool
 import com.simone.jarvismobile.tools.NavigationTool
 import com.simone.jarvismobile.tools.OpenAppTool
@@ -78,6 +79,7 @@ object ToolsModule {
             ForgetMemoryTool(memory),
             UpdateMemoryTool(memory),
             ListMemoriesTool(memory),
+            MoveMemoryTool(memory),
             SearchKnowledgeTool(knowledge),
             OpenAppTool(context),
             OpenSettingsTool(context),

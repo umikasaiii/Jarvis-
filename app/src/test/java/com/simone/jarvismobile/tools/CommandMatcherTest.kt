@@ -289,4 +289,30 @@ class CommandMatcherTest {
         ) as Match.Run
         assertEquals("add_reminder", m.call.name)
     }
+
+    // --- Re-filing a note into a category --------------------------------
+
+    @Test
+    fun movingANoteIntoACategoryIsRecognised() {
+        val m = CommandMatcher.match("sposta l'appunto sulla moto in Lavoro e studio") as Match.Run
+        assertEquals("move_memory", m.call.name)
+        assertEquals("moto", m.call.arguments["text"]?.jsonPrimitive?.content)
+        assertEquals("lavoro e studio", m.call.arguments["category"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun movingAnUnnamedNoteAsksWhichOne() {
+        // "questa nota" points at something JARVIS cannot see; it must ask
+        // instead of re-filing an arbitrary note.
+        val m = CommandMatcher.match("sposta questa nota in Casa") as Match.Ask
+        assertEquals("move_memory", m.tool)
+        assertEquals("text", m.missing)
+        assertEquals("casa", m.partial["category"])
+    }
+
+    @Test
+    fun aPlannerRescheduleIsNotANoteRefiling() {
+        // Same verb, no note cue: must stay with the agenda path.
+        assertNull(CommandMatcher.match("sposta il dentista a venerdì"))
+    }
 }

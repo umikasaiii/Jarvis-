@@ -9,6 +9,7 @@ import com.simone.jarvismobile.core.tools.SensitivityLevel
 import com.simone.jarvismobile.core.tools.Tool
 import com.simone.jarvismobile.core.tools.ToolPolicy
 import com.simone.jarvismobile.core.tools.ToolResult
+import com.simone.jarvismobile.core.memory.MemoryCategories
 import com.simone.jarvismobile.core.memory.MemoryKind
 import com.simone.jarvismobile.core.memory.MemoryStructure
 import com.simone.jarvismobile.memory.MemoryIndex
@@ -323,6 +324,63 @@ class UpdateMemoryTool(private val memory: MemoryIndex) : Tool {
  * answer to "cosa devo fare?" comes from the file, never from the model, so it
  * can't be invented.
  */
+/**
+ * Files a saved note under a different category ("sposta l'appunto sulla moto in
+ * Lavoro"). Fail-closed like the other memory edits: it moves a note only when
+ * exactly one matches the words given, so a vague phrase never re-files the
+ * wrong one. The category must be one JARVIS actually uses.
+ */
+class MoveMemoryTool(private val memory: MemoryIndex) : Tool {
+    override val name = "move_memory"
+    override val description = "Sposta un appunto in un'altra categoria della memoria."
+    override val policy = ToolPolicy.LOW_RISK_WRITE
+    override val sensitivity = SensitivityLevel.PERSONAL
+    override val requiresNetwork = false
+    override val timeoutMs = 8_000L
+
+    override fun validate(arguments: JsonObject): String? {
+        val text = arguments.str("text") ?: return "manca il campo 'text'"
+        if (text.length < 2) return "testo troppo corto"
+        val category = arguments.str("category") ?: return "manca la categoria"
+        // normalize() falls back to «Altro» for anything it doesn't know, so a
+        // typo would quietly file the note in the wrong place. Only accept
+        // «Altro» when that is what was actually asked for.
+        if (!isKnownCategory(category)) return "categoria sconosciuta: $category"
+        return null
+    }
+
+    override suspend fun execute(arguments: JsonObject): ToolResult {
+        val text = arguments.str("text") ?: return ToolResult.Failure("missing_text")
+        val requested = arguments.str("category").orEmpty()
+        if (!isKnownCategory(requested)) return ToolResult.Failure("unknown_category")
+        val category = MemoryCategories.normalize(requested)
+
+        val matches = runCatching { memory.findMemories(text) }.getOrDefault(emptyList())
+        return when {
+            matches.isEmpty() -> ToolResult.Failure("memory_not_found")
+            matches.size > 1 -> ok(
+                "spoken" to "Ho più appunti che contengono «$text». Dimmi qualche parola in più.",
+            )
+            else -> {
+                val moved = runCatching { memory.setCategory(matches.first().id, category) }.getOrNull()
+                if (moved == null) {
+                    ToolResult.Failure("memory_move_failed")
+                } else {
+                    ok("category" to category, "spoken" to "Spostato in $category: ${moved.text}")
+                }
+            }
+        }
+    }
+}
+
+/** True when [raw] names a category JARVIS really has (not just the fallback). */
+private fun isKnownCategory(raw: String): Boolean {
+    val cleaned = raw.trim()
+    if (cleaned.isEmpty()) return false
+    if (cleaned.equals(MemoryCategories.OTHER, ignoreCase = true)) return true
+    return MemoryCategories.normalize(cleaned) != MemoryCategories.OTHER
+}
+
 class ListMemoriesTool(private val memory: MemoryIndex) : Tool {
     override val name = "list_memories"
     override val description = "Elenca gli appunti e i promemoria salvati."
