@@ -61,6 +61,7 @@ fun RulesScreen(
     val parking by viewModel.savedParking.collectAsStateWithLifecycle()
     val executions by viewModel.recentExecutions.collectAsStateWithLifecycle()
     val currentMode by viewModel.currentMode.collectAsStateWithLifecycle()
+    val weatherEnabled by viewModel.weatherEnabled.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
@@ -126,6 +127,30 @@ fun RulesScreen(
                         },
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text("Consenti «Non disturbare»") }
+                }
+            }
+        }
+
+        // --- Meteo ---
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Meteo", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "L'unica funzione che usa la rete di sua iniziativa. Se " +
+                                "presente, invia solo la posizione arrotondata (circa 1 " +
+                                "km) a un servizio meteo senza account; se assente, le " +
+                                "regole «se piove» restano semplicemente spente, mai " +
+                                "indovinate.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    Switch(checked = weatherEnabled, onCheckedChange = { viewModel.setWeatherEnabled(it) })
                 }
             }
         }
@@ -224,6 +249,7 @@ fun RulesScreen(
         // --- Nuova regola ---
         RuleBuilderCard(
             places = places,
+            weatherEnabled = weatherEnabled,
             onCreate = { viewModel.createRule(it) },
         )
 
@@ -326,6 +352,7 @@ private fun PlaceCapture(onSave: (String, Float) -> Unit) {
 @Composable
 private fun RuleBuilderCard(
     places: List<AutomationPlaceEntity>,
+    weatherEnabled: Boolean,
     onCreate: (RuleDraft) -> Unit,
 ) {
     var kind by remember { mutableStateOf(TriggerKind.DAILY_TIME) }
@@ -337,6 +364,7 @@ private fun RuleBuilderCard(
     // Optional "SE" filters.
     var days by remember { mutableStateOf(emptySet<DayOfWeek>()) }
     var onlyCharging by remember { mutableStateOf(false) }
+    var onlyIfRainTomorrow by remember { mutableStateOf(false) }
     var timeFrom by remember { mutableStateOf("") }
     var timeTo by remember { mutableStateOf("") }
 
@@ -392,11 +420,25 @@ private fun RuleBuilderCard(
                     )
                 }
             }
-            FilterChip(
-                selected = onlyCharging,
-                onClick = { onlyCharging = !onlyCharging },
-                label = { Text("Solo in carica") },
-            )
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(
+                    selected = onlyCharging,
+                    onClick = { onlyCharging = !onlyCharging },
+                    label = { Text("Solo in carica") },
+                )
+                FilterChip(
+                    selected = onlyIfRainTomorrow,
+                    onClick = { onlyIfRainTomorrow = !onlyIfRainTomorrow },
+                    label = { Text("Se domani piove") },
+                )
+            }
+            if (onlyIfRainTomorrow && !weatherEnabled) {
+                Text(
+                    "Il meteo è spento: attivalo qui sopra perché questa condizione " +
+                        "possa mai risultare vera.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
                     value = timeFrom,
@@ -504,6 +546,8 @@ private fun conditionLabel(condition: Condition): String = when (condition) {
     Condition.IsCharging -> "in carica"
     is Condition.TimeRange -> "${condition.from}–${condition.to}"
     is Condition.CurrentPlace -> "a ${condition.placeId}"
+    Condition.RainToday -> "piove oggi"
+    Condition.RainTomorrow -> "piove domani"
     else -> "condizioni"
 }
 

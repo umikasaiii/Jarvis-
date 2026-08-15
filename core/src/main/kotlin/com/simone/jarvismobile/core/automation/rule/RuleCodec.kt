@@ -160,6 +160,8 @@ object RuleCodec {
             is Condition.RuleNotExecutedRecently -> leaf("NOT_EXECUTED_RECENTLY") {
                 put("minutes", JsonPrimitive(condition.minutes))
             }
+            Condition.RainToday -> leaf("RAIN_TODAY") {}
+            Condition.RainTomorrow -> leaf("RAIN_TOMORROW") {}
         }
 
     private fun leaf(type: String, body: kotlinx.serialization.json.JsonObjectBuilder.() -> Unit) =
@@ -194,6 +196,8 @@ object RuleCodec {
             "CALENDAR_EVENT_EXISTS" -> Condition.CalendarEventExists
             "NOT_EXECUTED_RECENTLY" ->
                 Condition.RuleNotExecutedRecently(o["minutes"]!!.jsonPrimitive.content.toLong())
+            "RAIN_TODAY" -> Condition.RainToday
+            "RAIN_TOMORROW" -> Condition.RainTomorrow
             else -> error("condizione sconosciuta: $type")
         }
     }

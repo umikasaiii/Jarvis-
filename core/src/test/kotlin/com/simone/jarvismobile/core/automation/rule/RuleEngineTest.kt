@@ -100,6 +100,16 @@ class RuleEngineTest {
     }
 
     @Test
+    fun rainIsUnknownUntilTheWeatherOptInSaysOtherwise() {
+        // Off/offline/before the first refresh: unknown, never guessed as false.
+        assertNull(ConditionEvaluator.known(Condition.RainTomorrow, ctx))
+        assertFalse(ConditionEvaluator.evaluate(Condition.RainTomorrow, ctx))
+        assertTrue(ConditionEvaluator.evaluate(Condition.RainTomorrow, ctx.copy(rainTomorrow = true)))
+        assertFalse(ConditionEvaluator.evaluate(Condition.RainTomorrow, ctx.copy(rainTomorrow = false)))
+        assertTrue(ConditionEvaluator.evaluate(Condition.RainToday, ctx.copy(rainToday = true)))
+    }
+
+    @Test
     fun negatingAnUnknownStaysUnknownRatherThanBecomingTrue() {
         // The dangerous case: NOT(unknown) must not open the gate.
         val c = Condition.Not(Condition.CurrentPlace("home"))

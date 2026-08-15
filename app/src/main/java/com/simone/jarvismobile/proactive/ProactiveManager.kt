@@ -8,6 +8,7 @@ import android.os.BatteryManager
 import android.util.Log
 import com.simone.jarvismobile.agenda.AgendaRepository
 import com.simone.jarvismobile.audio.SessionCoordinator
+import com.simone.jarvismobile.context.ContextEngine
 import com.simone.jarvismobile.core.proactive.ProactiveComposer
 import com.simone.jarvismobile.core.proactive.ProactiveDecision
 import com.simone.jarvismobile.core.proactive.ProactiveGovernor
@@ -40,6 +41,7 @@ class ProactiveManager @Inject constructor(
     private val store: ProactiveStore,
     private val notifier: ProactiveNotifier,
     private val coordinator: SessionCoordinator,
+    private val contextEngine: ContextEngine,
 ) {
     /** Called periodically by the worker as a coarse fallback (see [evaluateOnUnlock]). */
     suspend fun evaluate(now: LocalDateTime = LocalDateTime.now()) =
@@ -61,7 +63,7 @@ class ProactiveManager @Inject constructor(
         val config = readSettings()
         if (!config.enabled) return
         val today = now.toLocalDate()
-        val candidates = candidatesFor(now, snapshot(today), today, forceMorning)
+        val candidates = candidatesFor(now, snapshot(today, now), today, forceMorning)
         if (candidates.isEmpty()) return
         val state = store.load().rolledTo(today)
         when (val decision = ProactiveGovernor.decide(candidates, config, state, now)) {
@@ -111,7 +113,7 @@ class ProactiveManager @Inject constructor(
         )
     }
 
-    private suspend fun snapshot(today: LocalDate): ProactiveSnapshot {
+    private suspend fun snapshot(today: LocalDate, now: LocalDateTime): ProactiveSnapshot {
         val battery = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         val level = battery?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
         val scale = battery?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
@@ -135,6 +137,10 @@ class ProactiveManager @Inject constructor(
             .filter { it.date == today && isBirthday(it.text) }
             .map { birthdayName(it.text) }
 
+        // Reuses ContextEngine's own staleness cutoff, so a refresher that has
+        // stopped working reads as "unknown" here too, not as a frozen forecast.
+        val rain = runCatching { contextEngine.evaluationContext(now = now) }.getOrNull()
+
         return ProactiveSnapshot(
             batteryPercent = percent,
             charging = charging,
@@ -142,6 +148,7 @@ class ProactiveManager @Inject constructor(
             todayAppointments = appointments,
             todayTasks = tasks,
             birthdaysToday = birthdays,
+            rainToday = rain?.rainToday,
         )
     }
 

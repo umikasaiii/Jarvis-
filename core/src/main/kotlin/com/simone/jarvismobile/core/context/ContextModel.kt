@@ -28,6 +28,14 @@ data class ContextState(
     /** True once the first unlock of today has been seen. */
     val firstUnlockDone: Boolean = false,
     val driving: Boolean = false,
+    /**
+     * Null unless the weather opt-in is on and a refresh has actually
+     * succeeded — off, offline, or stale all read the same as "unknown" here,
+     * exactly like every other fact in this state.
+     */
+    val rainToday: Boolean? = null,
+    val rainTomorrow: Boolean? = null,
+    val weatherUpdatedAt: LocalDateTime? = null,
     val updatedAt: LocalDateTime? = null,
 ) {
     /** Privacy-safe summary for diagnostics: ids and confidences, never coordinates. */
@@ -37,6 +45,7 @@ data class ContextState(
         append(" activity=").append(activity ?: "?")
         append(" driving=").append(driving)
         append(" bt=").append(if (bluetoothKnown) connectedBluetooth.size.toString() else "?")
+        append(" rain=").append(rainToday?.toString() ?: "?").append("/").append(rainTomorrow?.toString() ?: "?")
     }
 }
 

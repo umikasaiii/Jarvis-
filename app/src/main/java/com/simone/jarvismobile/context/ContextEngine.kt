@@ -125,6 +125,17 @@ class ContextEngine @Inject constructor(
         _state.update { it.copy(driving = driving, updatedAt = now) }
     }
 
+    /**
+     * Records the latest weather refresh (§ opt-in, phase "meteo"). Both values
+     * are null when the fetch itself failed or returned nothing usable — the
+     * refresher's job is to say what it actually knows, never to guess.
+     */
+    fun onWeather(rainToday: Boolean?, rainTomorrow: Boolean?, now: LocalDateTime = LocalDateTime.now()) {
+        _state.update {
+            it.copy(rainToday = rainToday, rainTomorrow = rainTomorrow, weatherUpdatedAt = now, updatedAt = now)
+        }
+    }
+
     // --- Facts read on demand -------------------------------------------
 
     /**
@@ -158,6 +169,12 @@ class ContextEngine @Inject constructor(
     ): EvaluationContext {
         refreshDeviceState(now)
         val s = _state.value
+        // A forecast older than the refresh window is worth less than admitting
+        // we don't know — the periodic refresher should have replaced it by now,
+        // so a stale value usually means the refresher itself is failing.
+        val weatherFresh = s.weatherUpdatedAt?.let {
+            java.time.Duration.between(it, now).toHours() < WEATHER_STALE_HOURS
+        } == true
         return EvaluationContext(
             now = now,
             placeId = s.placeId,
@@ -170,6 +187,8 @@ class ContextEngine @Inject constructor(
             jarvisMode = s.jarvisMode,
             hasCalendarEvent = hasCalendarEvent,
             lastExecutionAt = lastExecutionAt,
+            rainToday = if (weatherFresh) s.rainToday else null,
+            rainTomorrow = if (weatherFresh) s.rainTomorrow else null,
         )
     }
 
@@ -207,6 +226,7 @@ class ContextEngine @Inject constructor(
 
     private companion object {
         const val TAG = "JarvisContext"
+        const val WEATHER_STALE_HOURS = 6L
     }
 }
 

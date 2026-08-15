@@ -101,6 +101,8 @@ class RuleCodecTest {
             Condition.JarvisMode("GUIDA"),
             Condition.CalendarEventExists,
             Condition.RuleNotExecutedRecently(45),
+            Condition.RainToday,
+            Condition.RainTomorrow,
         )
         for (c in kinds) {
             assertEquals(c, RuleCodec.decodeCondition(RuleCodec.encodeCondition(c)), "round trip: $c")

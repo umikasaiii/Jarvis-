@@ -107,6 +107,10 @@ class SettingsRepository @Inject constructor(
         val BACKUP_PLACE_IDS = stringSetPreferencesKey("backup_place_ids")
         val BACKUP_CLOUD_ENABLED = booleanPreferencesKey("backup_cloud_enabled")
         val BACKUP_CLOUD_PROVIDER = stringPreferencesKey("backup_cloud_provider")
+
+        // --- Weather (opt-in, online — the one deliberate exception to
+        // offline-first, only ever the rounded coordinate, never anything else) --
+        val WEATHER_ENABLED = booleanPreferencesKey("weather_enabled")
         // User-picked destination folder (SAF tree URI). Survives uninstall and
         // doubles as the restore source when it already holds backups.
         val BACKUP_FOLDER_URI = stringPreferencesKey("backup_folder_uri")
@@ -755,6 +759,15 @@ class SettingsRepository @Inject constructor(
     val backupPlaceIds: Flow<Set<String>> =
         context.settingsDataStore.data.map { it[Keys.BACKUP_PLACE_IDS] ?: emptySet() }
 
+    /**
+     * Opt-in, off by default. The single feature allowed to touch the network
+     * for its own sake (weather forecasting is inherently online) — everything
+     * else in JARVIS stays offline unless the user explicitly connects a PC/HA
+     * profile. Only a rounded coordinate is ever sent, never anything else.
+     */
+    val weatherEnabled: Flow<Boolean> =
+        context.settingsDataStore.data.map { it[Keys.WEATHER_ENABLED] ?: false }
+
     /** Skip the backup below this battery percentage (0 = no floor). */
     val backupMinBattery: Flow<Int> =
         context.settingsDataStore.data.map { (it[Keys.BACKUP_MIN_BATTERY] ?: DEFAULT_BACKUP_MIN_BATTERY).coerceIn(0, 100) }
@@ -801,6 +814,10 @@ class SettingsRepository @Inject constructor(
 
     suspend fun setBackupPlaceIds(value: Set<String>) {
         context.settingsDataStore.edit { it[Keys.BACKUP_PLACE_IDS] = value }
+    }
+
+    suspend fun setWeatherEnabled(value: Boolean) {
+        context.settingsDataStore.edit { it[Keys.WEATHER_ENABLED] = value }
     }
 
     suspend fun setBackupChargingOnly(value: Boolean) {

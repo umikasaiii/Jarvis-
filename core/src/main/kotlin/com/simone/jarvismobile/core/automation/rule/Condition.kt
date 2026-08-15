@@ -44,6 +44,15 @@ sealed interface Condition {
     data class BluetoothConnected(val device: String) : Condition
     data class JarvisMode(val mode: String) : Condition
 
+    /**
+     * Rain forecast for today/tomorrow. Deliberately unknown (never false) with
+     * the weather opt-in off, offline, or before the first refresh — the same
+     * three-valued discipline as everything else here, so "avvisami se piove"
+     * never fires on a guess just because the network was unavailable.
+     */
+    data object RainToday : Condition
+    data object RainTomorrow : Condition
+
     // --- Agenda / history ----------------------------------------------
     data object CalendarEventExists : Condition
 
@@ -71,6 +80,9 @@ data class EvaluationContext(
     val jarvisMode: String? = null,
     val hasCalendarEvent: Boolean? = null,
     val lastExecutionAt: LocalDateTime? = null,
+    /** Null unless the weather opt-in is on and a refresh has actually run. */
+    val rainToday: Boolean? = null,
+    val rainTomorrow: Boolean? = null,
 )
 
 /**
@@ -146,6 +158,8 @@ object ConditionEvaluator {
 
         is Condition.JarvisMode -> context.jarvisMode?.let { it.equals(condition.mode, ignoreCase = true) }
         Condition.CalendarEventExists -> context.hasCalendarEvent
+        Condition.RainToday -> context.rainToday
+        Condition.RainTomorrow -> context.rainTomorrow
 
         is Condition.RuleNotExecutedRecently -> {
             val last = context.lastExecutionAt

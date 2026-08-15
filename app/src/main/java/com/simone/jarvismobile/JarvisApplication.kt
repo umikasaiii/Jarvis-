@@ -29,6 +29,7 @@ class JarvisApplication : Application() {
     @Inject lateinit var proactiveScheduler: com.simone.jarvismobile.proactive.ProactiveScheduler
     @Inject lateinit var ruleScheduler: com.simone.jarvismobile.automation.rule.RuleScheduler
     @Inject lateinit var placeRepository: com.simone.jarvismobile.automation.rule.PlaceRepository
+    @Inject lateinit var weatherScheduler: com.simone.jarvismobile.weather.WeatherScheduler
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -51,6 +52,9 @@ class JarvisApplication : Application() {
         // Re-register place geofences from Room (phase 6). Proximity alerts do not
         // survive a reboot or a force-stop; this rebuilds them.
         appScope.launch { runCatching { placeRepository.reload() } }
+        // Re-book the weather refresh if the user opted in; a harmless no-op
+        // (cancels any schedule) when the setting is off.
+        appScope.launch { runCatching { weatherScheduler.sync() } }
     }
 
     private fun createListeningChannel() {

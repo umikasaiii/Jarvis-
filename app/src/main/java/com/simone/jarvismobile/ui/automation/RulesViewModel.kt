@@ -25,8 +25,10 @@ import com.simone.jarvismobile.core.automation.rule.TriggerEvent
 import com.simone.jarvismobile.core.automation.rule.TriggerRegistry
 import com.simone.jarvismobile.core.automation.rule.TriggerSpec
 import com.simone.jarvismobile.core.mode.JarvisModes
+import com.simone.jarvismobile.data.SettingsRepository
 import com.simone.jarvismobile.mode.JarvisModeManager
 import com.simone.jarvismobile.navigation.NavigationLocationProvider
+import com.simone.jarvismobile.weather.WeatherScheduler
 import java.time.DayOfWeek
 import java.time.LocalDateTime
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -59,9 +61,20 @@ class RulesViewModel @Inject constructor(
     private val parking: ParkingRepository,
     private val log: ExecutionLogRepository,
     private val modes: JarvisModeManager,
+    private val settings: SettingsRepository,
+    private val weatherScheduler: WeatherScheduler,
 ) : ViewModel() {
 
     val currentMode: StateFlow<String> = modes.mode
+
+    val weatherEnabled: StateFlow<Boolean> =
+        settings.weatherEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    /** Opt-in toggle for the weather feature (§ the deliberate online exception). */
+    fun setWeatherEnabled(value: Boolean) = viewModelScope.launch {
+        settings.setWeatherEnabled(value)
+        runCatching { weatherScheduler.sync() }
+    }
 
     fun hasDndAccess(): Boolean = modes.hasDndAccess()
 
@@ -294,6 +307,7 @@ data class RuleDraft(
     // Optional "SE" filters, combined with AND. Empty = no filter.
     val days: Set<DayOfWeek> = emptySet(),
     val onlyCharging: Boolean = false,
+    val onlyIfRainTomorrow: Boolean = false,
     val timeFrom: String = "",
     val timeTo: String = "",
 ) {
@@ -339,6 +353,7 @@ data class RuleDraft(
         val parts = mutableListOf<Condition>()
         if (days.isNotEmpty()) parts += Condition.DayOfWeekIn(days)
         if (onlyCharging) parts += Condition.IsCharging
+        if (onlyIfRainTomorrow) parts += Condition.RainTomorrow
         val from = RuleSchedule.parseTime(timeFrom)
         val to = RuleSchedule.parseTime(timeTo)
         if (from != null && to != null) parts += Condition.TimeRange(from, to)
