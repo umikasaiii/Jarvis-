@@ -9,9 +9,11 @@ import java.util.UUID
  * When an automation fires.
  *
  * The set is deliberately small and all of it works offline with no background
- * microphone and no extra permission. Anything that would need a always-on
- * listener, location, or reading other apps' data is out by design
- * (docs/PRIVACY.md).
+ * microphone and no reading of other apps' data. Time and power triggers need
+ * no extra permission at all. [ArrivedAt] is the one exception: it needs the
+ * location permission, and it earns it by staying inside a single, explicit,
+ * user-created geofence — the OS evaluates arrival on-device, there is no
+ * continuous tracking and no network (see ADR 0011 and docs/PRIVACY.md).
  */
 sealed interface Trigger {
 
@@ -27,6 +29,17 @@ sealed interface Trigger {
 
     /** The charger has just been plugged in. */
     data object ChargingStarted : Trigger
+
+    /**
+     * The phone has entered the saved place named [place].
+     *
+     * The name is a reference into the user's own list of places
+     * (`JARVIS/Luoghi.md`); the coordinates live there, not in the rule, so a
+     * rule reads "arrivo a casa" and the place can be moved without rewriting
+     * every rule. A rule whose place has no coordinates yet is kept but stays
+     * dormant — it cannot arm a geofence until the place is defined.
+     */
+    data class ArrivedAt(val place: String) : Trigger
 }
 
 /**

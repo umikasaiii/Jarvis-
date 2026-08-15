@@ -145,6 +145,46 @@ class AutomationTest {
         assertEquals(a.id, back.id)
     }
 
+    // --- arrival at a place -------------------------------------------------
+
+    @Test
+    fun `arriving at a place is understood`() {
+        val a = AutomationPhrase.parse("quando arrivo a casa ricordami di annaffiare le piante")!!
+        assertEquals(Trigger.ArrivedAt("casa"), a.trigger)
+        assertEquals(Action.Notify("annaffiare le piante"), a.action)
+    }
+
+    @Test
+    fun `arriving somewhere with a preposition and a spoken action`() {
+        val a = AutomationPhrase.parse("appena arrivo in ufficio dimmi la lista di oggi")!!
+        assertEquals(Trigger.ArrivedAt("ufficio"), a.trigger)
+        assertTrue(a.action is Action.Speak, a.action.toString())
+    }
+
+    @Test
+    fun `an arrival rule survives the round trip through the file`() {
+        val rule = Automation(
+            id = "1oc0feed",
+            name = "annaffiare",
+            trigger = Trigger.ArrivedAt("casa"),
+            action = Action.Notify("annaffiare le piante"),
+        )
+        assertEquals(
+            "- [x] arrivo a casa — notifica: annaffiare le piante {#1oc0feed}",
+            rule.toMarkdown(),
+        )
+        val back = AutomationCodec.parseLine(rule.toMarkdown())!!
+        assertEquals(Trigger.ArrivedAt("casa"), back.trigger)
+        assertEquals(rule.action, back.action)
+        assertEquals(rule.id, back.id)
+    }
+
+    @Test
+    fun `leaving a place is not the same as arriving and is not guessed`() {
+        // "esco di casa" has no arrival verb, so it is not an arrival rule.
+        assertNull(AutomationPhrase.parse("quando esco di casa avvisami"))
+    }
+
     @Test
     fun `the description reads as one line`() {
         val a = Automation(

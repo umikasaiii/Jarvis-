@@ -34,6 +34,7 @@ class AutomationRepository @Inject constructor(
     @ApplicationContext private val context: Context,
     private val vault: VaultRepository,
     private val scheduler: AutomationScheduler,
+    private val locationTriggers: LocationTriggers,
 ) {
     private val mutex = Mutex()
 
@@ -53,6 +54,8 @@ class AutomationRepository @Inject constructor(
     suspend fun reload(): List<Automation> {
         val loaded = mutex.withLock { loadLocked() }
         scheduler.sync(loaded)
+        runCatching { locationTriggers.syncAutomations(loaded) }
+            .onFailure { Log.w(TAG, "automation_geofence_failed ${it.javaClass.simpleName}") }
         return loaded
     }
 
@@ -106,6 +109,8 @@ class AutomationRepository @Inject constructor(
         // because WorkManager complained would be the wrong trade.
         runCatching { scheduler.sync(updated) }
             .onFailure { Log.w(TAG, "automation_schedule_failed ${it.javaClass.simpleName}") }
+        runCatching { locationTriggers.syncAutomations(updated) }
+            .onFailure { Log.w(TAG, "automation_geofence_failed ${it.javaClass.simpleName}") }
         _lastError.value = ""
         return true
     }

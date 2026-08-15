@@ -132,6 +132,10 @@ dependencies {
     implementation(libs.androidx.documentfile)
     implementation(libs.onnxruntime.android)
 
+    // Geofencing for location automations (Trigger.ArrivedAt). Evaluated
+    // on-device by the OS; no network and no continuous tracking. See ADR 0011.
+    implementation(libs.play.services.location)
+
     // Unit tests.
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

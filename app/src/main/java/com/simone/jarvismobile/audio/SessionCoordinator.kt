@@ -29,6 +29,7 @@ import com.simone.jarvismobile.memory.ConversationMemoryStore
 import com.simone.jarvismobile.automation.AutomationRepository
 import com.simone.jarvismobile.core.automation.AutomationCodec
 import com.simone.jarvismobile.core.automation.AutomationPhrase
+import com.simone.jarvismobile.core.automation.Trigger
 import com.simone.jarvismobile.tools.CommandMatcher
 import com.simone.jarvismobile.tools.ItalianNumbers
 import com.simone.jarvismobile.tools.LlmIntentClassifier
@@ -413,7 +414,15 @@ class SessionCoordinator @Inject constructor(
             AutomationPhrase.parse(transcript)?.let { rule ->
                 val saved = runCatching { automations.add(rule) }.getOrDefault(false)
                 return if (saved) {
-                    "Automazione creata: ${AutomationCodec.describe(rule)}."
+                    val base = "Automazione creata: ${AutomationCodec.describe(rule)}."
+                    // A location rule cannot arm until its place has coordinates, so
+                    // say so rather than let it sit silently dormant.
+                    val trigger = rule.trigger
+                    if (trigger is Trigger.ArrivedAt) {
+                        "$base Salva il luogo «${trigger.place}» in Automazioni › Luoghi perché scatti."
+                    } else {
+                        base
+                    }
                 } else {
                     // Name the reason. "Non sono riuscito" on its own is a dead
                     // end for the user and for whoever has to fix it.

@@ -53,6 +53,19 @@ object AutomationPhrase {
         RegexOption.IGNORE_CASE,
     )
 
+    /**
+     * "quando arrivo a casa", "appena arrivo in ufficio", "quando torno al
+     * lavoro". The place is a single word: it is a reference into the user's
+     * list of places, not free prose, so a short token keeps it from swallowing
+     * the message that follows ("arrivo a casa avvisami di annaffiare").
+     */
+    private val ARRIVAL = Regex(
+        "(?:${word("arrivo")}|${word("arrivato")}|${word("torno")})\\s+" +
+            "(?:${word("a")}|${word("ad")}|${word("al")}|${word("allo")}|${word("alla")}|${word("in")})\\s+" +
+            "([\\p{L}][\\p{L}'-]*)",
+        RegexOption.IGNORE_CASE,
+    )
+
     private val SPEAK_HINT = Regex(
         "(${word("dimmi")}|${word("dillo")}|${word("annuncia")}|${word("ad")}\\s+alta\\s+voce)",
         RegexOption.IGNORE_CASE,
@@ -93,6 +106,13 @@ object AutomationPhrase {
                 val percent = m.groupValues[1].toIntOrNull()?.takeIf { it in 1..99 } ?: return null
                 rest = raw.removeRange(m.range)
                 Trigger.BatteryBelow(percent)
+            }
+            conditional && ARRIVAL.containsMatchIn(raw) -> {
+                val m = ARRIVAL.find(raw)!!
+                val place = m.groupValues[1].trim()
+                if (place.isEmpty()) return null
+                rest = raw.removeRange(m.range)
+                Trigger.ArrivedAt(place)
             }
             conditional && CHARGING.containsMatchIn(raw) && !AT_TIME.containsMatchIn(raw) -> {
                 val m = CHARGING.find(raw)!!

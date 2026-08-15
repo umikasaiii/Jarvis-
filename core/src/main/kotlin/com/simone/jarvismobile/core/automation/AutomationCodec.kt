@@ -25,6 +25,7 @@ object AutomationCodec {
     private val EVERY_DAYS = Regex("""^ogni\s+([a-z,]+)\s+(\d{1,2}):(\d{2})$""", RegexOption.IGNORE_CASE)
     private val BATTERY = Regex("""^batteria\s*<\s*(\d{1,2})\s*%$""", RegexOption.IGNORE_CASE)
     private val CHARGING = Regex("""^in\s+carica$""", RegexOption.IGNORE_CASE)
+    private val ARRIVAL = Regex("""^arrivo\s+a\s+(.+)$""", RegexOption.IGNORE_CASE)
 
     private val ACTION = Regex("""^(notifica|voce|agenda)\s*:\s*(.+)$""", RegexOption.IGNORE_CASE)
 
@@ -85,6 +86,10 @@ object AutomationCodec {
             return if (percent in 1..99) Trigger.BatteryBelow(percent) else null
         }
         if (CHARGING.matches(t)) return Trigger.ChargingStarted
+        ARRIVAL.find(t)?.let { m ->
+            val place = m.groupValues[1].trim()
+            return if (place.isNotEmpty()) Trigger.ArrivedAt(place) else null
+        }
         return null
     }
 
@@ -100,6 +105,7 @@ object AutomationCodec {
         }
         is Trigger.BatteryBelow -> "batteria < ${trigger.percent}%"
         Trigger.ChargingStarted -> "in carica"
+        is Trigger.ArrivedAt -> "arrivo a ${trigger.place}"
     }
 
     // --- actions -----------------------------------------------------------

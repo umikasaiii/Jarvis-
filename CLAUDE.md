@@ -90,6 +90,7 @@ Plugin and all AndroidX/Compose/Material3 artifacts. Consequences:
 | 6c | Understanding V3 | **Implemented (pending CI/device check)** — knowledge/conversation messages, including multiple questions, now take one coherent model turn. Deterministic tools run first; only plausible unfamiliar operations invoke the one-line LLM classifier. Low-confidence output cannot execute a tool, and generated role/template continuations are removed. |
 | 6d | Persistent response queue | **Implemented (pending CI/device check)** — typed requests are persisted in Room and run by a long-running WorkManager worker with visible progress, real native cancellation, retry and idempotent chat writes. The chat send control becomes Stop while active; a 90-second native watchdog prevents infinite inference. Model load, memory retrieval and generation survive Activity closure/process recreation. A private “response ready” notification opens the chat; preview is opt-in. |
 | 6e | Reminder engine | **Implemented (pending CI/device check)** — agenda entries keep stable IDs plus zero/multiple alert rules in human-readable Markdown metadata. Dashboard choices: due time, morning-of, 1/2/3/7 days before, custom time, or none. WorkManager persists notifications across app exit/reboot; reconciliation handles edits/deletes and the morning hour is configurable. |
+| 6f | Automation engine | **Implemented (pending CI/device check)** — user rules in `JARVIS/Automazioni.md` written as Italian sentences (same parser as chat/voice). Triggers: time-of-day (exact alarms), battery threshold and charger (evaluated on power broadcasts), and **arrival at a saved place** (on-device geofence, ADR 0011). Actions reuse the allowlisted surface: notify / speak / add-to-agenda. Places live in `JARVIS/Luoghi.md`. The schedule and geofences re-arm on boot, package-replace and every cold start (`JarvisApplication`). Location is the one new permission and is off until the user opts in and saves a place; every other trigger needs none. See ADR 0011. |
 | 7 | Home Assistant | Not started |
 | 8 | PC companion (`server/`) | Not started |
 | 9 | Hardening / release | Not started |
@@ -102,8 +103,10 @@ lint is clean, docs/decisions updated. Never leave the main branch uncompilable.
 - **Real & tested (JVM):** conversation state machine, hybrid router, tool JSON
   protocol + repair, tool registry/policies, calculate tool, log redactor,
   Markdown/frontmatter parser, retrieval ranker, Italian date/time parser +
-  agenda model/formatting, Memory V2 codecs/summarizer and the neural-TTS layer
-  (Italian G2P, phoneme vocabulary, NPZ voice-pack reader). → `cd core && ./gradlew test`.
+  agenda model/formatting, Memory V2 codecs/summarizer, the automation model +
+  codec + Italian rule parser (time/battery/charger/arrival) and the place model
+  + `Luoghi.md` codec, and the neural-TTS layer (Italian G2P, phoneme
+  vocabulary, NPZ voice-pack reader). → `cd core && ./gradlew test`.
 - **Compiled + packaged by CI (GitHub Actions, Android SDK):** all of `app/` —
   audio route manager, real AudioRecord capture, offline TTS, listening foreground
   service, QS tile, Compose Home + Diagnostics, permissions, DI wiring. A debug APK

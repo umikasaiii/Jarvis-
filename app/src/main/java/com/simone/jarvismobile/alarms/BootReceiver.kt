@@ -6,6 +6,7 @@ import android.content.Intent
 import android.util.Log
 import com.simone.jarvismobile.agenda.AgendaRepository
 import com.simone.jarvismobile.automation.AutomationRepository
+import com.simone.jarvismobile.automation.PlaceRepository
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
@@ -41,6 +42,9 @@ class BootReceiver : BroadcastReceiver() {
         CoroutineScope(Dispatchers.Default).launch {
             try {
                 deps.agenda().reload()
+                // Places first, so their geofences are cached before the
+                // automations that arm them re-sync.
+                deps.places().reload()
                 deps.automations().reload()
                 Log.i(TAG, "alarms_rearmed after=$action")
             } catch (e: Throwable) {
@@ -56,6 +60,7 @@ class BootReceiver : BroadcastReceiver() {
     interface BootEntryPoint {
         fun agenda(): AgendaRepository
         fun automations(): AutomationRepository
+        fun places(): PlaceRepository
     }
 
     private companion object {

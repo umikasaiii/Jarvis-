@@ -43,6 +43,18 @@
     <!-- Phase 6 tools: set timers/alarms in the system clock app without opening its UI. -->
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
 
+    <!-- Location: ONLY for "arrivo a <luogo>" automations (Trigger.ArrivedAt).
+         Foreground fine/coarse are needed to read the current position once when
+         the user saves a place, and to register a geofence. Background location
+         lets the single, user-created geofence fire while the app is closed —
+         that is the whole point of "tell me when I get home". The OS evaluates
+         the geofence on-device: no continuous tracking, no location leaves the
+         phone, and the whole feature is dormant until the user grants it and
+         saves a place. See ADR 0011 and docs/PRIVACY.md. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+
     <!-- Deliberately NOT requested: MANAGE_EXTERNAL_STORAGE, QUERY_ALL_PACKAGES,
          REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, any Accessibility service. See
          docs/PRIVACY.md and docs/SECURITY.md. -->
@@ -159,6 +171,12 @@
                 <action android:name="android.intent.action.BATTERY_LOW" />
             </intent-filter>
         </receiver>
+
+        <!-- Where a geofence transition lands for "arrivo a <luogo>" rules. Not
+             exported: only the system's geofencing service delivers to it. -->
+        <receiver
+            android:name=".automation.GeofenceReceiver"
+            android:exported="false" />
 
         <service
             android:name=".tools.JarvisNotificationListener"

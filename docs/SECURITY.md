@@ -45,6 +45,8 @@ Legend: [x] designed/partially implemented, [ ] planned. See `CLAUDE.md` phase s
 | `POST_NOTIFICATIONS` | Session, response and agenda notifications | Android 13+. Private preview is off by default. |
 | `BLUETOOTH_CONNECT` | Route to AirPods, read device name | No location, no scanning. |
 | `INTERNET`, `ACCESS_NETWORK_STATE` | Opt-in PC/HA only | Unused on the offline path. |
+| `ACCESS_FINE_LOCATION` / `_COARSE_LOCATION` | "arrivo a &lt;luogo&gt;" rules | Position read once when saving a place; then register a geofence. Off until opted in. |
+| `ACCESS_BACKGROUND_LOCATION` | Fire a saved geofence while the app is closed | One user-drawn fence, evaluated on-device. No tracking, no network. See ADR 0011. |
 
 Not requested: `MANAGE_EXTERNAL_STORAGE`, `QUERY_ALL_PACKAGES`,
 `CALL_PHONE`, `SEND_SMS`, `READ_CONTACTS`, `READ_CALENDAR`,
