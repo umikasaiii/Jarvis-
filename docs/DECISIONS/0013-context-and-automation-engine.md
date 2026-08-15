@@ -100,11 +100,34 @@ CI-verified**, so the engine is live for the first time:
   above is exercisable rather than only compiled. It offers only trigger kinds
   with a live source, so nothing armed there can fail to fire.
 
+Also done and CI-verified since:
+
+- **Charger triggers.** `DEVICE_CHARGING` / `DEVICE_UNPLUGGED` are delivered by
+  a manifest `EnginePowerReceiver` (protected broadcast, GMS-free, fires even to
+  a stopped app) and offered in the builder — testable offline by plugging in.
+- **Phase 7 — activity recognition: deliberately NOT built.** There is no AOSP
+  activity-recognition API; it lives in Play Services, which this project
+  avoids. Rather than pull in GMS or fake it, `ACTIVITY_*` stays `UNSUPPORTED`
+  (the CapabilityManager already reports this honestly).
+- **Phase 8 — parking, GMS-free.** `SAVE_PARKING_LOCATION` is implemented (a real
+  handler reading the last-known `LocationManager` fix) and there is a manual
+  "salva dove sono parcheggiato" button + a "distanza da qui" (reusing
+  `Geo.distanceMeters`). The auto-trigger is intended to be "driving mode ended
+  AND not at a saved place", which waits on a driving mode the owner will add
+  after the 10 phases.
+- **Phase 9 — conditions + diagnostics.** The builder now sets a "SE": weekdays,
+  "solo in carica", a time window, combined with AND into the tested `Condition`
+  tree. A "Prova adesso" dry-runs a rule through the real gate (no side effect)
+  and a "Diagnostica" card shows recent firings and, crucially, non-firings with
+  the reason — reusing the already-written execution log. What remains of phase 9
+  is more condition kinds and a richer builder (nested OR/NOT); the core logic is
+  already tested.
+
 The old Markdown engine still runs the user's existing automations; hand-over is
 still deliberately last.
 
-Still missing: Activity Recognition (phase 7) and parking (phase 8) — device-only
-sensor APIs; the full QUANDO/SE/ALLORA Rule Builder with conditions and
-diagnostics/dry-run (phase 9, only a minimal builder exists today);
-natural-language `AutomationDraft`; and the hand-over from the old engine
-(phase 10). Real geofence firing is verifiable only on a phone.
+Still missing: full activity recognition (only if GMS is ever accepted); a
+Bluetooth-connect/disconnect source and the driving-mode-exit trigger that would
+auto-save parking; nested condition editing; natural-language `AutomationDraft`;
+and the hand-over from the old engine (phase 10). Real geofence and charger
+firing are verifiable only on a phone.
