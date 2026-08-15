@@ -45,6 +45,9 @@ Legend: [x] designed/partially implemented, [ ] planned. See `CLAUDE.md` phase s
 | `POST_NOTIFICATIONS` | Session, response and agenda notifications | Android 13+. Private preview is off by default. |
 | `BLUETOOTH_CONNECT` | Route to AirPods, read device name | No location, no scanning. |
 | `INTERNET`, `ACCESS_NETWORK_STATE` | Opt-in PC/HA only | Unused on the offline path. |
+| `ACCESS_FINE_LOCATION` / `_COARSE_LOCATION` | Offline navigation GNSS; place automations | On-device only; no network, no scanning. |
+| `FOREGROUND_SERVICE_LOCATION` | Navigation guidance with the screen off | Declared only while a visible navigation session runs. |
+| `ACCESS_BACKGROUND_LOCATION` | Place automations ("arrivo a &lt;luogo&gt;") fire while the app is closed | Opt-in per place rule; geofence evaluated on-device, no tracking, no network. `CapabilityManager` gates rules on this grant. |
 
 Not requested: `MANAGE_EXTERNAL_STORAGE`, `QUERY_ALL_PACKAGES`,
 `CALL_PHONE`, `SEND_SMS`, `READ_CONTACTS`, `READ_CALENDAR`,

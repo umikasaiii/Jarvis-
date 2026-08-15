@@ -35,6 +35,14 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
 
+    <!-- Place-based automations ("quando arrivo a <luogo>"). The context engine's
+         CapabilityManager already gates place rules on this grant, but without
+         declaring it the grant can never be given, so a geofence rule looked
+         armed while it could never fire in the background. Requested only after
+         the foreground grant, and only when the user opts a place rule in; the OS
+         evaluates the geofence on-device — no continuous tracking, no network. -->
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+
     <!-- Short haptic when a voice reply lands while the chat is closed. -->
     <uses-permission android:name="android.permission.VIBRATE" />
 
