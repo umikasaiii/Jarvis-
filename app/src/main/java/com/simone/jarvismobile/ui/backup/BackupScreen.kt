@@ -4,6 +4,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -13,6 +15,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -41,6 +44,7 @@ import java.util.Locale
  * The cloud is an optional, clearly-secondary copy. "Esegui backup ora",
  * "Ripristina backup" and "Gestisci backup" all live here.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun BackupScreen(
     onBack: () -> Unit,
@@ -51,6 +55,7 @@ fun BackupScreen(
     val backups by viewModel.backups.collectAsStateWithLifecycle()
     val busy by viewModel.busy.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
+    val savedPlaces by viewModel.savedPlaces.collectAsStateWithLifecycle()
 
     var showManage by remember { mutableStateOf(false) }
 
@@ -132,6 +137,37 @@ fun BackupScreen(
                         "resta sempre disponibile senza rete.",
                     style = MaterialTheme.typography.bodySmall,
                 )
+                HorizontalDivider()
+                Text(
+                    "Solo in questi luoghi (opzionale)",
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                if (savedPlaces.isEmpty()) {
+                    Text(
+                        "Nessun luogo salvato: il backup non è limitato a un posto. " +
+                            "Salva un luogo in Automazioni › Regole avanzate › Luoghi per " +
+                            "farlo partire solo lì (es. «casa» o «casa Francy»).",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                } else {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        savedPlaces.forEach { place ->
+                            FilterChip(
+                                selected = place.id in ui.placeIds,
+                                onClick = { viewModel.togglePlace(place.id) },
+                                label = { Text(place.displayName) },
+                            )
+                        }
+                    }
+                    Text(
+                        if (ui.placeIds.isEmpty()) {
+                            "Nessuno selezionato: il backup non è limitato a un posto."
+                        } else {
+                            "Il backup parte solo quando sei in uno dei luoghi selezionati."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
             }
         }
 

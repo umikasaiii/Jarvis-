@@ -103,6 +103,8 @@ class SettingsRepository @Inject constructor(
         val BACKUP_RETENTION_DAILY = intPreferencesKey("backup_retention_daily")
         val BACKUP_RETENTION_WEEKLY = intPreferencesKey("backup_retention_weekly")
         val BACKUP_RETENTION_MONTHLY = intPreferencesKey("backup_retention_monthly")
+        /** Saved place ids the backup requires; empty means no place gate (default). */
+        val BACKUP_PLACE_IDS = stringSetPreferencesKey("backup_place_ids")
         val BACKUP_CLOUD_ENABLED = booleanPreferencesKey("backup_cloud_enabled")
         val BACKUP_CLOUD_PROVIDER = stringPreferencesKey("backup_cloud_provider")
         // User-picked destination folder (SAF tree URI). Survives uninstall and
@@ -745,6 +747,14 @@ class SettingsRepository @Inject constructor(
     val backupChargingOnly: Flow<Boolean> =
         context.settingsDataStore.data.map { it[Keys.BACKUP_CHARGING_ONLY] ?: false }
 
+    /**
+     * Saved places (§ Luoghi, phase 6) the phone must be at for the nightly
+     * backup to run — "casa o casa Francy". Empty means unrestricted, so this
+     * never changes behaviour for a user who has not opted in.
+     */
+    val backupPlaceIds: Flow<Set<String>> =
+        context.settingsDataStore.data.map { it[Keys.BACKUP_PLACE_IDS] ?: emptySet() }
+
     /** Skip the backup below this battery percentage (0 = no floor). */
     val backupMinBattery: Flow<Int> =
         context.settingsDataStore.data.map { (it[Keys.BACKUP_MIN_BATTERY] ?: DEFAULT_BACKUP_MIN_BATTERY).coerceIn(0, 100) }
@@ -787,6 +797,10 @@ class SettingsRepository @Inject constructor(
 
     suspend fun setBackupWifiOnly(value: Boolean) {
         context.settingsDataStore.edit { it[Keys.BACKUP_WIFI_ONLY] = value }
+    }
+
+    suspend fun setBackupPlaceIds(value: Set<String>) {
+        context.settingsDataStore.edit { it[Keys.BACKUP_PLACE_IDS] = value }
     }
 
     suspend fun setBackupChargingOnly(value: Boolean) {

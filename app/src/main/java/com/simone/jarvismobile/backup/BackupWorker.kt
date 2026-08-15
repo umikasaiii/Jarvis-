@@ -10,13 +10,17 @@ import androidx.core.content.ContextCompat
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.simone.jarvismobile.background.JarvisNotifications
+import com.simone.jarvismobile.context.ContextEngine
+import com.simone.jarvismobile.data.SettingsRepository
 import com.simone.jarvismobile.ui.MainActivity
 import android.app.PendingIntent
 import android.content.Intent
+import android.util.Log
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.components.SingletonComponent
+import kotlinx.coroutines.flow.first
 
 /**
  * Runs the scheduled evening backup: make the local encrypted snapshot, verify
@@ -24,7 +28,9 @@ import dagger.hilt.components.SingletonComponent
  * connected a provider). A failed local backup retries with backoff and, on the
  * final give-up, posts one discrete notification — the only time the user is
  * bothered (spec). A cloud step that is merely deferred (offline / not signed
- * in) is not a failure: the encrypted backup stays queued for next time.
+ * in) is not a failure: the encrypted backup stays queued for next time. An
+ * optional place gate ("casa o casa Francy", § Impostazioni › Backup) can also
+ * defer a run silently to the next cycle without ever counting as an error.
  *
  * Dependencies come through a Hilt entry point, matching the other workers here.
  */
@@ -39,6 +45,15 @@ class BackupWorker(
     )
 
     override suspend fun doWork(): Result {
+        // "Casa o casa Francy": an optional place gate on top of WorkManager's
+        // own Wi-Fi/charging/battery Constraints. Empty selection (the default)
+        // means unrestricted, so a user who never opens Luoghi sees no change.
+        // Not being at a required place tonight is a deferral, not a failure —
+        // WorkManager tries again on its next 24h cycle, silently.
+        if (!runCatching { placeGateOk() }.getOrDefault(true)) {
+            Log.i(TAG, "backup_skipped_not_at_place")
+            return Result.success()
+        }
         val repo = deps.backup()
         val manifest = runCatching { repo.runBackup() }.getOrNull()
         if (manifest == null) {
@@ -61,6 +76,20 @@ class BackupWorker(
             deps.cloud().processQueue()
         }
         return Result.success()
+    }
+
+    /**
+     * True when no place is required, or the fused place the [ContextEngine]
+     * currently believes we are at is one of the required ones. A gate that
+     * cannot be evaluated (an internal error) fails **open** — a backup taken
+     * outside the chosen place is a minor inconvenience; one silently skipped
+     * forever because of a bug is the user's safety net quietly disappearing.
+     */
+    private suspend fun placeGateOk(): Boolean {
+        val required = deps.settings().backupPlaceIds.first()
+        if (required.isEmpty()) return true
+        val current = deps.contextEngine().state.value.placeId
+        return current != null && current in required
     }
 
     private fun notifyFailure(text: String) {
@@ -103,10 +132,13 @@ class BackupWorker(
     interface BackupEntryPoint {
         fun backup(): BackupRepository
         fun cloud(): CloudSyncManager
+        fun settings(): SettingsRepository
+        fun contextEngine(): ContextEngine
     }
 
     companion object {
         const val MAX_ATTEMPTS = 3
         private const val NOTIFICATION_ID = 7_100
+        private const val TAG = "JarvisBackup"
     }
 }

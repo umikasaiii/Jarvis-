@@ -10,13 +10,17 @@ import com.simone.jarvismobile.backup.CloudBackupProvider
 import com.simone.jarvismobile.backup.CloudSyncManager
 import com.simone.jarvismobile.backup.ExternalBackupStore
 import com.simone.jarvismobile.backup.NoCloudProvider
+import com.simone.jarvismobile.automation.rule.AutomationPlaceEntity
+import com.simone.jarvismobile.automation.rule.PlaceRepository
 import com.simone.jarvismobile.core.backup.BackupManifest
 import com.simone.jarvismobile.data.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -35,6 +39,8 @@ data class BackupUi(
     val provider: String = NoCloudProvider.ID,
     /** Name of the chosen destination folder, or null for internal-only. */
     val destinationName: String? = null,
+    /** Saved place ids the backup requires; empty means unrestricted. */
+    val placeIds: Set<String> = emptySet(),
     val loaded: Boolean = false,
 )
 
@@ -54,9 +60,14 @@ class BackupViewModel @Inject constructor(
     private val cloud: CloudSyncManager,
     private val settings: SettingsRepository,
     private val external: ExternalBackupStore,
+    private val places: PlaceRepository,
 ) : ViewModel() {
 
     val state: StateFlow<BackupState> = repository.state
+
+    /** Saved places (§ Luoghi, phase 6) offered as the backup's location gate. */
+    val savedPlaces: StateFlow<List<AutomationPlaceEntity>> =
+        places.observePlaces().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val _ui = MutableStateFlow(BackupUi())
     val ui: StateFlow<BackupUi> = _ui.asStateFlow()
@@ -91,6 +102,7 @@ class BackupViewModel @Inject constructor(
             cloudEnabled = settings.backupCloudEnabled.first(),
             provider = settings.backupCloudProvider.first().ifBlank { NoCloudProvider.ID },
             destinationName = external.folderName(),
+            placeIds = settings.backupPlaceIds.first(),
             loaded = true,
         )
     }
@@ -134,6 +146,13 @@ class BackupViewModel @Inject constructor(
 
     fun setMinBattery(value: Int) = viewModelScope.launch {
         reloadAfter { settings.setBackupMinBattery(value) }
+    }
+
+    /** Adds/removes [placeId] from the required-places set; empty = unrestricted. */
+    fun togglePlace(placeId: String) = viewModelScope.launch {
+        val current = _ui.value.placeIds
+        val updated = if (placeId in current) current - placeId else current + placeId
+        reloadAfter { settings.setBackupPlaceIds(updated) }
     }
 
     fun setRetention(daily: Int, weekly: Int, monthly: Int) = viewModelScope.launch {
