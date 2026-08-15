@@ -1,8 +1,12 @@
 package com.simone.jarvismobile.automation.rule
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import com.simone.jarvismobile.agenda.AgendaRepository
 import com.simone.jarvismobile.audio.SessionCoordinator
 import com.simone.jarvismobile.automation.DeferredCommand
@@ -73,16 +77,38 @@ class NotifyActionHandler @Inject constructor(
     override suspend fun handle(spec: ActionSpec, dryRun: Boolean): ActionOutcome {
         val message = spec.param("message") ?: return ActionOutcome.Failed("testo mancante")
         if (dryRun) return ActionOutcome.Skipped("dry-run: mostrerei «${message.take(40)}»")
-        return runCatching {
-            val notification = JarvisNotifications.styled(
-                context = context,
-                channelId = JarvisNotifications.CHANNEL_SUGGESTIONS,
-                text = message,
-            ).build()
+        // The gate already checked POST_NOTIFICATIONS, but it can be revoked in
+        // the moment between that check and this call — and a handler that
+        // reported success for a notification nobody saw would be exactly the
+        // dishonesty this engine is built to avoid.
+        //
+        // The check is written inline, not extracted into a helper, because
+        // lint's MissingPermission analysis does not follow the guard across a
+        // function boundary. This mirrors AutomationRunner.notify().
+        if (
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS,
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            return ActionOutcome.Failed("permesso notifiche mancante")
+        }
+        val notification = JarvisNotifications.styled(
+            context = context,
+            channelId = JarvisNotifications.CHANNEL_SUGGESTIONS,
+            text = message,
+            expandableText = message,
+        ).build()
+        return try {
             NotificationManagerCompat.from(context)
                 .notify(NOTIFICATION_TAG, message.hashCode(), notification)
             ActionOutcome.Done
-        }.getOrElse { ActionOutcome.Failed(it.javaClass.simpleName) }
+        } catch (_: SecurityException) {
+            ActionOutcome.Failed("permesso notifiche revocato")
+        } catch (e: Exception) {
+            ActionOutcome.Failed(e.javaClass.simpleName)
+        }
     }
 
     private companion object {
