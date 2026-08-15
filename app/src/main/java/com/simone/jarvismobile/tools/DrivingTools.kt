@@ -32,7 +32,14 @@ class StartDrivingModeTool(private val manager: DrivingModeManager) : Tool {
     override fun validate(arguments: JsonObject): String? = null
 
     override suspend fun execute(arguments: JsonObject): ToolResult = when (manager.start()) {
-        DrivingStartResult.Started -> drivingOk("spoken" to "Modalità guida attiva.")
+        DrivingStartResult.Started -> {
+            val spoken = if (manager.hasNotificationAccess()) {
+                "Modalità guida attiva."
+            } else {
+                "Modalità guida attiva. Manca l'accesso alle notifiche: messaggi e Spotify non funzioneranno finché non lo concedi."
+            }
+            drivingOk("spoken" to spoken)
+        }
         DrivingStartResult.MissingOverlayPermission -> ToolResult.Failure(
             "overlay_permission_required",
             "manca il permesso di sovrapposizione ad altre app",

@@ -25,13 +25,23 @@ class DrivingModeEntryViewModel @Inject constructor(
 
     fun overlayPermissionIntent() = manager.overlayPermissionIntent()
 
-    /** Returns false only when overlay permission is missing, so the caller can prompt for it. */
-    fun toggle(onMissingPermission: () -> Unit) {
+    fun notificationAccessIntent() = manager.notificationAccessIntent()
+
+    /**
+     * [onMissingOverlayPermission] blocks the start entirely — there is no overlay
+     * without it. [onMissingNotificationAccess] fires *after* a successful start:
+     * Modalità Guida still works (map, wake word, navigation) without it, it just
+     * means messages and Spotify will show nothing until it is granted.
+     */
+    fun toggle(onMissingOverlayPermission: () -> Unit, onMissingNotificationAccess: () -> Unit) {
         viewModelScope.launch {
             if (state.value.active) {
                 manager.stop()
-            } else if (manager.start() == DrivingStartResult.MissingOverlayPermission) {
-                onMissingPermission()
+                return@launch
+            }
+            when (manager.start()) {
+                DrivingStartResult.MissingOverlayPermission -> onMissingOverlayPermission()
+                DrivingStartResult.Started -> if (!manager.hasNotificationAccess()) onMissingNotificationAccess()
             }
         }
     }

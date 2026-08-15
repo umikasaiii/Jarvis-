@@ -35,6 +35,7 @@ class DrivingMediaController @Inject constructor(
     val media: StateFlow<DrivingMediaState?> = _media.asStateFlow()
 
     private var controller: MediaController? = null
+    private var sessionsListener: MediaSessionManager.OnActiveSessionsChangedListener? = null
 
     private val callback = object : MediaController.Callback() {
         override fun onPlaybackStateChanged(state: PlaybackState?) = publish()
@@ -42,12 +43,38 @@ class DrivingMediaController @Inject constructor(
         override fun onSessionDestroyed() { attach() }
     }
 
-    fun start() = attach()
+    /**
+     * [attach] alone only catches whatever session is active right now — Spotify
+     * opened and pressed play *after* Modalità Guida started would be missed
+     * until something else re-triggered a check. [OnActiveSessionsChangedListener]
+     * is the real push signal for "a session appeared/changed" instead.
+     */
+    fun start() {
+        attach()
+        registerSessionsListener()
+    }
 
     fun stop() {
+        unregisterSessionsListener()
         runCatching { controller?.unregisterCallback(callback) }
         controller = null
         _media.value = null
+    }
+
+    private fun registerSessionsListener() {
+        if (sessionsListener != null || !hasAccess()) return
+        val manager = context.getSystemService(Context.MEDIA_SESSION_SERVICE) as? MediaSessionManager ?: return
+        val component = ComponentName(context, JarvisNotificationListener::class.java)
+        val listener = MediaSessionManager.OnActiveSessionsChangedListener { attach() }
+        runCatching { manager.addOnActiveSessionsChangedListener(listener, component) }
+            .onSuccess { sessionsListener = listener }
+    }
+
+    private fun unregisterSessionsListener() {
+        val listener = sessionsListener ?: return
+        val manager = context.getSystemService(Context.MEDIA_SESSION_SERVICE) as? MediaSessionManager
+        runCatching { manager?.removeOnActiveSessionsChangedListener(listener) }
+        sessionsListener = null
     }
 
     /** Re-checks for an active session; call after a fresh notification-access grant too. */
@@ -58,6 +85,7 @@ class DrivingMediaController @Inject constructor(
             _media.value = null
             return
         }
+        registerSessionsListener()
         val manager = context.getSystemService(Context.MEDIA_SESSION_SERVICE) as? MediaSessionManager
         val component = ComponentName(context, JarvisNotificationListener::class.java)
         val active = manager?.let { runCatching { it.getActiveSessions(component).firstOrNull() }.getOrNull() }
@@ -69,6 +97,9 @@ class DrivingMediaController @Inject constructor(
         runCatching { active.registerCallback(callback) }
         publish()
     }
+
+    /** False when access was missing at the last [attach]/[start] — a caller can retry. */
+    fun isListening(): Boolean = sessionsListener != null
 
     fun art(): Bitmap? = controller?.metadata?.let { meta ->
         meta.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART) ?: meta.getBitmap(MediaMetadata.METADATA_KEY_ART)

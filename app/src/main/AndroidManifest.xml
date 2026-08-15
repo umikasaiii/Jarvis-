@@ -166,13 +166,17 @@
 
         <!-- Modalità Guida overlay (docs "Driving Mode"). specialUse: no built-in
              FGS type fits "small overlay windows over another app"; the property
-             below is the justification Android 14+ requires. Started only by an
-             explicit user action (Home button, voice command, or a rule the user
-             created) and always shows the persistent notification below. -->
+             below is the justification Android 14+ requires. microphone: with no
+             visible Activity (Maps owns the foreground, not JARVIS), the wake word's
+             mic access needs its own qualifying foreground-service type or Android's
+             background-mic restriction silently blocks it — the same reason
+             ListeningService declares it. Started only by an explicit user action
+             (Home button, voice command, or a rule the user created) and always
+             shows the persistent notification below. -->
         <service
             android:name=".driving.DrivingModeService"
             android:exported="false"
-            android:foregroundServiceType="specialUse">
+            android:foregroundServiceType="specialUse|microphone">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Overlay JARVIS su Google Maps durante la Modalità Guida scelta dall'utente" />

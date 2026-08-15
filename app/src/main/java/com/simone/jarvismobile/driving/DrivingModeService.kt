@@ -30,7 +30,9 @@ import com.simone.jarvismobile.ui.driving.DrivingMediaPanel
 import com.simone.jarvismobile.ui.driving.DrivingNavPanel
 import com.simone.jarvismobile.ui.driving.DrivingTopPanel
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -73,6 +75,17 @@ class DrivingModeService : LifecycleService() {
         }
         lifecycleScope.launch {
             media.media.collectLatest { drivingModeManager.updateMedia(it) }
+        }
+        // Notification Access is often granted *after* Modalità Guida is already
+        // running (the user follows the prompt, then comes back) — this catches
+        // that transition instead of leaving messages/Spotify stuck off until a
+        // restart. Cheap local calls only; no polling of anything remote.
+        lifecycleScope.launch {
+            while (isActive) {
+                delay(5_000)
+                if (!media.isListening()) media.attach()
+                drivingModeManager.updateNotifications(notifications.snapshot())
+            }
         }
     }
 
@@ -200,11 +213,18 @@ class DrivingModeService : LifecycleService() {
             .setCategory(NotificationCompat.CATEGORY_NAVIGATION)
             .addAction(0, getString(R.string.driving_mode_stop_action), stopIntent)
             .build()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+        // Both types: specialUse for the overlay, microphone so the wake word's
+        // mic access is not silently blocked by Android's background-mic
+        // restriction (there is no visible Activity while Maps owns the
+        // foreground — see the manifest comment). minSdk 31 already clears the
+        // 3-arg startForeground floor (API 29), so this needs only one branch
+        // for whether FOREGROUND_SERVICE_TYPE_SPECIAL_USE itself exists (API 34+).
+        val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
         } else {
-            startForeground(NOTIFICATION_ID, notification)
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
         }
+        startForeground(NOTIFICATION_ID, notification, type)
     }
 
     private fun createChannel() {

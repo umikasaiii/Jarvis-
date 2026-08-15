@@ -54,8 +54,13 @@ internal class DrivingOverlayWindow(
     }
 
     private fun baseFlags(): Int {
-        var flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+        // Deliberately NOT FLAG_LAYOUT_IN_SCREEN: without it the system keeps a
+        // TOP-gravity window clear of the status bar and a BOTTOM-gravity one
+        // clear of the gesture/nav bar on its own, correctly for whatever the
+        // device's own bar heights are — far more reliable than guessing a fixed
+        // padding here, and it was the actual cause of the top bar overlapping
+        // the status bar / Maps' own top UI on-device.
+        var flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
         if (keepScreenOn) flags = flags or WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
         return flags
     }

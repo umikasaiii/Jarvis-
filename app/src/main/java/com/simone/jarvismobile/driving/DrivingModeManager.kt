@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.simone.jarvismobile.audio.WakeWordController
 import com.simone.jarvismobile.automation.rule.PlaceRepository
@@ -69,6 +70,13 @@ class DrivingModeManager @Inject constructor(
     fun overlayPermissionIntent(): Intent =
         Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${context.packageName}"))
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+    /** Messages and Spotify both need this; the overlay still works without it. */
+    fun hasNotificationAccess(): Boolean =
+        NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName)
+
+    fun notificationAccessIntent(): Intent =
+        Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
     /**
      * Starts Modalità Guida: without overlay permission this does nothing but

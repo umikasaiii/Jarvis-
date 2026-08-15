@@ -450,7 +450,10 @@ fun DashboardScreen(
                     footer = "JARVIS + Google Maps",
                     accent = Rose,
                     onClick = {
-                        drivingVm.toggle { context.startActivity(drivingVm.overlayPermissionIntent()) }
+                        drivingVm.toggle(
+                            onMissingOverlayPermission = { context.startActivity(drivingVm.overlayPermissionIntent()) },
+                            onMissingNotificationAccess = { context.startActivity(drivingVm.notificationAccessIntent()) },
+                        )
                     },
                     modifier = Modifier.weight(1f),
                 )
