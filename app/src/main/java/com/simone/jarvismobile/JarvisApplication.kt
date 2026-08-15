@@ -27,6 +27,7 @@ class JarvisApplication : Application() {
     @Inject lateinit var automationServiceController:
         com.simone.jarvismobile.automation.AutomationServiceController
     @Inject lateinit var proactiveScheduler: com.simone.jarvismobile.proactive.ProactiveScheduler
+    @Inject lateinit var ruleScheduler: com.simone.jarvismobile.automation.rule.RuleScheduler
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -43,6 +44,9 @@ class JarvisApplication : Application() {
         appScope.launch { runCatching { automationServiceController.syncFromSettings() } }
         // Re-book the proactive check if the user has proactivity on.
         appScope.launch { runCatching { proactiveScheduler.sync() } }
+        // Arm the generic engine's clock triggers (phase 5). Time rules re-arm on
+        // every cold start, so an OEM force-stop cannot leave the engine dead.
+        appScope.launch { runCatching { ruleScheduler.sync() } }
     }
 
     private fun createListeningChannel() {

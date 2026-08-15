@@ -6,6 +6,7 @@ import android.content.Intent
 import android.util.Log
 import com.simone.jarvismobile.agenda.AgendaRepository
 import com.simone.jarvismobile.automation.AutomationRepository
+import com.simone.jarvismobile.automation.rule.RuleScheduler
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
@@ -42,6 +43,9 @@ class BootReceiver : BroadcastReceiver() {
             try {
                 deps.agenda().reload()
                 deps.automations().reload()
+                // The generic engine's clock triggers re-arm from Room, the source
+                // of truth for the new rules.
+                deps.ruleScheduler().sync()
                 Log.i(TAG, "alarms_rearmed after=$action")
             } catch (e: Throwable) {
                 Log.w(TAG, "alarm_rearm_failed ${e.javaClass.simpleName}")
@@ -56,6 +60,7 @@ class BootReceiver : BroadcastReceiver() {
     interface BootEntryPoint {
         fun agenda(): AgendaRepository
         fun automations(): AutomationRepository
+        fun ruleScheduler(): RuleScheduler
     }
 
     private companion object {

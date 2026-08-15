@@ -14,7 +14,11 @@ import androidx.core.content.ContextCompat
 import com.simone.jarvismobile.agenda.AgendaRepository
 import com.simone.jarvismobile.automation.AutomationRepository
 import com.simone.jarvismobile.automation.AutomationRunner
+import com.simone.jarvismobile.automation.rule.AutomationExecutor
+import com.simone.jarvismobile.automation.rule.RuleScheduler
 import com.simone.jarvismobile.background.JarvisNotifications
+import com.simone.jarvismobile.context.ContextEngine
+import com.simone.jarvismobile.core.automation.rule.TriggerEvent
 import com.simone.jarvismobile.reminders.ReminderActionReceiver
 import com.simone.jarvismobile.ui.MainActivity
 import dagger.hilt.EntryPoint
@@ -73,6 +77,31 @@ class AlarmReceiver : BroadcastReceiver() {
                         repository.reload()
                     } catch (e: Throwable) {
                         Log.w(TAG, "alarm_automation_failed ${e.javaClass.simpleName}")
+                    } finally {
+                        pending.finish()
+                    }
+                }
+            }
+            ExactAlarms.KIND_RULE -> {
+                val deps = EntryPointAccessors.fromApplication(
+                    context.applicationContext,
+                    AlarmEntryPoint::class.java,
+                )
+                val triggerType = intent.getStringExtra(ExactAlarms.EXTRA_TRIGGER_TYPE) ?: return
+                val occurrence = intent.getStringExtra(ExactAlarms.EXTRA_OCCURRENCE).orEmpty()
+                val pending = goAsync()
+                CoroutineScope(Dispatchers.Default).launch {
+                    try {
+                        val now = java.time.LocalDateTime.now()
+                        // The occurrence is the dedup key, so a duplicated delivery
+                        // of the same firing is collapsed by the gate.
+                        val event = TriggerEvent(type = triggerType, at = now, dedupKey = occurrence)
+                        val evalContext = deps.contextEngine().evaluationContext(now = now)
+                        deps.ruleExecutor().onTrigger(event, evalContext)
+                        // Re-arm the successor: only the next occurrence is ever booked.
+                        deps.ruleScheduler().sync(now)
+                    } catch (e: Throwable) {
+                        Log.w(TAG, "alarm_rule_failed ${e.javaClass.simpleName}")
                     } finally {
                         pending.finish()
                     }
@@ -157,6 +186,9 @@ class AlarmReceiver : BroadcastReceiver() {
         fun automations(): AutomationRepository
         fun agenda(): AgendaRepository
         fun runner(): AutomationRunner
+        fun contextEngine(): ContextEngine
+        fun ruleExecutor(): AutomationExecutor
+        fun ruleScheduler(): RuleScheduler
     }
 
     private companion object {

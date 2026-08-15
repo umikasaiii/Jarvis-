@@ -96,8 +96,13 @@ class ExactAlarms @Inject constructor(
         const val EXTRA_ENTRY_ID = "entry_id"
         const val EXTRA_TITLE = "title"
         const val EXTRA_SUBTEXT = "subtext"
+        /** New-engine time trigger: which trigger type fired, and for which occurrence. */
+        const val EXTRA_TRIGGER_TYPE = "trigger_type"
+        const val EXTRA_OCCURRENCE = "occurrence"
         const val KIND_REMINDER = "reminder"
         const val KIND_AUTOMATION = "automation"
+        /** The generic context+automation engine's scheduled clock triggers (phase 5). */
+        const val KIND_RULE = "rule"
         private const val TAG = "JarvisAlarms"
     }
 }
