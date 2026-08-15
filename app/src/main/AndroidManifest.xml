@@ -229,6 +229,13 @@
             </intent-filter>
         </receiver>
 
+        <!-- Where an OS proximity alert lands for a saved place (phase 6). Not
+             exported: only the system's LocationManager delivers to it, via the
+             explicit PendingIntent the geofence source registers. -->
+        <receiver
+            android:name=".automation.rule.PlaceProximityReceiver"
+            android:exported="false" />
+
         <service
             android:name=".tools.JarvisNotificationListener"
             android:exported="true"

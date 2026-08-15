@@ -216,9 +216,10 @@ class RuleEngineTest {
     fun aRuleArmedOnAnUnimplementedTriggerIsRefused() {
         // The trap the old ArrivedHome trigger fell into: selectable in the model,
         // impossible to fire in reality. Storing it would show the user an
-        // "active" rule that can never run.
+        // "active" rule that can never run. PLACE_DWELL still has no dwell-tick
+        // source, so it stands in for "declared but not deliverable yet".
         val r = rule().copy(
-            triggers = listOf(TriggerSpec(TriggerRegistry.PLACE_ENTER, mapOf("placeId" to "home"))),
+            triggers = listOf(TriggerSpec(TriggerRegistry.PLACE_DWELL, mapOf("placeId" to "home"))),
         )
         assertTrue(
             r.validationErrors().any { it.contains("non è ancora disponibile") },
@@ -321,12 +322,15 @@ class RuleEngineTest {
 
     @Test
     fun theTriggersOfferedAreOnlyTheOnesWithoutExtraPlumbing() {
-        // Place, activity and notification triggers need subsystems that do not
-        // exist yet; they must not be offerable until they do.
+        // Activity, notification and place-dwell triggers need subsystems that do
+        // not exist yet; they must not be offerable until they do. Place
+        // enter/exit became offerable in phase 6 (geofencing via addProximityAlert).
         val offered = TriggerRegistry.available().map { it.type }.toSet()
-        assertTrue(TriggerRegistry.PLACE_ENTER !in offered)
         assertTrue(TriggerRegistry.ACTIVITY_ENTER !in offered)
         assertTrue(TriggerRegistry.NOTIFICATION_MATCH !in offered)
+        assertTrue(TriggerRegistry.PLACE_DWELL !in offered)
+        assertTrue(TriggerRegistry.PLACE_ENTER in offered)
+        assertTrue(TriggerRegistry.PLACE_EXIT in offered)
         assertTrue(TriggerRegistry.DEVICE_CHARGING in offered)
         assertTrue(TriggerRegistry.RECURRING_TIME in offered)
     }

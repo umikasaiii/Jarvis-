@@ -6,6 +6,7 @@ import android.content.Intent
 import android.util.Log
 import com.simone.jarvismobile.agenda.AgendaRepository
 import com.simone.jarvismobile.automation.AutomationRepository
+import com.simone.jarvismobile.automation.rule.PlaceRepository
 import com.simone.jarvismobile.automation.rule.RuleScheduler
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
@@ -46,6 +47,8 @@ class BootReceiver : BroadcastReceiver() {
                 // The generic engine's clock triggers re-arm from Room, the source
                 // of truth for the new rules.
                 deps.ruleScheduler().sync()
+                // Place geofences (proximity alerts) also do not survive a reboot.
+                deps.places().reload()
                 Log.i(TAG, "alarms_rearmed after=$action")
             } catch (e: Throwable) {
                 Log.w(TAG, "alarm_rearm_failed ${e.javaClass.simpleName}")
@@ -61,6 +64,7 @@ class BootReceiver : BroadcastReceiver() {
         fun agenda(): AgendaRepository
         fun automations(): AutomationRepository
         fun ruleScheduler(): RuleScheduler
+        fun places(): PlaceRepository
     }
 
     private companion object {

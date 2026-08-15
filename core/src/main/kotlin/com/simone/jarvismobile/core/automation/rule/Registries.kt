@@ -108,12 +108,12 @@ object TriggerRegistry {
         TriggerDefinition(
             PLACE_ENTER, "Quando arrivo in un luogo",
             listOf(ParamSpec("placeId", "Luogo", ParamKind.PLACE)),
-            requires = Capability.LOCATION_BACKGROUND, implemented = false,
+            requires = Capability.LOCATION_BACKGROUND,
         ),
         TriggerDefinition(
             PLACE_EXIT, "Quando esco da un luogo",
             listOf(ParamSpec("placeId", "Luogo", ParamKind.PLACE)),
-            requires = Capability.LOCATION_BACKGROUND, implemented = false,
+            requires = Capability.LOCATION_BACKGROUND,
         ),
         TriggerDefinition(
             PLACE_DWELL, "Quando resto in un luogo",

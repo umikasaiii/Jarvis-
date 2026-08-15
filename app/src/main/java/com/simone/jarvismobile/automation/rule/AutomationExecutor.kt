@@ -10,6 +10,7 @@ import com.simone.jarvismobile.core.automation.rule.ExecutionHistory
 import com.simone.jarvismobile.core.automation.rule.GateResult
 import com.simone.jarvismobile.core.automation.rule.RuleGate
 import com.simone.jarvismobile.core.automation.rule.TriggerEvent
+import com.simone.jarvismobile.core.automation.rule.TriggerMatching
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -66,7 +67,7 @@ class AutomationExecutor @Inject constructor(
         val candidates = runCatching { rules.armable(event.at) }.getOrElse {
             Log.w(TAG, "rules_unreadable ${it.javaClass.simpleName}")
             return emptyList()
-        }.filter { rule -> rule.triggers.any { it.type == event.type } }
+        }.filter { rule -> TriggerMatching.ruleListens(rule, event) }
         if (candidates.isEmpty()) return emptyList()
 
         // Gate first: only rules that may actually run get to compete for the

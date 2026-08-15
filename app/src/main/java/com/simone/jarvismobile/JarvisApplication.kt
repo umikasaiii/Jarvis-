@@ -28,6 +28,7 @@ class JarvisApplication : Application() {
         com.simone.jarvismobile.automation.AutomationServiceController
     @Inject lateinit var proactiveScheduler: com.simone.jarvismobile.proactive.ProactiveScheduler
     @Inject lateinit var ruleScheduler: com.simone.jarvismobile.automation.rule.RuleScheduler
+    @Inject lateinit var placeRepository: com.simone.jarvismobile.automation.rule.PlaceRepository
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -47,6 +48,9 @@ class JarvisApplication : Application() {
         // Arm the generic engine's clock triggers (phase 5). Time rules re-arm on
         // every cold start, so an OEM force-stop cannot leave the engine dead.
         appScope.launch { runCatching { ruleScheduler.sync() } }
+        // Re-register place geofences from Room (phase 6). Proximity alerts do not
+        // survive a reboot or a force-stop; this rebuilds them.
+        appScope.launch { runCatching { placeRepository.reload() } }
     }
 
     private fun createListeningChannel() {

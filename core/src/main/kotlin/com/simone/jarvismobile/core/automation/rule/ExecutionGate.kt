@@ -92,8 +92,9 @@ object RuleGate {
         }
         if (rule.hasExpired(event.at)) return GateResult(ExecutionDecision.SKIP_EXPIRED, "regola scaduta")
 
-        // The rule must actually listen for this trigger.
-        if (rule.triggers.none { it.type == event.type }) {
+        // The rule must actually listen for this trigger — and for a place, the
+        // *right* place, not merely a place-of-the-same-kind.
+        if (!TriggerMatching.ruleListens(rule, event)) {
             return GateResult(ExecutionDecision.SKIP_NOT_RUNNABLE, "trigger non previsto da questa regola")
         }
 
