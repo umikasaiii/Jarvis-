@@ -1,0 +1,191 @@
+package com.simone.jarvismobile.ui.automation
+
+import android.annotation.SuppressLint
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.simone.jarvismobile.automation.rule.AutomationPlaceEntity
+import com.simone.jarvismobile.automation.rule.PlaceGeofenceSource
+import com.simone.jarvismobile.automation.rule.PlaceRepository
+import com.simone.jarvismobile.automation.rule.RuleRepository
+import com.simone.jarvismobile.automation.rule.RuleScheduler
+import com.simone.jarvismobile.core.automation.rule.ActionRegistry
+import com.simone.jarvismobile.core.automation.rule.ActionSpec
+import com.simone.jarvismobile.core.automation.rule.AutomationRule
+import com.simone.jarvismobile.core.automation.rule.TriggerRegistry
+import com.simone.jarvismobile.core.automation.rule.TriggerSpec
+import com.simone.jarvismobile.navigation.NavigationLocationProvider
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+import java.util.UUID
+import javax.inject.Inject
+
+/**
+ * The generic engine's own screen: create a rule and see it fire (phases 5-6).
+ *
+ * Deliberately separate from the old-engine [AutomationsViewModel]: this drives
+ * the Room-backed [RuleRepository] and the exact-alarm / geofence schedulers, and
+ * it only offers trigger kinds that have a live delivery path today — clock and
+ * place — so nothing can be armed that could never fire.
+ */
+@HiltViewModel
+class RulesViewModel @Inject constructor(
+    private val rules: RuleRepository,
+    private val places: PlaceRepository,
+    private val geofences: PlaceGeofenceSource,
+    private val scheduler: RuleScheduler,
+    private val navLocation: NavigationLocationProvider,
+) : ViewModel() {
+
+    val savedRules: StateFlow<List<AutomationRule>> =
+        rules.observeRules().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val savedPlaces: StateFlow<List<AutomationPlaceEntity>> =
+        places.observePlaces().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    private val _message = kotlinx.coroutines.flow.MutableStateFlow("")
+    val message: StateFlow<String> = _message
+
+    fun hasForegroundLocation(): Boolean = geofences.hasForegroundLocation()
+    fun hasBackgroundLocation(): Boolean = geofences.hasBackgroundLocation()
+
+    /** Re-arm after the location permission changes from the OS dialog. */
+    fun onLocationPermissionChanged() = viewModelScope.launch {
+        runCatching { places.reload() }
+    }
+
+    // --- places ----------------------------------------------------------
+
+    /**
+     * Captures the phone's current GNSS position once and saves it as [name].
+     * Reads location a single time here; from then on the OS watches the fence.
+     */
+    @SuppressLint("MissingPermission")
+    fun captureCurrentPlace(name: String, radiusMeters: Float) {
+        val clean = name.trim()
+        if (clean.isEmpty()) {
+            _message.value = "Dai un nome al luogo, per esempio «casa»."
+            return
+        }
+        if (!navLocation.hasPermission()) {
+            _message.value = "Serve il permesso di posizione per salvare un luogo."
+            return
+        }
+        if (!navLocation.gpsEnabled()) {
+            _message.value = "Attiva il GPS per salvare la posizione attuale."
+            return
+        }
+        viewModelScope.launch {
+            val fix = withTimeoutOrNull(POSITION_TIMEOUT_MS) {
+                runCatching { navLocation.fixes(intervalMs = 1_000L).first() }.getOrNull()
+            }
+            if (fix == null) {
+                _message.value = "Posizione non disponibile ora. Riprova all'aperto."
+                return@launch
+            }
+            val saved = places.saveNamedPlace(
+                name = clean,
+                latitude = fix.location.lat,
+                longitude = fix.location.lon,
+                radiusMeters = radiusMeters,
+            )
+            _message.value = if (saved != null) {
+                "Luogo salvato: ${saved.displayName} (raggio ${saved.radiusMeters.toInt()} m)."
+            } else {
+                "Non sono riuscito a salvare il luogo."
+            }
+        }
+    }
+
+    fun deletePlace(place: AutomationPlaceEntity) = viewModelScope.launch {
+        places.delete(place.id)
+        _message.value = "Luogo eliminato: ${place.displayName}."
+    }
+
+    // --- rules -----------------------------------------------------------
+
+    /**
+     * Creates a rule from the structured choices in the builder. Only clock and
+     * place triggers are offered, and both have a live source, so a saved rule
+     * can always actually fire.
+     */
+    fun createRule(draft: RuleDraft) = viewModelScope.launch {
+        val trigger = draft.triggerSpec()
+        if (trigger == null) {
+            _message.value = draft.triggerError ?: "Completa il quando."
+            return@launch
+        }
+        val body = draft.message.trim()
+        if (body.isEmpty()) {
+            _message.value = "Scrivi cosa deve dire o notificare."
+            return@launch
+        }
+        val action = ActionSpec(draft.actionType, mapOf("message" to body))
+        val rule = AutomationRule(
+            id = UUID.randomUUID().toString().take(8),
+            name = body.take(60),
+            triggers = listOf(trigger),
+            actions = listOf(action),
+        )
+        val errors = rules.save(rule)
+        if (errors.isNotEmpty()) {
+            _message.value = "Non valida: ${errors.first()}"
+            return@launch
+        }
+        // Clock rules need the alarm booked; place rules ride the place's geofence.
+        runCatching { scheduler.sync() }
+        _message.value = "Regola creata."
+    }
+
+    fun deleteRule(rule: AutomationRule) = viewModelScope.launch {
+        rules.delete(rule.id)
+        runCatching { scheduler.sync() }
+        _message.value = "Regola eliminata."
+    }
+
+    fun toggleRule(rule: AutomationRule) = viewModelScope.launch {
+        rules.setEnabled(rule.id, !rule.enabled)
+        runCatching { scheduler.sync() }
+    }
+
+    fun clearMessage() { _message.value = "" }
+
+    private companion object {
+        const val POSITION_TIMEOUT_MS = 12_000L
+    }
+}
+
+/** The builder's current choices, turned into a [TriggerSpec] on save. */
+data class RuleDraft(
+    val kind: TriggerKind,
+    val time: String = "",
+    val placeId: String? = null,
+    val actionType: String = ActionRegistry.SHOW_NOTIFICATION,
+    val message: String = "",
+) {
+    var triggerError: String? = null
+        private set
+
+    fun triggerSpec(): TriggerSpec? = when (kind) {
+        TriggerKind.DAILY_TIME -> {
+            val t = com.simone.jarvismobile.core.automation.rule.RuleSchedule.parseTime(time)
+            if (t == null) { triggerError = "Ora non valida (usa HH:mm, es. 08:00)."; null }
+            else TriggerSpec(TriggerRegistry.RECURRING_TIME, mapOf("time" to "%02d:%02d".format(t.hour, t.minute)))
+        }
+        TriggerKind.PLACE_ARRIVE -> placeId?.let { TriggerSpec(TriggerRegistry.PLACE_ENTER, mapOf("placeId" to it)) }
+            ?: run { triggerError = "Scegli un luogo."; null }
+        TriggerKind.PLACE_LEAVE -> placeId?.let { TriggerSpec(TriggerRegistry.PLACE_EXIT, mapOf("placeId" to it)) }
+            ?: run { triggerError = "Scegli un luogo."; null }
+    }
+}
+
+/** The trigger kinds the builder offers — only the ones with a live source. */
+enum class TriggerKind(val label: String) {
+    DAILY_TIME("Ogni giorno a un'ora"),
+    PLACE_ARRIVE("Quando arrivo a un luogo"),
+    PLACE_LEAVE("Quando esco da un luogo"),
+}

@@ -55,6 +55,7 @@ import com.simone.jarvismobile.ui.commands.CommandsScreen
 import com.simone.jarvismobile.ui.dashboard.DashboardScreen
 import com.simone.jarvismobile.ui.diagnostics.DiagnosticsScreen
 import com.simone.jarvismobile.ui.automation.AutomationsScreen
+import com.simone.jarvismobile.ui.automation.RulesScreen
 import com.simone.jarvismobile.ui.backup.BackupScreen
 import com.simone.jarvismobile.ui.home.JarvisChatWindow
 import com.simone.jarvismobile.ui.livetranslate.LiveTranslatorScreen
@@ -76,7 +77,7 @@ private enum class Tab(val label: String, val icon: ImageVector) {
     IMPOSTAZIONI("Impostazioni", Icons.Filled.Settings),
 }
 
-private enum class Overlay { CHAT, MODELS, MEMORY, DIAGNOSTICS, AUTOMATIONS, TRANSLATOR, DOCUMENTS, NAVIGATION, MAPS, FAVORITES, BACKUP }
+private enum class Overlay { CHAT, MODELS, MEMORY, DIAGNOSTICS, AUTOMATIONS, RULES, TRANSLATOR, DOCUMENTS, NAVIGATION, MAPS, FAVORITES, BACKUP }
 
 /**
  * Top-level navigation. The dashboard shell is always present; the written chat
@@ -286,6 +287,7 @@ fun JarvisApp(
         // Full-screen overlays (opaque) for the secondary screens.
         if (overlay == Overlay.MODELS || overlay == Overlay.MEMORY ||
             overlay == Overlay.DIAGNOSTICS || overlay == Overlay.AUTOMATIONS ||
+            overlay == Overlay.RULES ||
             overlay == Overlay.TRANSLATOR || overlay == Overlay.DOCUMENTS ||
             overlay == Overlay.NAVIGATION || overlay == Overlay.MAPS ||
             overlay == Overlay.FAVORITES || overlay == Overlay.BACKUP
@@ -295,7 +297,11 @@ fun JarvisApp(
                 when (overlay) {
                     Overlay.MODELS -> ModelsScreen(onBack = { overlay = null })
                     Overlay.MEMORY -> MemoryScreen(onBack = { overlay = null })
-                    Overlay.AUTOMATIONS -> AutomationsScreen(onBack = { overlay = null })
+                    Overlay.AUTOMATIONS -> AutomationsScreen(
+                        onBack = { overlay = null },
+                        onOpenAdvanced = { overlay = Overlay.RULES },
+                    )
+                    Overlay.RULES -> RulesScreen(onBack = { overlay = null })
                     Overlay.DIAGNOSTICS -> DiagnosticsScreen(onBack = { overlay = null })
                     Overlay.TRANSLATOR -> LiveTranslatorScreen(onBack = { overlay = null })
                     Overlay.DOCUMENTS -> DocumentArchiveScreen(onBack = { overlay = null })

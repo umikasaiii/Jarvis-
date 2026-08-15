@@ -53,6 +53,7 @@ private val Warn = Color(0xFFF3A65B)
 @Composable
 fun AutomationsScreen(
     onBack: () -> Unit,
+    onOpenAdvanced: () -> Unit = {},
     viewModel: AutomationsViewModel = hiltViewModel(),
 ) {
     val automations by viewModel.automations.collectAsStateWithLifecycle()
@@ -146,6 +147,10 @@ fun AutomationsScreen(
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
+        }
+
+        OutlinedButton(onClick = onOpenAdvanced, modifier = Modifier.fillMaxWidth()) {
+            Text("Regole avanzate (orario e luogo) →")
         }
 
         OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) { Text("Indietro") }
