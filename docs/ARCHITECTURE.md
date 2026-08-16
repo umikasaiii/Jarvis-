@@ -179,3 +179,88 @@ temporarily declares media playback and uses the selected offline TTS voice.
 Agenda notifications use a separate reconciliation layer. Stable entry IDs and
 alert rules live in `Agenda.md`; WorkManager jobs are derived, replaceable state.
 Reopening/reloading the agenda cancels stale jobs and recreates future ones.
+
+## Modalità Guida / Driving Mode (§ Driving Mode V2)
+
+Two things live under "Driving Mode" today, and it matters to keep them apart:
+
+1. **The offline Navigation feature** (`app/.../navigation` + `core/.../navigation`,
+   `ui/navigation/NavigationScreen`) — a complete, independent turn-by-turn
+   navigator: MapLibre Native renders local PMTiles vector maps
+   (`ui/navigation/JarvisMapView`, the one component allowed to know about
+   MapLibre), `OfflineRoutingEngine`/`AStarRouter` compute routes fully offline,
+   `MapMatcher`/`OffRouteDetector`/`NavigationStateMachine` (all `:core`) handle
+   live guidance and recalculation, `NavigationRepository` owns the session, and
+   `RegionManager`/`InstalledRegionStore` manage downloaded map/routing datasets.
+   This predates the current phase and was previously undocumented here.
+2. **Modalità Guida** (`app/.../driving`) — the *driving experience wrapper*:
+   wake word integration, notification/media surfacing, call-safe layout, and
+   (today) a thin Google-Maps-Intent launcher. It does not render a map or
+   compute a route itself — it either delegates to Google Maps (current) or to
+   (1) above (target).
+
+### CURRENT
+
+```
+JARVIS (wake word / voice command)
+ ↓
+DrivingModeManager → DrivingModeService (foreground, specialUse+microphone)
+ ↓
+3 WindowManager overlay windows (Compose, no Activity)
+ ↓
+DrivingMapsLauncher → Google Maps (Intent) — real map/routing, JARVIS never sees it
+```
+
+`DrivingNavigationState`'s `distanceToNextTurn`/`nextInstruction`/`etaMinutes`
+stay null on this path — Google Maps never hands turn-by-turn data back to the
+app that launched it.
+
+### TRANSITION (this phase — both exist side by side)
+
+```
+                                     ┌─ EXTERNAL_MAPS_OVERLAY (current, default)
+JARVIS Driving Mode ── DrivingNavigationMode ─┤    → DrivingModeService (WindowManager overlay) → Google Maps
+                                     └─ INTERNAL_JARVIS_NAVIGATION (developer flag)
+                                          → DrivingModeActivity (real Activity, edge-to-edge Compose)
+                                          → JarvisMapView → NavigationRepository → OfflineRoutingEngine
+```
+
+`DrivingNavigationMode` (`:core`) selects between them; the default stays
+`EXTERNAL_MAPS_OVERLAY` until the internal path is complete
+(`SettingsRepository.drivingNavigationMode`, developer-only toggle in
+Diagnostica). Both paths share the same underlying systems rather than each
+owning a copy: `SessionCoordinator`'s voice state (`toDrivingVoiceState()`),
+`WakeWordController`'s `drivingModeActive` flag, `DrivingNotificationController`/
+`DrivingMediaController`, and — for the UI itself — the exact same Compose
+widgets (`DrivingMediaPanel`, `NotifSheet`) render inside both the
+`WindowManager` overlay and the new `DrivingModeActivity`.
+
+`DrivingModeActivity`'s screen (`ui/driving/DrivingModeScreen` +
+`DrivingModeViewModel`) is provider-agnostic: its state
+(`core/driving/DrivingUiState`) never references MapLibre, Google Maps, or a
+routing type directly — only plain values and the same
+`DrivingMediaState`/`DrivingNotification` models the overlay already uses.
+Incoming-call handling (`JarvisNotificationListener.hasActiveCall()`, via
+`Notification.CATEGORY_CALL` — no `READ_PHONE_STATE`) collapses whatever panel
+was open and restores it when the call ends.
+
+### TARGET
+
+```
+JARVIS
+ ↓
+DrivingModeActivity
+ ↓
+JarvisMapView (MapLibre)
+ ↓
+Offline map data (PMTiles, RegionManager/InstalledRegionStore)
+ ↓
+NavigationRepository / OfflineRoutingEngine (AStarRouter)
+ ↓
+A dedicated turn-by-turn routing engine (Valhalla or equivalent) — NOT implemented in this phase.
+```
+
+`OfflineRoutingEngine`'s `AStarRouter` already provides real offline routing
+today (used by the Navigation screen) — it is not Valhalla, and evaluating a
+dedicated routing engine for richer profiles/traffic-aware routing remains
+future work, tracked separately from this UI-architecture phase.
