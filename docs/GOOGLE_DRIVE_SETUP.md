@@ -93,6 +93,7 @@ keystore — see `docs/DECISIONS`.)
   connected; a revoked or lost connection is reported honestly rather than
   faking success, and the encrypted backup stays queued locally until you
   reconnect.
-- **Revoking access**: `myaccount.google.com/permissions`, or the
-  "Disconnetti Google Drive" button in JARVIS (best-effort revoke + always
-  clears local state either way).
+- **Revoking access**: the "Disconnetti Google Drive" button in JARVIS always
+  clears the local connection state, but only Google itself can revoke the
+  grant server-side — do that at `myaccount.google.com/permissions` if you
+  want the account to stop recognizing JARVIS entirely, not just locally.

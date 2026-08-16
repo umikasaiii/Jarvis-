@@ -107,10 +107,15 @@ class GoogleAuthManager @Inject constructor(
     fun isConnected(): Boolean = store.isConnected()
     fun connectedEmail(): String? = store.accountEmail
 
-    /** Revokes access with Google (best-effort) and clears local state. */
+    /**
+     * Clears local connection state. `AuthorizationClient.revokeAccess()`'s
+     * exact signature in this play-services-auth version could not be
+     * confirmed from this build environment, so it is deliberately not called
+     * here rather than guessed at — the user can revoke server-side access
+     * directly at myaccount.google.com/permissions (docs/GOOGLE_DRIVE_SETUP.md);
+     * disconnecting in JARVIS always works regardless.
+     */
     suspend fun disconnect() = withContext(Dispatchers.IO) {
-        runCatching { authorizationClient.revokeAccess().awaitResult() }
-            .onFailure { Log.w(TAG, "revoke_failed ${it.javaClass.simpleName}") }
         store.clear()
     }
 
