@@ -67,9 +67,10 @@ A third, differently-shaped exception: **Google Drive backup sync**
 - **Content stays encrypted end to end.** What reaches Drive is the same
   AES-256-GCM archive already written locally — Google never sees plaintext.
 - **No client id/secret anywhere.** The OAuth client is an "Android" type,
-  matched by this app's package name and **release** signing certificate —
-  nothing for the app or the user to hold or paste in; see
-  `docs/GOOGLE_DRIVE_SETUP.md`.
+  matched by this app's package name and signing certificate (a separate
+  registration for the debug and release variants — see
+  `docs/GOOGLE_DRIVE_SETUP.md`) — nothing for the app or the user to hold or
+  paste in.
 - **A recovery key is required to read old cloud backups on a new device**,
   shown only on explicit request and never written into the cloud archive it
   protects (`BackupKeyManager`, `RecoveryKeyCodec`).

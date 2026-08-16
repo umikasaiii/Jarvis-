@@ -11,10 +11,22 @@ and signing certificate, not by a client id/secret embedded anywhere. See
 `docs/DECISIONS/0015-drive-authorization-client.md` for why (and how this
 differs from the "Desktop app" approach in the now-superseded ADR 0014).
 
-**Important — this only works with a release-signed build.** An "Android"
-OAuth client is tied to one exact signing certificate's SHA-1. A debug APK
-(different certificate) cannot complete authorization no matter how the
-Cloud Console is configured — see `docs/DECISIONS` for the release keystore.
+**An "Android" OAuth client is tied to one exact (package name, signing
+certificate SHA-1) pair.** Debug and release builds have different package
+names (`com.simone.jarvismobile.debug` vs `com.simone.jarvismobile`,
+via `applicationIdSuffix`) and different signing certificates, so each needs
+its **own** OAuth Android client in Cloud Console. Both can exist side by
+side under the same project/consent screen — the app code is identical
+either way; Play Services just resolves whichever client matches the
+package+certificate of the APK that is actually running.
+
+**Currently testing with the DEBUG build.** JARVIS's debug signing is a
+fixed, committed keystore (`app/debug.keystore`, tracked in git, same
+`androiddebugkey`/`android`/`android` on every machine and every CI run —
+see `docs/DEBUG_SIGNING.md`), so its SHA-1 is stable across rebuilds; you
+only need to register it once. Steps 1–3 below are one-time and identical
+regardless of which build you register; step 4 shows both the debug and
+release variants — use debug for now.
 
 ## 1. Create a Google Cloud project
 
@@ -44,28 +56,40 @@ Cloud Console is configured — see `docs/DECISIONS` for the release keystore.
 
 1. **APIs & Services › Credentials › Create Credentials › OAuth client ID**.
 2. Application type: **Android**.
-3. **Package name**: `com.simone.jarvismobile` (the release `applicationId` —
-   not `com.simone.jarvismobile.debug`, which is the debug build's separate id).
-4. **SHA-1 certificate fingerprint**: the SHA-1 of your **release** keystore
-   (`jarvis-release.jks`), not the debug one. Get it with:
-   ```
-   keytool -list -v -keystore jarvis-release.jks -alias jarvis-release
-   ```
-5. Click **Create**. No client secret is issued for this type — Play Services
-   resolves the correct project from your app's package name + certificate,
-   nothing to paste into JARVIS.
+3. **Package name / SHA-1** — create one client for whichever build you are
+   about to test:
+
+   | Build | Package name | SHA-1 source |
+   |-------|--------------|--------------|
+   | **Debug (current)** | `com.simone.jarvismobile.debug` | `app/debug.keystore` — `B9:A7:FA:01:2E:4A:1F:04:DD:97:BD:0A:55:4D:99:B2:59:E9:DC:41` (stable, see `docs/DEBUG_SIGNING.md`) |
+   | Release (later) | `com.simone.jarvismobile` | your `jarvis-release.jks`: `keytool -list -v -keystore jarvis-release.jks -alias jarvis-release` |
+
+   You can create both now or just the debug one — they don't conflict, and
+   nothing in the app code changes between them.
+4. Click **Create**. No client secret is issued for this type — Play Services
+   resolves the correct project from the running APK's package name +
+   certificate, nothing to paste into JARVIS.
 
 ## 5. Connect JARVIS
 
-1. Build and install a **release**-signed APK (see `keystore.properties` /
-   the `JARVIS_RELEASE_*` env vars in `app/build.gradle.kts`; a debug build
-   cannot complete this).
+1. Install the **debug** APK built with `app/debug.keystore` (the CI artifact
+   or a local `:app:assembleDebug` — no special setup needed, this is JARVIS's
+   normal debug build). A build signed with a certificate that has no matching
+   OAuth client in Cloud Console (e.g. someone else's ad-hoc debug keystore)
+   cannot complete this — only `app/debug.keystore`, the one committed in this
+   repo, matches what you registered in step 4.
 2. Open JARVIS › Impostazioni › Backup e sincronizzazione.
 3. Turn on **Sincronizza sul cloud**, pick **Google Drive** as the provider.
 4. Tap **Collega Google Drive**. If Play Services already has consent cached
    this completes instantly with no UI; otherwise Google's own account/consent
    screen opens, you approve it, and you're back in JARVIS.
 5. Impostazioni shows the connected account's email once it completes.
+
+Later, moving to the release build only requires registering the release
+row of the table above as a second OAuth client — the connection itself
+(account, backup folder, archives) is Google-Drive-side state, not tied to
+which JARVIS variant uploaded it; see `docs/DECISIONS/0015-drive-authorization-client.md`
+for why the backup format itself never depends on which build created it.
 
 ## 6. Before you ever need it: save the recovery key
 
@@ -82,13 +106,16 @@ keystore — see `docs/DECISIONS`.)
 
 ## Troubleshooting
 
-- **Nothing happens / silently fails on a debug build** — expected: the
-  Android OAuth client is registered against the *release* certificate's
-  SHA-1 only. Install the release APK.
-- **`ApiException` / authorization fails even on the release build** —
-  double-check the package name and SHA-1 in Cloud Console match the release
-  keystore exactly (`keytool -list -v` again to confirm), and that your
-  Google account is listed under Test users (step 3.4).
+- **`ApiException` / authorization fails** — double-check the package name
+  and SHA-1 registered in Cloud Console match the build you actually
+  installed (`keytool -list -v -keystore app/debug.keystore` for debug,
+  storepass/keypass `android`, alias `androiddebugkey` — re-check with
+  `keytool -list -v -keystore jarvis-release.jks -alias jarvis-release` for
+  release), and that your Google account is listed under Test users (step 3.4).
+- **Works on debug but nothing happens after switching to a release
+  build (or vice versa)** — expected if you only registered one OAuth
+  client. Each (package name, certificate) pair needs its own entry from
+  step 4's table; the debug and release clients don't share registration.
 - **Uploads stuck "in coda"** — check Impostazioni shows the account as
   connected; a revoked or lost connection is reported honestly rather than
   faking success, and the encrypted backup stays queued locally until you

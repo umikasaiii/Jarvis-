@@ -71,14 +71,39 @@ that the user explicitly opens via a picker), so:
   (e.g. the folder was deleted in Drive), rather than failing the same way
   forever.
 
-### Release signing requirement
+### Signing requirement — one OAuth client per (package, certificate)
 
-An "Android" OAuth client is matched by the **exact** signing certificate
-that produced the running APK. This means Drive sync **only works with a
-release-signed build** using the SHA-1 registered in Google Cloud Console
-(`jarvis-release.jks`) — a debug-signed APK (different certificate) will get
-`hasResolution()` with no way to complete it, since the debug certificate was
-never registered. `docs/GOOGLE_DRIVE_SETUP.md` says this explicitly.
+An "Android" OAuth client is matched by the **exact** (package name, signing
+certificate) pair that produced the running APK. Debug and release are two
+different pairs — `com.simone.jarvismobile.debug` signed with
+`app/debug.keystore` vs `com.simone.jarvismobile` signed with
+`jarvis-release.jks` — so each needs its **own** OAuth Android client
+registered in Cloud Console; an APK signed with a certificate that has no
+matching registration gets `hasResolution()` with no way to complete it.
+
+The app code itself does not distinguish debug from release here — the same
+`GoogleAuthManager`/`AuthorizationRequest` call resolves whichever client
+matches the running APK. This makes debug-build testing viable as long as
+its signing is **stable** (so its SHA-1 only needs registering once):
+`app/debug.keystore` is committed to the repo rather than left to AGP's
+default per-machine/per-runner debug key, exactly so this works —
+see `docs/DEBUG_SIGNING.md`. `docs/GOOGLE_DRIVE_SETUP.md` documents
+registering either or both.
+
+### Backup format does not depend on which variant created it
+
+Nothing in `BackupManifest`/`ManifestCodec` (`:core`), `BackupCrypto`/
+`BackupKeyManager` (content-key envelope encryption), or
+`GoogleDriveRestClient`'s fixed "JARVIS Backups" folder name references
+`applicationId`/`packageName`/build type. A backup uploaded from the debug
+app and one from the release app are byte-for-byte the same kind of archive
+in the same Drive folder (once both variants have their own OAuth client
+connected to the same Google account). Restoring across variants — e.g.
+debug → Drive → a later release install — only requires carrying over the
+**Recovery Key** (`BackupKeyManager.importRecoveryKey`), because the AES
+content key is wrapped by each app's own non-exportable Keystore entry
+locally (debug and release are different Android UIDs with separate Keystore
+namespaces) but the key itself, and the archive it protects, are not.
 
 ## Consequences
 
@@ -91,7 +116,9 @@ never registered. `docs/GOOGLE_DRIVE_SETUP.md` says this explicitly.
   alternative at all, not a blanket policy this ADR claims to still hold.
 - Local backup remains fully offline and fully functional with zero Google
   account, exactly as before — Drive is still only ever a later copy.
-- Testing requires a release-signed APK from here on, not the debug build
-  every other feature in this repo has been verified with so far.
+- Testing requires registering an OAuth Android client that matches the
+  exact build under test's package name + certificate — this works equally
+  for the stable, committed debug keystore or a release keystore (see
+  above); it does not require a release build specifically.
 - The Recovery Key mechanism (`BackupKeyManager`, `RecoveryKeyCodec`) is
   unchanged by this ADR — see ADR 0014's "Recovery key" section, still current.
