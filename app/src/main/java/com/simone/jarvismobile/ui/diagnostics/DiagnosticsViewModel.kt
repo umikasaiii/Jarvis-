@@ -11,10 +11,14 @@ import com.simone.jarvismobile.audio.CaptureResult
 import com.simone.jarvismobile.audio.SessionCoordinator
 import com.simone.jarvismobile.audio.SttResult
 import com.simone.jarvismobile.audio.TtsState
+import com.simone.jarvismobile.core.driving.DrivingNavigationMode
+import com.simone.jarvismobile.data.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -29,7 +33,20 @@ data class PermissionSnapshot(
 class DiagnosticsViewModel @Inject constructor(
     application: Application,
     private val coordinator: SessionCoordinator,
+    private val settings: SettingsRepository,
 ) : AndroidViewModel(application) {
+
+    /**
+     * Developer-only selector between the shipped Google-Maps overlay and the
+     * new in-app navigation while it's being built (spec §1/§21). Defaults to
+     * [DrivingNavigationMode.EXTERNAL_MAPS_OVERLAY].
+     */
+    val drivingNavigationMode: StateFlow<DrivingNavigationMode> = settings.drivingNavigationMode
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DrivingNavigationMode.EXTERNAL_MAPS_OVERLAY)
+
+    fun setDrivingNavigationMode(mode: DrivingNavigationMode) {
+        viewModelScope.launch { settings.setDrivingNavigationMode(mode) }
+    }
 
     val routeState: StateFlow<AudioRouteState> = coordinator.routeState
     val ttsState: StateFlow<TtsState> = coordinator.ttsState

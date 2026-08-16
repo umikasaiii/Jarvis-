@@ -1,5 +1,6 @@
 package com.simone.jarvismobile.data
 
+import com.simone.jarvismobile.core.driving.DrivingNavigationMode
 import com.simone.jarvismobile.core.speech.SpeechStyle
 import com.simone.jarvismobile.core.translate.TranslationAudioOutput
 import com.simone.jarvismobile.core.translate.TranslationLanguage
@@ -78,6 +79,9 @@ class SettingsRepository @Inject constructor(
 
         // Offline navigation region catalogue (manifest URL).
         val NAV_MANIFEST_URL = stringPreferencesKey("nav_manifest_url")
+
+        // Driving Mode V2 (internal navigation, developer-only while in progress).
+        val DRIVING_NAVIGATION_MODE = stringPreferencesKey("driving_navigation_mode")
 
         // Document import (Memory & Knowledge).
         val DOC_SAVE_DEFAULT = booleanPreferencesKey("doc_save_to_vault_default")
@@ -652,6 +656,24 @@ class SettingsRepository @Inject constructor(
 
     suspend fun setNavManifestUrl(value: String) {
         context.settingsDataStore.edit { it[Keys.NAV_MANIFEST_URL] = value }
+    }
+
+    /**
+     * Developer-only selector between the current Google-Maps-overlay Driving
+     * Mode and the new in-app [DrivingNavigationMode.INTERNAL_JARVIS_NAVIGATION]
+     * while the latter is being built. Defaults to [DrivingNavigationMode.EXTERNAL_MAPS_OVERLAY] —
+     * nothing about the shipped, user-visible behaviour changes unless this is
+     * explicitly flipped from Diagnostics.
+     */
+    val drivingNavigationMode: Flow<DrivingNavigationMode> =
+        context.settingsDataStore.data.map {
+            it[Keys.DRIVING_NAVIGATION_MODE]?.let { name ->
+                runCatching { DrivingNavigationMode.valueOf(name) }.getOrNull()
+            } ?: DrivingNavigationMode.EXTERNAL_MAPS_OVERLAY
+        }
+
+    suspend fun setDrivingNavigationMode(value: DrivingNavigationMode) {
+        context.settingsDataStore.edit { it[Keys.DRIVING_NAVIGATION_MODE] = value.name }
     }
 
     suspend fun setDocSaveToVaultDefault(value: Boolean) {

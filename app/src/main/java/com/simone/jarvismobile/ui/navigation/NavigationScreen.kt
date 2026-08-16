@@ -34,32 +34,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.simone.jarvismobile.core.navigation.GpsFix
 import com.simone.jarvismobile.core.navigation.ManeuverType
 import com.simone.jarvismobile.core.navigation.NavigationProgress
-import com.simone.jarvismobile.core.navigation.LatLng as CoreLatLng
 import com.simone.jarvismobile.navigation.GpsStatus
-import org.maplibre.android.MapLibre
-import org.maplibre.android.camera.CameraUpdateFactory
-import org.maplibre.android.maps.MapLibreMap
-import org.maplibre.android.maps.MapView
-import org.maplibre.android.maps.Style
-import org.maplibre.android.style.layers.LineLayer
-import org.maplibre.android.style.layers.PropertyFactory
-import org.maplibre.android.style.sources.GeoJsonSource
-import org.maplibre.geojson.LineString
-import org.maplibre.geojson.Point
 import java.util.Locale
-
-private const val ROUTE_SOURCE = "jarvis-route-src"
-private const val ROUTE_LAYER = "jarvis-route-layer"
 
 private val Ink = Color(0xFF0A0E14)
 private val Panel = Color(0xE6121A26)
@@ -82,14 +66,12 @@ fun NavigationScreen(
     onOpenMaps: () -> Unit = {},
     viewModel: NavigationViewModel = hiltViewModel(),
 ) {
-    val context = LocalContext.current
     val fix by viewModel.fix.collectAsStateWithLifecycle()
     val gpsStatus by viewModel.gpsStatus.collectAsStateWithLifecycle()
     val covering by viewModel.coveringRegion.collectAsStateWithLifecycle()
     val route by viewModel.route.collectAsStateWithLifecycle()
     val progress by viewModel.progress.collectAsStateWithLifecycle()
     val muted by viewModel.voiceMuted.collectAsStateWithLifecycle()
-    var styleReady by remember { mutableStateOf(false) }
 
     var granted by remember { mutableStateOf(viewModel.hasLocationPermission()) }
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -99,76 +81,7 @@ fun NavigationScreen(
         if (ok) viewModel.start()
     }
 
-    // Initialise MapLibre once, then build the MapView. Both are cheap to hold.
-    val mapView = remember {
-        MapLibre.getInstance(context)
-        MapView(context)
-    }
-    var map by remember { mutableStateOf<MapLibreMap?>(null) }
     var following by remember { mutableStateOf(true) }
-
-    // Drive the MapView lifecycle from composition (screen is a full overlay).
-    DisposableEffect(Unit) {
-        mapView.onCreate(null)
-        mapView.onStart()
-        mapView.onResume()
-        mapView.getMapAsync { m ->
-            m.uiSettings.isRotateGesturesEnabled = true
-            // Long-press sets a destination and starts an offline route to it.
-            m.addOnMapLongClickListener { p ->
-                viewModel.navigateTo(CoreLatLng(p.latitude, p.longitude))
-                true
-            }
-            map = m
-        }
-        onDispose {
-            mapView.onPause()
-            mapView.onStop()
-            mapView.onDestroy()
-        }
-    }
-
-    // Load the style once the map is ready, injecting the covering region's local
-    // PMTiles as the vector source. With no region installed the style still
-    // renders (dark background) and the "download map" banner shows.
-    LaunchedEffect(map, covering) {
-        val m = map ?: return@LaunchedEffect
-        val base = runCatching {
-            context.assets.open("jarvis-navigation.json").bufferedReader().use { it.readText() }
-        }.getOrNull() ?: return@LaunchedEffect
-        val pmtilesPath = viewModel.coveringPmtilesPath()
-        val styleJson = if (pmtilesPath != null) {
-            base.replace("pmtiles://LOCAL_REGION_PLACEHOLDER", "pmtiles://file://$pmtilesPath")
-        } else {
-            base
-        }
-        styleReady = false
-        m.setStyle(Style.Builder().fromJson(styleJson)) { style ->
-            if (style.getSource(ROUTE_SOURCE) == null) {
-                style.addSource(GeoJsonSource(ROUTE_SOURCE))
-                style.addLayer(
-                    LineLayer(ROUTE_LAYER, ROUTE_SOURCE).withProperties(
-                        PropertyFactory.lineColor(android.graphics.Color.parseColor("#4FD1E0")),
-                        PropertyFactory.lineWidth(7f),
-                    ),
-                )
-            }
-            styleReady = true
-        }
-    }
-
-    // Draw / clear the computed route as a line on the map.
-    LaunchedEffect(route, styleReady, map) {
-        val m = map ?: return@LaunchedEffect
-        if (!styleReady) return@LaunchedEffect
-        val src = m.style?.getSourceAs<GeoJsonSource>(ROUTE_SOURCE) ?: return@LaunchedEffect
-        val r = route
-        if (r == null) {
-            src.setGeoJson("{\"type\":\"FeatureCollection\",\"features\":[]}")
-        } else {
-            src.setGeoJson(LineString.fromLngLats(r.geometry.map { Point.fromLngLat(it.lon, it.lat) }))
-        }
-    }
 
     // Start/stop GNSS with the screen; ask for permission if needed.
     LaunchedEffect(Unit) {
@@ -176,22 +89,15 @@ fun NavigationScreen(
     }
     DisposableEffect(Unit) { onDispose { viewModel.stop() } }
 
-    // Follow the vehicle: recentre the camera on each fix while following.
-    LaunchedEffect(fix, map, following) {
-        val m = map ?: return@LaunchedEffect
-        val f = fix ?: return@LaunchedEffect
-        if (following) {
-            m.moveCamera(
-                CameraUpdateFactory.newLatLngZoom(
-                    org.maplibre.android.geometry.LatLng(f.location.lat, f.location.lon),
-                    16.0,
-                ),
-            )
-        }
-    }
-
     Box(Modifier.fillMaxSize().background(Ink)) {
-        AndroidView(factory = { mapView }, modifier = Modifier.fillMaxSize())
+        JarvisMapView(
+            cameraTarget = fix?.location,
+            route = route,
+            stylePmtilesPath = viewModel.coveringPmtilesPath(),
+            followCamera = following,
+            onLongPress = { viewModel.navigateTo(it) },
+            modifier = Modifier.fillMaxSize(),
+        )
 
         // The vehicle marker: the camera keeps the position centred, so a centre
         // dot represents "you" in the heading-up view.

@@ -18,6 +18,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -26,6 +27,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.simone.jarvismobile.core.driving.DrivingNavigationMode
 
 /**
  * Minimal diagnostics screen (docs/ARCHITECTURE.md §8 / task §10): shows the
@@ -47,6 +49,7 @@ fun DiagnosticsScreen(
     val testing by viewModel.testing.collectAsStateWithLifecycle()
     val sttStatus by viewModel.sttStatus.collectAsStateWithLifecycle()
     val sttPartial by viewModel.sttPartial.collectAsStateWithLifecycle()
+    val drivingNavigationMode by viewModel.drivingNavigationMode.collectAsStateWithLifecycle()
     val perms = viewModel.permissions()
 
     val micPermLauncher = rememberLauncherForActivityResult(
@@ -150,6 +153,34 @@ fun DiagnosticsScreen(
         OutlinedButton(onClick = viewModel::onResetAudio, modifier = Modifier.fillMaxWidth()) {
             Text("Reset audio")
         }
+
+        // Driving Mode V2 (sviluppo): la modalità overlay su Google Maps resta il
+        // default finché la nuova DrivingModeActivity interna non è completa.
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Modalità Guida (sviluppo)", style = MaterialTheme.typography.titleMedium)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(
+                        if (drivingNavigationMode == DrivingNavigationMode.INTERNAL_JARVIS_NAVIGATION) {
+                            "JARVIS Drive interno (beta)"
+                        } else {
+                            "Overlay su Google Maps (predefinito)"
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Switch(
+                        checked = drivingNavigationMode == DrivingNavigationMode.INTERNAL_JARVIS_NAVIGATION,
+                        onCheckedChange = {
+                            viewModel.setDrivingNavigationMode(
+                                if (it) DrivingNavigationMode.INTERNAL_JARVIS_NAVIGATION
+                                else DrivingNavigationMode.EXTERNAL_MAPS_OVERLAY,
+                            )
+                        },
+                    )
+                }
+            }
+        }
+
         OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
             Text("Indietro")
         }
