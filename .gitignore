@@ -24,6 +24,9 @@ release/
 # release key and holds no secret (standard debug password "android").
 !app/debug.keystore
 keystore.properties
+keystore.properties.local
+*-credentials.txt
+jarvis-release*
 secrets.properties
 .env
 *.env

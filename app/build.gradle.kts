@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -6,6 +8,24 @@ plugins {
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
 }
+
+// Release signing (docs/DECISIONS — jarvis-release.jks). Read from a
+// gitignored keystore.properties at the repo root, or from environment
+// variables (for CI) — never hardcoded. Its absence is not an error: a
+// checkout without either simply cannot produce a signed release build,
+// exactly as before this was wired up.
+val releaseKeystoreProperties = Properties().apply {
+    val propsFile = rootProject.file("keystore.properties")
+    if (propsFile.exists()) {
+        propsFile.inputStream().use { load(it) }
+    }
+}
+
+fun releaseSigningProp(propKey: String, envKey: String): String? =
+    releaseKeystoreProperties.getProperty(propKey) ?: System.getenv(envKey)
+
+val releaseStoreFile = releaseSigningProp("storeFile", "JARVIS_RELEASE_STORE_FILE")
+val hasReleaseSigning = !releaseStoreFile.isNullOrBlank()
 
 android {
     namespace = "com.simone.jarvismobile"
@@ -45,6 +65,14 @@ android {
             keyAlias = "androiddebugkey"
             keyPassword = "android"
         }
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = file(releaseStoreFile!!)
+                storePassword = releaseSigningProp("storePassword", "JARVIS_RELEASE_STORE_PASSWORD")
+                keyAlias = releaseSigningProp("keyAlias", "JARVIS_RELEASE_KEY_ALIAS")
+                keyPassword = releaseSigningProp("keyPassword", "JARVIS_RELEASE_KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
@@ -61,6 +89,9 @@ android {
                 "proguard-rules.pro",
             )
             // Secrets are never baked into BuildConfig (docs/SECURITY.md §21).
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 
