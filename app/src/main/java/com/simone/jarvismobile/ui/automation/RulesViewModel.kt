@@ -242,6 +242,7 @@ class RulesViewModel @Inject constructor(
             triggers = listOf(trigger),
             condition = draft.conditionOrNull(),
             actions = listOf(action),
+            cooldownSeconds = draft.cooldownSecondsOrDefault(),
         )
         val errors = rules.save(rule)
         if (errors.isNotEmpty()) {
@@ -346,7 +347,18 @@ data class RuleDraft(
             ?: run { triggerError = "Scegli un luogo."; null }
         TriggerKind.CHARGING -> TriggerSpec(TriggerRegistry.DEVICE_CHARGING)
         TriggerKind.UNPLUGGED -> TriggerSpec(TriggerRegistry.DEVICE_UNPLUGGED)
+        TriggerKind.FIRST_UNLOCK -> TriggerSpec(TriggerRegistry.FIRST_UNLOCK_OF_DAY)
     }
+
+    /**
+     * "Al primo sblocco" has no calendar-day primitive in the generic gate (its
+     * cooldown is a fixed gap, not a midnight reset) — a minimum gap of most of a
+     * day is the honest approximation, same idea as the old engine's per-day
+     * SharedPreferences key but expressed the way this engine already understands
+     * "don't fire again too soon". Combine with "Dalle/Alle" below for a real
+     * "non prima delle 7" restriction; that condition already exists generically.
+     */
+    fun cooldownSecondsOrDefault(): Long = if (kind == TriggerKind.FIRST_UNLOCK) FIRST_UNLOCK_MIN_GAP_SECONDS else 0L
 
     /** The AND of the enabled filters, or null when the user set none. */
     fun conditionOrNull(): Condition? {
@@ -363,6 +375,10 @@ data class RuleDraft(
             else -> Condition.All(parts)
         }
     }
+
+    private companion object {
+        const val FIRST_UNLOCK_MIN_GAP_SECONDS = 20 * 3600L
+    }
 }
 
 /** The trigger kinds the builder offers — only the ones with a live source. */
@@ -372,4 +388,5 @@ enum class TriggerKind(val label: String) {
     PLACE_LEAVE("Quando esco da un luogo"),
     CHARGING("Quando metto in carica"),
     UNPLUGGED("Quando tolgo dalla carica"),
+    FIRST_UNLOCK("Al primo sblocco del giorno"),
 }

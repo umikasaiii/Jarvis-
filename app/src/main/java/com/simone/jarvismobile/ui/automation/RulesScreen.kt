@@ -407,6 +407,11 @@ private fun RuleBuilderCard(
                     }
                 }
                 TriggerKind.CHARGING, TriggerKind.UNPLUGGED -> Unit
+                TriggerKind.FIRST_UNLOCK -> Text(
+                    "Scatta al primo sblocco dello schermo della giornata. Per «non prima " +
+                        "delle 7», usa «Dalle/Alle» qui sotto.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
             }
 
             Text("Solo se… (opzionale)", style = MaterialTheme.typography.labelLarge)
@@ -560,6 +565,7 @@ private fun triggerLabel(spec: TriggerSpec, places: List<AutomationPlaceEntity>)
         TriggerRegistry.PLACE_EXIT -> "Quando esco da ${placeName(spec.params["placeId"])}"
         TriggerRegistry.DEVICE_CHARGING -> "Quando metto in carica"
         TriggerRegistry.DEVICE_UNPLUGGED -> "Quando tolgo dalla carica"
+        TriggerRegistry.FIRST_UNLOCK_OF_DAY -> "Al primo sblocco del giorno"
         else -> TriggerRegistry.definition(spec.type)?.label ?: spec.type
     }
 }

@@ -22,7 +22,11 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.simone.jarvismobile.R
+import com.simone.jarvismobile.automation.rule.AutomationExecutor
+import com.simone.jarvismobile.context.ContextEngine
 import com.simone.jarvismobile.core.automation.Trigger
+import com.simone.jarvismobile.core.automation.rule.TriggerEvent
+import com.simone.jarvismobile.core.automation.rule.TriggerRegistry
 import com.simone.jarvismobile.proactive.ProactiveManager
 import com.simone.jarvismobile.ui.MainActivity
 import dagger.hilt.android.AndroidEntryPoint
@@ -53,6 +57,8 @@ class AutomationEventService : Service() {
     @Inject lateinit var repository: AutomationRepository
     @Inject lateinit var runner: AutomationRunner
     @Inject lateinit var proactive: ProactiveManager
+    @Inject lateinit var newEngineExecutor: AutomationExecutor
+    @Inject lateinit var newEngineContext: ContextEngine
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val lastFired = HashMap<String, Long>()
@@ -136,6 +142,22 @@ class AutomationEventService : Service() {
         scope.launch {
             runCatching { proactive.evaluateOnUnlock(LocalDateTime.now()) }
                 .onFailure { Log.w("JarvisAutomation", "proactive_unlock_failed ${it.javaClass.simpleName}") }
+        }
+        // Same idea for the new (6j) rule-builder engine's FIRST_UNLOCK_OF_DAY
+        // trigger. Unlike the block above, no manual day key is tracked here: the
+        // gate's own cooldownSeconds is what stands in for "once a day" (the
+        // builder sets a ~20h minimum gap for this trigger kind, see RuleDraft),
+        // consistent with how every other trigger in this file is dispatched —
+        // unconditionally on the raw event, leaving all suppression to the gate.
+        // A precise "not before 7am" is a job for the rule's own "Dalle/Alle"
+        // condition, already generic, rather than special-cased matching here.
+        scope.launch {
+            val nowDt = LocalDateTime.now()
+            val evalContext = runCatching { newEngineContext.evaluationContext(now = nowDt) }.getOrNull()
+                ?: return@launch
+            val event = TriggerEvent(type = TriggerRegistry.FIRST_UNLOCK_OF_DAY, at = nowDt)
+            runCatching { newEngineExecutor.onTrigger(event, evalContext) }
+                .onFailure { Log.w("JarvisAutomation", "first_unlock_dispatch_failed ${it.javaClass.simpleName}") }
         }
     }
 
