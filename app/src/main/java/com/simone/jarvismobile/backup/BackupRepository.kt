@@ -55,9 +55,11 @@ data class BackupState(
 class BackupRepository @Inject constructor(
     @ApplicationContext private val context: Context,
     private val crypto: BackupCrypto,
+    private val keys: BackupKeyManager,
     private val vault: VaultRepository,
     private val settings: SettingsRepository,
     private val external: ExternalBackupStore,
+    private val cloud: CloudSyncManager,
 ) {
     private val root: File get() = File(context.filesDir, "backups").apply { mkdirs() }
 
@@ -117,7 +119,7 @@ class BackupRepository @Inject constructor(
 
             // Encrypt the payload, then drop the plaintext zip.
             val enc = File(dir, "backup.enc")
-            plainZip.inputStream().use { input -> enc.outputStream().use { out -> crypto.encrypt(input, out) } }
+            plainZip.inputStream().use { input -> enc.outputStream().use { out -> crypto.encrypt(input, out, keys.contentKey()) } }
             plainZip.delete()
 
             val manifest = BackupManifest(
@@ -155,17 +157,20 @@ class BackupRepository @Inject constructor(
 
     suspend fun listBackups(): List<BackupManifest> = withContext(Dispatchers.IO) {
         val internalManifests = root.listFiles()?.filter { it.isDirectory }?.mapNotNull { readManifest(it.name) }.orEmpty()
-        // Merge in backups that live only in the destination folder (e.g. after a
-        // reinstall, when internal storage was wiped), preferring the internal copy.
+        // Merge in backups that live only in the destination folder or the cloud
+        // (e.g. after a reinstall, when internal storage was wiped, or a restore
+        // on a brand new device with nothing local yet), preferring the internal copy.
         val externalManifests = runCatching { external.listManifests() }.getOrDefault(emptyList())
+        val cloudManifests = runCatching { cloud.listManifests() }.getOrDefault(emptyList())
         val byId = LinkedHashMap<String, BackupManifest>()
-        (internalManifests + externalManifests).forEach { byId.putIfAbsent(it.id, it) }
+        (internalManifests + externalManifests + cloudManifests).forEach { byId.putIfAbsent(it.id, it) }
         byId.values.sortedByDescending { it.createdAt }
     }
 
     /** Verifies a backup's encrypted archive against the manifest hash. */
     suspend fun verify(id: String): Boolean = withContext(Dispatchers.IO) {
         if (readManifest(id) == null) runCatching { external.importInto(root, id) }
+        if (readManifest(id) == null) runCatching { cloud.importInto(root, id) }
         val manifest = readManifest(id) ?: return@withContext false
         val enc = File(File(root, id), "backup.enc")
         enc.exists() && sha256File(enc).equals(manifest.archiveSha256, ignoreCase = true)
@@ -174,6 +179,7 @@ class BackupRepository @Inject constructor(
     suspend fun delete(id: String) = withContext(Dispatchers.IO) {
         File(root, id).deleteRecursively()
         runCatching { external.remove(id) }
+        runCatching { cloud.remove(id) }
         refreshState()
     }
 
@@ -184,9 +190,11 @@ class BackupRepository @Inject constructor(
      * the app restarts.
      */
     suspend fun restore(id: String, paths: Set<String>? = null): Boolean = withContext(Dispatchers.IO) {
-        // The backup may live only in the destination folder (e.g. after a
-        // reinstall) — pull it into internal storage so the normal path can read it.
+        // The backup may live only in the destination folder or the cloud (e.g.
+        // after a reinstall, or on a brand new device) — pull it into internal
+        // storage so the normal path can read it.
         if (readManifest(id) == null) runCatching { external.importInto(root, id) }
+        if (readManifest(id) == null) runCatching { cloud.importInto(root, id) }
         val manifest = readManifest(id) ?: return@withContext false
         runBackup() // pre-restore safety snapshot
         var ok = true
@@ -194,9 +202,12 @@ class BackupRepository @Inject constructor(
         for (entry in wanted) {
             val sourceBackup = entry.storedInBackupId.ifBlank { id }
             // Incremental backups reference earlier archives for unchanged files;
-            // those too may only exist in the destination folder.
+            // those too may only exist in the destination folder or the cloud.
             if (!File(File(root, sourceBackup), "backup.enc").exists()) {
                 runCatching { external.importInto(root, sourceBackup) }
+            }
+            if (!File(File(root, sourceBackup), "backup.enc").exists()) {
+                runCatching { cloud.importInto(root, sourceBackup) }
             }
             val bytes = extract(sourceBackup, entry.relPath)
             if (bytes == null) { ok = false; continue }
@@ -265,7 +276,7 @@ class BackupRepository @Inject constructor(
         val enc = File(File(root, backupId), "backup.enc")
         if (!enc.exists()) return null
         val plain = ByteArrayOutputStream()
-        runCatching { enc.inputStream().use { crypto.decrypt(it, plain) } }.onFailure { return null }
+        runCatching { enc.inputStream().use { crypto.decrypt(it, plain, keys.contentKey()) } }.onFailure { return null }
         ZipInputStream(ByteArrayInputStream(plain.toByteArray())).use { zip ->
             while (true) {
                 val e = zip.nextEntry ?: break

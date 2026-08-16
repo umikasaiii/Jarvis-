@@ -9,6 +9,14 @@ sealed interface CloudResult {
     data class Failed(val reason: String) : CloudResult
 }
 
+/** One backup as a cloud provider lists it: its archive and (if present) manifest remote ids. */
+data class CloudBackupRef(
+    val backupId: String,
+    val archiveRemoteId: String,
+    val manifestRemoteId: String?,
+    val sizeBytes: Long,
+)
+
 /**
  * A place an encrypted backup can be copied to (spec: Google Drive, OneDrive,
  * Dropbox, WebDAV, S3, NAS — added over time behind this one interface). The
@@ -34,6 +42,18 @@ interface CloudBackupProvider {
      * retry later rather than dropping the backup.
      */
     suspend fun upload(backupId: String, archive: File, manifest: File): CloudResult
+
+    /** Every backup this provider currently holds — used for retention pruning and restore-on-a-new-device. */
+    suspend fun list(): List<CloudBackupRef>
+
+    /** Raw bytes of [ref]'s encrypted archive, or null on any failure. */
+    suspend fun downloadArchive(ref: CloudBackupRef): ByteArray?
+
+    /** Raw bytes of [ref]'s plaintext manifest JSON, or null on any failure. */
+    suspend fun downloadManifest(ref: CloudBackupRef): ByteArray?
+
+    /** Removes [ref] from the cloud (retention pruning). Best-effort; never throws. */
+    suspend fun delete(ref: CloudBackupRef)
 }
 
 /**
@@ -46,24 +66,10 @@ class NoCloudProvider : CloudBackupProvider {
     override suspend fun isConfigured() = true
     override suspend fun upload(backupId: String, archive: File, manifest: File) =
         CloudResult.Unavailable("Nessun cloud selezionato")
+    override suspend fun list() = emptyList<CloudBackupRef>()
+    override suspend fun downloadArchive(ref: CloudBackupRef) = null
+    override suspend fun downloadManifest(ref: CloudBackupRef) = null
+    override suspend fun delete(ref: CloudBackupRef) = Unit
 
     companion object { const val ID = "none" }
-}
-
-/**
- * Google Drive provider. The Drive REST upload itself is a small, well-defined
- * call, but it needs an OAuth account connected through Google Sign-In, which
- * cannot be wired up or tested in this build environment (no Google services,
- * no signing config). Rather than ship a fake "success", this reports itself as
- * not configured, so the queue keeps the encrypted backup pending and the UI
- * shows an honest "da collegare" state until real sign-in lands.
- */
-class GoogleDriveBackupProvider : CloudBackupProvider {
-    override val id = ID
-    override val label = "Google Drive"
-    override suspend fun isConfigured() = false
-    override suspend fun upload(backupId: String, archive: File, manifest: File) =
-        CloudResult.Unavailable("Account Google non collegato")
-
-    companion object { const val ID = "gdrive" }
 }

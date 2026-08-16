@@ -151,6 +151,25 @@
             </intent-filter>
         </activity>
 
+        <!-- Catches the browser's redirect after Google's OAuth consent page
+             (Backup e sincronizzazione › Collega Google Drive). A private-use
+             custom scheme, not an https App Link, so no domain verification is
+             needed; exported because the external browser must be able to
+             invoke it. No Play Services involved — see GoogleAuthManager. -->
+        <activity
+            android:name=".backup.drive.OAuthRedirectActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:excludeFromRecents="true">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="com.simone.jarvismobile" android:path="/oauth2redirect" />
+            </intent-filter>
+        </activity>
+
         <!-- Foreground listening service. Started only by explicit user action. -->
         <service
             android:name=".audio.ListeningService"

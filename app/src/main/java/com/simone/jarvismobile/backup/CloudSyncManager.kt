@@ -2,14 +2,21 @@ package com.simone.jarvismobile.backup
 
 import android.content.Context
 import android.util.Log
+import com.simone.jarvismobile.backup.drive.GoogleDriveBackupProvider
+import com.simone.jarvismobile.core.backup.BackupManifest
+import com.simone.jarvismobile.core.backup.BackupRef
 import com.simone.jarvismobile.core.backup.BackupStatus
 import com.simone.jarvismobile.core.backup.ManifestCodec
+import com.simone.jarvismobile.core.backup.Retention
+import com.simone.jarvismobile.core.backup.RetentionPolicy
 import com.simone.jarvismobile.data.SettingsRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -24,10 +31,11 @@ import javax.inject.Singleton
 class CloudSyncManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val settings: SettingsRepository,
+    googleDrive: GoogleDriveBackupProvider,
 ) {
     private val providers: Map<String, CloudBackupProvider> = listOf(
         NoCloudProvider(),
-        GoogleDriveBackupProvider(),
+        googleDrive,
     ).associateBy { it.id }
 
     private val root: File get() = File(context.filesDir, "backups").apply { mkdirs() }
@@ -75,6 +83,75 @@ class CloudSyncManager @Inject constructor(
     }
 
     fun pendingCount(): Int = readQueue().size
+
+    /** Every manifest currently on the selected cloud provider, for restore's backup list. */
+    suspend fun listManifests(): List<BackupManifest> = withContext(Dispatchers.IO) {
+        val provider = activeProvider() ?: return@withContext emptyList()
+        val refs = runCatching { provider.list() }.getOrDefault(emptyList())
+        refs.mapNotNull { ref ->
+            val bytes = runCatching { provider.downloadManifest(ref) }.getOrNull() ?: return@mapNotNull null
+            runCatching { ManifestCodec.decode(bytes.toString(Charsets.UTF_8)) }.getOrNull()
+        }
+    }
+
+    /** Pulls backup [id]'s archive+manifest from the cloud into internal [root], if it lives there. */
+    suspend fun importInto(root: File, id: String): Boolean = withContext(Dispatchers.IO) {
+        val target = File(root, id)
+        if (File(target, "backup.enc").exists() && File(target, "manifest.json").exists()) return@withContext true
+        val provider = activeProvider() ?: return@withContext false
+        val refs = runCatching { provider.list() }.getOrDefault(emptyList())
+        val ref = refs.firstOrNull { it.backupId == id } ?: return@withContext false
+        val archiveBytes = provider.downloadArchive(ref) ?: return@withContext false
+        val manifestBytes = provider.downloadManifest(ref) ?: return@withContext false
+        runCatching {
+            target.mkdirs()
+            File(target, "backup.enc").writeBytes(archiveBytes)
+            File(target, "manifest.json").writeBytes(manifestBytes)
+            true
+        }.getOrDefault(false)
+    }
+
+    /** Deletes backup [id] from the cloud (a user "Elimina", outside retention). */
+    suspend fun remove(id: String) = withContext(Dispatchers.IO) {
+        val provider = activeProvider() ?: return@withContext
+        val refs = runCatching { provider.list() }.getOrDefault(emptyList())
+        val ref = refs.firstOrNull { it.backupId == id } ?: return@withContext
+        runCatching { provider.delete(ref) }
+    }
+
+    /**
+     * Grandfather-father-son retention over the cloud provider's own contents
+     * (spec), mirroring [com.simone.jarvismobile.backup.BackupRepository]'s
+     * local/external pruning. A backup whose id does not parse as the expected
+     * `backup-yyyyMMdd-HHmmss` timestamp is left alone rather than guessed at —
+     * every id here is JARVIS's own, so this should never happen, but an
+     * unreadable date must never turn into a deletion.
+     */
+    suspend fun pruneRemote() = withContext(Dispatchers.IO) {
+        val provider = activeProvider() ?: return@withContext
+        val policy = RetentionPolicy(
+            daily = settings.backupRetentionDaily.first(),
+            weekly = settings.backupRetentionWeekly.first(),
+            monthly = settings.backupRetentionMonthly.first(),
+        )
+        val remote = runCatching { provider.list() }.getOrDefault(emptyList())
+        val refs = remote.mapNotNull { r -> parseBackupIdTimestamp(r.backupId)?.let { BackupRef(r.backupId, it) } }
+        val toDelete = Retention.prune(refs, policy).toSet()
+        remote.filter { it.backupId in toDelete }.forEach { runCatching { provider.delete(it) } }
+    }
+
+    /** The selected cloud provider, or null when cloud is off, unset, "no cloud" or not yet connected. */
+    private suspend fun activeProvider(): CloudBackupProvider? {
+        if (!settings.backupCloudEnabled.first()) return null
+        val provider = providers[settings.backupCloudProvider.first()] ?: return null
+        if (provider.id == NoCloudProvider.ID) return null
+        if (!provider.isConfigured()) return null
+        return provider
+    }
+
+    private fun parseBackupIdTimestamp(id: String): Long? = runCatching {
+        SimpleDateFormat("'backup-'yyyyMMdd-HHmmss", Locale.US).parse(id)?.time
+    }.getOrNull()
 
     private fun markUploaded(manifestFile: File) {
         runCatching {

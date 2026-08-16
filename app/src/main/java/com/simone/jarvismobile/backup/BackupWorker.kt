@@ -74,6 +74,7 @@ class BackupWorker(
         runCatching {
             deps.cloud().enqueue(manifest.id)
             deps.cloud().processQueue()
+            deps.cloud().pruneRemote()
         }
         return Result.success()
     }

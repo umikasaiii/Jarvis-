@@ -15,15 +15,23 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * AES-256-GCM encryption for backups, with the key held in the Android Keystore
- * (spec). The key never leaves the secure store — encryption/decryption go
- * through it — so a stolen backup file is useless without this device. The 12-byte
- * GCM IV is written as a length-prefixed header before the ciphertext.
+ * AES-256-GCM encryption, parameterized by an explicit [SecretKey] rather than
+ * always reaching for one key of its own. Two very different keys go through
+ * this same pair of methods:
+ *  - [localWrappingKey], a non-exportable Android Keystore key that never
+ *    leaves this device — used only to wrap the backup content key for local
+ *    storage between runs;
+ *  - the backup content key itself ([BackupKeyManager.contentKey]), a
+ *    software-held, *exportable* key that actually encrypts backup archives —
+ *    exportable is the point, since it is what a recovery key restores on a
+ *    new device, which a Keystore key by design can never do.
+ * The 12-byte GCM IV is written as a length-prefixed header before the ciphertext.
  */
 @Singleton
 class BackupCrypto @Inject constructor() {
 
-    private fun key(): SecretKey {
+    /** The device's own non-exportable Keystore key; wraps the content key at rest only. */
+    fun localWrappingKey(): SecretKey {
         val ks = KeyStore.getInstance(KEYSTORE).apply { load(null) }
         (ks.getEntry(ALIAS, null) as? KeyStore.SecretKeyEntry)?.let { return it.secretKey }
         val gen = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, KEYSTORE)
@@ -37,17 +45,17 @@ class BackupCrypto @Inject constructor() {
         return gen.generateKey()
     }
 
-    /** Encrypts [input] into [output]: [ivLen][iv][ciphertext+tag]. */
-    fun encrypt(input: InputStream, output: OutputStream) {
-        val cipher = Cipher.getInstance(TRANSFORM).apply { init(Cipher.ENCRYPT_MODE, key()) }
+    /** Encrypts [input] into [output] with [key]: [ivLen][iv][ciphertext+tag]. */
+    fun encrypt(input: InputStream, output: OutputStream, key: SecretKey) {
+        val cipher = Cipher.getInstance(TRANSFORM).apply { init(Cipher.ENCRYPT_MODE, key) }
         val iv = cipher.iv
         output.write(iv.size)
         output.write(iv)
         CipherOutputStream(output, cipher).use { cos -> input.copyTo(cos) }
     }
 
-    /** Decrypts an [input] produced by [encrypt] into [output]. */
-    fun decrypt(input: InputStream, output: OutputStream) {
+    /** Decrypts an [input] produced by [encrypt] with the same [key] into [output]. */
+    fun decrypt(input: InputStream, output: OutputStream, key: SecretKey) {
         val ivLen = input.read()
         require(ivLen in 1..64) { "bad IV length" }
         val iv = ByteArray(ivLen)
@@ -58,7 +66,7 @@ class BackupCrypto @Inject constructor() {
             read += n
         }
         val cipher = Cipher.getInstance(TRANSFORM).apply {
-            init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, iv))
+            init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, iv))
         }
         CipherInputStream(input, cipher).use { cis -> cis.copyTo(output) }
     }

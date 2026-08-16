@@ -1,8 +1,10 @@
 package com.simone.jarvismobile.ui.backup
 
+import android.content.Intent
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.simone.jarvismobile.backup.BackupKeyManager
 import com.simone.jarvismobile.backup.BackupRepository
 import com.simone.jarvismobile.backup.BackupScheduler
 import com.simone.jarvismobile.backup.BackupState
@@ -10,18 +12,24 @@ import com.simone.jarvismobile.backup.CloudBackupProvider
 import com.simone.jarvismobile.backup.CloudSyncManager
 import com.simone.jarvismobile.backup.ExternalBackupStore
 import com.simone.jarvismobile.backup.NoCloudProvider
+import com.simone.jarvismobile.backup.drive.DriveConnectResult
+import com.simone.jarvismobile.backup.drive.DriveCredentialStore
+import com.simone.jarvismobile.backup.drive.GoogleAuthManager
 import com.simone.jarvismobile.automation.rule.AutomationPlaceEntity
 import com.simone.jarvismobile.automation.rule.PlaceRepository
 import com.simone.jarvismobile.core.backup.BackupManifest
 import com.simone.jarvismobile.data.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 /** One immutable snapshot of the "Backup e sincronizzazione" screen. */
@@ -41,6 +49,10 @@ data class BackupUi(
     val destinationName: String? = null,
     /** Saved place ids the backup requires; empty means unrestricted. */
     val placeIds: Set<String> = emptySet(),
+    val driveClientId: String = "",
+    val driveClientSecret: String = "",
+    val driveConnected: Boolean = false,
+    val driveAccountEmail: String? = null,
     val loaded: Boolean = false,
 )
 
@@ -61,6 +73,9 @@ class BackupViewModel @Inject constructor(
     private val settings: SettingsRepository,
     private val external: ExternalBackupStore,
     private val places: PlaceRepository,
+    private val driveAuth: GoogleAuthManager,
+    private val driveCredentials: DriveCredentialStore,
+    private val keys: BackupKeyManager,
 ) : ViewModel() {
 
     val state: StateFlow<BackupState> = repository.state
@@ -86,6 +101,19 @@ class BackupViewModel @Inject constructor(
     init {
         viewModelScope.launch { load() }
         refreshBackups()
+        // Picks up the outcome of a "Collega Google Drive" round trip through the
+        // browser, whenever OAuthRedirectActivity's handleRedirect() publishes one.
+        viewModelScope.launch {
+            driveAuth.connectResult.filterNotNull().collect { result ->
+                _message.value = when (result) {
+                    is DriveConnectResult.Connected ->
+                        "Google Drive collegato" + (result.email?.let { ": $it" } ?: ".")
+                    is DriveConnectResult.Failed -> "Collegamento a Google Drive non riuscito: ${result.reason}"
+                }
+                load()
+                driveAuth.consumeConnectResult()
+            }
+        }
     }
 
     private suspend fun load() {
@@ -103,6 +131,10 @@ class BackupViewModel @Inject constructor(
             provider = settings.backupCloudProvider.first().ifBlank { NoCloudProvider.ID },
             destinationName = external.folderName(),
             placeIds = settings.backupPlaceIds.first(),
+            driveClientId = driveCredentials.clientId,
+            driveClientSecret = driveCredentials.clientSecret,
+            driveConnected = driveAuth.isConnected(),
+            driveAccountEmail = driveAuth.connectedEmail(),
             loaded = true,
         )
     }
@@ -167,6 +199,48 @@ class BackupViewModel @Inject constructor(
     fun setProvider(id: String) = viewModelScope.launch {
         settings.setBackupCloudProvider(id)
         load()
+    }
+
+    /** Saves the pasted-in OAuth client id/secret from the user's own Google Cloud project. */
+    fun saveDriveClientConfig(clientId: String, clientSecret: String) = viewModelScope.launch {
+        driveCredentials.clientId = clientId
+        driveCredentials.clientSecret = clientSecret
+        load()
+        _message.value = "Credenziali Google Drive salvate."
+    }
+
+    /** The intent to open Google's consent page, or null if no client id is set yet. */
+    fun driveConnectIntent(): Intent? = driveAuth.beginConnectIntent()
+
+    fun disconnectDrive() = viewModelScope.launch {
+        driveAuth.disconnect()
+        load()
+        _message.value = "Google Drive scollegato."
+    }
+
+    private val _recoveryKey = MutableStateFlow<String?>(null)
+    /** Null until [revealRecoveryKey] is called — never shown by default. */
+    val recoveryKey: StateFlow<String?> = _recoveryKey.asStateFlow()
+
+    /** Reads (generating on first use) the current backup content key, for the user to save. */
+    fun revealRecoveryKey() = viewModelScope.launch {
+        _recoveryKey.value = withContext(Dispatchers.IO) { keys.exportRecoveryKey() }
+    }
+
+    fun hideRecoveryKey() { _recoveryKey.value = null }
+
+    /**
+     * Adopts a recovery key exported from another device (or from this one,
+     * earlier) — needed before restoring a cloud backup encrypted with a
+     * different content key than the one this device currently holds.
+     */
+    fun importRecoveryKey(text: String) = viewModelScope.launch {
+        val ok = withContext(Dispatchers.IO) { keys.importRecoveryKey(text) }
+        _message.value = if (ok) {
+            "Chiave di recupero importata. Ora puoi ripristinare i backup cifrati con questa chiave."
+        } else {
+            "Chiave di recupero non valida: controlla di averla copiata per intero."
+        }
     }
 
     fun runNow() = viewModelScope.launch {

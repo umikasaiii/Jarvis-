@@ -15,7 +15,8 @@ hidden recording. No always-on background microphone in the default config.
 | LLM prompts/outputs | RAM; local model | Only to a PC endpoint under an opt-in profile, fragments only. |
 | Obsidian notes | User's vault (SAF) | Only fragments, only under opt-in remote profile. |
 | Secrets (tokens) | Android Keystore | Never. |
-| Telemetry | Local only, disableable | Never (no remote telemetry). |
+| Google Drive OAuth client id/secret, tokens, connected email | `DriveCredentialStore` — `EncryptedSharedPreferences`, Keystore-backed; separate from the plaintext DataStore every other setting uses | Only to Google's own OAuth endpoints, and only once the user pastes in their own client id and taps "Collega Google Drive" (opt-in, off by default). |
+| Backup content (JARVIS's own data — vault, memory, Room DB, prefs, agenda) | AES-256-GCM encrypted archive, key never in the archive | Only to the user's own Google Drive `appDataFolder` (hidden, per-app, invisible in their normal Drive), only when cloud sync is explicitly turned on and an account is connected. Never in plaintext. |
 | Notification content read by Modalità Guida | RAM only, read on demand from the OS notification listener | Never. Not persisted, not logged; disappears the moment Notification Access is revoked. |
 
 Modalità Guida (the driving overlay) is opt-in, foreground-service-backed like the
@@ -44,6 +45,30 @@ travel-time estimates** for a place. Both share the same shape:
 
 Every other feature — STT, the local LLM, TTS, memory, agenda, automations —
 stays fully offline, unaffected by this opt-in.
+
+## Optional cloud backup (Google Drive)
+
+A third, differently-shaped exception: **Google Drive backup sync**
+(Impostazioni › Backup e sincronizzazione), opt-in and off by default.
+
+- **Never required.** Local backup — the source of truth — works fully
+  offline with no Google account at all; Drive is only ever a later, optional
+  copy (see `docs/DECISIONS/0014-drive-oauth-without-play-services.md`).
+- **`drive.appdata` scope only.** JARVIS can only read/write files it created
+  itself, in a hidden per-app folder Google does not surface in the user's
+  normal Drive UI — never the user's own Drive files, never broader Drive
+  access.
+- **No Google Sign-In / Play Services.** OAuth is a plain browser round trip
+  to Google's own consent page (RFC 8252 native-app flow); no Google SDK is
+  linked into the app for this or anything else.
+- **Content stays encrypted end to end.** What reaches Drive is the same
+  AES-256-GCM archive already written locally — Google never sees plaintext.
+- **The user brings their own OAuth client.** No Google credential of any
+  kind is bundled in the APK or this repository; see
+  `docs/GOOGLE_DRIVE_SETUP.md`.
+- **A recovery key is required to read old cloud backups on a new device**,
+  shown only on explicit request and never written into the cloud archive it
+  protects (`BackupKeyManager`, `RecoveryKeyCodec`).
 
 ## Privacy profiles (§13)
 
