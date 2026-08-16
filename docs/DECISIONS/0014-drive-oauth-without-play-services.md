@@ -22,7 +22,7 @@ feature that is supposed to be optional and secondary to begin with.
 Use RFC 8252's OAuth 2.0 native-app flow instead: open Google's consent page
 in an external browser (Custom Tab-free — a plain `ACTION_VIEW` Intent, same
 shape as the app's existing navigation/Maps launches), catch the redirect on a
-private-use custom URI scheme (`com.simone.jarvismobile:/oauth2redirect`), and
+private-use custom URI scheme (`com.simone.jarvismobile://oauth2redirect`), and
 exchange the authorization code for tokens with Authorization Code + PKCE over
 plain HTTPS (`OkHttpClient`, already a dependency). No Google SDK, no Play
 Services, no WebView (Google disallows embedded-WebView OAuth for this flow

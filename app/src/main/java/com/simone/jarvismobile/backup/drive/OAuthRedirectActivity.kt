@@ -10,7 +10,7 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
- * Catches the `com.simone.jarvismobile:/oauth2redirect` the browser opens after
+ * Catches the `com.simone.jarvismobile://oauth2redirect` the browser opens after
  * the user finishes (or cancels) Google's consent page — see [GoogleAuthManager].
  * Shows nothing: it hands the redirect to [GoogleAuthManager.handleRedirect],
  * brings the existing app task back to the front, and finishes itself.

@@ -53,7 +53,7 @@ GMS/Play-Services-free everywhere, including here).
 
 You do not need to register a redirect URI in the console for a Desktop-app
 client — Google accepts the custom-scheme redirect JARVIS sends
-(`com.simone.jarvismobile:/oauth2redirect`) without pre-registration for this
+(`com.simone.jarvismobile://oauth2redirect`) without pre-registration for this
 client type.
 
 ## 5. Connect JARVIS

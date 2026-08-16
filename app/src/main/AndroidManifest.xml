@@ -166,7 +166,7 @@
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="com.simone.jarvismobile" android:path="/oauth2redirect" />
+                <data android:scheme="com.simone.jarvismobile" android:host="oauth2redirect" />
             </intent-filter>
         </activity>
 

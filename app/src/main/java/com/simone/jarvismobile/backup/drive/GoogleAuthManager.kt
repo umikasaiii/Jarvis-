@@ -245,9 +245,11 @@ class GoogleAuthManager @Inject constructor(
          * OAuth clients, which is the client type this flow needs (see
          * docs/GOOGLE_DRIVE_SETUP.md — NOT the "Android" client type, which is
          * meant for the Play-Services-backed sign-in SDKs this app deliberately
-         * avoids).
+         * avoids). Host-based (`scheme://host`), not path-only (`scheme:/path`),
+         * because Android Lint's AppLinkUrlError requires an intent-filter
+         * `<data>` for a BROWSABLE/VIEW/DEFAULT filter to declare a host.
          */
-        const val REDIRECT_URI = "com.simone.jarvismobile:/oauth2redirect"
+        const val REDIRECT_URI = "com.simone.jarvismobile://oauth2redirect"
         private const val AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth"
         private const val TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token"
         private const val REVOKE_ENDPOINT = "https://oauth2.googleapis.com/revoke"
