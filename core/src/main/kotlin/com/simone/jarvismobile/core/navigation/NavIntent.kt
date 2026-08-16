@@ -149,6 +149,14 @@ object NavIntentParser {
         "vai in ", "raggiungi ", "conducimi a ", "aggiungi tappa ", "passa da ", "fai tappa a ",
     )
 
+    /**
+     * Word/phrase-boundary containment, not raw substring: a plain `in` check
+     * made "naviga" match inside "navigazione" ("imposta *naviga*zione per…"),
+     * so a spoken-navigation trigger fired on a completely different phrase
+     * ("imposta navigazione per…", which belongs to Modalità Guida's online
+     * Maps flow, spec-primary and never the offline one unless asked for) and
+     * always failed to find the raw, unstripped sentence in the offline index.
+     */
     private fun containsAny(haystack: String, vararg needles: String): Boolean =
-        needles.any { it in haystack }
+        needles.any { Regex("""\b${Regex.escape(it)}\b""").containsMatchIn(haystack) }
 }

@@ -113,7 +113,12 @@ class DrivingModeService : LifecycleService() {
     }
 
     private fun showOverlays() {
-        topWindow = DrivingOverlayWindow(this, DrivingOverlayWindow.GRAVITY_TOP, keepScreenOn = true).apply {
+        topWindow = DrivingOverlayWindow(
+            this,
+            DrivingOverlayWindow.GRAVITY_TOP,
+            keepScreenOn = true,
+            extendUnderStatusBar = true,
+        ).apply {
             show {
                 val state by drivingModeManager.state.collectAsStateWithLifecycle()
                 DrivingTopPanel(

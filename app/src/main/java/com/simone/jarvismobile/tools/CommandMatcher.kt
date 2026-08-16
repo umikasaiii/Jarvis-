@@ -815,7 +815,10 @@ object CommandMatcher {
     )
     private val MEDIA_PREVIOUS_RE = Regex("""\b(?:brano|canzone|traccia)\s+precedent\w*\b|\btorna\w*\b.{0,15}\b(?:brano|canzone|traccia)\b""")
     private val MEDIA_RESUME_RE = Regex(
-        """\b(?:riprendi|continua)\w*\b.{0,15}\b(?:musica|brano|riproduzione)\b|^riprendi\w*$""",
+        """\b(?:riprendi|continua)\w*\b.{0,15}\b(?:musica|brano|riproduzione)\b|^riprendi\w*$|""" +
+            // "avvia canzone" with no title names nothing to search for — the only
+            // sensible reading is "start what's already loaded" (spec §21).
+            """^avvia\w*\s+(?:la\s+)?(?:canzone|musica|brano)$""",
     )
     private val PLAY_MEDIA_RE = Regex(
         """^(?:riproduci|fammi\s+sentire)\s+(.+)$|""" +

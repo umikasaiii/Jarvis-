@@ -17,10 +17,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -55,7 +58,17 @@ fun DrivingTopPanel(
     onReply: (DrivingNotification) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier = modifier.padding(10.dp)) {
+    // The window itself draws under the status bar (spec follow-up: "coprisse
+    // tutta la barra delle notifiche") — the dark background reaches the true
+    // top edge, the content insets itself below the real status bar icons so
+    // nothing collides with them.
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(DrivingSportColors.Bg)
+            .windowInsetsPadding(WindowInsets.statusBars)
+            .padding(10.dp),
+    ) {
         TopBarRow(voiceState, hasLocationPermission)
         Spacer(Modifier.height(8.dp))
         if (notifications.isNotEmpty()) {

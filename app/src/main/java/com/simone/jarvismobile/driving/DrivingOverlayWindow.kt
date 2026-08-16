@@ -26,6 +26,15 @@ internal class DrivingOverlayWindow(
     private val context: Context,
     private val gravity: Int,
     private val keepScreenOn: Boolean = false,
+    /**
+     * Lets this one window draw its background under the status bar instead of
+     * being kept clear of it — the top cluster wants its dark panel to visually
+     * reach the true screen edge (system bar icons still render above it either
+     * way), while the compact-nav and media-dock windows stay clear as before.
+     * The content inside must still apply its own inset padding so text/icons
+     * do not collide with the real status bar icons.
+     */
+    private val extendUnderStatusBar: Boolean = false,
 ) {
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private val owner = DrivingOverlayLifecycleOwner()
@@ -54,13 +63,15 @@ internal class DrivingOverlayWindow(
     }
 
     private fun baseFlags(): Int {
-        // Deliberately NOT FLAG_LAYOUT_IN_SCREEN: without it the system keeps a
-        // TOP-gravity window clear of the status bar and a BOTTOM-gravity one
-        // clear of the gesture/nav bar on its own, correctly for whatever the
-        // device's own bar heights are — far more reliable than guessing a fixed
-        // padding here, and it was the actual cause of the top bar overlapping
-        // the status bar / Maps' own top UI on-device.
+        // Without FLAG_LAYOUT_IN_SCREEN the system keeps a window clear of the
+        // status/gesture bars on its own, correctly for whatever the device's
+        // own bar heights are — far more reliable than guessing a fixed padding.
+        // That is right for the nav-compact and media-dock windows (that was the
+        // earlier fix for the top bar overlapping Maps' own top UI); the top
+        // cluster now opts back into it on request, so its background can reach
+        // the true top edge — the content still insets itself, see DrivingTopPanel.
         var flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+        if (extendUnderStatusBar) flags = flags or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
         if (keepScreenOn) flags = flags or WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
         return flags
     }
