@@ -15,8 +15,8 @@ hidden recording. No always-on background microphone in the default config.
 | LLM prompts/outputs | RAM; local model | Only to a PC endpoint under an opt-in profile, fragments only. |
 | Obsidian notes | User's vault (SAF) | Only fragments, only under opt-in remote profile. |
 | Secrets (tokens) | Android Keystore | Never. |
-| Google Drive OAuth client id/secret, tokens, connected email | `DriveCredentialStore` — `EncryptedSharedPreferences`, Keystore-backed; separate from the plaintext DataStore every other setting uses | Only to Google's own OAuth endpoints, and only once the user pastes in their own client id and taps "Collega Google Drive" (opt-in, off by default). |
-| Backup content (JARVIS's own data — vault, memory, Room DB, prefs, agenda) | AES-256-GCM encrypted archive, key never in the archive | Only to the user's own Google Drive `appDataFolder` (hidden, per-app, invisible in their normal Drive), only when cloud sync is explicitly turned on and an account is connected. Never in plaintext. |
+| Google Drive connection state (whether authorized, the connected account's email, the "JARVIS Backups" folder id) | `DriveCredentialStore` — `EncryptedSharedPreferences`, Keystore-backed; separate from the plaintext DataStore every other setting uses | Not stored elsewhere. No client id/secret or refresh token is held by the app at all — Play Services manages the OAuth exchange itself (opt-in, off by default; see docs/DECISIONS/0015). |
+| Backup content (JARVIS's own data — vault, memory, Room DB, prefs, agenda) | AES-256-GCM encrypted archive, key never in the archive | Only to a "JARVIS Backups" folder JARVIS creates in the user's **own, visible** Google Drive, only when cloud sync is explicitly turned on and an account is connected. Never in plaintext. |
 | Notification content read by Modalità Guida | RAM only, read on demand from the OS notification listener | Never. Not persisted, not logged; disappears the moment Notification Access is revoked. |
 
 Modalità Guida (the driving overlay) is opt-in, foreground-service-backed like the
@@ -53,18 +53,22 @@ A third, differently-shaped exception: **Google Drive backup sync**
 
 - **Never required.** Local backup — the source of truth — works fully
   offline with no Google account at all; Drive is only ever a later, optional
-  copy (see `docs/DECISIONS/0014-drive-oauth-without-play-services.md`).
-- **`drive.appdata` scope only.** JARVIS can only read/write files it created
-  itself, in a hidden per-app folder Google does not surface in the user's
-  normal Drive UI — never the user's own Drive files, never broader Drive
-  access.
-- **No Google Sign-In / Play Services.** OAuth is a plain browser round trip
-  to Google's own consent page (RFC 8252 native-app flow); no Google SDK is
-  linked into the app for this or anything else.
+  copy (see `docs/DECISIONS/0015-drive-authorization-client.md`).
+- **`drive.file` scope only.** JARVIS can only read/write files and folders it
+  created itself — a "JARVIS Backups" folder it creates in the user's own
+  Drive — never the user's other Drive files, never broader Drive access.
+  Unlike an earlier design (ADR 0014, superseded), **this folder is visible**
+  in the user's normal Drive UI, not hidden — the content inside it is still
+  the same encrypted archive either way.
+- **Uses Play Services** (`com.google.android.gms:play-services-auth`,
+  Identity/AuthorizationClient), a deliberate, narrowly scoped exception to
+  this app's general Play-Services-free stance — see ADR 0015 for why. No
+  other feature in the app depends on Play Services.
 - **Content stays encrypted end to end.** What reaches Drive is the same
   AES-256-GCM archive already written locally — Google never sees plaintext.
-- **The user brings their own OAuth client.** No Google credential of any
-  kind is bundled in the APK or this repository; see
+- **No client id/secret anywhere.** The OAuth client is an "Android" type,
+  matched by this app's package name and **release** signing certificate —
+  nothing for the app or the user to hold or paste in; see
   `docs/GOOGLE_DRIVE_SETUP.md`.
 - **A recovery key is required to read old cloud backups on a new device**,
   shown only on explicit request and never written into the cloud archive it

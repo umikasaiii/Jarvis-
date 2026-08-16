@@ -5,6 +5,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
@@ -17,7 +18,7 @@ import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** One file as Drive's appDataFolder reports it. */
+/** One file (or folder) as Drive reports it. */
 data class DriveFile(
     val id: String,
     val name: String,
@@ -33,13 +34,16 @@ sealed interface DriveResult<out T> {
 }
 
 /**
- * Thin Drive API v3 REST client scoped to `appDataFolder` — JARVIS's own hidden
- * per-app space in the user's Drive: invisible in their normal Drive UI and
- * removed automatically if the app is uninstalled or access is revoked.
+ * Thin Drive API v3 REST client. Everything lives inside one folder this app
+ * creates in the user's own Drive ("JARVIS Backups") — the `drive.file` scope
+ * only grants access to files/folders the app itself created or the user
+ * explicitly opened, and does not include the separate `appDataFolder` space
+ * (that requires the `drive.appdata` scope instead). The folder **is** visible
+ * in the user's normal Drive UI; see docs/PRIVACY.md.
  *
  * Plain OkHttp calls against the documented JSON endpoints rather than
  * Google's `google-api-client`/`google-api-services-drive` Java libraries —
- * half a dozen well-defined REST calls do not need that dependency tree, and
+ * a handful of well-defined REST calls do not need that dependency tree, and
  * OkHttp is already used everywhere else in the app (see OpenMeteoWeatherSource).
  *
  * Every call takes the bearer token as a parameter instead of owning
@@ -58,35 +62,66 @@ class GoogleDriveRestClient @Inject constructor() {
     }
     private val json = Json { ignoreUnknownKeys = true }
 
-    /** Uploads [file] as [name] into appDataFolder. */
-    suspend fun upload(accessToken: String, name: String, file: File, mimeType: String): DriveResult<DriveFile> =
-        withContext(Dispatchers.IO) {
-            val metadata = "{\"name\":${jsonEscape(name)},\"parents\":[\"appDataFolder\"]}"
-            val body = MultipartBody.Builder()
-                .setType("multipart/related".toMediaType())
-                // Content-Type per part comes from each RequestBody's own media
-                // type; OkHttp rejects a Content-Type header passed explicitly
-                // alongside a body that already carries one.
-                .addPart(metadata.toRequestBody("application/json; charset=UTF-8".toMediaType()))
-                .addPart(file.asRequestBody(mimeType.toMediaType()))
-                .build()
-            val request = Request.Builder()
-                .url("$UPLOAD_ENDPOINT?uploadType=multipart&fields=id,name,size,md5Checksum")
-                .header("Authorization", "Bearer $accessToken")
-                .post(body)
-                .build()
-            execute(request) { json.decodeFromString(DriveFileResponse.serializer(), it).toDriveFile() }
-        }
-
-    /** Every file JARVIS has stored in its own appDataFolder. */
-    suspend fun list(accessToken: String): DriveResult<List<DriveFile>> = withContext(Dispatchers.IO) {
-        val request = Request.Builder()
-            .url("$FILES_ENDPOINT?spaces=appDataFolder&pageSize=1000&fields=files(id,name,size,md5Checksum)")
-            .header("Authorization", "Bearer $accessToken")
-            .get()
+    /** The non-trashed "JARVIS Backups" folder, if this app has already created one. */
+    suspend fun findBackupFolder(accessToken: String): DriveResult<DriveFile?> = withContext(Dispatchers.IO) {
+        val query = "name=${driveQuote(FOLDER_NAME)} and mimeType='application/vnd.google-apps.folder' and trashed=false"
+        val url = FILES_ENDPOINT.toHttpUrl().newBuilder()
+            .addQueryParameter("q", query)
+            .addQueryParameter("spaces", "drive")
+            .addQueryParameter("fields", "files(id,name)")
             .build()
-        execute(request) { json.decodeFromString(DriveListResponse.serializer(), it).files.map { f -> f.toDriveFile() } }
+        val request = Request.Builder().url(url).header("Authorization", "Bearer $accessToken").get().build()
+        execute(request) { json.decodeFromString(DriveListResponse.serializer(), it).files.firstOrNull()?.toDriveFile() }
     }
+
+    /** Creates the "JARVIS Backups" folder at the root of the user's Drive. */
+    suspend fun createBackupFolder(accessToken: String): DriveResult<DriveFile> = withContext(Dispatchers.IO) {
+        val metadata = "{\"name\":${jsonQuote(FOLDER_NAME)},\"mimeType\":\"application/vnd.google-apps.folder\"}"
+        val request = Request.Builder()
+            .url("$FILES_ENDPOINT?fields=id,name")
+            .header("Authorization", "Bearer $accessToken")
+            .post(metadata.toRequestBody("application/json; charset=UTF-8".toMediaType()))
+            .build()
+        execute(request) { json.decodeFromString(DriveFileResponse.serializer(), it).toDriveFile() }
+    }
+
+    /** Uploads [file] as [name] into [parentFolderId]. */
+    suspend fun upload(
+        accessToken: String,
+        name: String,
+        file: File,
+        mimeType: String,
+        parentFolderId: String,
+    ): DriveResult<DriveFile> = withContext(Dispatchers.IO) {
+        val metadata = "{\"name\":${jsonQuote(name)},\"parents\":[${jsonQuote(parentFolderId)}]}"
+        val body = MultipartBody.Builder()
+            .setType("multipart/related".toMediaType())
+            // Content-Type per part comes from each RequestBody's own media
+            // type; OkHttp rejects a Content-Type header passed explicitly
+            // alongside a body that already carries one.
+            .addPart(metadata.toRequestBody("application/json; charset=UTF-8".toMediaType()))
+            .addPart(file.asRequestBody(mimeType.toMediaType()))
+            .build()
+        val request = Request.Builder()
+            .url("$UPLOAD_ENDPOINT?uploadType=multipart&fields=id,name,size,md5Checksum")
+            .header("Authorization", "Bearer $accessToken")
+            .post(body)
+            .build()
+        execute(request) { json.decodeFromString(DriveFileResponse.serializer(), it).toDriveFile() }
+    }
+
+    /** Every file JARVIS has stored in [parentFolderId]. */
+    suspend fun list(accessToken: String, parentFolderId: String): DriveResult<List<DriveFile>> =
+        withContext(Dispatchers.IO) {
+            val url = FILES_ENDPOINT.toHttpUrl().newBuilder()
+                .addQueryParameter("q", "${driveQuote(parentFolderId)} in parents and trashed=false")
+                .addQueryParameter("spaces", "drive")
+                .addQueryParameter("pageSize", "1000")
+                .addQueryParameter("fields", "files(id,name,size,md5Checksum)")
+                .build()
+            val request = Request.Builder().url(url).header("Authorization", "Bearer $accessToken").get().build()
+            execute(request) { json.decodeFromString(DriveListResponse.serializer(), it).files.map { f -> f.toDriveFile() } }
+        }
 
     /** Raw bytes of [fileId]. */
     suspend fun download(accessToken: String, fileId: String): DriveResult<ByteArray> = withContext(Dispatchers.IO) {
@@ -150,7 +185,8 @@ class GoogleDriveRestClient @Inject constructor() {
         }
     }
 
-    private fun jsonEscape(s: String): String = buildString {
+    /** A double-quoted, escaped JSON string literal. */
+    private fun jsonQuote(s: String): String = buildString {
         append('"')
         for (c in s) {
             when (c) {
@@ -161,6 +197,23 @@ class GoogleDriveRestClient @Inject constructor() {
             }
         }
         append('"')
+    }
+
+    /**
+     * A single-quoted, escaped Drive query-language string literal (Drive's
+     * `q=` parameter, e.g. `name='JARVIS Backups'`) — a different quoting rule
+     * from JSON's, so this is deliberately a separate function from [jsonQuote].
+     */
+    private fun driveQuote(s: String): String = buildString {
+        append('\'')
+        for (c in s) {
+            when (c) {
+                '\'' -> append("\\'")
+                '\\' -> append("\\\\")
+                else -> append(c)
+            }
+        }
+        append('\'')
     }
 
     @Serializable
@@ -179,6 +232,7 @@ class GoogleDriveRestClient @Inject constructor() {
     private companion object {
         const val FILES_ENDPOINT = "https://www.googleapis.com/drive/v3/files"
         const val UPLOAD_ENDPOINT = "https://www.googleapis.com/upload/drive/v3/files"
+        const val FOLDER_NAME = "JARVIS Backups"
         const val TIMEOUT_SECONDS = 20L
         const val UPLOAD_TIMEOUT_SECONDS = 120L
         const val TAG = "JarvisDriveRest"

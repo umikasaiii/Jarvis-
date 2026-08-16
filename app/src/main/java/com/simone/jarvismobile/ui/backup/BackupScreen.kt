@@ -27,6 +27,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -72,6 +73,21 @@ fun BackupScreen(
     val folderPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocumentTree(),
     ) { uri -> if (uri != null) viewModel.setDestination(uri) }
+
+    // Google Drive authorization: most of the time connectDrive() resolves
+    // silently (Play Services already has consent cached), but the first
+    // time — or after a revoke — Google needs to show its own consent screen,
+    // which only the Activity Result API can launch and hand back to us.
+    val driveAuthResolution by viewModel.driveAuthResolution.collectAsStateWithLifecycle()
+    val driveAuthLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult(),
+    ) { result -> viewModel.onDriveAuthResolutionResult(result.data) }
+    LaunchedEffect(driveAuthResolution) {
+        driveAuthResolution?.let { request ->
+            runCatching { driveAuthLauncher.launch(request) }
+            viewModel.consumeDriveAuthResolution()
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -389,16 +405,14 @@ fun BackupScreen(
 }
 
 /**
- * "Collega Google Drive": paste in the OAuth client id/secret from the user's
- * own Google Cloud project (docs/GOOGLE_DRIVE_SETUP.md), then connect/disconnect
- * the account. No Google credential of any kind is ever bundled with JARVIS.
+ * "Collega Google Drive": the OAuth client lives entirely in Google Cloud
+ * Console, tied to this app's package name and **release** signing
+ * certificate (docs/GOOGLE_DRIVE_SETUP.md) — nothing to paste in here. Most
+ * connections resolve silently (Play Services already holds consent); the
+ * first one shows Google's own account/consent screen.
  */
 @Composable
 private fun GoogleDriveSection(ui: BackupUi, viewModel: BackupViewModel) {
-    val context = LocalContext.current
-    var clientId by remember(ui.driveClientId) { mutableStateOf(ui.driveClientId) }
-    var clientSecret by remember(ui.driveClientSecret) { mutableStateOf(ui.driveClientSecret) }
-
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Google Drive", style = MaterialTheme.typography.titleSmall)
         if (ui.driveConnected) {
@@ -411,36 +425,12 @@ private fun GoogleDriveSection(ui: BackupUi, viewModel: BackupViewModel) {
             }
         } else {
             Text(
-                "Serve un client OAuth Android creato nel tuo progetto Google Cloud " +
-                    "(guida in docs/GOOGLE_DRIVE_SETUP.md). Nessuna credenziale Google è " +
-                    "inclusa in JARVIS: questi due campi restano solo su questo telefono, cifrati.",
+                "I backup vengono salvati in una cartella «JARVIS Backups» nel tuo Drive " +
+                    "normale (visibile, non nascosta) — cifrati comunque prima di partire.",
                 style = MaterialTheme.typography.bodySmall,
             )
-            OutlinedTextField(
-                value = clientId,
-                onValueChange = { clientId = it },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("OAuth Client ID") },
-                singleLine = true,
-            )
-            OutlinedTextField(
-                value = clientSecret,
-                onValueChange = { clientSecret = it },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("Client secret (se richiesto)") },
-                singleLine = true,
-            )
             OutlinedButton(
-                onClick = { viewModel.saveDriveClientConfig(clientId, clientSecret) },
-                enabled = clientId.isNotBlank(),
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text("Salva credenziali") }
-            OutlinedButton(
-                onClick = {
-                    val intent = viewModel.driveConnectIntent()
-                    if (intent != null) runCatching { context.startActivity(intent) }
-                },
-                enabled = ui.driveClientId.isNotBlank(),
+                onClick = viewModel::connectDrive,
                 modifier = Modifier.fillMaxWidth(),
             ) { Text("Collega Google Drive") }
         }

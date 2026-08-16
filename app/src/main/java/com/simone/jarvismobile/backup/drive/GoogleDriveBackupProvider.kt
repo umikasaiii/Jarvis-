@@ -9,15 +9,19 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Real Google Drive `appDataFolder` backend for [CloudBackupProvider], built on
- * [GoogleAuthManager] (OAuth, GMS-free) and [GoogleDriveRestClient] (the REST
- * calls themselves). Each backup is two remote files, `<id>.enc` and
- * `<id>.manifest.json`; [list] pairs them back up by name.
+ * Real Google Drive backend for [CloudBackupProvider], built on
+ * [GoogleAuthManager] (Identity/AuthorizationClient, `drive.file` scope) and
+ * [GoogleDriveRestClient] (the REST calls themselves). Everything lives in
+ * one "JARVIS Backups" folder this app creates in the user's own Drive (see
+ * [GoogleDriveRestClient] — `drive.file` has no hidden appdata space). Each
+ * backup is two remote files, `<id>.enc` and `<id>.manifest.json`; [list]
+ * pairs them back up by name.
  */
 @Singleton
 class GoogleDriveBackupProvider @Inject constructor(
     private val auth: GoogleAuthManager,
     private val rest: GoogleDriveRestClient,
+    private val credentials: DriveCredentialStore,
 ) : CloudBackupProvider {
 
     override val id = ID
@@ -26,12 +30,19 @@ class GoogleDriveBackupProvider @Inject constructor(
     override suspend fun isConfigured(): Boolean = auth.isConnected()
 
     override suspend fun upload(backupId: String, archive: File, manifest: File): CloudResult {
-        val token = auth.validAccessToken() ?: return CloudResult.Unavailable("Account Google non collegato")
-        val archiveResult = uploadWithRetry(token, "$backupId$ARCHIVE_SUFFIX", archive, "application/octet-stream")
+        val token = auth.currentAccessToken() ?: return CloudResult.Unavailable("Account Google non collegato")
+        val folderId = resolveFolderId(token) ?: return CloudResult.Unavailable("Cartella di backup su Drive non disponibile")
+        val archiveResult = uploadWithRetry(token, "$backupId$ARCHIVE_SUFFIX", archive, "application/octet-stream", folderId)
         val archiveFile = when (archiveResult) {
             is DriveResult.Ok -> archiveResult.value
             is DriveResult.Unauthorized -> return CloudResult.Unavailable("Sessione Google scaduta, riprova più tardi")
-            is DriveResult.Error -> return CloudResult.Failed(archiveResult.reason)
+            is DriveResult.Error -> {
+                // The cached folder id may be stale (e.g. the folder was
+                // deleted in Drive) — drop it so the next attempt re-resolves
+                // instead of failing the same way forever.
+                credentials.backupFolderId = null
+                return CloudResult.Failed(archiveResult.reason)
+            }
         }
         // Post-upload hash check (spec): trust the cloud copy only once Drive's
         // own md5Checksum for what it just stored matches the local file.
@@ -41,7 +52,7 @@ class GoogleDriveBackupProvider @Inject constructor(
             runCatching { deleteRaw(token, archiveFile.id) }
             return CloudResult.Failed("Verifica hash post-upload non riuscita")
         }
-        val manifestResult = uploadWithRetry(token, "$backupId$MANIFEST_SUFFIX", manifest, "application/json")
+        val manifestResult = uploadWithRetry(token, "$backupId$MANIFEST_SUFFIX", manifest, "application/json", folderId)
         if (manifestResult !is DriveResult.Ok) {
             // The archive alone is unusable without its manifest on restore —
             // clean it up rather than leave an orphaned half-upload behind.
@@ -52,8 +63,9 @@ class GoogleDriveBackupProvider @Inject constructor(
     }
 
     override suspend fun list(): List<CloudBackupRef> {
-        val token = auth.validAccessToken() ?: return emptyList()
-        val files = when (val result = listWithRetry(token)) {
+        val token = auth.currentAccessToken() ?: return emptyList()
+        val folderId = resolveFolderId(token) ?: return emptyList()
+        val files = when (val result = listWithRetry(token, folderId)) {
             is DriveResult.Ok -> result.value
             else -> return emptyList()
         }
@@ -73,46 +85,61 @@ class GoogleDriveBackupProvider @Inject constructor(
         ref.manifestRemoteId?.let { download(it) }
 
     override suspend fun delete(ref: CloudBackupRef) {
-        val token = auth.validAccessToken() ?: return
+        val token = auth.currentAccessToken() ?: return
         runCatching { deleteRaw(token, ref.archiveRemoteId) }
         ref.manifestRemoteId?.let { runCatching { deleteRaw(token, it) } }
     }
 
     private suspend fun download(fileId: String): ByteArray? {
-        val token = auth.validAccessToken() ?: return null
+        val token = auth.currentAccessToken() ?: return null
         return when (val result = downloadWithRetry(token, fileId)) {
             is DriveResult.Ok -> result.value
             else -> null
         }
     }
 
-    // --- one retry after a forced token refresh on a 401 ---------------------
-
-    private suspend fun uploadWithRetry(token: String, name: String, file: File, mimeType: String): DriveResult<DriveFile> {
-        val first = rest.upload(token, name, file, mimeType)
-        if (first !is DriveResult.Unauthorized) return first
-        val refreshed = auth.forceRefresh() ?: return first
-        return rest.upload(refreshed, name, file, mimeType)
+    /** The cached "JARVIS Backups" folder id, or a freshly found/created one. */
+    private suspend fun resolveFolderId(token: String): String? {
+        credentials.backupFolderId?.let { return it }
+        val found = (rest.findBackupFolder(token) as? DriveResult.Ok)?.value
+        val folder = found ?: (rest.createBackupFolder(token) as? DriveResult.Ok)?.value ?: return null
+        credentials.backupFolderId = folder.id
+        return folder.id
     }
 
-    private suspend fun listWithRetry(token: String): DriveResult<List<DriveFile>> {
-        val first = rest.list(token)
+    // --- one retry after a forced token refresh on a 401 ---------------------
+
+    private suspend fun uploadWithRetry(
+        token: String,
+        name: String,
+        file: File,
+        mimeType: String,
+        parentFolderId: String,
+    ): DriveResult<DriveFile> {
+        val first = rest.upload(token, name, file, mimeType, parentFolderId)
         if (first !is DriveResult.Unauthorized) return first
-        val refreshed = auth.forceRefresh() ?: return first
-        return rest.list(refreshed)
+        val refreshed = auth.currentAccessToken() ?: return first
+        return rest.upload(refreshed, name, file, mimeType, parentFolderId)
+    }
+
+    private suspend fun listWithRetry(token: String, parentFolderId: String): DriveResult<List<DriveFile>> {
+        val first = rest.list(token, parentFolderId)
+        if (first !is DriveResult.Unauthorized) return first
+        val refreshed = auth.currentAccessToken() ?: return first
+        return rest.list(refreshed, parentFolderId)
     }
 
     private suspend fun downloadWithRetry(token: String, fileId: String): DriveResult<ByteArray> {
         val first = rest.download(token, fileId)
         if (first !is DriveResult.Unauthorized) return first
-        val refreshed = auth.forceRefresh() ?: return first
+        val refreshed = auth.currentAccessToken() ?: return first
         return rest.download(refreshed, fileId)
     }
 
     private suspend fun deleteRaw(token: String, fileId: String) {
         val first = rest.delete(token, fileId)
         if (first is DriveResult.Unauthorized) {
-            val refreshed = auth.forceRefresh() ?: return
+            val refreshed = auth.currentAccessToken() ?: return
             rest.delete(refreshed, fileId)
         }
     }

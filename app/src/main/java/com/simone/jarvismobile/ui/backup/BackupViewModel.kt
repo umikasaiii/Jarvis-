@@ -2,6 +2,7 @@ package com.simone.jarvismobile.ui.backup
 
 import android.content.Intent
 import android.net.Uri
+import androidx.activity.result.IntentSenderRequest
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.simone.jarvismobile.backup.BackupKeyManager
@@ -12,8 +13,7 @@ import com.simone.jarvismobile.backup.CloudBackupProvider
 import com.simone.jarvismobile.backup.CloudSyncManager
 import com.simone.jarvismobile.backup.ExternalBackupStore
 import com.simone.jarvismobile.backup.NoCloudProvider
-import com.simone.jarvismobile.backup.drive.DriveConnectResult
-import com.simone.jarvismobile.backup.drive.DriveCredentialStore
+import com.simone.jarvismobile.backup.drive.DriveAuthOutcome
 import com.simone.jarvismobile.backup.drive.GoogleAuthManager
 import com.simone.jarvismobile.automation.rule.AutomationPlaceEntity
 import com.simone.jarvismobile.automation.rule.PlaceRepository
@@ -25,7 +25,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -49,8 +48,6 @@ data class BackupUi(
     val destinationName: String? = null,
     /** Saved place ids the backup requires; empty means unrestricted. */
     val placeIds: Set<String> = emptySet(),
-    val driveClientId: String = "",
-    val driveClientSecret: String = "",
     val driveConnected: Boolean = false,
     val driveAccountEmail: String? = null,
     val loaded: Boolean = false,
@@ -74,7 +71,6 @@ class BackupViewModel @Inject constructor(
     private val external: ExternalBackupStore,
     private val places: PlaceRepository,
     private val driveAuth: GoogleAuthManager,
-    private val driveCredentials: DriveCredentialStore,
     private val keys: BackupKeyManager,
 ) : ViewModel() {
 
@@ -101,19 +97,6 @@ class BackupViewModel @Inject constructor(
     init {
         viewModelScope.launch { load() }
         refreshBackups()
-        // Picks up the outcome of a "Collega Google Drive" round trip through the
-        // browser, whenever OAuthRedirectActivity's handleRedirect() publishes one.
-        viewModelScope.launch {
-            driveAuth.connectResult.filterNotNull().collect { result ->
-                _message.value = when (result) {
-                    is DriveConnectResult.Connected ->
-                        "Google Drive collegato" + (result.email?.let { ": $it" } ?: ".")
-                    is DriveConnectResult.Failed -> "Collegamento a Google Drive non riuscito: ${result.reason}"
-                }
-                load()
-                driveAuth.consumeConnectResult()
-            }
-        }
     }
 
     private suspend fun load() {
@@ -131,8 +114,6 @@ class BackupViewModel @Inject constructor(
             provider = settings.backupCloudProvider.first().ifBlank { NoCloudProvider.ID },
             destinationName = external.folderName(),
             placeIds = settings.backupPlaceIds.first(),
-            driveClientId = driveCredentials.clientId,
-            driveClientSecret = driveCredentials.clientSecret,
             driveConnected = driveAuth.isConnected(),
             driveAccountEmail = driveAuth.connectedEmail(),
             loaded = true,
@@ -201,16 +182,34 @@ class BackupViewModel @Inject constructor(
         load()
     }
 
-    /** Saves the pasted-in OAuth client id/secret from the user's own Google Cloud project. */
-    fun saveDriveClientConfig(clientId: String, clientSecret: String) = viewModelScope.launch {
-        driveCredentials.clientId = clientId
-        driveCredentials.clientSecret = clientSecret
-        load()
-        _message.value = "Credenziali Google Drive salvate."
+    private val _driveAuthResolution = MutableStateFlow<IntentSenderRequest?>(null)
+    /** Non-null when the interactive consent screen must be launched; see [BackupScreen]. */
+    val driveAuthResolution: StateFlow<IntentSenderRequest?> = _driveAuthResolution.asStateFlow()
+
+    /** "Collega Google Drive": may complete silently, or require the resolution UI. */
+    fun connectDrive() = viewModelScope.launch {
+        applyDriveOutcome(driveAuth.requestAuthorization())
     }
 
-    /** The intent to open Google's consent page, or null if no client id is set yet. */
-    fun driveConnectIntent(): Intent? = driveAuth.beginConnectIntent()
+    /** Called with the Activity Result once the resolution UI (from [driveAuthResolution]) returns. */
+    fun onDriveAuthResolutionResult(data: Intent?) = viewModelScope.launch {
+        _driveAuthResolution.value = null
+        applyDriveOutcome(driveAuth.handleResolution(data))
+    }
+
+    /** The UI has launched (or given up on) the pending resolution request. */
+    fun consumeDriveAuthResolution() { _driveAuthResolution.value = null }
+
+    private suspend fun applyDriveOutcome(outcome: DriveAuthOutcome) {
+        when (outcome) {
+            is DriveAuthOutcome.Authorized -> {
+                _message.value = "Google Drive collegato" + (outcome.email?.let { ": $it" } ?: ".")
+                load()
+            }
+            is DriveAuthOutcome.NeedsResolution -> _driveAuthResolution.value = outcome.intentSenderRequest
+            is DriveAuthOutcome.Failed -> _message.value = "Collegamento a Google Drive non riuscito: ${outcome.reason}"
+        }
+    }
 
     fun disconnectDrive() = viewModelScope.launch {
         driveAuth.disconnect()

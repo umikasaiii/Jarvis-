@@ -1,6 +1,14 @@
 # 0014 — Google Drive backup: real OAuth, still without Play Services
 
-Status: implemented (CI-verified, pending device check) · 2026-08-16
+Status: **superseded by [ADR 0015](0015-drive-authorization-client.md)** · 2026-08-16 → 2026-08-16
+
+**The OAuth approach below (manual PKCE, "Desktop app" client, custom-scheme
+redirect) was replaced the same day**, at the user's explicit direction, by
+the Identity/AuthorizationClient API against an "Android" OAuth client —
+see ADR 0015 for why and what changed. Kept here as the historical record of
+why the GMS-free approach was chosen first, not because it is still in effect.
+**The "Recovery key" section below is unaffected and still describes the
+current design** — `BackupKeyManager`/`RecoveryKeyCodec` did not change.
 
 ## Context
 

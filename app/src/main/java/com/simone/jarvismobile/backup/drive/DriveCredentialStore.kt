@@ -8,12 +8,17 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Everything Google-Drive-shaped and sensitive: the OAuth client id/secret the
- * user pastes in from their own Google Cloud project, the refresh/access
- * tokens, and the connected account's email. None of this is ever hardcoded
- * or committed — "credenziali cloud fuori dall'APK" — it only exists once the
- * user types it in, and it lives here, Keystore-encrypted at rest, never in
- * the plaintext DataStore the rest of Settings uses. See docs/GOOGLE_DRIVE_SETUP.md.
+ * Everything Google-Drive-shaped and local: whether the user has completed
+ * Drive authorization at least once, their connected account's email (shown
+ * as "account collegato: …"), and the id of the "JARVIS Backups" Drive folder
+ * this app created (drive.file scope only grants access to files/folders the
+ * app itself created — there is no separate hidden appdata space to use).
+ *
+ * There is no client id/secret or refresh token to hold here: with the
+ * Identity/AuthorizationClient API and an "Android" OAuth client (matched by
+ * package name + signing certificate), Play Services resolves the right
+ * Google Cloud project and manages token refresh itself — see
+ * docs/DECISIONS/0015-drive-authorization-client.md.
  */
 @Singleton
 class DriveCredentialStore @Inject constructor(
@@ -32,72 +37,36 @@ class DriveCredentialStore @Inject constructor(
         )
     }
 
-    var clientId: String
-        get() = prefs.getString(KEY_CLIENT_ID, "") ?: ""
-        set(value) = prefs.edit().putString(KEY_CLIENT_ID, value.trim()).apply()
+    /** True once the interactive consent flow has completed successfully at least once. */
+    var authorized: Boolean
+        get() = prefs.getBoolean(KEY_AUTHORIZED, false)
+        set(value) = prefs.edit().putBoolean(KEY_AUTHORIZED, value).apply()
 
-    /** Google still expects this for a "Desktop app" OAuth client even with PKCE; may be blank. */
-    var clientSecret: String
-        get() = prefs.getString(KEY_CLIENT_SECRET, "") ?: ""
-        set(value) = prefs.edit().putString(KEY_CLIENT_SECRET, value.trim()).apply()
-
-    var refreshToken: String?
-        get() = prefs.getString(KEY_REFRESH_TOKEN, null)
-        set(value) = prefs.edit().putString(KEY_REFRESH_TOKEN, value).apply()
-
-    var accessToken: String?
-        get() = prefs.getString(KEY_ACCESS_TOKEN, null)
-        set(value) = prefs.edit().putString(KEY_ACCESS_TOKEN, value).apply()
-
-    var accessTokenExpiresAtMs: Long
-        get() = prefs.getLong(KEY_ACCESS_EXPIRES, 0L)
-        set(value) = prefs.edit().putLong(KEY_ACCESS_EXPIRES, value).apply()
-
-    /** Cached once after connecting (userinfo call), only to show "account collegato: …". */
+    /** Cached after connecting (a userinfo call), only to show "account collegato: …". */
     var accountEmail: String?
         get() = prefs.getString(KEY_EMAIL, null)
         set(value) = prefs.edit().putString(KEY_EMAIL, value).apply()
 
-    /**
-     * The PKCE verifier/state for an authorization request in flight, persisted
-     * (not just kept in memory) because MagicOS — this app's target OS — is known
-     * to kill backgrounded apps aggressively while the browser has focus; without
-     * this, a process death between "opened the consent page" and "came back"
-     * would silently strand the connection attempt.
-     */
-    var pendingVerifier: String?
-        get() = prefs.getString(KEY_PENDING_VERIFIER, null)
-        set(value) = prefs.edit().putString(KEY_PENDING_VERIFIER, value).apply()
+    /** The "JARVIS Backups" Drive folder id, created on first upload and reused after. */
+    var backupFolderId: String?
+        get() = prefs.getString(KEY_FOLDER_ID, null)
+        set(value) = prefs.edit().putString(KEY_FOLDER_ID, value).apply()
 
-    var pendingState: String?
-        get() = prefs.getString(KEY_PENDING_STATE, null)
-        set(value) = prefs.edit().putString(KEY_PENDING_STATE, value).apply()
+    fun isConnected(): Boolean = authorized
 
-    fun clearPending() {
-        prefs.edit().remove(KEY_PENDING_VERIFIER).remove(KEY_PENDING_STATE).apply()
-    }
-
-    fun isConnected(): Boolean = !refreshToken.isNullOrBlank()
-
-    /** Disconnect: drop tokens and the cached email, keep the pasted-in client id/secret. */
-    fun clearTokens() {
+    /** Disconnect: local state only — [GoogleAuthManager.disconnect] also revokes with Google. */
+    fun clear() {
         prefs.edit()
-            .remove(KEY_REFRESH_TOKEN)
-            .remove(KEY_ACCESS_TOKEN)
-            .remove(KEY_ACCESS_EXPIRES)
+            .remove(KEY_AUTHORIZED)
             .remove(KEY_EMAIL)
+            .remove(KEY_FOLDER_ID)
             .apply()
     }
 
     private companion object {
         const val FILE_NAME = "jarvis_drive_credentials"
-        const val KEY_CLIENT_ID = "client_id"
-        const val KEY_CLIENT_SECRET = "client_secret"
-        const val KEY_REFRESH_TOKEN = "refresh_token"
-        const val KEY_ACCESS_TOKEN = "access_token"
-        const val KEY_ACCESS_EXPIRES = "access_expires_at_ms"
+        const val KEY_AUTHORIZED = "authorized"
         const val KEY_EMAIL = "account_email"
-        const val KEY_PENDING_VERIFIER = "pending_verifier"
-        const val KEY_PENDING_STATE = "pending_state"
+        const val KEY_FOLDER_ID = "backup_folder_id"
     }
 }

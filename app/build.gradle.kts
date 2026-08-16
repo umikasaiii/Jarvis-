@@ -172,6 +172,12 @@ dependencies {
     implementation("com.google.mlkit:translate:17.0.3")
     implementation("com.google.mlkit:language-id:17.0.6")
 
+    // Google Drive backup sync (opt-in, Impostazioni > Backup): the Identity/
+    // AuthorizationClient API against an "Android" OAuth client (package name +
+    // release SHA-1). A deliberate, scoped exception to this app's general
+    // Play-Services-free stance — see docs/DECISIONS/0015-drive-authorization-client.md.
+    implementation(libs.play.services.auth)
+
     // Home-screen widgets (Jetpack Glance). Widgets are thin: they only fire the
     // existing deep links/broadcasts, never their own controllers.
     implementation("androidx.glance:glance-appwidget:1.1.1")
