@@ -1,6 +1,5 @@
 package com.simone.jarvismobile.ui.navigation
 
-import android.graphics.Color as AndroidColor
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -19,15 +18,15 @@ import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
-import org.maplibre.android.style.layers.LineLayer
-import org.maplibre.android.style.layers.PropertyFactory
 import org.maplibre.android.style.sources.GeoJsonSource
 import org.maplibre.geojson.LineString
 import org.maplibre.geojson.Point
 import org.maplibre.android.geometry.LatLng as MapLibreLatLng
 
+// The source and its three route-glow/route-outline/route-main layers are
+// declared directly in the style JSON (jarvis-navigation.json) — this view
+// only ever feeds it new geometry, never creates sources/layers itself.
 private const val ROUTE_SOURCE = "jarvis-route-src"
-private const val ROUTE_LAYER = "jarvis-route-layer"
 
 /**
  * The one Compose component in JARVIS allowed to know about MapLibre
@@ -96,18 +95,7 @@ fun JarvisMapView(
             base
         }
         styleReady = false
-        m.setStyle(Style.Builder().fromJson(styleJson)) { style ->
-            if (style.getSource(ROUTE_SOURCE) == null) {
-                style.addSource(GeoJsonSource(ROUTE_SOURCE))
-                style.addLayer(
-                    LineLayer(ROUTE_LAYER, ROUTE_SOURCE).withProperties(
-                        PropertyFactory.lineColor(AndroidColor.parseColor("#4FD1E0")),
-                        PropertyFactory.lineWidth(7f),
-                    ),
-                )
-            }
-            styleReady = true
-        }
+        m.setStyle(Style.Builder().fromJson(styleJson)) { styleReady = true }
     }
 
     // Draw / clear the computed route as a line on the map.

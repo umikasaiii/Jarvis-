@@ -7,6 +7,10 @@
     "jarvis-region": {
       "type": "vector",
       "url": "pmtiles://LOCAL_REGION_PLACEHOLDER"
+    },
+    "jarvis-route-src": {
+      "type": "geojson",
+      "data": { "type": "FeatureCollection", "features": [] }
     }
   },
   "layers": [
@@ -70,6 +74,38 @@
       "source-layer": "transportation",
       "filter": ["==", "class", "motorway"],
       "paint": { "line-color": "#E23A2E", "line-width": 3.5 }
+    },
+    {
+      "id": "route-glow",
+      "type": "line",
+      "source": "jarvis-route-src",
+      "layout": { "line-cap": "round", "line-join": "round" },
+      "paint": {
+        "line-color": "#E23A2E",
+        "line-width": 16,
+        "line-opacity": 0.18,
+        "line-blur": 6
+      }
+    },
+    {
+      "id": "route-outline",
+      "type": "line",
+      "source": "jarvis-route-src",
+      "layout": { "line-cap": "round", "line-join": "round" },
+      "paint": {
+        "line-color": "#173A5E",
+        "line-width": 9
+      }
+    },
+    {
+      "id": "route-main",
+      "type": "line",
+      "source": "jarvis-route-src",
+      "layout": { "line-cap": "round", "line-join": "round" },
+      "paint": {
+        "line-color": "#4FD1E0",
+        "line-width": 5
+      }
     },
     {
       "id": "road-labels",

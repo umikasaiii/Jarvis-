@@ -151,6 +151,16 @@
             </intent-filter>
         </activity>
 
+        <!-- Driving Mode V2: the new in-app INTERNAL_JARVIS_NAVIGATION screen — a
+             real Activity, not a system overlay. Reachable only from the
+             developer feature flag while it's being built (docs/ARCHITECTURE.md);
+             EXTERNAL_MAPS_OVERLAY (DrivingModeService below) is untouched and
+             stays the default. -->
+        <activity
+            android:name=".driving.DrivingModeActivity"
+            android:exported="false"
+            android:theme="@style/Theme.JarvisMobile" />
+
         <!-- Foreground listening service. Started only by explicit user action. -->
         <service
             android:name=".audio.ListeningService"

@@ -82,6 +82,17 @@ class JarvisNotificationListener : NotificationListenerService() {
         return runCatching { action.actionIntent.send(this, 0, fillInIntent) }.isSuccess
     }
 
+    /**
+     * Whether the system currently shows an incoming/ongoing call notification
+     * (`Notification.CATEGORY_CALL`) — how Modalità Guida V2 detects a call
+     * without `READ_PHONE_STATE`/`TelephonyManager`, which this app does not
+     * request (docs/SECURITY.md). Every dialer/VoIP app that posts a proper
+     * call notification (the Android-required way to show one) is covered.
+     */
+    fun hasActiveCall(): Boolean =
+        runCatching { activeNotifications.orEmpty() }.getOrDefault(emptyArray())
+            .any { it.packageName != packageName && it.notification.category == Notification.CATEGORY_CALL }
+
     private fun summary(sbn: StatusBarNotification): Summary? {
         val extras = sbn.notification.extras
         val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()?.trim().orEmpty()

@@ -26,6 +26,9 @@ class DrivingNotificationController @Inject constructor(
     fun hasAccess(): Boolean =
         NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName)
 
+    /** See [JarvisNotificationListener.hasActiveCall] — no telephony permission involved. */
+    fun hasActiveCall(): Boolean = JarvisNotificationListener.instance?.hasActiveCall() ?: false
+
     /**
      * One card per sender, not per raw notification — "Marco · 2 messaggi"
      * (spec §9), not two separate Marco cards. Pulls more raw notifications

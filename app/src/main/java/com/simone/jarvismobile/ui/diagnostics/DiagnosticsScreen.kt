@@ -4,6 +4,7 @@ import android.Manifest
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -28,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.simone.jarvismobile.core.driving.DrivingNavigationMode
+import com.simone.jarvismobile.driving.DrivingModeActivity
 
 /**
  * Minimal diagnostics screen (docs/ARCHITECTURE.md §8 / task §10): shows the
@@ -51,6 +53,7 @@ fun DiagnosticsScreen(
     val sttPartial by viewModel.sttPartial.collectAsStateWithLifecycle()
     val drivingNavigationMode by viewModel.drivingNavigationMode.collectAsStateWithLifecycle()
     val perms = viewModel.permissions()
+    val context = LocalContext.current
 
     val micPermLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
@@ -177,6 +180,14 @@ fun DiagnosticsScreen(
                             )
                         },
                     )
+                }
+                if (drivingNavigationMode == DrivingNavigationMode.INTERNAL_JARVIS_NAVIGATION) {
+                    Button(
+                        onClick = { context.startActivity(DrivingModeActivity.intent(context)) },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Apri JARVIS Drive (beta)")
+                    }
                 }
             }
         }

@@ -185,8 +185,12 @@ private fun NotifLine(notifications: List<DrivingNotification>, onClick: () -> U
     }
 }
 
+/**
+ * Not `private`: also reused as-is by [MessageCard] in the new
+ * `DrivingModeActivity` UI (spec §17 "non duplicare... message card").
+ */
 @Composable
-private fun NotifSheet(
+fun NotifSheet(
     notifications: List<DrivingNotification>,
     onRead: (DrivingNotification) -> Unit,
     onReply: (DrivingNotification) -> Unit,

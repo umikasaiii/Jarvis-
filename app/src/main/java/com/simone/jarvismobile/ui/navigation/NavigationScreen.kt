@@ -43,7 +43,6 @@ import com.simone.jarvismobile.core.navigation.GpsFix
 import com.simone.jarvismobile.core.navigation.ManeuverType
 import com.simone.jarvismobile.core.navigation.NavigationProgress
 import com.simone.jarvismobile.navigation.GpsStatus
-import java.util.Locale
 
 private val Ink = Color(0xFF0A0E14)
 private val Panel = Color(0xE6121A26)
@@ -264,28 +263,8 @@ private fun HintPanel(modifier: Modifier) {
     }
 }
 
-private fun maneuverGlyph(type: ManeuverType?): String = when (type) {
-    ManeuverType.TURN_LEFT, ManeuverType.SLIGHT_LEFT, ManeuverType.SHARP_LEFT, ManeuverType.KEEP_LEFT -> "↰"
-    ManeuverType.TURN_RIGHT, ManeuverType.SLIGHT_RIGHT, ManeuverType.SHARP_RIGHT, ManeuverType.KEEP_RIGHT -> "↱"
-    ManeuverType.UTURN -> "⤺"
-    ManeuverType.ROUNDABOUT -> "⟳"
-    ManeuverType.ARRIVE -> "◎"
-    else -> "↑"
-}
-
-private fun formatDistance(meters: Double): String = when {
-    meters >= 1000 -> String.format(Locale.ITALY, "%.1f km", meters / 1000.0)
-    else -> "${(meters / 10).toInt() * 10} m"
-}
-
-private fun formatDuration(seconds: Double): String {
-    val m = (seconds / 60).toInt()
-    return when {
-        m >= 60 -> "${m / 60} h ${m % 60} min"
-        m >= 1 -> "$m min"
-        else -> "<1 min"
-    }
-}
+// maneuverGlyph/formatDistance/formatDuration moved to NavigationFormatting.kt
+// (same package) so JARVIS Drive's ManeuverCard/EtaBar can reuse them too.
 
 private fun gpsLabel(status: GpsStatus, fix: GpsFix?, covered: Boolean): String = when {
     status == GpsStatus.NONE -> "in attesa"
