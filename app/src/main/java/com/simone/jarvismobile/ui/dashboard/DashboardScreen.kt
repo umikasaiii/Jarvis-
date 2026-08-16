@@ -3,15 +3,20 @@ package com.simone.jarvismobile.ui.dashboard
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import android.Manifest
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.os.BatteryManager
 import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -441,6 +446,18 @@ fun DashboardScreen(
             // Full-width like Automazioni — an entry point, not a metric.
             val drivingVm: com.simone.jarvismobile.ui.driving.DrivingModeEntryViewModel = hiltViewModel()
             val drivingState by drivingVm.state.collectAsStateWithLifecycle()
+            fun startDrivingMode() {
+                drivingVm.toggle(
+                    onMissingOverlayPermission = { context.startActivity(drivingVm.overlayPermissionIntent()) },
+                    onMissingNotificationAccess = { context.startActivity(drivingVm.notificationAccessIntent()) },
+                )
+            }
+            // The wake word needs RECORD_AUDIO; without it Modalità Guida would start
+            // silently unable to listen, with no explanation. Checked only when
+            // STARTING — stopping never needs a permission at all.
+            val micPermissionLauncher = rememberLauncherForActivityResult(
+                ActivityResultContracts.RequestPermission(),
+            ) { granted -> if (granted) startDrivingMode() }
             Row(Modifier.fillMaxWidth()) {
                 StatTile(
                     icon = Icons.Filled.DirectionsCar,
@@ -450,10 +467,13 @@ fun DashboardScreen(
                     footer = "JARVIS + Google Maps",
                     accent = Rose,
                     onClick = {
-                        drivingVm.toggle(
-                            onMissingOverlayPermission = { context.startActivity(drivingVm.overlayPermissionIntent()) },
-                            onMissingNotificationAccess = { context.startActivity(drivingVm.notificationAccessIntent()) },
-                        )
+                        val hasMic = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+                            PackageManager.PERMISSION_GRANTED
+                        if (drivingState.active || hasMic) {
+                            startDrivingMode()
+                        } else {
+                            micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                        }
                     },
                     modifier = Modifier.weight(1f),
                 )

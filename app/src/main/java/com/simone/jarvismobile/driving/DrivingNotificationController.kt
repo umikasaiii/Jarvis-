@@ -26,19 +26,31 @@ class DrivingNotificationController @Inject constructor(
     fun hasAccess(): Boolean =
         NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName)
 
+    /**
+     * One card per sender, not per raw notification — "Marco · 2 messaggi"
+     * (spec §9), not two separate Marco cards. Pulls more raw notifications
+     * than [limit] before grouping so a busy conversation does not crowd out
+     * other senders; [DrivingNotification.count] is the real per-sender count,
+     * never a placeholder.
+     */
     fun snapshot(limit: Int = 8): List<DrivingNotification> {
         val listener = JarvisNotificationListener.instance ?: return emptyList()
-        return listener.snapshot(limit = limit).map { s ->
-            DrivingNotification(
-                id = s.key,
-                app = appLabel(s.packageName),
-                sender = s.title,
-                preview = s.text,
-                count = 1,
-                postedAtEpochMs = s.postedAt,
-                supportsReply = s.supportsReply,
-            )
-        }
+        return listener.snapshot(limit = RAW_PULL_LIMIT)
+            .groupBy { it.packageName to it.title }
+            .map { (_, items) ->
+                val latest = items.maxBy { it.postedAt }
+                DrivingNotification(
+                    id = latest.key,
+                    app = appLabel(latest.packageName),
+                    sender = latest.title,
+                    preview = latest.text,
+                    count = items.size,
+                    postedAtEpochMs = latest.postedAt,
+                    supportsReply = latest.supportsReply,
+                )
+            }
+            .sortedByDescending { it.postedAtEpochMs }
+            .take(limit)
     }
 
     /** Never claims success Android did not actually report (spec §9). */
@@ -51,5 +63,10 @@ class DrivingNotificationController @Inject constructor(
             val pm = context.packageManager
             pm.getApplicationLabel(pm.getApplicationInfo(packageName, 0)).toString()
         }.getOrDefault(packageName)
+    }
+
+    private companion object {
+        /** JarvisNotificationListener.snapshot() itself caps at 20. */
+        const val RAW_PULL_LIMIT = 20
     }
 }

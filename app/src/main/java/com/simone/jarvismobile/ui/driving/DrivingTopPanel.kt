@@ -135,7 +135,10 @@ private fun JarvisStatePill(voiceState: DrivingVoiceState) {
 @Composable
 private fun NotifLine(notifications: List<DrivingNotification>, onClick: () -> Unit) {
     val firstApp = notifications.first().app
-    val senders = notifications.map { it.sender }.distinct()
+    // notifications is already grouped one-card-per-sender (DrivingNotificationController),
+    // so size() is the contact count directly; the badge is the real total message
+    // count across senders, not the number of cards.
+    val totalMessages = notifications.sumOf { it.count }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -147,7 +150,7 @@ private fun NotifLine(notifications: List<DrivingNotification>, onClick: () -> U
     ) {
         Column(Modifier.weight(1f)) {
             Text(
-                text = "Notifiche · $firstApp · ${senders.size} contatti",
+                text = "Notifiche · $firstApp · ${notifications.size} contatti",
                 color = DrivingSportColors.TextMain,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Bold,
@@ -164,7 +167,7 @@ private fun NotifLine(notifications: List<DrivingNotification>, onClick: () -> U
                 .border(1.dp, DrivingSportColors.LineStrong, RoundedCornerShape(12.dp))
                 .padding(horizontal = 10.dp, vertical = 6.dp),
         ) {
-            Text(notifications.size.toString(), color = DrivingSportColors.TextMain, fontSize = 13.sp, fontWeight = FontWeight.Black)
+            Text(totalMessages.toString(), color = DrivingSportColors.TextMain, fontSize = 13.sp, fontWeight = FontWeight.Black)
         }
     }
 }
@@ -202,7 +205,7 @@ private fun NotifSheet(
                     Text(relativeTime(n.postedAtEpochMs), color = DrivingSportColors.Muted, fontSize = 11.sp)
                 }
                 Text(
-                    text = n.sender,
+                    text = if (n.count > 1) "${n.sender} · ${n.count} messaggi" else n.sender,
                     color = DrivingSportColors.TextMain,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Black,
