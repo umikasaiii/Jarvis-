@@ -7,8 +7,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import com.simone.jarvismobile.core.navigation.LatLng
@@ -53,6 +55,13 @@ private const val ROUTE_SOURCE = "jarvis-route-src"
  * never for this view's own follow-camera [org.maplibre.android.maps.MapLibreMap.moveCamera]
  * calls — so a caller can drop out of follow mode on a real drag without
  * fighting its own programmatic recentring (spec §12 FREE mode).
+ *
+ * [onVehicleScreenPosition] reports where [cameraTarget] actually lands on
+ * screen right now (`Projection.toScreenLocation`, in this view's own pixel
+ * space) — recomputed whenever the camera settles or the target moves, so a
+ * caller can draw a puck at the vehicle's real position even while panned
+ * away in FREE mode, instead of assuming it's always screen-centre (only
+ * true while following). Null once there is no target to project.
  */
 @Composable
 fun JarvisMapView(
@@ -67,9 +76,12 @@ fun JarvisMapView(
     cameraTiltDegrees: Float? = null,
     onLongPress: (LatLng) -> Unit = {},
     onUserGesture: () -> Unit = {},
+    onVehicleScreenPosition: (Offset?) -> Unit = {},
 ) {
     val context = LocalContext.current
     var styleReady by remember { mutableStateOf(false) }
+    val latestCameraTarget by rememberUpdatedState(cameraTarget)
+    val latestOnVehicleScreenPosition by rememberUpdatedState(onVehicleScreenPosition)
 
     // Initialise MapLibre once, then build the MapView. Both are cheap to hold.
     val mapView = remember {
@@ -77,6 +89,16 @@ fun JarvisMapView(
         MapView(context)
     }
     var map by remember { mutableStateOf<MapLibreMap?>(null) }
+
+    fun projectVehicle(m: MapLibreMap) {
+        val target = latestCameraTarget
+        if (target == null) {
+            latestOnVehicleScreenPosition(null)
+            return
+        }
+        val screen = m.projection.toScreenLocation(MapLibreLatLng(target.lat, target.lon))
+        latestOnVehicleScreenPosition(Offset(screen.x, screen.y))
+    }
 
     // Drive the MapView lifecycle from composition (the host is a full-screen surface).
     DisposableEffect(Unit) {
@@ -92,6 +114,10 @@ fun JarvisMapView(
             m.addOnCameraMoveStartedListener { reason ->
                 if (reason == MapLibreMap.OnCameraMoveStartedListener.REASON_API_GESTURE) onUserGesture()
             }
+            // Re-project the vehicle's screen position every time the camera
+            // settles (pan, zoom, our own follow moves alike) — the only
+            // reliable way to know where cameraTarget actually landed.
+            m.addOnCameraIdleListener { projectVehicle(m) }
             map = m
         }
         onDispose {
@@ -99,6 +125,12 @@ fun JarvisMapView(
             mapView.onStop()
             mapView.onDestroy()
         }
+    }
+
+    // Also re-project immediately on a fresh fix, without waiting for the
+    // camera to move at all (e.g. while stationary in FREE mode).
+    LaunchedEffect(cameraTarget, map) {
+        map?.let { projectVehicle(it) }
     }
 
     // Load the style once the map is ready, injecting the covering region's local

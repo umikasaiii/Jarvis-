@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -33,7 +34,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -44,6 +48,7 @@ import com.simone.jarvismobile.core.driving.DrivingExpandedPanel
 import com.simone.jarvismobile.driving.DrivingMapsLauncher
 import com.simone.jarvismobile.driving.DrivingModeViewModel
 import com.simone.jarvismobile.ui.navigation.JarvisMapView
+import kotlin.math.roundToInt
 
 /**
  * `INTERNAL_JARVIS_NAVIGATION`'s screen (spec §2/§10): a real, in-app,
@@ -59,6 +64,7 @@ fun DrivingModeScreen(
     viewModel: DrivingModeViewModel = hiltViewModel(),
 ) {
     val context = LocalContext.current
+    val density = LocalDensity.current
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val fix by viewModel.fix.collectAsStateWithLifecycle()
     val route by viewModel.route.collectAsStateWithLifecycle()
@@ -83,6 +89,7 @@ fun DrivingModeScreen(
     val cameraState = DrivingCameraController.forFollow(fix)
     var cameraUi by remember { mutableStateOf(DrivingCameraUiState()) }
     val following = cameraUi.mode == DrivingCameraMode.FOLLOW
+    var vehicleScreenPosition by remember { mutableStateOf<Offset?>(null) }
 
     Box(Modifier.fillMaxSize().background(DrivingSportColors.Bg)) {
         JarvisMapView(
@@ -95,16 +102,34 @@ fun DrivingModeScreen(
             cameraTiltDegrees = if (following) cameraState?.tiltDegrees else null,
             onLongPress = { viewModel.navigateTo(it) },
             onUserGesture = { cameraUi = cameraUi.userPanned() },
+            onVehicleScreenPosition = { vehicleScreenPosition = it },
             modifier = Modifier.fillMaxSize(),
         )
 
-        // Screen-centred only holds true while the camera is actually following
-        // the vehicle — JarvisMapView doesn't yet project the real coordinate to
-        // screen space, so rather than show the puck in a wrong spot once the
-        // driver has panned away (FREE mode), it's hidden until Recenter brings
-        // both the camera and the puck back in sync (known limitation, spec §10).
-        if (fix != null && following) {
-            VehiclePuck(bearingDegrees = null, modifier = Modifier.align(Alignment.Center))
+        if (fix != null) {
+            if (following) {
+                // Always true while following: the camera itself keeps the
+                // target centred, so this is cheaper than reading the
+                // projected offset every frame for the common case.
+                VehiclePuck(bearingDegrees = null, modifier = Modifier.align(Alignment.Center))
+            } else {
+                // FREE mode: the map may be panned anywhere, so the puck is
+                // drawn at its real projected screen position (spec §10) —
+                // never assumed to be centre — and shows its true bearing
+                // since the map itself is no longer heading-up rotated here.
+                vehicleScreenPosition?.let { screen ->
+                    val puckOuterPx = with(density) { (JarvisDriveDimensions.PuckSize + 14.dp).toPx() }
+                    VehiclePuck(
+                        bearingDegrees = fix?.bearingDegrees,
+                        modifier = Modifier.offset {
+                            IntOffset(
+                                (screen.x - puckOuterPx / 2f).roundToInt(),
+                                (screen.y - puckOuterPx / 2f).roundToInt(),
+                            )
+                        },
+                    )
+                }
+            }
         }
 
         // RECENTER (spec §12): only shown once a real drag has left follow mode.
