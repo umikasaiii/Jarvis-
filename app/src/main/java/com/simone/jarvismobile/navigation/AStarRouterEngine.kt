@@ -16,46 +16,47 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * The offline routing service. It loads a region's road graph once (cached) and
- * runs the deterministic `:core` A* over it — no Directions API, no dependency on
- * the AI model (spec §6). When a region has no routing data yet, calculation
- * fails with [RoutingError.NO_GRAPH] and the UI says so instead of faking a route.
+ * The [NavigationEngine] backend behind the existing offline `:core` A* router
+ * — explicitly a **temporary backend** (see [NavigationEngine]'s own doc):
+ * loads a region's road graph once (cached) and runs the deterministic A* over
+ * it — no Directions API, no dependency on the AI model (spec §6). When a
+ * region has no routing data yet, calculation fails with [RoutingError.NO_GRAPH]
+ * and the caller says so instead of faking a route.
  *
- * The BRouter/`.rd5` production path converts into the same [RoadGraph] the router
- * already consumes; this engine is agnostic to how the graph was produced.
+ * The BRouter/`.rd5` production path converts into the same [RoadGraph] the
+ * router already consumes; this engine is agnostic to how the graph was produced.
  */
 @Singleton
-class OfflineRoutingEngine @Inject constructor(
+class AStarRouterEngine @Inject constructor(
     @ApplicationContext private val context: Context,
     private val store: InstalledRegionStore,
-) {
+) : NavigationEngine {
     @Volatile private var cachedRegionId: String? = null
     @Volatile private var cachedGraph: RoadGraph? = null
     @Volatile private var cachedMtime: Long = 0L
 
-    suspend fun hasRoutingData(region: RegionMetadata): Boolean =
+    override suspend fun hasRoutingData(region: RegionMetadata): Boolean =
         graphFor(region) != null
 
-    /** Deterministic route from [start] to [destination] within [region]. */
-    suspend fun calculateRoute(
+    override suspend fun calculateRoute(
         region: RegionMetadata?,
         start: LatLng,
         destination: LatLng,
-        profile: RoutingProfile = RoutingProfile.CAR,
-        options: RouteOptions = RouteOptions(),
-        waypoints: List<LatLng> = emptyList(),
+        profile: RoutingProfile,
+        options: RouteOptions,
+        waypoints: List<LatLng>,
     ): RoutingResult = withContext(Dispatchers.Default) {
         val graph = region?.let { graphFor(it) }
             ?: return@withContext RoutingResult.Failure(RoutingError.NO_GRAPH)
         AStarRouter(graph).route(start, destination, profile, options, waypoints)
     }
 
-    suspend fun recalculateRoute(
+    override suspend fun recalculateRoute(
         region: RegionMetadata?,
         current: LatLng,
         destination: LatLng,
-        profile: RoutingProfile = RoutingProfile.CAR,
-        options: RouteOptions = RouteOptions(),
+        profile: RoutingProfile,
+        options: RouteOptions,
     ): RoutingResult = calculateRoute(region, current, destination, profile, options)
 
     private suspend fun graphFor(region: RegionMetadata): RoadGraph? = withContext(Dispatchers.IO) {

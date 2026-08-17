@@ -128,7 +128,13 @@ class RouteProgressCalculator(private val route: Route, private val matcher: Map
 
 // --- navigation state machine ----------------------------------------------
 
-enum class NavState { IDLE, SEARCHING, ROUTE_READY, NAVIGATING, RECALCULATING, GPS_WEAK, ARRIVED, PAUSED }
+/**
+ * IDLE/CALCULATING/READY/NAVIGATING/REROUTING/ARRIVING/ARRIVED/ERROR are the
+ * provider-agnostic states any [com.simone.jarvismobile.navigation.NavigationEngine]
+ * backend drives (Driving Mode spec §8); GPS_WEAK/PAUSED are additional,
+ * pre-existing states this app also needs and the spec doesn't forbid.
+ */
+enum class NavState { IDLE, CALCULATING, READY, NAVIGATING, REROUTING, ARRIVING, ARRIVED, GPS_WEAK, PAUSED, ERROR }
 
 sealed interface NavEvent {
     data object SearchStarted : NavEvent
@@ -139,6 +145,9 @@ sealed interface NavEvent {
     data object RecalculationDone : NavEvent
     data object GpsLost : NavEvent
     data object GpsRestored : NavEvent
+
+    /** Close enough to the destination to show ARRIVING, but not yet [Arrived]. */
+    data object Approaching : NavEvent
     data object Arrived : NavEvent
     data object Pause : NavEvent
     data object Resume : NavEvent
@@ -158,14 +167,15 @@ class NavigationStateMachine(initial: NavState = NavState.IDLE) {
     fun dispatch(event: NavEvent): NavState {
         state = when (event) {
             NavEvent.Stop -> NavState.IDLE
-            NavEvent.SearchStarted -> NavState.SEARCHING
-            NavEvent.RouteFound -> NavState.ROUTE_READY
-            NavEvent.RouteFailed -> NavState.IDLE
-            NavEvent.StartNavigation -> if (state == NavState.ROUTE_READY) NavState.NAVIGATING else state
-            NavEvent.OffRouteConfirmed -> if (state == NavState.NAVIGATING) NavState.RECALCULATING else state
-            NavEvent.RecalculationDone -> if (state == NavState.RECALCULATING) NavState.NAVIGATING else state
-            NavEvent.Arrived -> if (state == NavState.NAVIGATING) NavState.ARRIVED else state
-            NavEvent.Pause -> if (state == NavState.NAVIGATING) NavState.PAUSED else state
+            NavEvent.SearchStarted -> NavState.CALCULATING
+            NavEvent.RouteFound -> NavState.READY
+            NavEvent.RouteFailed -> NavState.ERROR
+            NavEvent.StartNavigation -> if (state == NavState.READY) NavState.NAVIGATING else state
+            NavEvent.OffRouteConfirmed -> if (state == NavState.NAVIGATING || state == NavState.ARRIVING) NavState.REROUTING else state
+            NavEvent.RecalculationDone -> if (state == NavState.REROUTING) NavState.NAVIGATING else state
+            NavEvent.Approaching -> if (state == NavState.NAVIGATING) NavState.ARRIVING else state
+            NavEvent.Arrived -> if (state == NavState.NAVIGATING || state == NavState.ARRIVING) NavState.ARRIVED else state
+            NavEvent.Pause -> if (state == NavState.NAVIGATING || state == NavState.ARRIVING) NavState.PAUSED else state
             NavEvent.Resume -> if (state == NavState.PAUSED) NavState.NAVIGATING else state
             NavEvent.GpsLost -> {
                 if (state != NavState.GPS_WEAK) beforeGpsLoss = state
@@ -174,5 +184,29 @@ class NavigationStateMachine(initial: NavState = NavState.IDLE) {
             NavEvent.GpsRestored -> beforeGpsLoss?.also { beforeGpsLoss = null } ?: state
         }
         return state
+    }
+}
+
+/**
+ * Prevents a reroute from firing again immediately after the last one (spec
+ * §19): [OffRouteDetector] already needs several consecutive bad samples, but
+ * once *that* has fired, a still-poor GPS fix could otherwise re-trigger on
+ * the very next sample. Centralised and testable rather than a magic sleep
+ * inline in the repository.
+ */
+class RerouteCooldown(private val cooldownMs: Long = 15_000L) {
+    private var lastRerouteAtMs: Long? = null
+
+    fun canReroute(nowMs: Long): Boolean {
+        val last = lastRerouteAtMs ?: return true
+        return nowMs - last >= cooldownMs
+    }
+
+    fun markRerouted(nowMs: Long) {
+        lastRerouteAtMs = nowMs
+    }
+
+    fun reset() {
+        lastRerouteAtMs = null
     }
 }

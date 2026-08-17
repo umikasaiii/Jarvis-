@@ -83,7 +83,8 @@ class NavigationService : Service() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val title = when (state) {
-            NavState.RECALCULATING -> "Ricalcolo percorso…"
+            NavState.REROUTING -> "Ricalcolo percorso…"
+            NavState.ARRIVING -> "In arrivo…"
             NavState.GPS_WEAK -> "Segnale GPS debole"
             NavState.PAUSED -> "Navigazione in pausa"
             else -> "Navigazione in corso"

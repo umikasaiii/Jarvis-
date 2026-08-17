@@ -11,8 +11,12 @@ import com.simone.jarvismobile.audio.CaptureResult
 import com.simone.jarvismobile.audio.SessionCoordinator
 import com.simone.jarvismobile.audio.SttResult
 import com.simone.jarvismobile.audio.TtsState
+import com.simone.jarvismobile.BuildConfig
 import com.simone.jarvismobile.core.driving.DrivingNavigationMode
+import com.simone.jarvismobile.core.navigation.GpxParser
+import com.simone.jarvismobile.core.navigation.GpxReplayRoute
 import com.simone.jarvismobile.data.SettingsRepository
+import com.simone.jarvismobile.navigation.debug.DebugGpsSimulator
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -46,6 +50,42 @@ class DiagnosticsViewModel @Inject constructor(
 
     fun setDrivingNavigationMode(mode: DrivingNavigationMode) {
         viewModelScope.launch { settings.setDrivingNavigationMode(mode) }
+    }
+
+    private val _gpxStatus = MutableStateFlow("")
+    val gpxStatus: StateFlow<String> = _gpxStatus.asStateFlow()
+
+    /**
+     * Loads a GPX file picked via SAF for debug route replay (spec §28): parsed
+     * once by the pure `:core` [GpxParser], then handed to [DebugGpsSimulator],
+     * which [com.simone.jarvismobile.navigation.NavigationLocationProvider]
+     * substitutes for real GNSS while the simulator is on. A no-op in release
+     * ([DebugGpsSimulator.loadGpx] itself already refuses outside debug).
+     */
+    fun loadGpxDebugRoute(uri: android.net.Uri) {
+        if (!BuildConfig.DEBUG) return
+        viewModelScope.launch {
+            val text = runCatching {
+                getApplication<Application>().contentResolver.openInputStream(uri)
+                    ?.bufferedReader()?.use { it.readText() }
+            }.getOrNull()
+            if (text == null) {
+                _gpxStatus.value = "Impossibile leggere il file GPX."
+                return@launch
+            }
+            val points = GpxParser.parse(text)
+            if (points.size < 2) {
+                _gpxStatus.value = "GPX non valido o senza punti sufficienti."
+                return@launch
+            }
+            DebugGpsSimulator.loadGpx(GpxReplayRoute(points))
+            _gpxStatus.value = "Caricato: ${points.size} punti · ${points.last().elapsedMs / 1000} s."
+        }
+    }
+
+    fun clearGpxDebugRoute() {
+        DebugGpsSimulator.loadGpx(null)
+        _gpxStatus.value = ""
     }
 
     val routeState: StateFlow<AudioRouteState> = coordinator.routeState

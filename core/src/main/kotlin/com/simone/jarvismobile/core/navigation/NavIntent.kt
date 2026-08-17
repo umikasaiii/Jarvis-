@@ -64,8 +64,10 @@ object NavIntentParser {
 
         // Control verbs first.
         when {
-            containsAny(q, "ferma navigazione", "termina navigazione", "annulla navigazione", "stop navigazione") ->
-                return NavIntent.Stop
+            containsAny(
+                q, "ferma navigazione", "termina navigazione", "annulla navigazione", "stop navigazione",
+                "annulla percorso", "cancella percorso", "ferma il percorso",
+            ) -> return NavIntent.Stop
             containsAny(q, "riprendi navigazione", "riprendi il percorso", "riprendi percorso", "continua navigazione") ->
                 return NavIntent.Resume
             containsAny(q, "pausa navigazione", "metti in pausa") ->

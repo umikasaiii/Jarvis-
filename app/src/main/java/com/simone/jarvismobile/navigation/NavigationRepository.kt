@@ -11,6 +11,7 @@ import com.simone.jarvismobile.core.navigation.NavigationStateMachine
 import com.simone.jarvismobile.core.navigation.OffRouteDetector
 import com.simone.jarvismobile.core.navigation.RegionMetadata
 import com.simone.jarvismobile.core.navigation.RegionSelector
+import com.simone.jarvismobile.core.navigation.RerouteCooldown
 import com.simone.jarvismobile.core.navigation.Route
 import com.simone.jarvismobile.core.navigation.RouteOptions
 import com.simone.jarvismobile.core.navigation.RouteProgressCalculator
@@ -47,7 +48,7 @@ class NavigationRepository @Inject constructor(
     @ApplicationContext private val context: Context,
     private val locationProvider: NavigationLocationProvider,
     private val regionStore: InstalledRegionStore,
-    private val routingEngine: OfflineRoutingEngine,
+    private val routingEngine: NavigationEngine,
     private val placeSearch: PlaceSearchRepository,
     private val voice: NavigationVoiceController,
     private val modeManager: JarvisModeManager,
@@ -110,6 +111,7 @@ class NavigationRepository @Inject constructor(
     @Volatile private var matcher: MapMatcher? = null
     @Volatile private var progressCalc: RouteProgressCalculator? = null
     private val offRoute = OffRouteDetector()
+    private val rerouteCooldown = RerouteCooldown()
 
     suspend fun refreshRegions() {
         _regions.value = regionStore.installed()
@@ -180,6 +182,7 @@ class NavigationRepository @Inject constructor(
         _progress.value = null
         announcer.reset()
         offRoute.reset()
+        rerouteCooldown.reset()
         _navState.value = machine.dispatch(NavEvent.Stop)
         runCatching { NavigationService.stop(context) }
     }
@@ -190,6 +193,7 @@ class NavigationRepository @Inject constructor(
         matcher = m
         progressCalc = RouteProgressCalculator(route, m)
         offRoute.reset()
+        rerouteCooldown.reset()
         announcer.reset()
         _navState.value = machine.dispatch(NavEvent.RouteFound)
         _navState.value = machine.dispatch(NavEvent.StartNavigation)
@@ -209,7 +213,9 @@ class NavigationRepository @Inject constructor(
         val route = _route.value
         val m = matcher
         val calc = progressCalc
-        if (_navState.value == NavState.NAVIGATING && route != null && m != null && calc != null) {
+        if ((_navState.value == NavState.NAVIGATING || _navState.value == NavState.ARRIVING) &&
+            route != null && m != null && calc != null
+        ) {
             val match = m.match(fix)
             val prog = calc.progress(match, fix)
             _progress.value = prog
@@ -221,6 +227,10 @@ class NavigationRepository @Inject constructor(
                 runCatching { NavigationService.stop(context) }
                 return
             }
+            // ARRIVING: close enough to show it, not yet close enough to declare it.
+            if (_navState.value == NavState.NAVIGATING && prog.remainingDistanceMeters <= ARRIVING_THRESHOLD_M) {
+                _navState.value = machine.dispatch(NavEvent.Approaching)
+            }
 
             // Spoken instruction, anticipated by speed and de-duplicated.
             prog.nextManeuver?.let { mv ->
@@ -229,9 +239,11 @@ class NavigationRepository @Inject constructor(
                     ?.let { announce(it) }
             }
 
-            // Off-route → recalculate offline.
-            if (offRoute.update(match, fix)) {
+            // Off-route → recalculate offline, gated by a cooldown (spec §19) so a
+            // still-poor fix right after a recalculation can't retrigger instantly.
+            if (offRoute.update(match, fix) && rerouteCooldown.canReroute(fix.timestampMs)) {
                 _navState.value = machine.dispatch(NavEvent.OffRouteConfirmed)
+                rerouteCooldown.markRerouted(fix.timestampMs)
                 announce(announcer.recalculating())
                 recalculate(fix.location)
             }
@@ -276,5 +288,6 @@ class NavigationRepository @Inject constructor(
     private companion object {
         const val WEAK_ACCURACY_M = 40f
         const val ARRIVE_THRESHOLD_M = 25.0
+        const val ARRIVING_THRESHOLD_M = 150.0
     }
 }

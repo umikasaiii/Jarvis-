@@ -196,10 +196,34 @@ fun DiagnosticsScreen(
                 // developer exercise the map/camera without moving (spec §13).
                 if (BuildConfig.DEBUG) {
                     val simulatorEnabled by DebugGpsSimulator.enabled.collectAsStateWithLifecycle()
+                    val gpxRoute by DebugGpsSimulator.gpxRoute.collectAsStateWithLifecycle()
+                    val gpxStatus by viewModel.gpxStatus.collectAsStateWithLifecycle()
+                    val gpxPicker = rememberLauncherForActivityResult(
+                        ActivityResultContracts.OpenDocument(),
+                    ) { uri -> uri?.let(viewModel::loadGpxDebugRoute) }
                     HorizontalDivider()
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text("GPS simulato (solo debug)", style = MaterialTheme.typography.bodyMedium)
                         Switch(checked = simulatorEnabled, onCheckedChange = DebugGpsSimulator::setEnabled)
+                    }
+                    Text(
+                        if (gpxRoute != null) "Percorso: registrazione GPX caricata" else "Percorso: giro sintetico (nessun GPX)",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = { gpxPicker.launch(arrayOf("*/*")) },
+                            modifier = Modifier.weight(1f),
+                        ) { Text("Carica GPX") }
+                        if (gpxRoute != null) {
+                            OutlinedButton(
+                                onClick = viewModel::clearGpxDebugRoute,
+                                modifier = Modifier.weight(1f),
+                            ) { Text("Rimuovi GPX") }
+                        }
+                    }
+                    if (gpxStatus.isNotEmpty()) {
+                        Text(gpxStatus, style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }

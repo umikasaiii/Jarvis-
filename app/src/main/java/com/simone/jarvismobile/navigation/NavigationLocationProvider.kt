@@ -59,11 +59,23 @@ class NavigationLocationProvider @Inject constructor(
         if (BuildConfig.DEBUG && DebugGpsSimulator.enabled.value) simulatedFixes(intervalMs) else realFixes(intervalMs, minDistanceM)
 
     private fun simulatedFixes(intervalMs: Long): Flow<GpsFix> = flow {
-        val route = SimulatedGpsRoute(origin = DEBUG_SIMULATION_ORIGIN)
+        val gpx = DebugGpsSimulator.gpxRoute.value
         val startedAtMs = System.currentTimeMillis()
-        while (true) {
-            emit(route.fixAt(System.currentTimeMillis() - startedAtMs))
-            delay(intervalMs)
+        if (gpx != null) {
+            // A real recorded track (spec §28) plays once, then stops — unlike the
+            // synthetic loop, an actual trip has a real end.
+            while (true) {
+                val elapsed = System.currentTimeMillis() - startedAtMs
+                emit(gpx.fixAt(elapsed))
+                if (elapsed >= gpx.durationMs) break
+                delay(intervalMs)
+            }
+        } else {
+            val route = SimulatedGpsRoute(origin = DEBUG_SIMULATION_ORIGIN)
+            while (true) {
+                emit(route.fixAt(System.currentTimeMillis() - startedAtMs))
+                delay(intervalMs)
+            }
         }
     }
 

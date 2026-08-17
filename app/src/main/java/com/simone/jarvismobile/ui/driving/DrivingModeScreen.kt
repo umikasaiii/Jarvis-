@@ -45,6 +45,7 @@ import com.simone.jarvismobile.core.driving.DrivingCameraController
 import com.simone.jarvismobile.core.driving.DrivingCameraMode
 import com.simone.jarvismobile.core.driving.DrivingCameraUiState
 import com.simone.jarvismobile.core.driving.DrivingExpandedPanel
+import com.simone.jarvismobile.core.navigation.Geo
 import com.simone.jarvismobile.driving.DrivingMapsLauncher
 import com.simone.jarvismobile.driving.DrivingModeViewModel
 import com.simone.jarvismobile.ui.navigation.JarvisMapView
@@ -95,6 +96,16 @@ fun DrivingModeScreen(
     // keeps that jitter from flipping the search UI to "moving" while stopped.
     val stationary = (fix?.speedMps ?: 0f) < 2f
 
+    // Total route length only changes when the route itself changes (a fresh
+    // calculation or reroute) — recomputed there, not on every GPS fix, since
+    // it walks the whole geometry (spec §33 "no per-fix full layer updates").
+    val totalRouteLengthMeters = remember(route) { route?.geometry?.let(Geo::polylineLength) }
+    val traveledDistanceMeters = remember(totalRouteLengthMeters, state.remainingDistanceMeters) {
+        val total = totalRouteLengthMeters
+        val remaining = state.remainingDistanceMeters
+        if (total != null && remaining != null) (total - remaining.toDouble()).coerceAtLeast(0.0) else null
+    }
+
     Box(Modifier.fillMaxSize().background(DrivingSportColors.Bg)) {
         JarvisMapView(
             cameraTarget = fix?.location,
@@ -104,6 +115,7 @@ fun DrivingModeScreen(
             cameraZoom = cameraState?.zoom ?: 16.0,
             cameraBearingDegrees = if (following) cameraState?.bearingDegrees else null,
             cameraTiltDegrees = if (following) cameraState?.tiltDegrees else null,
+            traveledDistanceMeters = traveledDistanceMeters,
             onLongPress = { viewModel.navigateTo(it) },
             onUserGesture = { cameraUi = cameraUi.userPanned() },
             onVehicleScreenPosition = { vehicleScreenPosition = it },

@@ -303,3 +303,43 @@ DestinationResolver.decide()
 Found vs. Ambiguous, so both the voice pipeline and a future UI search box share
 one answer for "is this destination obvious or not". Schema: see
 `tools/navigation/README.md`.
+
+### Real navigation engine (routing behind an interface)
+
+Explicit decision this phase: build everything a real turn-by-turn engine needs
+*except* Valhalla itself, with the existing offline `:core` A* router doing the
+work behind an interface a future native engine can drop into without anything
+above it changing:
+
+```
+NavigationRepository
+ ↓
+NavigationEngine (interface, app/.../navigation)
+ ↓
+AStarRouterEngine (today's only implementation — wraps :core's AStarRouter)
+                     ── future: ValhallaNavigationEngine, not implemented ──
+```
+
+`NavigationEngine` is bound via `di/NavigationEngineModule.kt` (`@Binds`,
+the same pattern `AudioModule` already uses for `TextToSpeechEngine`/
+`SpeechToTextEngine`) — swapping backends later is a one-line change there.
+Map matching (`core/navigation/MapMatcher`) is deliberately **not** part of
+this interface: it already works on any `Route` regardless of which engine
+produced it, so it needed no change. `ValhallaNavigationEngine.kt` exists only
+as a documentation stub explaining exactly why it isn't implemented yet (its
+real Kotlin API could not be verified from this environment — see the file's
+own doc comment) rather than a fake/guessed one.
+
+`NavState` (`:core`) now literally matches the spec's states —
+`IDLE/CALCULATING/READY/NAVIGATING/REROUTING/ARRIVING/ARRIVED/ERROR` — plus
+the pre-existing `GPS_WEAK`/`PAUSED` the app also needs. `RerouteCooldown`
+(`:core`, pure) gates automatic rerouting so a still-poor GPS fix right after
+a recalculation can't retrigger one instantly, on top of the pre-existing
+`OffRouteDetector` consecutive-sample confirmation. `JarvisMapView` gained a
+`traveledDistanceMeters` parameter that feeds the previously-declared-but-unused
+`route-traversed` style layer, computed once per route (not per fix) from
+`NavigationRepository`'s live progress. `GpxParser`/`GpxReplayRoute` (`:core`,
+pure, DOM-based, no new dependency) replace the synthetic square-loop debug
+simulator with real recorded-track replay when a `.gpx` file is picked in
+Diagnostica (still strictly debug-only — `DebugGpsSimulator.loadGpx` is a
+no-op outside `BuildConfig.DEBUG`, same guard the existing simulator toggle uses).

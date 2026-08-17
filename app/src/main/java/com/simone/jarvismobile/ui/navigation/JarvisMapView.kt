@@ -13,6 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
+import com.simone.jarvismobile.core.navigation.Geo
 import com.simone.jarvismobile.core.navigation.LatLng
 import com.simone.jarvismobile.core.navigation.Route
 import org.maplibre.android.MapLibre
@@ -30,6 +31,10 @@ import org.maplibre.android.geometry.LatLng as MapLibreLatLng
 // declared directly in the style JSON (jarvis-navigation.json) — this view
 // only ever feeds it new geometry, never creates sources/layers itself.
 private const val ROUTE_SOURCE = "jarvis-route-src"
+
+// The already-driven portion of the route (spec §7 "route-traversed") — same
+// declare-in-style, feed-geometry-only pattern as [ROUTE_SOURCE].
+private const val ROUTE_TRAVERSED_SOURCE = "jarvis-route-traversed-src"
 
 /**
  * The one Compose component in JARVIS allowed to know about MapLibre
@@ -74,6 +79,8 @@ fun JarvisMapView(
     cameraZoom: Double = 16.0,
     cameraBearingDegrees: Float? = null,
     cameraTiltDegrees: Float? = null,
+    /** Distance driven so far along [route], for the "route-traversed" layer (spec §7). Null/0 draws nothing. */
+    traveledDistanceMeters: Double? = null,
     onLongPress: (LatLng) -> Unit = {},
     onUserGesture: () -> Unit = {},
     onVehicleScreenPosition: (Offset?) -> Unit = {},
@@ -163,6 +170,21 @@ fun JarvisMapView(
         }
     }
 
+    // Draw / clear the already-driven portion of the route (spec §7).
+    LaunchedEffect(route, traveledDistanceMeters, styleReady, map) {
+        val m = map ?: return@LaunchedEffect
+        if (!styleReady) return@LaunchedEffect
+        val src = m.style?.getSourceAs<GeoJsonSource>(ROUTE_TRAVERSED_SOURCE) ?: return@LaunchedEffect
+        val r = route
+        val traveled = traveledDistanceMeters
+        val slice = if (r == null || traveled == null || traveled <= 0.0) emptyList() else traversedSlice(r.geometry, traveled)
+        if (slice.size < 2) {
+            src.setGeoJson("{\"type\":\"FeatureCollection\",\"features\":[]}")
+        } else {
+            src.setGeoJson(LineString.fromLngLats(slice.map { Point.fromLngLat(it.lon, it.lat) }))
+        }
+    }
+
     // Follow the vehicle: recentre (and, when asked, rotate/tilt) the camera
     // on each fix while following.
     LaunchedEffect(cameraTarget, map, followCamera, cameraZoom, cameraBearingDegrees, cameraTiltDegrees) {
@@ -179,4 +201,29 @@ fun JarvisMapView(
     }
 
     AndroidView(factory = { mapView }, modifier = modifier.fillMaxSize())
+}
+
+/**
+ * The prefix of [geometry] covering the first [distanceMeters] of its length,
+ * interpolating the final point so the traversed line ends exactly at the
+ * vehicle's progress instead of snapping to the nearest vertex.
+ */
+private fun traversedSlice(geometry: List<LatLng>, distanceMeters: Double): List<LatLng> {
+    if (geometry.size < 2) return emptyList()
+    val out = ArrayList<LatLng>(geometry.size)
+    var remaining = distanceMeters
+    out += geometry[0]
+    for (i in 1 until geometry.size) {
+        val a = geometry[i - 1]
+        val b = geometry[i]
+        val segLen = Geo.distanceMeters(a, b)
+        if (remaining <= segLen) {
+            val t = if (segLen > 0) (remaining / segLen).coerceIn(0.0, 1.0) else 0.0
+            out += LatLng(a.lat + (b.lat - a.lat) * t, a.lon + (b.lon - a.lon) * t)
+            return out
+        }
+        out += b
+        remaining -= segLen
+    }
+    return out // travelled the whole route
 }

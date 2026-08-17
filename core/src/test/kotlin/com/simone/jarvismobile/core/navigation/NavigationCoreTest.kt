@@ -130,11 +130,12 @@ class NavigationCoreTest {
 
     @Test fun stateMachineHappyPath() {
         val sm = NavigationStateMachine()
-        assertEquals(NavState.SEARCHING, sm.dispatch(NavEvent.SearchStarted))
-        assertEquals(NavState.ROUTE_READY, sm.dispatch(NavEvent.RouteFound))
+        assertEquals(NavState.CALCULATING, sm.dispatch(NavEvent.SearchStarted))
+        assertEquals(NavState.READY, sm.dispatch(NavEvent.RouteFound))
         assertEquals(NavState.NAVIGATING, sm.dispatch(NavEvent.StartNavigation))
-        assertEquals(NavState.RECALCULATING, sm.dispatch(NavEvent.OffRouteConfirmed))
+        assertEquals(NavState.REROUTING, sm.dispatch(NavEvent.OffRouteConfirmed))
         assertEquals(NavState.NAVIGATING, sm.dispatch(NavEvent.RecalculationDone))
+        assertEquals(NavState.ARRIVING, sm.dispatch(NavEvent.Approaching))
         assertEquals(NavState.ARRIVED, sm.dispatch(NavEvent.Arrived))
     }
 
@@ -143,6 +144,46 @@ class NavigationCoreTest {
         sm.dispatch(NavEvent.SearchStarted); sm.dispatch(NavEvent.RouteFound); sm.dispatch(NavEvent.StartNavigation)
         assertEquals(NavState.GPS_WEAK, sm.dispatch(NavEvent.GpsLost))
         assertEquals(NavState.NAVIGATING, sm.dispatch(NavEvent.GpsRestored))
+    }
+
+    @Test fun routeFailureIsADistinctErrorStateNotIdle() {
+        val sm = NavigationStateMachine()
+        sm.dispatch(NavEvent.SearchStarted)
+        assertEquals(NavState.ERROR, sm.dispatch(NavEvent.RouteFailed))
+        // A fresh search still works from ERROR — it isn't a dead end.
+        assertEquals(NavState.CALCULATING, sm.dispatch(NavEvent.SearchStarted))
+    }
+
+    @Test fun arrivingCanStillReroute() {
+        // Off-route while ARRIVING (e.g. drove past the destination on a parallel
+        // road) must still be able to trigger a reroute, not get stuck.
+        val sm = NavigationStateMachine()
+        sm.dispatch(NavEvent.SearchStarted); sm.dispatch(NavEvent.RouteFound); sm.dispatch(NavEvent.StartNavigation)
+        sm.dispatch(NavEvent.Approaching)
+        assertEquals(NavState.REROUTING, sm.dispatch(NavEvent.OffRouteConfirmed))
+    }
+
+    @Test fun arrivedRequiresHavingBeenNavigatingOrArriving() {
+        val sm = NavigationStateMachine()
+        // Stray Arrived before any trip started is a no-op, never a fake arrival.
+        assertEquals(NavState.IDLE, sm.dispatch(NavEvent.Arrived))
+    }
+
+    // --- reroute cooldown -----------------------------------------------------
+
+    @Test fun rerouteCooldownBlocksImmediateRetrigger() {
+        val cooldown = RerouteCooldown(cooldownMs = 15_000L)
+        assertTrue(cooldown.canReroute(0L))
+        cooldown.markRerouted(0L)
+        assertTrue(!cooldown.canReroute(5_000L))
+        assertTrue(cooldown.canReroute(15_000L))
+    }
+
+    @Test fun rerouteCooldownResets() {
+        val cooldown = RerouteCooldown(cooldownMs = 15_000L)
+        cooldown.markRerouted(0L)
+        cooldown.reset()
+        assertTrue(cooldown.canReroute(1L))
     }
 
     // --- search ranking ------------------------------------------------------
@@ -218,6 +259,11 @@ class NavigationCoreTest {
     @Test fun intentStopAndResume() {
         assertEquals(NavIntent.Stop, NavIntentParser.parse("ferma navigazione"))
         assertEquals(NavIntent.Resume, NavIntentParser.parse("riprendi il percorso"))
+    }
+
+    @Test fun intentStopAcceptsPercorsoWording() {
+        assertEquals(NavIntent.Stop, NavIntentParser.parse("annulla percorso"))
+        assertEquals(NavIntent.Stop, NavIntentParser.parse("cancella percorso"))
     }
 
     @Test fun nonNavigationUtteranceIsNull() {
