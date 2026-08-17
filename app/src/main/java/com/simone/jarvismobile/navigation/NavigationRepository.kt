@@ -19,6 +19,7 @@ import com.simone.jarvismobile.core.navigation.RoutingProfile
 import com.simone.jarvismobile.core.navigation.RoutingResult
 import com.simone.jarvismobile.core.navigation.VoiceAnnouncer
 import com.simone.jarvismobile.core.mode.LocationPrecision
+import com.simone.jarvismobile.data.SettingsRepository
 import com.simone.jarvismobile.mode.JarvisModeManager
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
@@ -28,6 +29,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -39,9 +41,13 @@ enum class GpsStatus { NONE, ACQUIRING, WEAK, OK }
  * on the pure `:core` engine: GNSS, offline map coverage, deterministic routing,
  * map matching, off-route detection, live progress and spoken instructions.
  *
- * Location is only collected while [start]ed (battery §15). Routing is fully
- * offline and never depends on the AI model; instructions come only from the
- * computed route (§6, §19).
+ * Location is only collected while [start]ed (battery §15). Routing is
+ * offline-first and never depends on the AI model; instructions come only
+ * from the computed route (§6, §19). When the offline engine has no data for
+ * the area — increasingly the common case now that JARVIS Drive's map itself
+ * can render from online tiles without any region installed — and only
+ * while "Traffico live (TomTom)" is on, [onlineRoutingEngine] computes the
+ * route instead of leaving navigation unusable (`docs/PRIVACY.md`).
  */
 @Singleton
 class NavigationRepository @Inject constructor(
@@ -49,6 +55,8 @@ class NavigationRepository @Inject constructor(
     private val locationProvider: NavigationLocationProvider,
     private val regionStore: InstalledRegionStore,
     private val routingEngine: NavigationEngine,
+    private val onlineRoutingEngine: TomTomRoutingEngine,
+    private val settings: SettingsRepository,
     private val placeSearch: PlaceSearchRepository,
     private val voice: NavigationVoiceController,
     private val modeManager: JarvisModeManager,
@@ -164,11 +172,27 @@ class NavigationRepository @Inject constructor(
             when (val r = routingEngine.calculateRoute(region, from, dest, prof, opts)) {
                 is RoutingResult.Success -> applyRoute(r.route)
                 is RoutingResult.Failure -> {
-                    _navState.value = machine.dispatch(NavEvent.RouteFailed)
-                    _message.value = "Percorso non disponibile offline per questa zona (${r.error})."
+                    val online = onlineRouteFallback(from, dest, prof)
+                    if (online != null) {
+                        applyRoute(online)
+                    } else {
+                        _navState.value = machine.dispatch(NavEvent.RouteFailed)
+                        _message.value = "Percorso non disponibile offline per questa zona (${r.error})."
+                    }
                 }
             }
         }
+    }
+
+    /**
+     * Online routing fallback (opt-in, `settings.liveTrafficEnabled` — same
+     * TomTom account as live traffic/search). Null when the setting is off,
+     * no key is saved, or the request itself fails — the caller then shows
+     * the honest offline-failure message instead of a fake route.
+     */
+    private suspend fun onlineRouteFallback(from: LatLng, dest: LatLng, prof: RoutingProfile): Route? {
+        if (!settings.liveTrafficEnabled.first()) return null
+        return onlineRoutingEngine.calculateRoute(from, dest, prof)
     }
 
     fun pauseNavigation() { _navState.value = machine.dispatch(NavEvent.Pause) }
@@ -254,20 +278,27 @@ class NavigationRepository @Inject constructor(
         val dest = destination ?: return
         scope.launch {
             when (val r = routingEngine.recalculateRoute(_coveringRegion.value, from, dest, profile, options)) {
-                is RoutingResult.Success -> {
-                    _route.value = r.route
-                    val m = MapMatcher(r.route)
-                    matcher = m
-                    progressCalc = RouteProgressCalculator(r.route, m)
-                    offRoute.reset()
-                    announcer.reset()
-                    _navState.value = machine.dispatch(NavEvent.RecalculationDone)
-                }
+                is RoutingResult.Success -> applyRecalculatedRoute(r.route)
                 is RoutingResult.Failure -> {
-                    _message.value = "Ricalcolo non riuscito (${r.error})."
+                    val online = onlineRouteFallback(from, dest, profile)
+                    if (online != null) {
+                        applyRecalculatedRoute(online)
+                    } else {
+                        _message.value = "Ricalcolo non riuscito (${r.error})."
+                    }
                 }
             }
         }
+    }
+
+    private fun applyRecalculatedRoute(route: Route) {
+        _route.value = route
+        val m = MapMatcher(route)
+        matcher = m
+        progressCalc = RouteProgressCalculator(route, m)
+        offRoute.reset()
+        announcer.reset()
+        _navState.value = machine.dispatch(NavEvent.RecalculationDone)
     }
 
     /** Shows a message and speaks it with the offline navigation voice. */

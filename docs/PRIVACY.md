@@ -31,9 +31,11 @@ confirmed like every other outbound message in this app.
 A small, explicit list of features are allowed to break offline-first — no
 others: **weather** (opt-in, Impostazioni › Automazioni), **online map tiles**
 for JARVIS Drive (opt-in, Impostazioni › Navigazione offline › Mappe offline),
-**live traffic** on JARVIS Drive's own internal map (opt-in, same screen) and
-**online destination search** (same toggle, fill-in only — see below, it does
-not share the "nothing typed" guarantee the others do). The first three share
+**live traffic** on JARVIS Drive's own internal map (opt-in, same screen),
+**online destination search** and **online routing** (same toggle,
+fill-in only — see below; unlike the first three, these two send the typed
+query resp. the start/destination coordinates, so they don't share the
+"nothing typed or routed" guarantee the others make). The first three share
 the same shape:
 
 - **Off by default.** Nothing is fetched unless the user turns the setting on.
@@ -65,9 +67,9 @@ Modalità Guida. The API key is entered once in Impostazioni › Navigazione
 offline › Mappe offline, stored Keystore-encrypted
 (`TrafficApiKeyStore`, never in the plaintext DataStore every other setting
 uses), and sent only as a query parameter on TomTom's own tile requests —
-never to any other host, never alongside a route, a destination, or anything
-typed or said. Turning the toggle off, or never saving a key, leaves the map
-exactly as it is today: no traffic layer, no request made.
+never to any other host, never alongside anything typed or said. Turning
+the toggle off, or never saving a key, leaves the map exactly as it is
+today: no traffic layer, no request made.
 
 **Online destination search is a different shape of exception — flagged
 separately because it breaks the "never anything typed or said" guarantee
@@ -86,6 +88,18 @@ one field, for that one request. Turning the toggle off, or never saving a
 key, keeps destination search exactly as it was before this existed:
 offline-only, and an honest "nessun risultato" when the offline index
 doesn't have it.
+
+**Online routing** (same toggle, same TomTom key) is the fourth and last
+piece of this same exception family. JARVIS Drive's own routing engine
+(`AStarRouterEngine`) is offline, but it can only compute a route inside a
+downloaded map region — with no region installed (the now-common case
+since the map itself can render from online tiles) it has nothing to route
+on. When that happens, and only while live traffic is on,
+`TomTomRoutingEngine` calculates the route online instead, sending the
+**start and destination coordinates** to TomTom for that one request —
+never the vault, memory, agenda, or anything else. Turning the toggle off
+leaves route calculation exactly as it was before this existed: offline
+regions only, an honest "percorso non disponibile" everywhere else.
 
 Every other feature — STT, the local LLM, TTS, memory, agenda, automations —
 stays fully offline, unaffected by this opt-in.
