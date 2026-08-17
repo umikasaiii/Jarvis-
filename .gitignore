@@ -16,6 +16,10 @@ release/
 *.log
 *.hprof
 
+# Python (tools/navigation/osm_to_jarvis.py)
+__pycache__/
+*.pyc
+
 # Secrets & personal data — never commit (docs/SECURITY.md, docs/PRIVACY.md)
 *.keystore
 *.jks
