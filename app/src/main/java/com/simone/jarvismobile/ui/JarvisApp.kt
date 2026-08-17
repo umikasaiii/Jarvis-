@@ -224,7 +224,6 @@ fun JarvisApp(
                         onOpenAutomations = { overlay = Overlay.AUTOMATIONS },
                         onOpenModels = { overlay = Overlay.MODELS },
                         onOpenTranslator = { overlay = Overlay.TRANSLATOR },
-                        onOpenNavigation = { overlay = Overlay.NAVIGATION },
                     )
                     Tab.CHAT -> Unit
                     Tab.COMANDI -> CommandsScreen()

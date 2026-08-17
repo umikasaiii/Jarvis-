@@ -3,20 +3,15 @@ package com.simone.jarvismobile.ui.dashboard
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import android.Manifest
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.content.pm.PackageManager
 import android.os.BatteryManager
 import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.core.content.ContextCompat
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -67,7 +62,6 @@ import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.DirectionsCar
-import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -114,6 +108,7 @@ import com.simone.jarvismobile.core.agenda.AgendaEntry
 import com.simone.jarvismobile.core.agenda.ReminderAlert
 import com.simone.jarvismobile.core.agenda.ReminderAlertType
 import com.simone.jarvismobile.core.state.ConversationState
+import com.simone.jarvismobile.driving.DrivingModeActivity
 import com.simone.jarvismobile.ui.components.HudOverlay
 import com.simone.jarvismobile.ui.components.JarvisCard
 import com.simone.jarvismobile.ui.components.JarvisOrb
@@ -207,7 +202,6 @@ fun DashboardScreen(
     onOpenAutomations: () -> Unit = {},
     onOpenModels: () -> Unit = {},
     onOpenTranslator: () -> Unit = {},
-    onOpenNavigation: () -> Unit = {},
     viewModel: DashboardViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -430,51 +424,22 @@ fun DashboardScreen(
                     onClick = onOpenTranslator,
                     modifier = Modifier.weight(1f),
                 )
-                StatTile(
-                    icon = Icons.Filled.Navigation,
-                    label = "Navigazione",
-                    value = "Offline",
-                    unit = "GPS",
-                    footer = "Apri mappa",
-                    accent = Cyan,
-                    onClick = onOpenNavigation,
-                    modifier = Modifier.weight(1f),
-                )
             }
 
-            // Modalità Guida: overlay JARVIS su Google Maps reale (spec dedicata).
-            // Full-width like Automazioni — an entry point, not a metric.
-            val drivingVm: com.simone.jarvismobile.ui.driving.DrivingModeEntryViewModel = hiltViewModel()
-            val drivingState by drivingVm.state.collectAsStateWithLifecycle()
-            fun startDrivingMode() {
-                drivingVm.toggle(
-                    onMissingOverlayPermission = { context.startActivity(drivingVm.overlayPermissionIntent()) },
-                    onMissingNotificationAccess = { context.startActivity(drivingVm.notificationAccessIntent()) },
-                )
-            }
-            // The wake word needs RECORD_AUDIO; without it Modalità Guida would start
-            // silently unable to listen, with no explanation. Checked only when
-            // STARTING — stopping never needs a permission at all.
-            val micPermissionLauncher = rememberLauncherForActivityResult(
-                ActivityResultContracts.RequestPermission(),
-            ) { granted -> if (granted) startDrivingMode() }
+            // JARVIS Drive: la mappa/navigazione interna di JARVIS (motore
+            // proprio, traffico live, ricerca destinazioni) — sostituisce i
+            // vecchi ingressi separati "Navigazione" (mappa offline semplice)
+            // e "Modalità Guida" (overlay su Google Maps). Full-width like
+            // Automazioni — an entry point, not a metric.
             Row(Modifier.fillMaxWidth()) {
                 StatTile(
                     icon = Icons.Filled.DirectionsCar,
-                    label = "Modalità Guida",
-                    value = if (drivingState.active) "Attiva" else "Pronta",
-                    unit = if (drivingState.active) "overlay su Maps" else "tocca per avviare",
-                    footer = "JARVIS + Google Maps",
+                    label = "JARVIS Drive",
+                    value = "Pronta",
+                    unit = "mappa interna",
+                    footer = "Naviga · traffico live · ricerca",
                     accent = Rose,
-                    onClick = {
-                        val hasMic = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
-                            PackageManager.PERMISSION_GRANTED
-                        if (drivingState.active || hasMic) {
-                            startDrivingMode()
-                        } else {
-                            micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                        }
-                    },
+                    onClick = { context.startActivity(DrivingModeActivity.intent(context)) },
                     modifier = Modifier.weight(1f),
                 )
             }
