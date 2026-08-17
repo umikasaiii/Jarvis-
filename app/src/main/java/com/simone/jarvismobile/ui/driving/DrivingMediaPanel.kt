@@ -32,6 +32,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -66,6 +68,12 @@ fun DrivingMediaPanel(
     }
 }
 
+/**
+ * Reference "07_MUSIC_CARD" over the real `drive_hud_music` frame asset (an
+ * album-art well on the left, a controls well on the right) instead of a
+ * Compose-redrawn panel — Compose only lays the dynamic title/artist/art and
+ * the transport buttons on top of it.
+ */
 @Composable
 private fun MediaDock(
     media: DrivingMediaState?,
@@ -75,14 +83,16 @@ private fun MediaDock(
     onToggleTransport: () -> Unit,
     onNext: () -> Unit,
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(DrivingSportColors.PanelStrong, RoundedCornerShape(26.dp))
-            .border(1.5.dp, JarvisDriveBrushes.EdgeSoft, RoundedCornerShape(26.dp))
-            .clickable(onClick = onToggle)
-            .padding(12.dp),
-    ) {
+    Box(Modifier.fillMaxWidth().clickable(onClick = onToggle)) {
+        Image(
+            painter = painterResource(JarvisDriveAssets.MusicCard),
+            contentDescription = null,
+            contentScale = ContentScale.FillBounds,
+            modifier = Modifier.matchParentSize(),
+        )
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(14.dp),
+        ) {
         Text(
             "SPOTIFY · " + (if (media == null) "nessuna riproduzione" else if (media.playing) "in riproduzione" else "in pausa"),
             color = DrivingSportColors.Muted,
@@ -134,6 +144,7 @@ private fun MediaDock(
                         ),
                 )
             }
+        }
         }
     }
 }

@@ -1,12 +1,14 @@
 package com.simone.jarvismobile.ui.driving
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -16,6 +18,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.simone.jarvismobile.core.driving.DrivingNotification
 
@@ -44,30 +49,47 @@ fun MessageCard(
     }
 }
 
+/**
+ * Reference "06_MESSAGES_CARD": title + up to two messages + an unread pill,
+ * drawn over the real reference frame asset (`drive_hud_messages`) rather
+ * than a Compose-redrawn panel — the frame's row dividers and avatar circles
+ * come from the artwork itself, Compose only lays dynamic text on top.
+ */
 @Composable
 private fun MessagePeek(notifications: List<DrivingNotification>, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    val latest = notifications.first()
     val total = notifications.sumOf { it.count }
-    Row(
-        modifier
-            .clickable(onClick = onClick)
-            .clip(JarvisDriveShapes.Card)
-            .background(DrivingSportColors.PanelStrong)
-            .border(1.5.dp, JarvisDriveBrushes.EdgeSoft, JarvisDriveShapes.Card)
-            .padding(horizontal = 14.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column {
+    val shown = notifications.take(2)
+    Box(modifier.width(230.dp).clickable(onClick = onClick)) {
+        Image(
+            painter = painterResource(JarvisDriveAssets.MessagesCard),
+            contentDescription = null,
+            contentScale = ContentScale.FillBounds,
+            modifier = Modifier.matchParentSize(),
+        )
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(7.dp).clip(CircleShape).background(DrivingSportColors.Accent))
                 Spacer(Modifier.width(6.dp))
                 Text("MESSAGGI", color = DrivingSportColors.Muted, style = JarvisDriveTypography.CardLabel)
             }
-            Text(
-                if (total > 1) "${latest.sender} · $total" else latest.sender,
-                color = DrivingSportColors.TextMain,
-                style = JarvisDriveTypography.Body,
-            )
+            Column(Modifier.padding(start = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                shown.forEach { n ->
+                    Column {
+                        Text(n.sender, color = DrivingSportColors.TextMain, style = JarvisDriveTypography.Body)
+                        Text(
+                            n.preview,
+                            color = DrivingSportColors.Muted,
+                            style = JarvisDriveTypography.CardLabel,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+            Text("$total messaggi ›", color = DrivingSportColors.Accent, style = JarvisDriveTypography.CardLabel)
         }
     }
 }
