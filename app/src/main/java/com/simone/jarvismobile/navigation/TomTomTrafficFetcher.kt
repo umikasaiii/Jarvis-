@@ -61,14 +61,18 @@ class TomTomTrafficFetcher @Inject constructor(
     }
 
     /**
-     * GETs a single low-zoom tile to confirm [key] is actually accepted before
-     * the Settings screen reports it as saved/working — the one and only use
-     * of the key outside of normal tile rendering.
+     * GETs a single known-good tile (zoom 12 over Rome, empirically confirmed
+     * to return real flow data on-device — zoom 0 was tried first and failed,
+     * whether from an invalid style name or the tile simply being out of the
+     * service's actual coverage/zoom range was never pinned down) to confirm
+     * [key] is actually accepted before the Settings screen reports it as
+     * saved/working — the one and only use of the key outside of normal tile
+     * rendering.
      */
     suspend fun verifyApiKey(key: String): Boolean = withContext(Dispatchers.IO) {
         if (key.isBlank()) return@withContext false
         runCatching {
-            val url = "https://api.tomtom.com/traffic/map/4/tile/flow/relative0/0/0/0.pbf?key=${key.trim()}"
+            val url = "https://api.tomtom.com/traffic/map/4/tile/flow/relative/12/2190/1520.pbf?key=${key.trim()}"
             client.newCall(Request.Builder().url(url).build()).execute().use { it.isSuccessful }
         }.onFailure { Log.w(TAG, "traffic_key_verify_failed ${it.javaClass.simpleName}") }.getOrDefault(false)
     }
@@ -77,6 +81,11 @@ class TomTomTrafficFetcher @Inject constructor(
         /** Source-layer name the vector flow tiles are documented to expose ("Traffic flow"). */
         const val TRAFFIC_SOURCE_LAYER = "Traffic flow"
         private const val TAG = "JarvisTraffic"
-        private const val TILE_TEMPLATE = "https://api.tomtom.com/traffic/map/4/tile/flow/relative0/{z}/{x}/{y}.pbf"
+        /**
+         * "relative" confirmed working on-device against a real key (2026-08-17);
+         * "relative0" was tried first (based on an indirectly-sourced style-naming
+         * guess) and did not work — style name is exactly "relative", no suffix.
+         */
+        private const val TILE_TEMPLATE = "https://api.tomtom.com/traffic/map/4/tile/flow/relative/{z}/{x}/{y}.pbf"
     }
 }
