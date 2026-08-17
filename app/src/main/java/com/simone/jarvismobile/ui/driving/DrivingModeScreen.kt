@@ -89,7 +89,12 @@ fun DrivingModeScreen(
     // Heading-up follow: the map itself rotates to match travel direction
     // (spec §8 DrivingCameraController), so the puck stays fixed pointing up
     // rather than also rotating — rotating both would double-count bearing.
-    val cameraState = DrivingCameraController.forFollow(fix)
+    // The next maneuver's distance (when there is one) nudges the camera in
+    // closer as the driver approaches it, on top of the speed-based zoom.
+    val cameraState = DrivingCameraController.forFollow(
+        fix,
+        distanceToManeuverMeters = state.nextManeuver?.distanceMeters?.toDouble(),
+    )
     var cameraUi by remember { mutableStateOf(DrivingCameraUiState()) }
     val following = cameraUi.mode == DrivingCameraMode.FOLLOW
     var vehicleScreenPosition by remember { mutableStateOf<Offset?>(null) }

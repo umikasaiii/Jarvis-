@@ -16,7 +16,8 @@
     },
     "jarvis-route-src": {
       "type": "geojson",
-      "data": { "type": "FeatureCollection", "features": [] }
+      "data": { "type": "FeatureCollection", "features": [] },
+      "lineMetrics": true
     },
     "jarvis-route-traversed-src": {
       "type": "geojson",
@@ -27,14 +28,14 @@
     {
       "id": "background",
       "type": "background",
-      "paint": { "background-color": "#10161F" }
+      "paint": { "background-color": "#050A0F" }
     },
     {
       "id": "water",
       "type": "fill",
       "source": "jarvis-region",
       "source-layer": "water",
-      "paint": { "fill-color": "#152232" }
+      "paint": { "fill-color": "#0C1620" }
     },
     {
       "id": "landuse",
@@ -42,7 +43,7 @@
       "source": "jarvis-region",
       "source-layer": "landuse",
       "minzoom": 8,
-      "paint": { "fill-color": "#161F2B", "fill-opacity": 0.6 }
+      "paint": { "fill-color": "#0D141C", "fill-opacity": 0.4 }
     },
     {
       "id": "buildings",
@@ -50,7 +51,7 @@
       "source": "jarvis-region",
       "source-layer": "building",
       "minzoom": 13,
-      "paint": { "fill-color": "#2A3644", "fill-opacity": 0.85 }
+      "paint": { "fill-color": "#1C2732", "fill-opacity": 0.55 }
     },
     {
       "id": "buildings-outline",
@@ -58,7 +59,7 @@
       "source": "jarvis-region",
       "source-layer": "building",
       "minzoom": 15,
-      "paint": { "line-color": "#3B4A5C", "line-width": 0.6, "line-opacity": 0.6 }
+      "paint": { "line-color": "#2A3441", "line-width": 0.6, "line-opacity": 0.35 }
     },
     {
       "id": "roads-minor",
@@ -69,7 +70,7 @@
       "minzoom": 12,
       "layout": { "line-cap": "round", "line-join": "round" },
       "paint": {
-        "line-color": "#3A4656",
+        "line-color": "#101820",
         "line-width": ["interpolate", ["linear"], ["zoom"], 13, 0.5, 16, 1.6, 18, 5]
       }
     },
@@ -81,7 +82,7 @@
       "filter": ["in", "class", "secondary", "tertiary"],
       "layout": { "line-cap": "round", "line-join": "round" },
       "paint": {
-        "line-color": "#5E7086",
+        "line-color": "#17232D",
         "line-width": ["interpolate", ["linear"], ["zoom"], 10, 0.5, 14, 2.2, 18, 8]
       }
     },
@@ -93,7 +94,7 @@
       "filter": ["in", "class", "primary", "trunk"],
       "layout": { "line-cap": "round", "line-join": "round" },
       "paint": {
-        "line-color": "#8CA0B8",
+        "line-color": "#1F2F3D",
         "line-width": ["interpolate", ["linear"], ["zoom"], 9, 0.8, 14, 3.2, 18, 11]
       }
     },
@@ -105,7 +106,7 @@
       "filter": ["==", "class", "motorway"],
       "layout": { "line-cap": "round", "line-join": "round" },
       "paint": {
-        "line-color": "#C3D0E0",
+        "line-color": "#2A3F52",
         "line-width": ["interpolate", ["linear"], ["zoom"], 8, 1, 14, 4, 18, 15]
       }
     },
@@ -134,20 +135,21 @@
       "source": "jarvis-route-src",
       "layout": { "line-cap": "round", "line-join": "round" },
       "paint": {
-        "line-color": "#E23A2E",
-        "line-width": 16,
-        "line-opacity": 0.18,
-        "line-blur": 6
+        "line-color": "#FF382E",
+        "line-width": ["interpolate", ["linear"], ["zoom"], 10, 14, 14, 26, 18, 46],
+        "line-opacity": 0.22,
+        "line-blur": 8
       }
     },
     {
-      "id": "route-outline",
+      "id": "route-casing",
       "type": "line",
       "source": "jarvis-route-src",
       "layout": { "line-cap": "round", "line-join": "round" },
       "paint": {
-        "line-color": "#173A5E",
-        "line-width": 9
+        "line-color": "#071D31",
+        "line-opacity": 0.95,
+        "line-width": ["interpolate", ["linear"], ["zoom"], 10, 8, 14, 16, 18, 30]
       }
     },
     {
@@ -156,8 +158,28 @@
       "source": "jarvis-route-src",
       "layout": { "line-cap": "round", "line-join": "round" },
       "paint": {
-        "line-color": "#4FD1E0",
-        "line-width": 5
+        "line-color": "#177CFF",
+        "line-width": ["interpolate", ["linear"], ["zoom"], 10, 4, 14, 9, 18, 18]
+      }
+    },
+    {
+      "id": "route-highlight",
+      "type": "line",
+      "source": "jarvis-route-src",
+      "layout": { "line-cap": "round", "line-join": "round" },
+      "paint": {
+        "line-color": "#62BCFF",
+        "line-width": ["interpolate", ["linear"], ["zoom"], 10, 2, 14, 4.5, 18, 9]
+      }
+    },
+    {
+      "id": "route-core",
+      "type": "line",
+      "source": "jarvis-route-src",
+      "layout": { "line-cap": "round", "line-join": "round" },
+      "paint": {
+        "line-color": "#D9F2FF",
+        "line-width": ["interpolate", ["linear"], ["zoom"], 10, 1, 14, 2, 18, 4]
       }
     },
     {
@@ -166,9 +188,9 @@
       "source": "jarvis-route-traversed-src",
       "layout": { "line-cap": "round", "line-join": "round" },
       "paint": {
-        "line-color": "#3A4656",
-        "line-width": 5,
-        "line-opacity": 0.85
+        "line-color": "#050A0F",
+        "line-width": ["interpolate", ["linear"], ["zoom"], 10, 4, 14, 9, 18, 18],
+        "line-opacity": 0.55
       }
     },
     {
@@ -183,8 +205,8 @@
         "text-size": 12
       },
       "paint": {
-        "text-color": "#D9DEE3",
-        "text-halo-color": "#10161F",
+        "text-color": "rgba(217, 222, 227, 0.6)",
+        "text-halo-color": "#050A0F",
         "text-halo-width": 1.4
       }
     }

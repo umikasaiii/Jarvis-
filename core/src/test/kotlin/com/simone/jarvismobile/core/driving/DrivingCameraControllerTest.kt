@@ -60,6 +60,35 @@ class DrivingCameraControllerTest {
         assertEquals(55f, DrivingCameraController.forFollow(fixAt(speedMps = 0f))?.tiltDegrees)
         assertEquals(55f, DrivingCameraController.forFollow(fixAt(speedMps = 30f))?.tiltDegrees)
     }
+
+    @Test
+    fun `no distance to maneuver leaves the speed-based zoom untouched`() {
+        val withDistance = DrivingCameraController.forFollow(fixAt(speedMps = 20f), distanceToManeuverMeters = null)
+        val without = DrivingCameraController.forFollow(fixAt(speedMps = 20f))
+        assertEquals(without?.zoom, withDistance?.zoom)
+    }
+
+    @Test
+    fun `zoom boosts in as the next maneuver gets closer`() {
+        val far = DrivingCameraController.forFollow(fixAt(speedMps = 20f), distanceToManeuverMeters = 500.0)!!
+        val near = DrivingCameraController.forFollow(fixAt(speedMps = 20f), distanceToManeuverMeters = 90.0)!!
+        val atManeuver = DrivingCameraController.forFollow(fixAt(speedMps = 20f), distanceToManeuverMeters = 0.0)!!
+        assertTrue(near.zoom > far.zoom)
+        assertTrue(atManeuver.zoom > near.zoom)
+    }
+
+    @Test
+    fun `far beyond the maneuver zoom-in distance behaves as if there were no maneuver at all`() {
+        val far = DrivingCameraController.forFollow(fixAt(speedMps = 20f), distanceToManeuverMeters = 500.0)
+        val none = DrivingCameraController.forFollow(fixAt(speedMps = 20f), distanceToManeuverMeters = null)
+        assertEquals(none?.zoom, far?.zoom)
+    }
+
+    @Test
+    fun `the maneuver zoom boost still respects the standstill zoom ceiling plus its own boost`() {
+        val state = DrivingCameraController.forFollow(fixAt(speedMps = 0f), distanceToManeuverMeters = 0.0)!!
+        assertEquals(19.0, state.zoom) // 18.0 (max, standing still) + 1.0 (full proximity boost)
+    }
 }
 
 class DrivingCameraUiStateTest {

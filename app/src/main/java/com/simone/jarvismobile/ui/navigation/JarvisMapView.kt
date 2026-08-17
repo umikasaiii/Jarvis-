@@ -204,16 +204,27 @@ fun JarvisMapView(
     }
 
     // Follow the vehicle: recentre (and, when asked, rotate/tilt) the camera
-    // on each fix while following.
+    // on each fix while following. Tilt being non-null is the same signal
+    // DrivingModeScreen already uses for "this is the driving nav camera, not
+    // a generic follow" (the plain offline Navigation screen follows flat,
+    // untilted) — reused here to anchor the vehicle low on screen (~70% down,
+    // spec §7) only for that real navigation view, via top padding: MapLibre
+    // centres the target within the viewport minus its padding, so reserving
+    // ~40% of the height at the top pushes the visual centre — and so the
+    // target — down toward 70%. Needs on-device confirmation of the exact
+    // anchor position; the padding direction itself is standard MapLibre/
+    // Mapbox camera behaviour.
     LaunchedEffect(cameraTarget, map, followCamera, cameraZoom, cameraBearingDegrees, cameraTiltDegrees) {
         val m = map ?: return@LaunchedEffect
         val target = cameraTarget ?: return@LaunchedEffect
         if (!followCamera) return@LaunchedEffect
+        val topPaddingPx = if (cameraTiltDegrees != null) mapView.height * 0.40 else 0.0
         val position = CameraPosition.Builder()
             .target(MapLibreLatLng(target.lat, target.lon))
             .zoom(cameraZoom)
             .bearing((cameraBearingDegrees ?: 0f).toDouble())
             .tilt((cameraTiltDegrees ?: 0f).toDouble())
+            .padding(0.0, topPaddingPx, 0.0, 0.0)
             .build()
         m.moveCamera(CameraUpdateFactory.newCameraPosition(position))
     }
