@@ -38,6 +38,12 @@ import javax.inject.Singleton
  * maneuver string safely falls back to [ManeuverType.CONTINUE] rather than
  * guessing wrong. Needs on-device confirmation that turn instructions read
  * out correctly.
+ *
+ * `routeType=fastest&traffic=true` are passed explicitly rather than relying
+ * on TomTom's own defaults, because the earlier implicit call is the likely
+ * cause of ETA/distance disagreeing with Google Maps on the same trip: a
+ * route calculated without live traffic picks the free-flow-fastest path and
+ * reports a free-flow time, not the current-conditions one Maps shows.
  */
 @Singleton
 class TomTomRoutingEngine @Inject constructor(
@@ -63,7 +69,8 @@ class TomTomRoutingEngine @Inject constructor(
                 }
                 val locations = "${start.lat},${start.lon}:${destination.lat},${destination.lon}"
                 val url = "https://api.tomtom.com/routing/1/calculateRoute/$locations/json" +
-                    "?key=$key&travelMode=$travelMode&instructionsType=text&language=it-IT"
+                    "?key=$key&travelMode=$travelMode&instructionsType=text&language=it-IT" +
+                    "&routeType=fastest&traffic=true"
                 val response = client.newCall(Request.Builder().url(url).build()).execute()
                 response.use { resp ->
                     if (!resp.isSuccessful) return@withContext null

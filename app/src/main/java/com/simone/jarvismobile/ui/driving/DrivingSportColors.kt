@@ -20,7 +20,13 @@ object DrivingSportColors {
     val AccentSoft = Color(0x1AFF5E5E)
     val TextMain = Color(0xFFFFF6F4)
     val Muted = Color(0xFFCFB4B1)
-    val Ok = Color(0xFF7EF6A4)
+    /**
+     * Success/OK accent — deliberately red-orange, not green, so the Sport
+     * palette never borrows the general app theme's green ([androidx.compose.material3]
+     * default success color): the driving overlay's active-state language is
+     * red/orange end to end, per the reference kit.
+     */
+    val Ok = Color(0xFFFF8747)
 
     /**
      * The dual red/blue neon accent from the reference JARVIS Drive kit
@@ -31,7 +37,13 @@ object DrivingSportColors {
      */
     val AccentBlue = Color(0xFF3AC0FF)
 
-    val VoiceReady = Color(0xFF7EF6A4)
+    /**
+     * READY was green ([0xFF7EF6A4]) — the one leak of the general app theme's
+     * "ok = green" language into this overlay. The reference kit's "Pronto"/
+     * "Listening" states are both red/orange (only intensity differs), so
+     * READY is now a dim ember red rather than a different hue entirely.
+     */
+    val VoiceReady = Color(0xFFB2524A)
     val VoiceListening = Color(0xFFFF9C7A)
     val VoiceProcessing = Color(0xFFFFC06E)
     val VoiceReplying = Color(0xFFFF7373)
