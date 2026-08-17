@@ -1,7 +1,21 @@
 package com.simone.jarvismobile.core.navigation
 
-/** Installation lifecycle of an offline region. */
-enum class InstallState { NOT_INSTALLED, DOWNLOADING, PAUSED, VERIFYING, INSTALLED, CORRUPT, UPDATE_AVAILABLE }
+/**
+ * Installation lifecycle of an offline region. [CORRUPT] means the payload
+ * itself is missing/unreadable; [INCOMPATIBLE] means the files are fine but
+ * were built for a manifest schema this build of JARVIS doesn't understand —
+ * a different failure with a different fix (update the app, not reinstall
+ * the same package).
+ */
+enum class InstallState { NOT_INSTALLED, DOWNLOADING, PAUSED, VERIFYING, INSTALLED, CORRUPT, INCOMPATIBLE, UPDATE_AVAILABLE }
+
+/**
+ * The manifest schema version this build of JARVIS can read. A region built
+ * for a different schema is never treated as usable, even if its files are
+ * present and its checksum is valid — silently reading an unknown format
+ * could misparse bounds/paths instead of failing honestly.
+ */
+const val SUPPORTED_REGION_SCHEMA_VERSION = 1
 
 /**
  * The independently-versioned data payloads of a region. Kept separate so an

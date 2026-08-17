@@ -11,6 +11,10 @@
     "jarvis-route-src": {
       "type": "geojson",
       "data": { "type": "FeatureCollection", "features": [] }
+    },
+    "jarvis-route-traversed-src": {
+      "type": "geojson",
+      "data": { "type": "FeatureCollection", "features": [] }
     }
   },
   "layers": [
@@ -105,6 +109,17 @@
       "paint": {
         "line-color": "#4FD1E0",
         "line-width": 5
+      }
+    },
+    {
+      "id": "route-traversed",
+      "type": "line",
+      "source": "jarvis-route-traversed-src",
+      "layout": { "line-cap": "round", "line-join": "round" },
+      "paint": {
+        "line-color": "#3A4656",
+        "line-width": 5,
+        "line-opacity": 0.85
       }
     },
     {

@@ -87,6 +87,19 @@ class NavigationRepository @Inject constructor(
     val openScreenRequest: StateFlow<Int> = _openScreenRequest.asStateFlow()
     fun requestOpenScreen() { _openScreenRequest.value += 1 }
 
+    /**
+     * Bumped when the offline-maps download screen should open — the "importa
+     * regione" action from JARVIS Drive's missing-map state, which runs in a
+     * separate Activity ([com.simone.jarvismobile.driving.DrivingModeActivity])
+     * and has no `MapsScreen` of its own to navigate to directly. Finishing
+     * that Activity reveals `MainActivity` underneath, whose `JarvisApp`
+     * collects this and opens the same `MapsScreen` the Impostazioni entry
+     * point uses — no second maps-import UI.
+     */
+    private val _openMapsScreenRequest = MutableStateFlow(0)
+    val openMapsScreenRequest: StateFlow<Int> = _openMapsScreenRequest.asStateFlow()
+    fun requestOpenMapsScreen() { _openMapsScreenRequest.value += 1 }
+
     val voiceMuted: StateFlow<Boolean> get() = voice.muted
     fun setVoiceMuted(value: Boolean) = voice.setMuted(value)
 

@@ -7,6 +7,7 @@ import com.simone.jarvismobile.core.navigation.InstallState
 import com.simone.jarvismobile.core.navigation.RegionFiles
 import com.simone.jarvismobile.core.navigation.RegionMetadata
 import com.simone.jarvismobile.core.navigation.RegionVersions
+import com.simone.jarvismobile.core.navigation.SUPPORTED_REGION_SCHEMA_VERSION
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -50,6 +51,10 @@ class InstalledRegionStore @Inject constructor(
             val f = json.getJSONObject("files")
             val pmtiles = f.getString("pmtiles")
             val pmtilesExists = File(dir, pmtiles).exists()
+            val versions = RegionVersions(
+                v.optInt("mapVersion", 1), v.optInt("routingVersion", 1),
+                v.optInt("searchIndexVersion", 1), v.optInt("schemaVersion", 1),
+            )
             RegionMetadata(
                 id = json.getString("id"),
                 name = json.getString("name"),
@@ -57,10 +62,7 @@ class InstalledRegionStore @Inject constructor(
                     b.getDouble("minLat"), b.getDouble("minLon"),
                     b.getDouble("maxLat"), b.getDouble("maxLon"),
                 ),
-                versions = RegionVersions(
-                    v.optInt("mapVersion", 1), v.optInt("routingVersion", 1),
-                    v.optInt("searchIndexVersion", 1), v.optInt("schemaVersion", 1),
-                ),
+                versions = versions,
                 osmDate = json.optString("osmDate", ""),
                 sizeBytes = json.optLong("sizeBytes", 0L),
                 checksumSha256 = json.optString("checksumSha256", ""),
@@ -70,8 +72,14 @@ class InstalledRegionStore @Inject constructor(
                     searchDb = f.optString("searchDb", ""),
                     style = f.optString("style", "jarvis-navigation.json"),
                 ),
-                // Present metadata but missing payload → CORRUPT, not usable.
-                state = if (pmtilesExists) InstallState.INSTALLED else InstallState.CORRUPT,
+                // Present metadata but missing payload → CORRUPT; readable but built
+                // for a schema this build doesn't understand → INCOMPATIBLE. Neither
+                // is silently treated as usable (spec §4/§5 "verificare compatibilità").
+                state = when {
+                    !pmtilesExists -> InstallState.CORRUPT
+                    versions.schemaVersion != SUPPORTED_REGION_SCHEMA_VERSION -> InstallState.INCOMPATIBLE
+                    else -> InstallState.INSTALLED
+                },
             )
         }.getOrElse {
             Log.w(TAG, "region_read_failed ${dir.name} ${it.javaClass.simpleName}")

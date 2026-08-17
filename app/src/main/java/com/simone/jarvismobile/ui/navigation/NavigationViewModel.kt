@@ -34,6 +34,7 @@ class NavigationViewModel @Inject constructor(
     val progress: StateFlow<NavigationProgress?> = repository.progress
     val message: StateFlow<String?> = repository.message
     val openScreenRequest: StateFlow<Int> = repository.openScreenRequest
+    val openMapsScreenRequest: StateFlow<Int> = repository.openMapsScreenRequest
     val voiceMuted: StateFlow<Boolean> = repository.voiceMuted
     fun setVoiceMuted(value: Boolean) = repository.setVoiceMuted(value)
     val regions: StateFlow<List<RegionMetadata>> =

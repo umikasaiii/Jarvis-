@@ -12,6 +12,7 @@ import com.simone.jarvismobile.core.driving.toDrivingVoiceState
 import com.simone.jarvismobile.core.driving.toManeuverUiModel
 import com.simone.jarvismobile.core.navigation.GpsFix
 import com.simone.jarvismobile.core.navigation.LatLng
+import com.simone.jarvismobile.core.navigation.RegionMetadata
 import com.simone.jarvismobile.core.navigation.Route
 import com.simone.jarvismobile.navigation.InstalledRegionStore
 import com.simone.jarvismobile.navigation.NavigationRepository
@@ -44,6 +45,9 @@ class DrivingModeViewModel @Inject constructor(
 
     val fix: StateFlow<GpsFix?> = navigationRepository.fix
     val route: StateFlow<Route?> = navigationRepository.route
+
+    /** Null when no installed region covers the current fix — drives the "no offline map" state. */
+    val coveringRegion: StateFlow<RegionMetadata?> = navigationRepository.coveringRegion
 
     init {
         mediaController.start()
@@ -98,6 +102,9 @@ class DrivingModeViewModel @Inject constructor(
 
     fun navigateTo(destination: LatLng) = navigationRepository.startNavigation(destination)
     fun stopNavigation() = navigationRepository.stopNavigation()
+
+    /** "Importa una mappa": asks MainActivity's JarvisApp to open MapsScreen once this Activity finishes. */
+    fun requestImportMap() = navigationRepository.requestOpenMapsScreen()
 
     fun togglePanel(panel: DrivingExpandedPanel) {
         _uiState.update { it.togglePanel(panel) }

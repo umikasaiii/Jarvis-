@@ -47,6 +47,12 @@ private const val ROUTE_SOURCE = "jarvis-route-src"
  * north-up top-down view the offline Navigation screen has always used —
  * only a caller that opts in (JARVIS Drive's follow mode) gets heading-up
  * rotation and a navigation tilt.
+ *
+ * [onUserGesture] fires only for a real touch pan/zoom
+ * ([org.maplibre.android.maps.MapLibreMap.OnCameraMoveStartedListener.REASON_API_GESTURE]),
+ * never for this view's own follow-camera [org.maplibre.android.maps.MapLibreMap.moveCamera]
+ * calls — so a caller can drop out of follow mode on a real drag without
+ * fighting its own programmatic recentring (spec §12 FREE mode).
  */
 @Composable
 fun JarvisMapView(
@@ -60,6 +66,7 @@ fun JarvisMapView(
     cameraBearingDegrees: Float? = null,
     cameraTiltDegrees: Float? = null,
     onLongPress: (LatLng) -> Unit = {},
+    onUserGesture: () -> Unit = {},
 ) {
     val context = LocalContext.current
     var styleReady by remember { mutableStateOf(false) }
@@ -81,6 +88,9 @@ fun JarvisMapView(
             m.addOnMapLongClickListener { p ->
                 onLongPress(LatLng(p.latitude, p.longitude))
                 true
+            }
+            m.addOnCameraMoveStartedListener { reason ->
+                if (reason == MapLibreMap.OnCameraMoveStartedListener.REASON_API_GESTURE) onUserGesture()
             }
             map = m
         }

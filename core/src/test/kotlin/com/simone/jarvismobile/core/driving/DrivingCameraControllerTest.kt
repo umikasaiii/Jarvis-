@@ -61,3 +61,35 @@ class DrivingCameraControllerTest {
         assertEquals(55f, DrivingCameraController.forFollow(fixAt(speedMps = 30f))?.tiltDegrees)
     }
 }
+
+class DrivingCameraUiStateTest {
+
+    @Test
+    fun `default state is FOLLOW`() {
+        assertEquals(DrivingCameraMode.FOLLOW, DrivingCameraUiState().mode)
+    }
+
+    @Test
+    fun `a user pan while following drops into FREE`() {
+        val free = DrivingCameraUiState().userPanned()
+        assertEquals(DrivingCameraMode.FREE, free.mode)
+    }
+
+    @Test
+    fun `panning again while already free is a no-op`() {
+        val free = DrivingCameraUiState().userPanned()
+        assertEquals(free, free.userPanned())
+    }
+
+    @Test
+    fun `recenter always returns to FOLLOW, from FREE or OVERVIEW`() {
+        assertEquals(DrivingCameraMode.FOLLOW, DrivingCameraUiState().userPanned().recenter().mode)
+        assertEquals(DrivingCameraMode.FOLLOW, DrivingCameraUiState().overview().recenter().mode)
+    }
+
+    @Test
+    fun `overview is reachable from any mode`() {
+        assertEquals(DrivingCameraMode.OVERVIEW, DrivingCameraUiState().overview().mode)
+        assertEquals(DrivingCameraMode.OVERVIEW, DrivingCameraUiState().userPanned().overview().mode)
+    }
+}

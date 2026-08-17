@@ -88,6 +88,9 @@ class RegionManager @Inject constructor(
         withContext(Dispatchers.IO) {
             val name = displayName ?: queryName(uri)
             val total = querySize(uri)
+            if (total > 0 && !hasEnoughSpace(total)) {
+                fail(name, "spazio insufficiente sul dispositivo"); return@withContext null
+            }
             _progress.value = Progress(name, Phase.COPYING, 0, total)
 
             val id = slug(name).ifBlank { UUID.randomUUID().toString() }
@@ -232,6 +235,9 @@ class RegionManager @Inject constructor(
                     val start = if (resume) already else 0L
                     if (!resume && already > 0) part.delete()
                     val total = start + body.contentLength()
+                    if (total > 0 && !hasEnoughSpace(total - start)) {
+                        fail(name, "spazio insufficiente sul dispositivo"); return@withContext null
+                    }
 
                     body.byteStream().use { input ->
                         java.io.FileOutputStream(part, resume).use { output ->
@@ -378,6 +384,14 @@ class RegionManager @Inject constructor(
         }
     }
 
+    /**
+     * A margin above the raw byte count: the temporary `.part` and the final
+     * file briefly coexist during [finishInstall]'s atomic rename fallback
+     * (copy+delete on filesystems where `renameTo` fails across volumes).
+     */
+    private fun hasEnoughSpace(bytes: Long): Boolean =
+        store.root.apply { mkdirs() }.usableSpace > bytes + MIN_FREE_SPACE_MARGIN_BYTES
+
     private fun fail(name: String, reason: String) {
         _progress.value = Progress(name, Phase.FAILED, 0, 0, reason)
     }
@@ -418,5 +432,6 @@ class RegionManager @Inject constructor(
         const val PMTILES_NAME = "region.pmtiles"
         const val METADATA_NAME = "metadata.json"
         const val HEX = "0123456789abcdef"
+        const val MIN_FREE_SPACE_MARGIN_BYTES = 50L * 1024 * 1024
     }
 }

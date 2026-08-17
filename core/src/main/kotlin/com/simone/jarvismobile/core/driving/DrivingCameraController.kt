@@ -2,6 +2,27 @@ package com.simone.jarvismobile.core.driving
 
 import com.simone.jarvismobile.core.navigation.GpsFix
 
+/** Which camera behavior `JarvisMapView` should use right now (spec §12). */
+enum class DrivingCameraMode { FOLLOW, FREE, OVERVIEW }
+
+/**
+ * Holds which [DrivingCameraMode] the map is in. A real touch-drag from the
+ * driver always drops FOLLOW into FREE — recentering is the only way back,
+ * never automatic — so a manual pan is never immediately fought by the next
+ * GPS fix. [OVERVIEW] is a declared placeholder: showing "the whole route"
+ * needs a real route to fit bounds around, which this phase doesn't compute
+ * yet (spec: no Valhalla/turn-by-turn here).
+ */
+data class DrivingCameraUiState(val mode: DrivingCameraMode = DrivingCameraMode.FOLLOW) {
+    /** A user gesture only matters while following — panning while already free is a no-op. */
+    fun userPanned(): DrivingCameraUiState =
+        if (mode == DrivingCameraMode.FOLLOW) copy(mode = DrivingCameraMode.FREE) else this
+
+    fun recenter(): DrivingCameraUiState = copy(mode = DrivingCameraMode.FOLLOW)
+
+    fun overview(): DrivingCameraUiState = copy(mode = DrivingCameraMode.OVERVIEW)
+}
+
 /**
  * Camera parameters for the follow-mode navigation view (spec §8): bearing
  * oriented to the direction of travel (heading-up), a fixed navigation tilt,

@@ -128,6 +128,12 @@ fun JarvisApp(
         if (openNavigation > 0) overlay = Overlay.NAVIGATION
     }
 
+    // JARVIS Drive's missing-map state asks to open the offline-maps download screen.
+    val openMaps by navigationViewModel.openMapsScreenRequest.collectAsStateWithLifecycle()
+    LaunchedEffect(openMaps) {
+        if (openMaps > 0) overlay = Overlay.MAPS
+    }
+
     Box(Modifier.fillMaxSize()) {
         // Base: the tab shell with the bottom navigation.
         Scaffold(

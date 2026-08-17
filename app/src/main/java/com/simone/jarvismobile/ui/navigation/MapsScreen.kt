@@ -39,6 +39,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.simone.jarvismobile.core.navigation.InstallState
 import com.simone.jarvismobile.core.navigation.RegionMetadata
 import com.simone.jarvismobile.navigation.RegionManager
 
@@ -278,6 +279,7 @@ private fun subtitle(r: RegionMetadata): String {
     val mb = if (r.sizeBytes > 0) "${r.sizeBytes / (1024 * 1024)} MB" else "—"
     val state = when {
         r.isUsable -> "installata"
+        r.state == InstallState.INCOMPATIBLE -> "richiede un aggiornamento di JARVIS"
         else -> "danneggiata — reinstalla"
     }
     return "$state · $mb"

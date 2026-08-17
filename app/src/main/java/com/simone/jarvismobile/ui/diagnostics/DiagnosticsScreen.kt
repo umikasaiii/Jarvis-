@@ -28,8 +28,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.simone.jarvismobile.BuildConfig
 import com.simone.jarvismobile.core.driving.DrivingNavigationMode
 import com.simone.jarvismobile.driving.DrivingModeActivity
+import com.simone.jarvismobile.navigation.debug.DebugGpsSimulator
 
 /**
  * Minimal diagnostics screen (docs/ARCHITECTURE.md §8 / task §10): shows the
@@ -187,6 +189,17 @@ fun DiagnosticsScreen(
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Text("Apri JARVIS Drive (beta)")
+                    }
+                }
+                // Debug-only, in-memory: never compiled into a meaningful state in
+                // release (DebugGpsSimulator.setEnabled is a no-op there) — lets a
+                // developer exercise the map/camera without moving (spec §13).
+                if (BuildConfig.DEBUG) {
+                    val simulatorEnabled by DebugGpsSimulator.enabled.collectAsStateWithLifecycle()
+                    HorizontalDivider()
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("GPS simulato (solo debug)", style = MaterialTheme.typography.bodyMedium)
+                        Switch(checked = simulatorEnabled, onCheckedChange = DebugGpsSimulator::setEnabled)
                     }
                 }
             }
