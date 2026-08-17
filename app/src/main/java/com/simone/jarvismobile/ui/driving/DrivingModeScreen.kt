@@ -71,6 +71,7 @@ fun DrivingModeScreen(
     val route by viewModel.route.collectAsStateWithLifecycle()
     val coveringRegion by viewModel.coveringRegion.collectAsStateWithLifecycle()
     val onlineSourceJson by viewModel.onlineSourceJson.collectAsStateWithLifecycle()
+    val trafficSourceJson by viewModel.trafficSourceJson.collectAsStateWithLifecycle()
     val noOfflineMap = fix != null && coveringRegion == null && onlineSourceJson == null
 
     var granted by remember { mutableStateOf(viewModel.hasLocationPermission()) }
@@ -118,6 +119,7 @@ fun DrivingModeScreen(
             cameraTiltDegrees = if (following) cameraState?.tiltDegrees else null,
             traveledDistanceMeters = traveledDistanceMeters,
             onlineSourceJson = onlineSourceJson,
+            trafficSourceJson = trafficSourceJson,
             onLongPress = { viewModel.navigateTo(it) },
             onUserGesture = { cameraUi = cameraUi.userPanned() },
             onVehicleScreenPosition = { vehicleScreenPosition = it },

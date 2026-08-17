@@ -88,6 +88,13 @@ fun JarvisMapView(
      * Ignored whenever a local region is available; local always wins.
      */
     onlineSourceJson: String? = null,
+    /**
+     * A vector source JSON object for TomTom's live traffic-flow tiles (see
+     * [com.simone.jarvismobile.navigation.TomTomTrafficFetcher]), spliced into
+     * the `jarvis-traffic` source and shown via the `traffic-flow` layer only
+     * while non-null — opt-in, off by default.
+     */
+    trafficSourceJson: String? = null,
     onLongPress: (LatLng) -> Unit = {},
     onUserGesture: () -> Unit = {},
     onVehicleScreenPosition: (Offset?) -> Unit = {},
@@ -152,17 +159,18 @@ fun JarvisMapView(
     // "jarvis-region". With neither available the style still renders (dark
     // background) and the caller's own "download map" state can show. Local
     // always wins over online when both happen to be present.
-    LaunchedEffect(map, stylePmtilesPath, onlineSourceJson, styleAsset) {
+    LaunchedEffect(map, stylePmtilesPath, onlineSourceJson, trafficSourceJson, styleAsset) {
         val m = map ?: return@LaunchedEffect
         val base = runCatching {
             context.assets.open(styleAsset).bufferedReader().use { it.readText() }
         }.getOrNull() ?: return@LaunchedEffect
-        val styleJson = when {
+        val withRegion = when {
             stylePmtilesPath != null ->
                 base.replace("pmtiles://LOCAL_REGION_PLACEHOLDER", "pmtiles://file://$stylePmtilesPath")
             onlineSourceJson != null -> replaceRegionSource(base, onlineSourceJson) ?: base
             else -> base
         }
+        val styleJson = trafficSourceJson?.let { applyTrafficOverlay(withRegion, it) } ?: withRegion
         styleReady = false
         m.setStyle(Style.Builder().fromJson(styleJson)) { styleReady = true }
     }
@@ -226,6 +234,26 @@ private fun replaceRegionSource(base: String, sourceJson: String): String? = run
     sources.put("jarvis-region", org.json.JSONObject(sourceJson))
     style.toString()
 }.getOrNull()
+
+/**
+ * Splices [trafficJson] into `jarvis-traffic` and flips the `traffic-flow`
+ * layer's visibility on — the layer is declared hidden in the base style
+ * (spec: never render against the unset placeholder source) so this is the
+ * only place that turns it on, and only while a real source is available.
+ * Falls back to [base] unchanged on any malformed input.
+ */
+private fun applyTrafficOverlay(base: String, trafficJson: String): String = runCatching {
+    val style = org.json.JSONObject(base)
+    style.getJSONObject("sources").put("jarvis-traffic", org.json.JSONObject(trafficJson))
+    val layers = style.getJSONArray("layers")
+    for (i in 0 until layers.length()) {
+        val layer = layers.getJSONObject(i)
+        if (layer.optString("id") == "traffic-flow") {
+            layer.optJSONObject("layout")?.put("visibility", "visible")
+        }
+    }
+    style.toString()
+}.getOrDefault(base)
 
 /**
  * The prefix of [geometry] covering the first [distanceMeters] of its length,

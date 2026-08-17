@@ -8,6 +8,12 @@
       "type": "vector",
       "url": "pmtiles://LOCAL_REGION_PLACEHOLDER"
     },
+    "jarvis-traffic": {
+      "type": "vector",
+      "tiles": ["https://TRAFFIC_TILE_PLACEHOLDER/{z}/{x}/{y}.pbf"],
+      "minzoom": 0,
+      "maxzoom": 22
+    },
     "jarvis-route-src": {
       "type": "geojson",
       "data": { "type": "FeatureCollection", "features": [] }
@@ -78,6 +84,25 @@
       "source-layer": "transportation",
       "filter": ["==", "class", "motorway"],
       "paint": { "line-color": "#E23A2E", "line-width": 3.5 }
+    },
+    {
+      "id": "traffic-flow",
+      "type": "line",
+      "source": "jarvis-traffic",
+      "source-layer": "Traffic flow",
+      "minzoom": 5,
+      "layout": { "visibility": "none", "line-cap": "round" },
+      "paint": {
+        "line-width": 2.5,
+        "line-opacity": 0.85,
+        "line-color": [
+          "interpolate", ["linear"], ["coalesce", ["to-number", ["get", "traffic_level"]], 0],
+          0, "#2ECC71",
+          0.5, "#F5A623",
+          0.8, "#E23A2E",
+          1, "#8B1A1A"
+        ]
+      }
     },
     {
       "id": "route-glow",

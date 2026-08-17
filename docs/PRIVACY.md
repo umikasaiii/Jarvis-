@@ -31,8 +31,8 @@ confirmed like every other outbound message in this app.
 A small, explicit list of features are allowed to break offline-first — no
 others: **weather** (opt-in, Impostazioni › Automazioni), **online map tiles**
 for JARVIS Drive (opt-in, Impostazioni › Navigazione offline › Mappe offline)
-and, later, **live-traffic travel-time estimates** for a place. All three share
-the same shape:
+and **live traffic** on JARVIS Drive's own internal map (opt-in, same screen).
+All share the same shape:
 
 - **Off by default.** Nothing is fetched unless the user turns the setting on.
 - **Only when the network is actually present.** No fetch is forced; a missing
@@ -53,6 +53,19 @@ saved places, destination history, search queries, or anything typed/said.
 Turning the toggle off (the default) never breaks the map — it just means an
 uncovered position shows the existing "nessuna mappa offline" state instead of
 an online tile, same as before this existed.
+
+**Live traffic** specifically: when on, and only when the user has saved
+their own [TomTom Developer](https://developer.tomtom.com) API key (free
+tier, no payment method required), JARVIS Drive's internal map fetches
+TomTom's vector traffic-flow tiles and draws them as a colored overlay on
+JARVIS's own map — never as an overlay on the separate Google-Maps-based
+Modalità Guida. The API key is entered once in Impostazioni › Navigazione
+offline › Mappe offline, stored Keystore-encrypted
+(`TrafficApiKeyStore`, never in the plaintext DataStore every other setting
+uses), and sent only as a query parameter on TomTom's own tile requests —
+never to any other host, never alongside a route, a destination, or anything
+typed or said. Turning the toggle off, or never saving a key, leaves the map
+exactly as it is today: no traffic layer, no request made.
 
 Every other feature — STT, the local LLM, TTS, memory, agenda, automations —
 stays fully offline, unaffected by this opt-in.

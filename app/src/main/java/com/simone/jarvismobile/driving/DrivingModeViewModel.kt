@@ -21,6 +21,7 @@ import com.simone.jarvismobile.navigation.InstalledRegionStore
 import com.simone.jarvismobile.navigation.NavigationRepository
 import com.simone.jarvismobile.navigation.OnlineMapStyleFetcher
 import com.simone.jarvismobile.navigation.PlaceSearchRepository
+import com.simone.jarvismobile.navigation.TomTomTrafficFetcher
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -47,6 +48,7 @@ class DrivingModeViewModel @Inject constructor(
     private val placeSearch: PlaceSearchRepository,
     private val settings: SettingsRepository,
     private val onlineMapStyleFetcher: OnlineMapStyleFetcher,
+    private val trafficFetcher: TomTomTrafficFetcher,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DrivingUiState(navigationMode = DrivingNavigationMode.INTERNAL_JARVIS_NAVIGATION))
@@ -68,6 +70,15 @@ class DrivingModeViewModel @Inject constructor(
     private val _onlineSourceJson = MutableStateFlow<String?>(null)
     val onlineSourceJson: StateFlow<String?> = _onlineSourceJson.asStateFlow()
 
+    /**
+     * TomTom live-traffic vector source (opt-in, off by default — see
+     * [SettingsRepository.liveTrafficEnabled] and [TomTomTrafficFetcher]). Null
+     * whenever the setting is off or no API key is saved — the map then shows
+     * no traffic layer at all, never a broken one.
+     */
+    private val _trafficSourceJson = MutableStateFlow<String?>(null)
+    val trafficSourceJson: StateFlow<String?> = _trafficSourceJson.asStateFlow()
+
     init {
         mediaController.start()
 
@@ -76,6 +87,12 @@ class DrivingModeViewModel @Inject constructor(
                 .collect { shouldFetch ->
                     _onlineSourceJson.value = if (shouldFetch) onlineMapStyleFetcher.vectorSourceJson() else null
                 }
+        }
+
+        viewModelScope.launch {
+            settings.liveTrafficEnabled.collect { enabled ->
+                _trafficSourceJson.value = if (enabled) trafficFetcher.trafficSourceJson() else null
+            }
         }
 
         viewModelScope.launch {

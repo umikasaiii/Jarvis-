@@ -35,6 +35,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -106,6 +107,63 @@ fun MapsScreen(
                             "installato una mappa offline, e solo con connessione attiva.",
                         style = MaterialTheme.typography.bodySmall,
                     )
+                }
+            }
+
+            val liveTrafficEnabled by viewModel.liveTrafficEnabled.collectAsStateWithLifecycle()
+            val trafficKeySaved by viewModel.trafficApiKeySaved.collectAsStateWithLifecycle()
+            val trafficKeyStatus by viewModel.trafficKeyStatus.collectAsStateWithLifecycle()
+            var trafficKeyInput by rememberSaveable { mutableStateOf("") }
+            Card(Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Traffico live (TomTom)", style = MaterialTheme.typography.bodyMedium)
+                        androidx.compose.material3.Switch(
+                            checked = liveTrafficEnabled,
+                            onCheckedChange = viewModel::setLiveTrafficEnabled,
+                        )
+                    }
+                    Text(
+                        "Spento di default. Mostra il traffico reale sulla mappa interna di " +
+                            "JARVIS Drive (non un overlay su Google Maps) usando il tuo account " +
+                            "gratuito TomTom. La chiave resta cifrata sul telefono e non viene " +
+                            "mai condivisa con nient'altro.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    if (trafficKeySaved) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text(
+                                when (trafficKeyStatus) {
+                                    TrafficKeyStatus.CHECKING -> "Verifica in corso…"
+                                    TrafficKeyStatus.VALID -> "Chiave salvata e verificata ✓"
+                                    TrafficKeyStatus.INVALID -> "Chiave salvata, verifica fallita (controlla o riprova)"
+                                    TrafficKeyStatus.UNVERIFIED -> "Chiave salvata, non ancora verificata"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(onClick = viewModel::verifyTrafficApiKey) { Text("Verifica chiave") }
+                            OutlinedButton(onClick = viewModel::clearTrafficApiKey) { Text("Rimuovi") }
+                        }
+                    } else {
+                        OutlinedTextField(
+                            value = trafficKeyInput,
+                            onValueChange = { trafficKeyInput = it },
+                            label = { Text("API key TomTom") },
+                            visualTransformation = PasswordVisualTransformation(),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Button(
+                            onClick = {
+                                viewModel.saveTrafficApiKey(trafficKeyInput)
+                                trafficKeyInput = ""
+                                viewModel.verifyTrafficApiKey()
+                            },
+                            enabled = trafficKeyInput.isNotBlank(),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("Salva chiave") }
+                    }
                 }
             }
 
