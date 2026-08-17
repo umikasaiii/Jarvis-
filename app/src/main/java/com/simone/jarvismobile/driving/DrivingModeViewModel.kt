@@ -87,6 +87,9 @@ class DrivingModeViewModel @Inject constructor(
         }
     }
 
+    /** Same entry point the Home mic button uses ([SessionCoordinator.startSession]) — no second mic path. */
+    fun startVoiceSession() = coordinator.startSession()
+
     fun hasLocationPermission(): Boolean = navigationRepository.hasLocationPermission()
     fun startLocation() = navigationRepository.start()
     fun stopLocation() = navigationRepository.stop()

@@ -14,6 +14,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.simone.jarvismobile.core.navigation.LatLng
 import com.simone.jarvismobile.core.navigation.Route
 import org.maplibre.android.MapLibre
+import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapView
@@ -40,6 +41,12 @@ private const val ROUTE_SOURCE = "jarvis-route-src"
  * `NavigationScreen` so the offline-navigation screen and the future
  * `DrivingModeActivity` share the exact same map rendering path instead of
  * two copies of it (spec §17 "non duplicare").
+ *
+ * [cameraBearingDegrees]/[cameraTiltDegrees] are optional (spec §8
+ * `DrivingCameraController`): left null, the camera stays the simple
+ * north-up top-down view the offline Navigation screen has always used —
+ * only a caller that opts in (JARVIS Drive's follow mode) gets heading-up
+ * rotation and a navigation tilt.
  */
 @Composable
 fun JarvisMapView(
@@ -49,6 +56,9 @@ fun JarvisMapView(
     followCamera: Boolean,
     modifier: Modifier = Modifier,
     styleAsset: String = "jarvis-navigation.json",
+    cameraZoom: Double = 16.0,
+    cameraBearingDegrees: Float? = null,
+    cameraTiltDegrees: Float? = null,
     onLongPress: (LatLng) -> Unit = {},
 ) {
     val context = LocalContext.current
@@ -111,13 +121,19 @@ fun JarvisMapView(
         }
     }
 
-    // Follow the vehicle: recentre the camera on each fix while following.
-    LaunchedEffect(cameraTarget, map, followCamera) {
+    // Follow the vehicle: recentre (and, when asked, rotate/tilt) the camera
+    // on each fix while following.
+    LaunchedEffect(cameraTarget, map, followCamera, cameraZoom, cameraBearingDegrees, cameraTiltDegrees) {
         val m = map ?: return@LaunchedEffect
         val target = cameraTarget ?: return@LaunchedEffect
-        if (followCamera) {
-            m.moveCamera(CameraUpdateFactory.newLatLngZoom(MapLibreLatLng(target.lat, target.lon), 16.0))
-        }
+        if (!followCamera) return@LaunchedEffect
+        val position = CameraPosition.Builder()
+            .target(MapLibreLatLng(target.lat, target.lon))
+            .zoom(cameraZoom)
+            .bearing((cameraBearingDegrees ?: 0f).toDouble())
+            .tilt((cameraTiltDegrees ?: 0f).toDouble())
+            .build()
+        m.moveCamera(CameraUpdateFactory.newCameraPosition(position))
     }
 
     AndroidView(factory = { mapView }, modifier = modifier.fillMaxSize())

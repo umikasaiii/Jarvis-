@@ -29,6 +29,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.simone.jarvismobile.core.driving.DrivingCameraController
 import com.simone.jarvismobile.core.driving.DrivingExpandedPanel
 import com.simone.jarvismobile.driving.DrivingModeViewModel
 import com.simone.jarvismobile.ui.navigation.JarvisMapView
@@ -62,18 +63,26 @@ fun DrivingModeScreen(
     }
     DisposableEffect(Unit) { onDispose { viewModel.stopLocation() } }
 
+    // Heading-up follow: the map itself rotates to match travel direction
+    // (spec §8 DrivingCameraController), so the puck stays fixed pointing up
+    // rather than also rotating — rotating both would double-count bearing.
+    val cameraState = DrivingCameraController.forFollow(fix)
+
     Box(Modifier.fillMaxSize().background(DrivingSportColors.Bg)) {
         JarvisMapView(
             cameraTarget = fix?.location,
             route = route,
             stylePmtilesPath = viewModel.coveringPmtilesPath(),
             followCamera = true,
+            cameraZoom = cameraState?.zoom ?: 16.0,
+            cameraBearingDegrees = cameraState?.bearingDegrees,
+            cameraTiltDegrees = cameraState?.tiltDegrees,
             onLongPress = { viewModel.navigateTo(it) },
             modifier = Modifier.fillMaxSize(),
         )
 
         if (fix != null) {
-            VehiclePuck(bearingDegrees = fix?.bearingDegrees, modifier = Modifier.align(Alignment.Center))
+            VehiclePuck(bearingDegrees = null, modifier = Modifier.align(Alignment.Center))
         }
 
         Column(Modifier.fillMaxSize()) {
@@ -133,7 +142,7 @@ fun DrivingModeScreen(
             VoiceDock(
                 voiceState = state.voiceState,
                 compact = state.incomingCall,
-                onMicClick = { /* SessionCoordinator session start is already reachable via wake word / Home; a dedicated mic-press entry point is a future integration point (spec §14). */ },
+                onMicClick = viewModel::startVoiceSession,
                 modifier = Modifier.padding(JarvisDriveDimensions.ScreenMargin),
             )
         }

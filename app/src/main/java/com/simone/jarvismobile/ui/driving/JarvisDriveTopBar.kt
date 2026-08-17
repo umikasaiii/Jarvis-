@@ -4,11 +4,15 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
@@ -34,43 +38,53 @@ fun JarvisDriveTopBar(
     onOpenSettings: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    Row(
+    // The background/border span the true top edge (edge-to-edge, spec §10);
+    // the row of content is inset below the status bar via windowInsetsPadding
+    // so the system clock/icons never collide with "JARVIS Drive" — same
+    // pattern as the existing overlay's DrivingTopPanel.
+    Column(
         modifier
             .fillMaxWidth()
-            .height(JarvisDriveDimensions.TopBarHeight)
             .background(DrivingSportColors.PanelStrong)
-            .border(JarvisDriveDimensions.HairlineWidth, DrivingSportColors.Line)
-            .padding(horizontal = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
+            .border(JarvisDriveDimensions.HairlineWidth, DrivingSportColors.Line),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier.size(30.dp).clip(CircleShape)
-                    .background(DrivingSportColors.Bg)
-                    .border(JarvisDriveDimensions.HairlineWidth, DrivingSportColors.Accent, CircleShape),
-            )
-            Text(
-                "JARVIS Drive",
-                color = DrivingSportColors.TextMain,
-                style = JarvisDriveTypography.CardValueMedium,
-                modifier = Modifier.padding(start = 10.dp),
-            )
-            if (voiceState == DrivingVoiceState.LISTENING) {
-                Text(
-                    "· In ascolto",
-                    color = DrivingSportColors.Accent,
-                    style = JarvisDriveTypography.CardTitle,
-                    modifier = Modifier.padding(start = 8.dp),
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .windowInsetsPadding(WindowInsets.statusBars)
+                .height(JarvisDriveDimensions.TopBarHeight)
+                .padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier.size(30.dp).clip(CircleShape)
+                        .background(DrivingSportColors.Bg)
+                        .border(JarvisDriveDimensions.HairlineWidth, DrivingSportColors.Accent, CircleShape),
                 )
+                Text(
+                    "JARVIS Drive",
+                    color = DrivingSportColors.TextMain,
+                    style = JarvisDriveTypography.CardValueMedium,
+                    modifier = Modifier.padding(start = 10.dp),
+                )
+                if (voiceState == DrivingVoiceState.LISTENING) {
+                    Text(
+                        "· In ascolto",
+                        color = DrivingSportColors.Accent,
+                        style = JarvisDriveTypography.CardTitle,
+                        modifier = Modifier.padding(start = 8.dp),
+                    )
+                }
             }
-        }
-        Row {
-            IconButton(onClick = {}) {
-                Icon(Icons.Filled.Shield, contentDescription = null, tint = DrivingSportColors.Muted)
-            }
-            IconButton(onClick = onOpenSettings) {
-                Icon(Icons.Filled.Settings, contentDescription = "Impostazioni", tint = DrivingSportColors.Muted)
+            Row {
+                IconButton(onClick = {}) {
+                    Icon(Icons.Filled.Shield, contentDescription = null, tint = DrivingSportColors.Muted)
+                }
+                IconButton(onClick = onOpenSettings) {
+                    Icon(Icons.Filled.Settings, contentDescription = "Impostazioni", tint = DrivingSportColors.Muted)
+                }
             }
         }
     }
