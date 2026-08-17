@@ -204,6 +204,7 @@ fun DrivingModeScreen(
                     remainingMinutes = state.remainingMinutes,
                     remainingDistanceMeters = state.remainingDistanceMeters,
                     modifier = Modifier.padding(horizontal = JarvisDriveDimensions.ScreenMargin),
+                    onStop = viewModel::stopNavigation,
                 )
             }
 

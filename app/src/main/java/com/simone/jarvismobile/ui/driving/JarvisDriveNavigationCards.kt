@@ -10,6 +10,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -88,6 +93,7 @@ fun EtaBar(
     remainingMinutes: Int?,
     remainingDistanceMeters: Int?,
     modifier: Modifier = Modifier,
+    onStop: (() -> Unit)? = null,
 ) {
     Row(
         modifier
@@ -96,11 +102,25 @@ fun EtaBar(
             .background(DrivingSportColors.PanelStrong)
             .border(1.5.dp, JarvisDriveBrushes.EdgeSoft, JarvisDriveShapes.Card)
             .padding(vertical = 10.dp),
-        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        EtaField(etaEpochMs?.let(::formatClock) ?: "—", "ARRIVO")
-        EtaField(remainingMinutes?.toString() ?: "—", "MIN")
-        EtaField(remainingDistanceMeters?.let { formatDistance(it.toDouble()) } ?: "—", "DISTANZA")
+        Row(Modifier.weight(1f), horizontalArrangement = Arrangement.SpaceEvenly) {
+            EtaField(etaEpochMs?.let(::formatClock) ?: "—", "ARRIVO")
+            EtaField(remainingMinutes?.toString() ?: "—", "MIN")
+            EtaField(remainingDistanceMeters?.let { formatDistance(it.toDouble()) } ?: "—", "DISTANZA")
+        }
+        if (onStop != null) {
+            IconButton(
+                onClick = onStop,
+                modifier = Modifier
+                    .padding(end = 6.dp)
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .background(DrivingSportColors.Panel),
+            ) {
+                Icon(Icons.Filled.Close, contentDescription = "Termina navigazione", tint = DrivingSportColors.Accent)
+            }
+        }
     }
 }
 
