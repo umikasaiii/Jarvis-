@@ -31,6 +31,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.simone.jarvismobile.core.driving.DrivingExpandedPanel
 import com.simone.jarvismobile.driving.DrivingModeViewModel
+import com.simone.jarvismobile.ui.navigation.JarvisMapView
 
 /**
  * `INTERNAL_JARVIS_NAVIGATION`'s screen (spec §2/§10): a real, in-app,
