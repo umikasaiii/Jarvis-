@@ -22,6 +22,15 @@ object DrivingSportColors {
     val Muted = Color(0xFFCFB4B1)
     val Ok = Color(0xFF7EF6A4)
 
+    /**
+     * The dual red/blue neon accent from the reference JARVIS Drive kit
+     * (`jarvis_drive_reference` sprite sheet) — used only as the second stop
+     * of an edge-gradient border ([JarvisDriveBrushes]), never as a standalone
+     * fill, so the rest of the palette (still red-only for state/meaning:
+     * voice states, traffic colors, accents) is unaffected.
+     */
+    val AccentBlue = Color(0xFF3AC0FF)
+
     val VoiceReady = Color(0xFF7EF6A4)
     val VoiceListening = Color(0xFFFF9C7A)
     val VoiceProcessing = Color(0xFFFFC06E)

@@ -79,7 +79,7 @@ private fun MediaDock(
         modifier = Modifier
             .fillMaxWidth()
             .background(DrivingSportColors.PanelStrong, RoundedCornerShape(26.dp))
-            .border(1.dp, DrivingSportColors.Line, RoundedCornerShape(26.dp))
+            .border(1.5.dp, JarvisDriveBrushes.EdgeSoft, RoundedCornerShape(26.dp))
             .clickable(onClick = onToggle)
             .padding(12.dp),
     ) {
@@ -167,7 +167,7 @@ private fun MediaIconButton(symbol: String, main: Boolean = false, onClick: () -
             .size(size)
             .clickable(onClick = onClick)
             .background(if (main) DrivingSportColors.AccentSoft else DrivingSportColors.PanelStrong, RoundedCornerShape(if (main) 16.dp else 14.dp))
-            .border(1.dp, DrivingSportColors.LineStrong, RoundedCornerShape(if (main) 16.dp else 14.dp)),
+            .border(1.5.dp, JarvisDriveBrushes.Edge, RoundedCornerShape(if (main) 16.dp else 14.dp)),
         contentAlignment = Alignment.Center,
     ) {
         Text(symbol, color = DrivingSportColors.TextMain, fontSize = 17.sp)
@@ -188,7 +188,7 @@ private fun MediaSheet(queue: List<String>) {
         modifier = Modifier
             .fillMaxWidth()
             .background(DrivingSportColors.PanelStrong, RoundedCornerShape(24.dp))
-            .border(1.dp, DrivingSportColors.Line, RoundedCornerShape(24.dp))
+            .border(1.5.dp, JarvisDriveBrushes.EdgeSoft, RoundedCornerShape(24.dp))
             .padding(12.dp),
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

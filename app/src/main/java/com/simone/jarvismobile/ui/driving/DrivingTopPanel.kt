@@ -199,7 +199,7 @@ fun NotifSheet(
         modifier = Modifier
             .fillMaxWidth()
             .background(DrivingSportColors.PanelStrong, RoundedCornerShape(22.dp))
-            .border(1.dp, DrivingSportColors.Line, RoundedCornerShape(22.dp))
+            .border(1.5.dp, JarvisDriveBrushes.Edge, RoundedCornerShape(22.dp))
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -214,7 +214,7 @@ fun NotifSheet(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(Color.White.copy(alpha = 0.025f), RoundedCornerShape(18.dp))
-                    .border(1.dp, DrivingSportColors.Line, RoundedCornerShape(18.dp))
+                    .border(1.dp, JarvisDriveBrushes.EdgeSoft, RoundedCornerShape(18.dp))
                     .padding(12.dp),
             ) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {

@@ -35,7 +35,7 @@ fun ManeuverCard(maneuver: ManeuverUiModel, modifier: Modifier = Modifier) {
         modifier
             .clip(JarvisDriveShapes.Card)
             .background(DrivingSportColors.PanelStrong)
-            .border(JarvisDriveDimensions.HairlineWidth, DrivingSportColors.Line, JarvisDriveShapes.Card)
+            .border(1.5.dp, JarvisDriveBrushes.EdgeSoft, JarvisDriveShapes.Card)
             .padding(JarvisDriveDimensions.CardPadding),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -60,7 +60,7 @@ fun SpeedCard(currentSpeedKmh: Int?, speedLimitKmh: Int?, modifier: Modifier = M
         modifier
             .clip(JarvisDriveShapes.Card)
             .background(DrivingSportColors.PanelStrong)
-            .border(JarvisDriveDimensions.HairlineWidth, DrivingSportColors.Line, JarvisDriveShapes.Card)
+            .border(1.5.dp, JarvisDriveBrushes.EdgeSoft, JarvisDriveShapes.Card)
             .padding(JarvisDriveDimensions.CardPadding),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -94,7 +94,7 @@ fun EtaBar(
             .fillMaxWidth()
             .clip(JarvisDriveShapes.Card)
             .background(DrivingSportColors.PanelStrong)
-            .border(JarvisDriveDimensions.HairlineWidth, DrivingSportColors.Line, JarvisDriveShapes.Card)
+            .border(1.5.dp, JarvisDriveBrushes.EdgeSoft, JarvisDriveShapes.Card)
             .padding(vertical = 10.dp),
         horizontalArrangement = Arrangement.SpaceEvenly,
     ) {

@@ -53,7 +53,7 @@ private fun MessagePeek(notifications: List<DrivingNotification>, onClick: () ->
             .clickable(onClick = onClick)
             .clip(JarvisDriveShapes.Card)
             .background(DrivingSportColors.PanelStrong)
-            .border(JarvisDriveDimensions.HairlineWidth, DrivingSportColors.Line, JarvisDriveShapes.Card)
+            .border(1.5.dp, JarvisDriveBrushes.EdgeSoft, JarvisDriveShapes.Card)
             .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

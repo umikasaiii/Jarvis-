@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material.icons.filled.Place
@@ -70,7 +71,7 @@ fun VoiceDock(
             .height(if (compact) 64.dp else JarvisDriveDimensions.VoiceDockHeight)
             .clip(JarvisDriveShapes.Dock)
             .background(DrivingSportColors.PanelStrong)
-            .border(JarvisDriveDimensions.HairlineWidth, DrivingSportColors.LineStrong, JarvisDriveShapes.Dock),
+            .border(1.5.dp, JarvisDriveBrushes.Edge, JarvisDriveShapes.Dock),
     ) {
         if (compact) {
             MicButton(accent = accent, glowAlpha = glowAlpha, size = 44.dp, onClick = onMicClick, modifier = Modifier.align(Alignment.Center))
@@ -79,11 +80,13 @@ fun VoiceDock(
                 Modifier.fillMaxWidth().padding(PaddingValues(vertical = 10.dp)),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
+                DockNotch()
                 Text(
                     voiceStateLabel(voiceState),
                     color = accent,
                     style = JarvisDriveTypography.CardTitle,
                     textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(top = 4.dp),
                 )
                 Row(
                     Modifier.fillMaxWidth().padding(top = 6.dp),
@@ -113,6 +116,37 @@ private fun MicButton(accent: Color, glowAlpha: Float, size: androidx.compose.ui
                 .border(2.dp, accent.copy(alpha = glowAlpha), CircleShape),
         ) {
             Icon(Icons.Filled.Mic, contentDescription = "Microfono", tint = accent)
+        }
+    }
+}
+
+/**
+ * The circular "layers" button next to the voice dock (reference kit's
+ * 10_LAYERS_BUTTON). Wired to a real action — opening Mappe offline, where
+ * the offline/online map and TomTom key live — rather than a decorative
+ * no-op. The reference's 09_APP_DRAWER_BUTTON is deliberately not added yet:
+ * it has no obvious real action in this app without inventing one.
+ */
+@Composable
+fun LayersButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    IconButton(
+        onClick = onClick,
+        modifier = modifier
+            .size(48.dp)
+            .clip(JarvisDriveShapes.Dock)
+            .background(DrivingSportColors.PanelStrong)
+            .border(1.5.dp, JarvisDriveBrushes.Edge, JarvisDriveShapes.Dock),
+    ) {
+        Icon(Icons.Filled.Layers, contentDescription = "Mappe", tint = DrivingSportColors.TextMain)
+    }
+}
+
+/** The three small dots above the "Pronto"/"In ascolto" label (reference kit's dock notch). */
+@Composable
+private fun DockNotch() {
+    Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+        repeat(3) {
+            Box(Modifier.size(4.dp).clip(CircleShape).background(DrivingSportColors.Muted.copy(alpha = 0.5f)))
         }
     }
 }

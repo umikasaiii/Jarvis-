@@ -1,6 +1,8 @@
 package com.simone.jarvismobile.ui.driving
 
+import androidx.compose.foundation.shape.CutCornerShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -29,7 +31,29 @@ object JarvisDriveDimensions {
 object JarvisDriveShapes {
     val Card = RoundedCornerShape(JarvisDriveDimensions.CardCornerRadius)
     val Pill = RoundedCornerShape(50)
-    val Dock = RoundedCornerShape(28.dp)
+
+    /**
+     * The chamfered "technical panel" bar from the reference kit's voice
+     * dock and side buttons — a fixed corner cut (not percent-based) so it
+     * reads as a consistent bevel regardless of the bar's height, unlike
+     * [RoundedCornerShape] which the old plain pill used.
+     */
+    val Dock = CutCornerShape(22.dp)
+}
+
+/**
+ * The dual red→blue edge from the reference JARVIS Drive kit
+ * (`jarvis_drive_reference` sprite sheet) — every card/panel border in that
+ * kit reads as a horizontal gradient from red (left) to blue (right), never
+ * a flat single-hue line. [Edge] mirrors the old [DrivingSportColors.LineStrong]
+ * weight (emphasized panels: the voice dock, the mic ring), [EdgeSoft] the
+ * old [DrivingSportColors.Line] weight (regular cards).
+ */
+object JarvisDriveBrushes {
+    val Edge: Brush = Brush.horizontalGradient(listOf(DrivingSportColors.Accent, DrivingSportColors.AccentBlue))
+    val EdgeSoft: Brush = Brush.horizontalGradient(
+        listOf(DrivingSportColors.Accent.copy(alpha = 0.55f), DrivingSportColors.AccentBlue.copy(alpha = 0.55f)),
+    )
 }
 
 object JarvisDriveTypography {

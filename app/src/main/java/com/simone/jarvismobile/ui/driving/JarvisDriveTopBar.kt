@@ -24,6 +24,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.unit.dp
 import com.simone.jarvismobile.core.driving.DrivingVoiceState
 
@@ -46,7 +47,7 @@ fun JarvisDriveTopBar(
         modifier
             .fillMaxWidth()
             .background(DrivingSportColors.PanelStrong)
-            .border(JarvisDriveDimensions.HairlineWidth, DrivingSportColors.Line),
+            .border(1.5.dp, JarvisDriveBrushes.EdgeSoft, RectangleShape),
     ) {
         Row(
             Modifier
@@ -61,7 +62,7 @@ fun JarvisDriveTopBar(
                 Box(
                     Modifier.size(30.dp).clip(CircleShape)
                         .background(DrivingSportColors.Bg)
-                        .border(JarvisDriveDimensions.HairlineWidth, DrivingSportColors.Accent, CircleShape),
+                        .border(1.5.dp, JarvisDriveBrushes.Edge, CircleShape),
                 )
                 Text(
                     "JARVIS Drive",

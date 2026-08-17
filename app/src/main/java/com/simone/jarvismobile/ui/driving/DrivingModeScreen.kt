@@ -233,13 +233,22 @@ fun DrivingModeScreen(
                 }
             }
 
-            VoiceDock(
-                voiceState = state.voiceState,
-                compact = state.incomingCall,
-                onMicClick = viewModel::startVoiceSession,
-                onPlacesClick = { showSearch = true },
-                modifier = Modifier.padding(JarvisDriveDimensions.ScreenMargin),
-            )
+            Row(
+                Modifier.fillMaxWidth().padding(JarvisDriveDimensions.ScreenMargin),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                VoiceDock(
+                    voiceState = state.voiceState,
+                    compact = state.incomingCall,
+                    onMicClick = viewModel::startVoiceSession,
+                    onPlacesClick = { showSearch = true },
+                    modifier = Modifier.weight(1f),
+                )
+                if (!state.incomingCall) {
+                    LayersButton(onClick = { viewModel.requestImportMap(); onClose() })
+                }
+            }
         }
 
         if (showSearch) {
