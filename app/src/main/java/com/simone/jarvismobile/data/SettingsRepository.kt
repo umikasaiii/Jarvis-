@@ -83,6 +83,11 @@ class SettingsRepository @Inject constructor(
         // Driving Mode V2 (internal navigation, developer-only while in progress).
         val DRIVING_NAVIGATION_MODE = stringPreferencesKey("driving_navigation_mode")
 
+        // Online map fallback (OpenFreeMap) when no offline region covers the
+        // current position — a sanctioned online exception like Open-Meteo,
+        // opt-in and off by default (see docs/PRIVACY.md).
+        val ONLINE_MAP_FALLBACK = booleanPreferencesKey("online_map_fallback_enabled")
+
         // Document import (Memory & Knowledge).
         val DOC_SAVE_DEFAULT = booleanPreferencesKey("doc_save_to_vault_default")
         val DOC_AUTO_INDEX = booleanPreferencesKey("doc_auto_index")
@@ -674,6 +679,19 @@ class SettingsRepository @Inject constructor(
 
     suspend fun setDrivingNavigationMode(value: DrivingNavigationMode) {
         context.settingsDataStore.edit { it[Keys.DRIVING_NAVIGATION_MODE] = value.name }
+    }
+
+    /**
+     * Off by default — offline-first stays the real default. When on, JARVIS
+     * Drive may fetch map tiles from OpenFreeMap (free, unlimited, no account —
+     * see [com.simone.jarvismobile.navigation.OnlineMapStyleFetcher]) only when
+     * no offline region covers the current position, and only while online.
+     */
+    val onlineMapFallbackEnabled: Flow<Boolean> =
+        context.settingsDataStore.data.map { it[Keys.ONLINE_MAP_FALLBACK] ?: false }
+
+    suspend fun setOnlineMapFallbackEnabled(value: Boolean) {
+        context.settingsDataStore.edit { it[Keys.ONLINE_MAP_FALLBACK] = value }
     }
 
     suspend fun setDocSaveToVaultDefault(value: Boolean) {

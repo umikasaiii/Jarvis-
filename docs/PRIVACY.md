@@ -28,9 +28,11 @@ confirmed like every other outbound message in this app.
 
 ## Sanctioned online exceptions
 
-Two features are explicitly allowed to break offline-first, and only these
-two: **weather** (opt-in, Impostazioni › Automazioni) and, later, **live-traffic
-travel-time estimates** for a place. Both share the same shape:
+A small, explicit list of features are allowed to break offline-first — no
+others: **weather** (opt-in, Impostazioni › Automazioni), **online map tiles**
+for JARVIS Drive (opt-in, Impostazioni › Navigazione offline › Mappe offline)
+and, later, **live-traffic travel-time estimates** for a place. All three share
+the same shape:
 
 - **Off by default.** Nothing is fetched unless the user turns the setting on.
 - **Only when the network is actually present.** No fetch is forced; a missing
@@ -42,6 +44,15 @@ travel-time estimates** for a place. Both share the same shape:
 - **No LLM, no vault, no transcript involved.** The network call is a plain
   HTTP fetch of public forecast/routing data; it never carries anything the
   user typed or said.
+
+**Online map tiles** specifically: when on, and only when no offline region
+covers the current position, JARVIS Drive fetches map tiles from
+[OpenFreeMap](https://openfreemap.org) — free, unlimited, no account, no API
+key. The request is a plain anonymous tile fetch; it never carries the user's
+saved places, destination history, search queries, or anything typed/said.
+Turning the toggle off (the default) never breaks the map — it just means an
+uncovered position shows the existing "nessuna mappa offline" state instead of
+an online tile, same as before this existed.
 
 Every other feature — STT, the local LLM, TTS, memory, agenda, automations —
 stays fully offline, unaffected by this opt-in.

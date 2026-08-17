@@ -90,6 +90,25 @@ fun MapsScreen(
                 modifier = Modifier.padding(vertical = 12.dp),
             )
 
+            val onlineFallbackEnabled by viewModel.onlineMapFallbackEnabled.collectAsStateWithLifecycle()
+            Card(Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Mappa online quando serve", style = MaterialTheme.typography.bodyMedium)
+                        androidx.compose.material3.Switch(
+                            checked = onlineFallbackEnabled,
+                            onCheckedChange = viewModel::setOnlineMapFallbackEnabled,
+                        )
+                    }
+                    Text(
+                        "Spento di default. Se acceso, JARVIS Drive usa mappe online " +
+                            "gratuite (OpenFreeMap, nessun account) solo dove non hai " +
+                            "installato una mappa offline, e solo con connessione attiva.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+
             Button(onClick = { picker.launch(arrayOf("*/*")) }, modifier = Modifier.fillMaxWidth()) {
                 Text("Importa mappa (.pmtiles)")
             }

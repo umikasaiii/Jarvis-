@@ -70,7 +70,8 @@ fun DrivingModeScreen(
     val fix by viewModel.fix.collectAsStateWithLifecycle()
     val route by viewModel.route.collectAsStateWithLifecycle()
     val coveringRegion by viewModel.coveringRegion.collectAsStateWithLifecycle()
-    val noOfflineMap = fix != null && coveringRegion == null
+    val onlineSourceJson by viewModel.onlineSourceJson.collectAsStateWithLifecycle()
+    val noOfflineMap = fix != null && coveringRegion == null && onlineSourceJson == null
 
     var granted by remember { mutableStateOf(viewModel.hasLocationPermission()) }
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -116,6 +117,7 @@ fun DrivingModeScreen(
             cameraBearingDegrees = if (following) cameraState?.bearingDegrees else null,
             cameraTiltDegrees = if (following) cameraState?.tiltDegrees else null,
             traveledDistanceMeters = traveledDistanceMeters,
+            onlineSourceJson = onlineSourceJson,
             onLongPress = { viewModel.navigateTo(it) },
             onUserGesture = { cameraUi = cameraUi.userPanned() },
             onVehicleScreenPosition = { vehicleScreenPosition = it },
@@ -146,6 +148,19 @@ fun DrivingModeScreen(
                     )
                 }
             }
+        }
+
+        // Required attribution while the online map fallback is the active
+        // source (OpenFreeMap terms) — small and out of the way, but present.
+        if (onlineSourceJson != null) {
+            Text(
+                "OpenFreeMap · OpenMapTiles · OpenStreetMap",
+                color = DrivingSportColors.Muted,
+                style = JarvisDriveTypography.CardLabel,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+            )
         }
 
         // RECENTER (spec §12): only shown once a real drag has left follow mode.

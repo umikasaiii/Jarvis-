@@ -16,13 +16,16 @@ import com.simone.jarvismobile.core.navigation.Place
 import com.simone.jarvismobile.core.navigation.PlaceHit
 import com.simone.jarvismobile.core.navigation.RegionMetadata
 import com.simone.jarvismobile.core.navigation.Route
+import com.simone.jarvismobile.data.SettingsRepository
 import com.simone.jarvismobile.navigation.InstalledRegionStore
 import com.simone.jarvismobile.navigation.NavigationRepository
+import com.simone.jarvismobile.navigation.OnlineMapStyleFetcher
 import com.simone.jarvismobile.navigation.PlaceSearchRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -42,6 +45,8 @@ class DrivingModeViewModel @Inject constructor(
     private val notifications: DrivingNotificationController,
     private val mediaController: DrivingMediaController,
     private val placeSearch: PlaceSearchRepository,
+    private val settings: SettingsRepository,
+    private val onlineMapStyleFetcher: OnlineMapStyleFetcher,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DrivingUiState(navigationMode = DrivingNavigationMode.INTERNAL_JARVIS_NAVIGATION))
@@ -53,8 +58,25 @@ class DrivingModeViewModel @Inject constructor(
     /** Null when no installed region covers the current fix — drives the "no offline map" state. */
     val coveringRegion: StateFlow<RegionMetadata?> = navigationRepository.coveringRegion
 
+    /**
+     * The online map fallback's vector source (spec: opt-in, off by default —
+     * see [SettingsRepository.onlineMapFallbackEnabled]), fetched only once
+     * there is genuinely no offline coverage here and the user has turned the
+     * fallback on. Null otherwise, including on fetch failure — the existing
+     * "no offline map" state is always the safe default, never a fake tile.
+     */
+    private val _onlineSourceJson = MutableStateFlow<String?>(null)
+    val onlineSourceJson: StateFlow<String?> = _onlineSourceJson.asStateFlow()
+
     init {
         mediaController.start()
+
+        viewModelScope.launch {
+            combine(navigationRepository.coveringRegion, settings.onlineMapFallbackEnabled) { region, enabled -> region == null && enabled }
+                .collect { shouldFetch ->
+                    _onlineSourceJson.value = if (shouldFetch) onlineMapStyleFetcher.vectorSourceJson() else null
+                }
+        }
 
         viewModelScope.launch {
             coordinator.state.collect { conv ->

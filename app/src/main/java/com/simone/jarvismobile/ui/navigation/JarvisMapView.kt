@@ -81,6 +81,13 @@ fun JarvisMapView(
     cameraTiltDegrees: Float? = null,
     /** Distance driven so far along [route], for the "route-traversed" layer (spec §7). Null/0 draws nothing. */
     traveledDistanceMeters: Double? = null,
+    /**
+     * A vector source JSON object (e.g. `{"type":"vector","url":"..."}`) to use
+     * for the `jarvis-region` source when [stylePmtilesPath] is null — the opt-in
+     * online map fallback (see [com.simone.jarvismobile.navigation.OnlineMapStyleFetcher]).
+     * Ignored whenever a local region is available; local always wins.
+     */
+    onlineSourceJson: String? = null,
     onLongPress: (LatLng) -> Unit = {},
     onUserGesture: () -> Unit = {},
     onVehicleScreenPosition: (Offset?) -> Unit = {},
@@ -140,18 +147,21 @@ fun JarvisMapView(
         map?.let { projectVehicle(it) }
     }
 
-    // Load the style once the map is ready, injecting the covering region's local
-    // PMTiles as the vector source. With no region installed the style still
-    // renders (dark background) and the caller's own "download map" state can show.
-    LaunchedEffect(map, stylePmtilesPath, styleAsset) {
+    // Load the style once the map is ready, injecting either the covering
+    // region's local PMTiles or (opt-in fallback) an online vector source as
+    // "jarvis-region". With neither available the style still renders (dark
+    // background) and the caller's own "download map" state can show. Local
+    // always wins over online when both happen to be present.
+    LaunchedEffect(map, stylePmtilesPath, onlineSourceJson, styleAsset) {
         val m = map ?: return@LaunchedEffect
         val base = runCatching {
             context.assets.open(styleAsset).bufferedReader().use { it.readText() }
         }.getOrNull() ?: return@LaunchedEffect
-        val styleJson = if (stylePmtilesPath != null) {
-            base.replace("pmtiles://LOCAL_REGION_PLACEHOLDER", "pmtiles://file://$stylePmtilesPath")
-        } else {
-            base
+        val styleJson = when {
+            stylePmtilesPath != null ->
+                base.replace("pmtiles://LOCAL_REGION_PLACEHOLDER", "pmtiles://file://$stylePmtilesPath")
+            onlineSourceJson != null -> replaceRegionSource(base, onlineSourceJson) ?: base
+            else -> base
         }
         styleReady = false
         m.setStyle(Style.Builder().fromJson(styleJson)) { styleReady = true }
@@ -202,6 +212,20 @@ fun JarvisMapView(
 
     AndroidView(factory = { mapView }, modifier = modifier.fillMaxSize())
 }
+
+/**
+ * Splices [sourceJson] (a vector source object) into `base`'s `sources.jarvis-region`,
+ * for the online map fallback — copies the fetched source verbatim rather than
+ * assuming its shape, so [OnlineMapStyleFetcher][com.simone.jarvismobile.navigation.OnlineMapStyleFetcher]
+ * never has to be kept in sync with this parsing. Null on any malformed input
+ * (never a crash, never a half-applied style).
+ */
+private fun replaceRegionSource(base: String, sourceJson: String): String? = runCatching {
+    val style = org.json.JSONObject(base)
+    val sources = style.getJSONObject("sources")
+    sources.put("jarvis-region", org.json.JSONObject(sourceJson))
+    style.toString()
+}.getOrNull()
 
 /**
  * The prefix of [geometry] covering the first [distanceMeters] of its length,

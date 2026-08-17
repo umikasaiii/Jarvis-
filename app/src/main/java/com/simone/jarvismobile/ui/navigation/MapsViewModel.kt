@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.simone.jarvismobile.core.navigation.RegionMetadata
+import com.simone.jarvismobile.data.SettingsRepository
 import com.simone.jarvismobile.navigation.CatalogEntry
 import com.simone.jarvismobile.navigation.RegionCatalogRepository
 import com.simone.jarvismobile.navigation.RegionManager
@@ -21,7 +22,19 @@ import javax.inject.Inject
 class MapsViewModel @Inject constructor(
     private val regionManager: RegionManager,
     private val catalog: RegionCatalogRepository,
+    private val settings: SettingsRepository,
 ) : ViewModel() {
+
+    /**
+     * Opt-in, off by default (spec: PRIVACY.md sanctioned online exceptions).
+     * When on, JARVIS Drive may fall back to OpenFreeMap tiles (free, no
+     * account) only where no offline region is installed, and only online.
+     */
+    val onlineMapFallbackEnabled: StateFlow<Boolean> = settings.onlineMapFallbackEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    fun setOnlineMapFallbackEnabled(value: Boolean) =
+        viewModelScope.launch { settings.setOnlineMapFallbackEnabled(value) }
 
     val regions: StateFlow<List<RegionMetadata>> = regionManager.regions
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
