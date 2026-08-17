@@ -90,6 +90,10 @@ fun DrivingModeScreen(
     var cameraUi by remember { mutableStateOf(DrivingCameraUiState()) }
     val following = cameraUi.mode == DrivingCameraMode.FOLLOW
     var vehicleScreenPosition by remember { mutableStateOf<Offset?>(null) }
+    var showSearch by remember { mutableStateOf(false) }
+    // GPS speed is noisy near zero even while parked; a couple of m/s of slack
+    // keeps that jitter from flipping the search UI to "moving" while stopped.
+    val stationary = (fix?.speedMps ?: 0f) < 2f
 
     Box(Modifier.fillMaxSize().background(DrivingSportColors.Bg)) {
         JarvisMapView(
@@ -204,7 +208,17 @@ fun DrivingModeScreen(
                 voiceState = state.voiceState,
                 compact = state.incomingCall,
                 onMicClick = viewModel::startVoiceSession,
+                onPlacesClick = { showSearch = true },
                 modifier = Modifier.padding(JarvisDriveDimensions.ScreenMargin),
+            )
+        }
+
+        if (showSearch) {
+            DestinationSearchSheet(
+                stationary = stationary,
+                onSearch = viewModel::searchDestinations,
+                onSelect = viewModel::navigateToPlace,
+                onClose = { showSearch = false },
             )
         }
 

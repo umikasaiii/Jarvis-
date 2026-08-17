@@ -19,6 +19,8 @@ data class CatalogEntry(
     val pmtilesUrl: String,
     val routingUrl: String?,
     val searchUrl: String?,
+    /** Pre-built SQLite+FTS5 search index (spec §2) — preferred over [searchUrl] when present. */
+    val searchSqliteUrl: String?,
     val sizeBytes: Long,
     val sha256: String?,
 )
@@ -32,7 +34,7 @@ data class CatalogEntry(
  * Manifest shape:
  *   { "regions": [
  *       { "id":"lazio","name":"Lazio","pmtilesUrl":"…","routingUrl":"…",
- *         "searchUrl":"…","sizeBytes":123,"sha256":"…" }, … ] }
+ *         "searchSqliteUrl":"…","searchUrl":"…","sizeBytes":123,"sha256":"…" }, … ] }
  */
 @Singleton
 class RegionCatalogRepository @Inject constructor(
@@ -73,6 +75,7 @@ class RegionCatalogRepository @Inject constructor(
                 pmtilesUrl = pmtiles,
                 routingUrl = o.optString("routingUrl", "").ifBlank { null },
                 searchUrl = o.optString("searchUrl", "").ifBlank { null },
+                searchSqliteUrl = o.optString("searchSqliteUrl", "").ifBlank { null },
                 sizeBytes = o.optLong("sizeBytes", 0L),
                 sha256 = o.optString("sha256", "").ifBlank { null },
             )

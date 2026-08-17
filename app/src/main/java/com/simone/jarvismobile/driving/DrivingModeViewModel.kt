@@ -12,10 +12,13 @@ import com.simone.jarvismobile.core.driving.toDrivingVoiceState
 import com.simone.jarvismobile.core.driving.toManeuverUiModel
 import com.simone.jarvismobile.core.navigation.GpsFix
 import com.simone.jarvismobile.core.navigation.LatLng
+import com.simone.jarvismobile.core.navigation.Place
+import com.simone.jarvismobile.core.navigation.PlaceHit
 import com.simone.jarvismobile.core.navigation.RegionMetadata
 import com.simone.jarvismobile.core.navigation.Route
 import com.simone.jarvismobile.navigation.InstalledRegionStore
 import com.simone.jarvismobile.navigation.NavigationRepository
+import com.simone.jarvismobile.navigation.PlaceSearchRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -38,6 +41,7 @@ class DrivingModeViewModel @Inject constructor(
     private val regionStore: InstalledRegionStore,
     private val notifications: DrivingNotificationController,
     private val mediaController: DrivingMediaController,
+    private val placeSearch: PlaceSearchRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DrivingUiState(navigationMode = DrivingNavigationMode.INTERNAL_JARVIS_NAVIGATION))
@@ -102,6 +106,21 @@ class DrivingModeViewModel @Inject constructor(
 
     fun navigateTo(destination: LatLng) = navigationRepository.startNavigation(destination)
     fun stopNavigation() = navigationRepository.stopNavigation()
+
+    /**
+     * Offline destination search for the "Places" entry point (spec §11) — the
+     * exact same [PlaceSearchRepository] the voice pipeline uses, capped to a
+     * short list ("non introdurre liste lunghe"). Blank query returns no results
+     * rather than every known place.
+     */
+    suspend fun searchDestinations(query: String): List<PlaceHit> =
+        if (query.isBlank()) emptyList() else placeSearch.search(query, fix.value?.location, limit = 5)
+
+    /** Starts navigation to a tapped search result and records it, same as a voice destination. */
+    fun navigateToPlace(place: Place) {
+        navigationRepository.startNavigation(place.location)
+        viewModelScope.launch { runCatching { placeSearch.addHistory(place.name, place.location) } }
+    }
 
     /** "Importa una mappa": asks MainActivity's JarvisApp to open MapsScreen once this Activity finishes. */
     fun requestImportMap() = navigationRepository.requestOpenMapsScreen()

@@ -5,9 +5,17 @@ osm_to_jarvis.py — genera i dati offline per JARVIS Offline Navigation.
 Da un estratto OpenStreetMap (.osm.pbf) produce i file che l'app JARVIS scarica
 e usa senza rete:
 
-  routing.json   la rete stradale (grafo nodi + archi) per il calcolo percorsi
-  search.json    l'elenco luoghi/POI per la ricerca "portami a ..."
-  regions.json   (opzionale) il manifest del catalogo, con gli URL da ospitare
+  routing.json    la rete stradale (grafo nodi + archi) per il calcolo percorsi
+  search.json     l'elenco luoghi/POI per la ricerca "portami a ..." (leggibile)
+  search.sqlite   lo stesso indice, pre-costruito in SQLite+FTS5: l'app lo apre
+                   in sola lettura invece di ricostruire l'indice sul telefono
+  regions.json    (opzionale) il manifest del catalogo, con gli URL da ospitare
+
+Schema di search.sqlite (vedi anche README.md):
+  meta(key, value)                    schema_version, region_id
+  places (FTS5): ref_id, name, address, category, region_id, lat, lon, importance
+    — ref_id/category/region_id/lat/lon/importance sono UNINDEXED (dati, non
+    testo cercabile); name/address sono le colonne su cui gira il full-text.
 
 NON gira sul telefono: si esegue una volta sul computer. La mappa vettoriale
 (.pmtiles) NON viene creata qui (serve un tile-builder tipo planetiler/tilemaker,
@@ -41,6 +49,7 @@ import argparse
 import hashlib
 import json
 import os
+import sqlite3
 import sys
 from collections import Counter
 
@@ -48,6 +57,11 @@ try:
     import osmium
 except ImportError:
     sys.exit("Manca pyosmium. Installa con:  pip install osmium")
+
+# Bumped only if the search.sqlite table shape changes incompatibly — mirrors
+# RegionMetadata.SUPPORTED_REGION_SCHEMA_VERSION on the app side, so a reader
+# can refuse an old/new-format database instead of misreading its columns.
+SEARCH_SCHEMA_VERSION = 1
 
 # --- classificazione strade -------------------------------------------------
 
@@ -150,20 +164,31 @@ class JarvisHandler(osmium.SimpleHandler):
             lat, lon = self._way_centroid(w)
             if lat is not None:
                 self._add_place(name, cat, lat, lon, 0.4, self._address(tags, name))
+        elif self._has_address(tags):
+            # Un edificio con civico ma senza nome/categoria (la stragrande
+            # maggioranza delle case) — indicizzato solo come indirizzo, cosi'
+            # "Via Cristoforo Colombo 100" si trova anche se non e' un POI.
+            lat, lon = self._way_centroid(w)
+            if lat is not None:
+                self._add_address_place(tags, lat, lon)
 
     def node(self, n):
         tags = {t.k: t.v for t in n.tags}
         name = tags.get("name", "")
-        if not name:
-            return
-        place = tags.get("place")
-        if place in PLACE_CATEGORY:
-            cat, imp = PLACE_CATEGORY[place]
-            self._add_place(name, cat, n.location.lat, n.location.lon, imp, name)
-            return
-        cat = self._category(tags)
-        if cat:
-            self._add_place(name, cat, n.location.lat, n.location.lon, 0.4, self._address(tags, name))
+        if name:
+            place = tags.get("place")
+            if place in PLACE_CATEGORY:
+                cat, imp = PLACE_CATEGORY[place]
+                self._add_place(name, cat, n.location.lat, n.location.lon, imp, name)
+                return
+            cat = self._category(tags)
+            if cat:
+                self._add_place(name, cat, n.location.lat, n.location.lon, 0.4, self._address(tags, name))
+                return
+        # Nodi indirizzo puri (comuni in OSM: addr:housenumber/addr:street senza
+        # alcun name) — spec §3/§12 "Via Cristoforo Colombo 100".
+        if self._has_address(tags):
+            self._add_address_place(tags, n.location.lat, n.location.lon)
 
     # --- helper ---
     def _category(self, tags):
@@ -183,10 +208,29 @@ class JarvisHandler(osmium.SimpleHandler):
         return None
 
     def _address(self, tags, fallback):
+        """Human-readable address string: 'Via X 12, 00184 Roma'. Housenumber and
+        postcode are folded in (spec §3) so both display and the ranker's
+        address-completeness bonus (PlaceSearchRanker, comma-separated parts) see
+        them, without needing separate structured columns."""
         street = tags.get("addr:street", "")
+        housenumber = tags.get("addr:housenumber", "")
+        postcode = tags.get("addr:postcode", "")
         city = tags.get("addr:city", "")
-        parts = [p for p in (street, city) if p]
+        street_part = f"{street} {housenumber}".strip() if street else ""
+        locality_part = " ".join(p for p in (postcode, city) if p)
+        parts = [p for p in (street_part, locality_part) if p]
         return ", ".join(parts) if parts else fallback
+
+    def _has_address(self, tags):
+        return bool(tags.get("addr:housenumber")) and bool(tags.get("addr:street"))
+
+    def _add_address_place(self, tags, lat, lon):
+        street = tags["addr:street"]
+        housenumber = tags["addr:housenumber"]
+        label = f"{street} {housenumber}"
+        # Low importance: a bare address is a fallback match, never meant to
+        # outrank a real POI/landmark with the same tokens in its name.
+        self._add_place(label, "ADDRESS", lat, lon, 0.15, self._address(tags, label))
 
     def _way_centroid(self, w):
         lats, lons = [], []
@@ -256,6 +300,51 @@ def _emit_link(handler, node_id, links, seg_refs, klass, speed, ow, toll, ferry,
 
 # --- output -----------------------------------------------------------------
 
+def write_sqlite(places, region_id, path):
+    """Pre-built SQLite+FTS5 search index (spec §2, §4): generated here on the
+    PC, opened read-only by the app — no OSM/JSON parsing or index-building ever
+    runs on the phone. One file per region, same shape as search.json's entries."""
+    if os.path.exists(path):
+        os.remove(path)
+    conn = sqlite3.connect(path)
+    try:
+        conn.execute("PRAGMA journal_mode=DELETE")  # ship a single file, no -wal/-shm sidecars
+        conn.execute("CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+        conn.execute("INSERT INTO meta VALUES ('schema_version', ?)", (str(SEARCH_SCHEMA_VERSION),))
+        conn.execute("INSERT INTO meta VALUES ('region_id', ?)", (region_id,))
+        try:
+            conn.execute(
+                """
+                CREATE VIRTUAL TABLE places USING fts5(
+                    ref_id UNINDEXED,
+                    name,
+                    address,
+                    category UNINDEXED,
+                    region_id UNINDEXED,
+                    lat UNINDEXED,
+                    lon UNINDEXED,
+                    importance UNINDEXED
+                )
+                """
+            )
+        except sqlite3.OperationalError as e:
+            conn.close()
+            os.remove(path)
+            sys.exit(
+                f"Il modulo sqlite3 di questo Python non supporta FTS5 ({e}). "
+                "Serve un Python la cui libreria SQLite sia compilata con FTS5 "
+                "(vale per la maggior parte delle build recenti di python.org/Linux)."
+            )
+        conn.executemany(
+            "INSERT INTO places (ref_id, name, address, category, region_id, lat, lon, importance) "
+            "VALUES (:id, :name, :address, :category, :region_id, :lat, :lon, :importance)",
+            ({**p, "region_id": region_id} for p in places),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def sha256_file(path):
     h = hashlib.sha256()
     with open(path, "rb") as f:
@@ -293,6 +382,10 @@ def main():
         json.dump(h.places, f, ensure_ascii=False)
     print(f"Scritto {search_path}  ({len(h.places)} voci)")
 
+    sqlite_path = os.path.join(args.out, "search.sqlite")
+    write_sqlite(h.places, args.region_id, sqlite_path)
+    print(f"Scritto {sqlite_path}  ({len(h.places)} voci, FTS5, schema v{SEARCH_SCHEMA_VERSION})")
+
     # Manifest opzionale.
     if args.base_url:
         base = args.base_url.rstrip("/")
@@ -302,6 +395,7 @@ def main():
             "name": args.region_name,
             "routingUrl": f"{base}/{rid}.routing.json",
             "searchUrl": f"{base}/{rid}.search.json",
+            "searchSqliteUrl": f"{base}/{rid}.search.sqlite",
         }
         if args.pmtiles:
             entry["pmtilesUrl"] = f"{base}/{rid}.pmtiles"
@@ -317,11 +411,12 @@ def main():
             json.dump(manifest, f, ensure_ascii=False, indent=2)
         print(f"Scritto {manifest_path}")
         print("\nRinomina/carica i file cosi' (accanto alla mappa):")
-        print(f"  {rid}.routing.json   <- {routing_path}")
-        print(f"  {rid}.search.json    <- {search_path}")
+        print(f"  {rid}.routing.json    <- {routing_path}")
+        print(f"  {rid}.search.json     <- {search_path}   (facoltativo: fallback/ispezione)")
+        print(f"  {rid}.search.sqlite   <- {sqlite_path}   (usato dall'app)")
         if args.pmtiles:
-            print(f"  {rid}.pmtiles        <- {args.pmtiles}")
-        print(f"  regions.json         <- {manifest_path}  (URL da incollare nell'app)")
+            print(f"  {rid}.pmtiles         <- {args.pmtiles}")
+        print(f"  regions.json          <- {manifest_path}  (URL da incollare nell'app)")
 
     print("\nFatto.")
 

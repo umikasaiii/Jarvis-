@@ -47,6 +47,18 @@ object PlaceSearchRanker {
     private const val W_DISTANCE = 0.25
     private const val W_IMPORTANCE = 0.15
 
+    /**
+     * A full-name match ("piazza venezia" for "Piazza Venezia") should clearly
+     * outrank a partial one even before distance/importance are weighed — this is
+     * what lets [DestinationResolver] tell "obviously this one" from "ambiguous"
+     * (spec §6 item 1).
+     */
+    private const val EXACT_MATCH_BONUS = 0.5
+
+    /** Small per-part credit for a fuller address ("Via X, 12, Roma" over "Roma"). */
+    private const val ADDRESS_PART_BONUS = 0.03
+    private const val MAX_ADDRESS_PARTS = 3
+
     fun rank(
         query: String,
         candidates: List<Place>,
@@ -55,6 +67,7 @@ object PlaceSearchRanker {
     ): List<PlaceHit> {
         val qTokens = ItalianTextNormalizer.tokens(query)
         if (qTokens.isEmpty()) return emptyList()
+        val normalizedQuery = ItalianTextNormalizer.normalize(query)
 
         val maxDistance = 200_000.0 // beyond this, proximity contributes ~nothing
         val hits = candidates.map { place ->
@@ -65,7 +78,12 @@ object PlaceSearchRanker {
             val distance = origin?.let { Geo.distanceMeters(it, place.location) }
             val proximity = distance?.let { (1.0 - (it / maxDistance)).coerceIn(0.0, 1.0) } ?: 0.0
 
-            val score = W_TEXT * relevance + W_DISTANCE * proximity + W_IMPORTANCE * place.importance
+            val exactMatch = ItalianTextNormalizer.normalize(place.name) == normalizedQuery
+            val addressParts = if (place.address.isBlank()) 0 else place.address.count { it == ',' } + 1
+            val addressBonus = addressParts.coerceAtMost(MAX_ADDRESS_PARTS) * ADDRESS_PART_BONUS
+
+            val score = W_TEXT * relevance + W_DISTANCE * proximity + W_IMPORTANCE * place.importance +
+                (if (exactMatch) EXACT_MATCH_BONUS else 0.0) + addressBonus
             PlaceHit(place, score, distance)
         }
 

@@ -107,6 +107,7 @@ class SessionCoordinator @Inject constructor(
     private val documents: com.simone.jarvismobile.document.DocumentImportManager,
     private val navigation: com.simone.jarvismobile.navigation.NavigationRepository,
     private val placeSearch: com.simone.jarvismobile.navigation.PlaceSearchRepository,
+    private val drivingMode: com.simone.jarvismobile.driving.DrivingModeManager,
 ) {
 
     /** Long-lived scope for fire-and-forget persistence; lives as long as the app. */
@@ -319,6 +320,22 @@ class SessionCoordinator @Inject constructor(
     @Volatile private var pendingPick: PendingPick? = null
 
     /**
+     * Set when offline destination search found several plausible candidates and
+     * none dominated (spec §9, §10 — [com.simone.jarvismobile.core.navigation.ResolvedDestination.Ambiguous]).
+     * Kept apart from [pendingPick] for the same reason that one is kept apart
+     * from [pendingSlot]: the answer picks among known candidates rather than
+     * filling a missing argument, and it is its own destination-only concern —
+     * reusing the exact shape already proven for agenda disambiguation rather
+     * than inventing a second dialog manager.
+     */
+    private data class PendingDestinationPick(
+        val candidates: List<com.simone.jarvismobile.core.navigation.PlaceHit>,
+        val options: com.simone.jarvismobile.core.navigation.RouteOptions,
+    )
+
+    @Volatile private var pendingDestinationPick: PendingDestinationPick? = null
+
+    /**
      * The planner entry the conversation is currently about, so "spostalo alle
      * 16" has something to bind to. Set whenever an entry is acted upon.
      */
@@ -525,7 +542,13 @@ class SessionCoordinator @Inject constructor(
         // Live Translator voice control: "avvia traduzione live italiano
         // giapponese", "ferma la traduzione", "scambia le lingue". Handled before
         // the command/LLM path so a translator phrase never becomes a chat turn.
-        if (pendingConfirmation == null && pendingSlot == null && !awaitingAnswer) {
+        // pendingDestinationPick is checked here too: JARVIS's own disambiguation
+        // question ("via Roma a Frascati o a Roma?") is answered in
+        // generateAtomicAnswer below, but a reply that itself happens to parse as
+        // a fresh NavIntent (e.g. containing "portami a") would otherwise be
+        // hijacked into starting an unrelated navigation right here, before that
+        // answer is ever reached.
+        if (pendingConfirmation == null && pendingSlot == null && pendingDestinationPick == null && !awaitingAnswer) {
             handleTranslatorCommand(transcript)?.let { return it }
             // Offline navigation voice control: "portami a…", "distributore più
             // vicino", "quanto manca?", "ferma navigazione". Coordinates come only
@@ -729,6 +752,27 @@ class SessionCoordinator @Inject constructor(
                 }
                 is com.simone.jarvismobile.tools.AgendaRouting.NotFound -> return resolved.spoken
             }
+        }
+
+        // JARVIS asked which of several offline-search destination candidates was
+        // meant ("Via Roma a Frascati o a Roma?"). Answered before anything else
+        // for the same reason as pendingPick above.
+        pendingDestinationPick?.let { pick ->
+            pendingDestinationPick = null
+            if (com.simone.jarvismobile.core.intent.IntentAliases.isCancellationOfPendingAction(transcript) ||
+                com.simone.jarvismobile.core.intent.IntentAliases.isNegative(transcript)
+            ) {
+                return "Va bene, lascio stare."
+            }
+            val chosen = pickDestination(pick.candidates, transcript)
+            if (chosen == null) {
+                pendingDestinationPick = pick
+                return "Non ho capito quale dei due intendi. Prova a dire la città, oppure \"il primo\"/\"il secondo\"."
+            }
+            navigation.startNavigation(chosen.location, pick.options)
+            if (!drivingMode.state.value.active) navigation.requestOpenScreen()
+            scope.launch { runCatching { placeSearch.addHistory(chosen.name, chosen.location) } }
+            return "Avvio la navigazione verso ${chosen.name}."
         }
 
         // The user is answering a question JARVIS asked ("Per quanto tempo?").
@@ -1511,7 +1555,11 @@ class SessionCoordinator @Inject constructor(
 
         fun startTo(dest: com.simone.jarvismobile.core.navigation.LatLng, label: String, opts: com.simone.jarvismobile.core.navigation.RouteOptions): String {
             navigation.startNavigation(dest, opts)
-            navigation.requestOpenScreen()
+            // Already looking at JARVIS Drive's own map (INTERNAL_JARVIS_NAVIGATION
+            // Driving Mode) — it shares this same NavigationRepository, so the route
+            // shows up there for free; popping the generic offline-nav overlay on
+            // top of it would fight for the screen instead of helping.
+            if (!drivingMode.state.value.active) navigation.requestOpenScreen()
             scope.launch { runCatching { placeSearch.addHistory(label, dest) } }
             return "Avvio la navigazione verso $label."
         }
@@ -1542,9 +1590,35 @@ class SessionCoordinator @Inject constructor(
                 startTo(fav.location, fav.label.ifBlank { favLabel(intent.kind) }, com.simone.jarvismobile.core.navigation.RouteOptions())
             }
             is com.simone.jarvismobile.core.navigation.NavIntent.Navigate -> {
-                val hit = placeSearch.search(intent.query, here, limit = 1).firstOrNull()
-                    ?: return "Non ho trovato «${intent.query}» nelle mappe offline."
-                startTo(hit.place.location, hit.place.name, intent.options)
+                // Saved place -> explicit coordinate -> offline search -> ranking ->
+                // destination (spec §9). NavIntentParser already routed a bare
+                // favourite phrase to NavigateFavorite above, so what lands here is
+                // free text: an explicit "lat,lon" or a name/address to search.
+                val explicit = com.simone.jarvismobile.core.navigation.DestinationResolver
+                    .resolve(intent.query, favorites = emptyList(), searchCandidates = emptyList(), origin = here)
+                if (explicit is com.simone.jarvismobile.core.navigation.ResolvedDestination.Found &&
+                    explicit.source == com.simone.jarvismobile.core.navigation.DestinationSource.EXPLICIT_COORDINATE
+                ) {
+                    startTo(explicit.place.location, explicit.place.name, intent.options)
+                } else {
+                    val hits = placeSearch.search(intent.query, here, limit = 5)
+                    when (val resolved = com.simone.jarvismobile.core.navigation.DestinationResolver.decide(hits)) {
+                        is com.simone.jarvismobile.core.navigation.ResolvedDestination.Found ->
+                            startTo(resolved.place.location, resolved.place.name, intent.options)
+                        is com.simone.jarvismobile.core.navigation.ResolvedDestination.Ambiguous -> {
+                            pendingDestinationPick = PendingDestinationPick(resolved.candidates, intent.options)
+                            "Ho trovato più risultati: ${describeCandidates(resolved.candidates)}. Quale intendi?"
+                        }
+                        is com.simone.jarvismobile.core.navigation.ResolvedDestination.NotFound,
+                        is com.simone.jarvismobile.core.navigation.ResolvedDestination.OutOfCoverage,
+                        -> if (regionId == null) {
+                            "Non ho una mappa offline per questa zona. Puoi installarne una da Impostazioni → " +
+                                "Navigazione offline → Mappe offline, oppure di' \"apri Google Maps\"."
+                        } else {
+                            "Non ho trovato «${intent.query}» nelle mappe offline installate."
+                        }
+                    }
+                }
             }
             is com.simone.jarvismobile.core.navigation.NavIntent.NavigateNearest -> {
                 if (here == null || regionId == null) return "Non ho ancora la posizione GPS o la mappa di questa zona."
@@ -1562,6 +1636,36 @@ class SessionCoordinator @Inject constructor(
             is com.simone.jarvismobile.core.navigation.NavIntent.SetAvoid,
             -> null // handled inside the navigation screen for an active route
         }
+    }
+
+    private fun describeCandidates(hits: List<com.simone.jarvismobile.core.navigation.PlaceHit>): String =
+        hits.take(3).joinToString(" e ") { hit ->
+            val place = hit.place
+            if (place.address.isNotBlank()) "${place.name} a ${place.address}" else place.name
+        }
+
+    /**
+     * Picks among ambiguous destination [candidates] from the user's follow-up
+     * reply: an ordinal ("il primo") or, more naturally here since the question
+     * already named each candidate's town/address, whichever wording best
+     * matches one of them (re-ranked against just this short candidate set with
+     * the same [com.simone.jarvismobile.core.navigation.PlaceSearchRanker] the
+     * original search used). Returns null when the reply still doesn't clearly
+     * pick one, so the caller can ask again instead of guessing.
+     */
+    private fun pickDestination(
+        candidates: List<com.simone.jarvismobile.core.navigation.PlaceHit>,
+        reply: String,
+    ): com.simone.jarvismobile.core.navigation.Place? {
+        val normalized = com.simone.jarvismobile.core.navigation.ItalianTextNormalizer.normalize(reply)
+        DESTINATION_ORDINALS.entries.firstOrNull { (word, _) ->
+            Regex("""(?<!\p{L})$word(?!\p{L})""").containsMatchIn(normalized)
+        }?.let { (_, index) -> candidates.getOrNull(index)?.place?.let { return it } }
+
+        val reRanked = com.simone.jarvismobile.core.navigation.PlaceSearchRanker.rank(
+            reply, candidates.map { it.place }, navigation.fix.value?.location, limit = 1,
+        )
+        return reRanked.firstOrNull()?.place
     }
 
     private fun favLabel(kind: com.simone.jarvismobile.core.navigation.FavoriteKind): String = when (kind) {
@@ -1693,6 +1797,7 @@ class SessionCoordinator @Inject constructor(
         pendingConfirmation = null
         pendingSlot = null
         pendingPick = null
+        pendingDestinationPick = null
         lastAgendaEntryId = null
         awaitingAnswer = false
         awaitingTranslatorLanguages = false
@@ -1926,6 +2031,13 @@ class SessionCoordinator @Inject constructor(
 
         /** Replies that cancel a pending tool confirmation. */
         private val DECLINE_WORDS = listOf("no", "annulla", "lascia", "niente", "ferma", "stop")
+
+        /** Ordinal words for picking among ambiguous destination candidates. */
+        private val DESTINATION_ORDINALS = mapOf(
+            "primo" to 0, "prima" to 0, "uno" to 0,
+            "secondo" to 1, "seconda" to 1, "due" to 1,
+            "terzo" to 2, "terza" to 2, "tre" to 2,
+        )
         private const val TAG = "JarvisSession"
     }
 }

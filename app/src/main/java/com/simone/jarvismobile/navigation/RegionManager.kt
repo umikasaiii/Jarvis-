@@ -52,6 +52,9 @@ class RegionManager @Inject constructor(
     enum class CompanionKind(val fileName: String, val label: String) {
         ROUTING("routing.json", "percorsi"),
         SEARCH("search.json", "ricerca"),
+
+        /** Pre-built SQLite+FTS5 search index (spec §2) — preferred over [SEARCH]. */
+        SEARCH_SQLITE("search.sqlite", "ricerca"),
     }
 
     data class Progress(
@@ -135,7 +138,15 @@ class RegionManager @Inject constructor(
         downloadJob = scope.launch {
             val region = runDownload(entry.pmtilesUrl, entry.name, entry.sha256) ?: return@launch
             entry.routingUrl?.let { runCompanionDownload(region.id, CompanionKind.ROUTING, it) }
-            entry.searchUrl?.let { runCompanionDownload(region.id, CompanionKind.SEARCH, it) }
+            // Prefer the pre-built search.sqlite (spec §2) when the manifest offers
+            // one; search.json is only the fallback for an older catalogue that
+            // doesn't have it yet — never both, to avoid double-counting a region.
+            val searchSqliteUrl = entry.searchSqliteUrl
+            if (searchSqliteUrl != null) {
+                runCompanionDownload(region.id, CompanionKind.SEARCH_SQLITE, searchSqliteUrl)
+            } else {
+                entry.searchUrl?.let { runCompanionDownload(region.id, CompanionKind.SEARCH, it) }
+            }
         }
     }
 
@@ -182,7 +193,9 @@ class RegionManager @Inject constructor(
                 currentCall = null
                 if (!part.renameTo(dest)) { part.copyTo(dest, overwrite = true); part.delete() }
                 bumpVersion(dir, companion)
-                if (companion == CompanionKind.SEARCH) runCatching { placeSearch.reloadPlaces(regionId) }
+                if (companion == CompanionKind.SEARCH || companion == CompanionKind.SEARCH_SQLITE) {
+                    runCatching { placeSearch.reloadPlaces(regionId) }
+                }
                 refresh()
                 _progress.value = Progress(name, Phase.DONE, dest.length(), dest.length())
             } catch (t: Throwable) {
@@ -204,7 +217,8 @@ class RegionManager @Inject constructor(
             val versions = json.optJSONObject("versions") ?: JSONObject()
             when (companion) {
                 CompanionKind.ROUTING -> versions.put("routingVersion", versions.optInt("routingVersion", 0) + 1)
-                CompanionKind.SEARCH -> versions.put("searchIndexVersion", versions.optInt("searchIndexVersion", 0) + 1)
+                CompanionKind.SEARCH, CompanionKind.SEARCH_SQLITE ->
+                    versions.put("searchIndexVersion", versions.optInt("searchIndexVersion", 0) + 1)
             }
             json.put("versions", versions)
             metaFile.writeText(json.toString())

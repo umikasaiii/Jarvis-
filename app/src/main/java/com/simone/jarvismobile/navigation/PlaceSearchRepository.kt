@@ -28,13 +28,21 @@ import javax.inject.Singleton
 class PlaceSearchRepository @Inject constructor(
     private val dao: NavDao,
     private val store: InstalledRegionStore,
+    private val sqliteIndex: RegionSearchIndex,
 ) {
     /**
      * Loads a region's places into the FTS index the first time it's needed, from
      * navigation/maps/<id>/search.json — a plain JSON array of places. A region
      * without that file simply has no searchable POIs yet.
+     *
+     * Skipped entirely for a region that already ships `search.sqlite`
+     * (pre-built FTS5, spec §2): that file is queried directly by
+     * [sqliteIndex] instead, so nothing is parsed/inserted on the phone for it.
+     * `search.json` stays the fallback for a region installed before this file
+     * existed, or re-fetched from an older catalogue.
      */
     suspend fun ensurePlacesLoaded(regionId: String) = withContext(Dispatchers.IO) {
+        if (sqliteIndex.hasSqlite(regionId)) return@withContext
         if (dao.placeCount(regionId) > 0) return@withContext
         val file = File(store.regionDir(regionId), "search.json")
         if (!file.exists()) return@withContext
@@ -59,29 +67,53 @@ class PlaceSearchRepository @Inject constructor(
         }.onFailure { Log.w(TAG, "places_load_failed ${it.javaClass.simpleName}") }
     }
 
-    /** Rebuilds a region's place index from a freshly-downloaded search.json. */
+    /**
+     * Rebuilds a region's place index after a fresh `search.json`/`search.sqlite`
+     * download. For a `search.sqlite` region this just drops the cached read-only
+     * handle to the old file (renamed-over on disk, but an already-open handle
+     * would otherwise keep serving the stale one) — there is nothing to delete
+     * from Room, since that region was never copied into it.
+     */
     suspend fun reloadPlaces(regionId: String) = withContext(Dispatchers.IO) {
+        sqliteIndex.invalidate(regionId)
         runCatching { dao.deleteRegionPlaces(regionId) }
         ensurePlacesLoaded(regionId)
     }
 
+    /**
+     * Text/address search across every installed region (spec §5). A region
+     * shipping the pre-built `search.sqlite` is queried directly there; a region
+     * that only has the older `search.json` is queried from the on-device Room
+     * FTS table [ensurePlacesLoaded] populated it into — the two sources never
+     * overlap for the same region, so their results are just concatenated.
+     */
     suspend fun search(query: String, origin: LatLng?, limit: Int = 10): List<PlaceHit> =
         withContext(Dispatchers.IO) {
             val match = ftsQuery(query) ?: return@withContext emptyList()
-            val candidates = runCatching { dao.searchPlaces(match, 60) }.getOrDefault(emptyList())
-                .map { it.toPlace() }
-            PlaceSearchRanker.rank(query, candidates, origin, limit)
+            val regionIds = runCatching { store.installed().map { it.id } }.getOrDefault(emptyList())
+            val fromSqlite = regionIds.filter { sqliteIndex.hasSqlite(it) }
+                .flatMap { sqliteIndex.search(it, match, 60) }
+            val fromRoom = runCatching { dao.searchPlaces(match, 60) }.getOrDefault(emptyList()).map { it.toPlace() }
+            PlaceSearchRanker.rank(query, fromSqlite + fromRoom, origin, limit)
         }
 
     suspend fun nearby(category: PlaceCategory, origin: LatLng, regionId: String): PlaceHit? =
         withContext(Dispatchers.IO) {
-            val candidates = dao.placesByCategory(category.name, regionId).map { it.toPlace() }
+            val candidates = if (sqliteIndex.hasSqlite(regionId)) {
+                sqliteIndex.byCategory(regionId, category)
+            } else {
+                dao.placesByCategory(category.name, regionId).map { it.toPlace() }
+            }
             PlaceSearchRanker.nearest(category, candidates, origin)
         }
 
     suspend fun reverseGeocode(point: LatLng, regionId: String): Place? =
         withContext(Dispatchers.IO) {
-            val all = dao.placesInRegion(regionId).map { it.toPlace() }
+            val all = if (sqliteIndex.hasSqlite(regionId)) {
+                sqliteIndex.all(regionId)
+            } else {
+                dao.placesInRegion(regionId).map { it.toPlace() }
+            }
             PlaceSearchRanker.reverse(point, all)
         }
 

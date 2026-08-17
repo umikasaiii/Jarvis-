@@ -264,3 +264,42 @@ A dedicated turn-by-turn routing engine (Valhalla or equivalent) — NOT impleme
 today (used by the Navigation screen) — it is not Valhalla, and evaluating a
 dedicated routing engine for richer profiles/traffic-aware routing remains
 future work, tracked separately from this UI-architecture phase.
+
+### Offline destination search
+
+Another undocumented-until-now discovery, found the same way as (1) above:
+`core/navigation/PlaceSearch.kt` (`ItalianTextNormalizer`, `PlaceSearchRanker`),
+`Favorites.kt` (`FavoriteResolver`), `NavIntent`/`NavIntentParser`, and
+`PlaceSearchRepository` (Room FTS4) already implemented offline text/POI/favourite
+search and were already wired into `SessionCoordinator.handleNavigationCommand`.
+What was missing — closed in this phase:
+
+```
+query
+ ↓
+FavoriteResolver (casa/lavoro/preferiti)
+ ↓
+DestinationResolver.parseExplicitCoordinate ("41.90, 12.50")
+ ↓
+PlaceSearchRepository.search()  ── per-region: search.sqlite (RegionSearchIndex,
+ ↓                                  read-only, pre-built on a PC) or, for a region
+PlaceSearchRanker.rank()            that only has the older search.json, the
+ ↓                                  on-device Room FTS4 table it was loaded into
+DestinationResolver.decide()
+ ├─ Found (dominant score gap)         → NavigationRepository.startNavigation()
+ ├─ Ambiguous (no dominant hit)        → SessionCoordinator.pendingDestinationPick,
+ │                                        same shape as pendingPick (agenda), answered
+ │                                        by ordinal or by re-ranking the reply
+ └─ NotFound / OutOfCoverage           → distinct spoken message (region installed
+                                          here but nothing matched, vs. no map at all)
+```
+
+`search.sqlite` is generated once on a PC by `tools/navigation/osm_to_jarvis.py`
+(SQLite+FTS5, Python's standard library, no extra dependency) and shipped next to
+`routing.json`/`<id>.pmtiles`; the app only ever opens it read-only
+(`RegionSearchIndex`) — no OSM parsing or index build ever runs on the phone.
+`search.json` remains a fallback for a region installed before this existed.
+`DestinationResolver` (`:core`, pure, 14 tests) is the only place that decides
+Found vs. Ambiguous, so both the voice pipeline and a future UI search box share
+one answer for "is this destination obvious or not". Schema: see
+`tools/navigation/README.md`.
