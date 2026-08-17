@@ -134,7 +134,7 @@ fun DestinationSearchSheet(
                 }
             } else if (query.isNotBlank()) {
                 Text(
-                    "Nessun risultato nelle mappe offline installate.",
+                    "Nessun risultato.",
                     color = DrivingSportColors.Muted,
                     style = JarvisDriveTypography.Body,
                     modifier = Modifier.padding(top = 10.dp),

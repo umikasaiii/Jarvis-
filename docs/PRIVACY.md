@@ -30,9 +30,11 @@ confirmed like every other outbound message in this app.
 
 A small, explicit list of features are allowed to break offline-first — no
 others: **weather** (opt-in, Impostazioni › Automazioni), **online map tiles**
-for JARVIS Drive (opt-in, Impostazioni › Navigazione offline › Mappe offline)
-and **live traffic** on JARVIS Drive's own internal map (opt-in, same screen).
-All share the same shape:
+for JARVIS Drive (opt-in, Impostazioni › Navigazione offline › Mappe offline),
+**live traffic** on JARVIS Drive's own internal map (opt-in, same screen) and
+**online destination search** (same toggle, fill-in only — see below, it does
+not share the "nothing typed" guarantee the others do). The first three share
+the same shape:
 
 - **Off by default.** Nothing is fetched unless the user turns the setting on.
 - **Only when the network is actually present.** No fetch is forced; a missing
@@ -66,6 +68,24 @@ uses), and sent only as a query parameter on TomTom's own tile requests —
 never to any other host, never alongside a route, a destination, or anything
 typed or said. Turning the toggle off, or never saving a key, leaves the map
 exactly as it is today: no traffic layer, no request made.
+
+**Online destination search is a different shape of exception — flagged
+separately because it breaks the "never anything typed or said" guarantee
+the other exceptions make.** When live traffic is on (same TomTom key,
+same toggle — Impostazioni › Navigazione offline › Mappe offline), JARVIS
+Drive's "Cerca destinazione" only calls TomTom's online search
+(`TomTomSearchFetcher`) as a **fill-in**, and only when the offline index
+does not already return enough results: the offline
+`PlaceSearchRepository` always runs first and its results are never
+dropped or replaced. When the online fill-in does run, it sends the
+**typed search text** plus a rounded current position to TomTom, so this
+one path is a real, deliberate exception to "nothing typed leaves the
+device." It never sends the conversation, the vault, saved places, or
+destination history — only the text the user is actively typing into that
+one field, for that one request. Turning the toggle off, or never saving a
+key, keeps destination search exactly as it was before this existed:
+offline-only, and an honest "nessun risultato" when the offline index
+doesn't have it.
 
 Every other feature — STT, the local LLM, TTS, memory, agenda, automations —
 stays fully offline, unaffected by this opt-in.

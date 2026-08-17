@@ -21,12 +21,14 @@ import com.simone.jarvismobile.navigation.InstalledRegionStore
 import com.simone.jarvismobile.navigation.NavigationRepository
 import com.simone.jarvismobile.navigation.OnlineMapStyleFetcher
 import com.simone.jarvismobile.navigation.PlaceSearchRepository
+import com.simone.jarvismobile.navigation.TomTomSearchFetcher
 import com.simone.jarvismobile.navigation.TomTomTrafficFetcher
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -49,6 +51,7 @@ class DrivingModeViewModel @Inject constructor(
     private val settings: SettingsRepository,
     private val onlineMapStyleFetcher: OnlineMapStyleFetcher,
     private val trafficFetcher: TomTomTrafficFetcher,
+    private val searchFetcher: TomTomSearchFetcher,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DrivingUiState(navigationMode = DrivingNavigationMode.INTERNAL_JARVIS_NAVIGATION))
@@ -147,13 +150,30 @@ class DrivingModeViewModel @Inject constructor(
     fun stopNavigation() = navigationRepository.stopNavigation()
 
     /**
-     * Offline destination search for the "Places" entry point (spec §11) — the
-     * exact same [PlaceSearchRepository] the voice pipeline uses, capped to a
-     * short list ("non introdurre liste lunghe"). Blank query returns no results
+     * Destination search for the "Places" entry point (spec §11) — the exact
+     * same [PlaceSearchRepository] the voice pipeline uses, capped to a short
+     * list ("non introdurre liste lunghe"). Blank query returns no results
      * rather than every known place.
+     *
+     * When the offline index doesn't fill the list, and only while "Traffico
+     * live (TomTom)" is on ([SettingsRepository.liveTrafficEnabled] — the
+     * same TomTom account already used for the traffic layer), the remaining
+     * slots are filled from [TomTomSearchFetcher]'s online geocoding — a
+     * different kind of exception from the traffic tiles: it sends the
+     * user's typed text, not just anonymous coordinates (`docs/PRIVACY.md`).
+     * Offline results always come first and are never replaced.
      */
-    suspend fun searchDestinations(query: String): List<PlaceHit> =
-        if (query.isBlank()) emptyList() else placeSearch.search(query, fix.value?.location, limit = 5)
+    suspend fun searchDestinations(query: String): List<PlaceHit> {
+        if (query.isBlank()) return emptyList()
+        val here = fix.value?.location
+        val offline = placeSearch.search(query, here, limit = 5)
+        if (offline.size >= 5 || !settings.liveTrafficEnabled.first()) return offline
+        val known = offline.mapTo(HashSet()) { it.place.location }
+        val online = searchFetcher.search(query, here, limit = 5 - offline.size)
+            .filter { it.location !in known }
+            .map { PlaceHit(place = it, score = 0.0, distanceMeters = null) }
+        return offline + online
+    }
 
     /** Starts navigation to a tapped search result and records it, same as a voice destination. */
     fun navigateToPlace(place: Place) {
