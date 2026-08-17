@@ -19,7 +19,6 @@ import com.simone.jarvismobile.core.navigation.RoutingProfile
 import com.simone.jarvismobile.core.navigation.RoutingResult
 import com.simone.jarvismobile.core.navigation.VoiceAnnouncer
 import com.simone.jarvismobile.core.mode.LocationPrecision
-import com.simone.jarvismobile.data.SettingsRepository
 import com.simone.jarvismobile.mode.JarvisModeManager
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
@@ -29,7 +28,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -45,9 +43,10 @@ enum class GpsStatus { NONE, ACQUIRING, WEAK, OK }
  * offline-first and never depends on the AI model; instructions come only
  * from the computed route (§6, §19). When the offline engine has no data for
  * the area — increasingly the common case now that JARVIS Drive's map itself
- * can render from online tiles without any region installed — and only
- * while "Traffico live (TomTom)" is on, [onlineRoutingEngine] computes the
- * route instead of leaving navigation unusable (`docs/PRIVACY.md`).
+ * can render from online tiles without any region installed — and a TomTom
+ * key is saved, [onlineRoutingEngine] computes the route instead of leaving
+ * navigation unusable (`docs/PRIVACY.md`); with no key saved it simply
+ * returns null and the offline failure message stands.
  */
 @Singleton
 class NavigationRepository @Inject constructor(
@@ -56,7 +55,6 @@ class NavigationRepository @Inject constructor(
     private val regionStore: InstalledRegionStore,
     private val routingEngine: NavigationEngine,
     private val onlineRoutingEngine: TomTomRoutingEngine,
-    private val settings: SettingsRepository,
     private val placeSearch: PlaceSearchRepository,
     private val voice: NavigationVoiceController,
     private val modeManager: JarvisModeManager,
@@ -185,15 +183,13 @@ class NavigationRepository @Inject constructor(
     }
 
     /**
-     * Online routing fallback (opt-in, `settings.liveTrafficEnabled` — same
-     * TomTom account as live traffic/search). Null when the setting is off,
-     * no key is saved, or the request itself fails — the caller then shows
-     * the honest offline-failure message instead of a fake route.
+     * Online routing fallback — active automatically whenever a TomTom key
+     * is saved (same account as live traffic/search), no separate toggle.
+     * Null when no key is saved or the request itself fails — the caller
+     * then shows the honest offline-failure message instead of a fake route.
      */
-    private suspend fun onlineRouteFallback(from: LatLng, dest: LatLng, prof: RoutingProfile): Route? {
-        if (!settings.liveTrafficEnabled.first()) return null
-        return onlineRoutingEngine.calculateRoute(from, dest, prof)
-    }
+    private suspend fun onlineRouteFallback(from: LatLng, dest: LatLng, prof: RoutingProfile): Route? =
+        onlineRoutingEngine.calculateRoute(from, dest, prof)
 
     fun pauseNavigation() { _navState.value = machine.dispatch(NavEvent.Pause) }
     fun resumeNavigation() { _navState.value = machine.dispatch(NavEvent.Resume) }

@@ -17,9 +17,8 @@ import javax.inject.Singleton
  * [TomTom's Traffic API](https://developer.tomtom.com), which is free for
  * mobile-app map+traffic tile display (generous daily allowance, no card
  * required). Requires the user's own free API key
- * ([TrafficApiKeyStore]) — off whenever no key is saved or the setting is
- * off (`SettingsRepository.liveTrafficEnabled`, default off — same
- * sanctioned-online-exception shape as weather/OpenFreeMap, `docs/PRIVACY.md`).
+ * ([TrafficApiKeyStore]) — active automatically once a key is saved, no
+ * separate toggle; off whenever no key is saved (`docs/PRIVACY.md`).
  *
  * The vector flow tile URL template (`.../traffic/map/4/tile/flow/{style}/{z}/{x}/{y}.pbf?key=...`)
  * is confirmed against TomTom's own official `tomtom-international/postman-collections`

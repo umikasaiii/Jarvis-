@@ -18,9 +18,10 @@ import javax.inject.Singleton
  * Online destination search via TomTom's Fuzzy Search API — the same TomTom
  * account/key already saved for live traffic ([TrafficApiKeyStore],
  * [TomTomTrafficFetcher]). Used only as a **fill-in** when the offline index
- * (`PlaceSearchRepository`) doesn't have enough results, and only while
- * "Traffico live (TomTom)" is on (spec: `docs/PRIVACY.md`) — a meaningfully
- * different, more sensitive exception than the tile fetches: this sends the
+ * (`PlaceSearchRepository`) doesn't have enough results — active
+ * automatically once a key is saved, no separate toggle (spec:
+ * `docs/PRIVACY.md`) — a meaningfully different, more sensitive exception
+ * than the tile fetches: this sends the
  * user's *typed* destination text (plus a rough current position for
  * relevance ranking) to TomTom, not just anonymous coordinates.
  *

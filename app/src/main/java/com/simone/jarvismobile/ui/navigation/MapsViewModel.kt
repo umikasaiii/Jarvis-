@@ -43,17 +43,6 @@ class MapsViewModel @Inject constructor(
     fun setOnlineMapFallbackEnabled(value: Boolean) =
         viewModelScope.launch { settings.setOnlineMapFallbackEnabled(value) }
 
-    /**
-     * Opt-in, off by default. When on and a TomTom API key is saved, JARVIS
-     * Drive's own internal map shows a live traffic overlay — never on the
-     * Google Maps overlay mode, never without the user's own key.
-     */
-    val liveTrafficEnabled: StateFlow<Boolean> = settings.liveTrafficEnabled
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
-
-    fun setLiveTrafficEnabled(value: Boolean) =
-        viewModelScope.launch { settings.setLiveTrafficEnabled(value) }
-
     private val _trafficApiKeySaved = MutableStateFlow(trafficKeyStore.apiKey != null)
     val trafficApiKeySaved: StateFlow<Boolean> = _trafficApiKeySaved.asStateFlow()
 

@@ -22,10 +22,10 @@ import javax.inject.Singleton
  * already saved for live traffic and destination search. [NavigationRepository]
  * calls this only after the offline [AStarRouterEngine] fails (no routing
  * data for the area — the far more common case now that JARVIS Drive's map
- * itself can render without any offline region installed), and only while
- * "Traffico live (TomTom)" is on. A fourth fill-in on the same account, same
- * shape as [TomTomSearchFetcher]: this sends the start/destination
- * coordinates to TomTom, never the vault/transcript/memory
+ * itself can render without any offline region installed) — active
+ * automatically once a key is saved, no separate toggle. A fourth fill-in
+ * on the same account, same shape as [TomTomSearchFetcher]: this sends the
+ * start/destination coordinates to TomTom, never the vault/transcript/memory
  * (`docs/PRIVACY.md`).
  *
  * Endpoint (`.../routing/1/calculateRoute/{lat},{lon}:{lat},{lon}/json`) is

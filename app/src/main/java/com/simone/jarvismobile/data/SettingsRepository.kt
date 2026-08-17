@@ -88,11 +88,6 @@ class SettingsRepository @Inject constructor(
         // opt-in and off by default (see docs/PRIVACY.md).
         val ONLINE_MAP_FALLBACK = booleanPreferencesKey("online_map_fallback_enabled")
 
-        // Live traffic overlay (TomTom vector flow tiles) on JARVIS Drive's own
-        // internal map — opt-in, off by default, requires the user's own free
-        // TomTom API key (stored separately in TrafficApiKeyStore, Keystore-backed).
-        val LIVE_TRAFFIC_ENABLED = booleanPreferencesKey("live_traffic_enabled")
-
         // Document import (Memory & Knowledge).
         val DOC_SAVE_DEFAULT = booleanPreferencesKey("doc_save_to_vault_default")
         val DOC_AUTO_INDEX = booleanPreferencesKey("doc_auto_index")
@@ -697,20 +692,6 @@ class SettingsRepository @Inject constructor(
 
     suspend fun setOnlineMapFallbackEnabled(value: Boolean) {
         context.settingsDataStore.edit { it[Keys.ONLINE_MAP_FALLBACK] = value }
-    }
-
-    /**
-     * Off by default. When on (and a TomTom API key is saved —
-     * [com.simone.jarvismobile.navigation.TrafficApiKeyStore]), JARVIS Drive's
-     * own internal map shows a live traffic-flow overlay
-     * ([com.simone.jarvismobile.navigation.TomTomTrafficFetcher]) — never an
-     * overlay on the Google Maps app, and never on by itself without a key.
-     */
-    val liveTrafficEnabled: Flow<Boolean> =
-        context.settingsDataStore.data.map { it[Keys.LIVE_TRAFFIC_ENABLED] ?: false }
-
-    suspend fun setLiveTrafficEnabled(value: Boolean) {
-        context.settingsDataStore.edit { it[Keys.LIVE_TRAFFIC_ENABLED] = value }
     }
 
     suspend fun setDocSaveToVaultDefault(value: Boolean) {

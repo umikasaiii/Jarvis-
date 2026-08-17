@@ -110,24 +110,18 @@ fun MapsScreen(
                 }
             }
 
-            val liveTrafficEnabled by viewModel.liveTrafficEnabled.collectAsStateWithLifecycle()
             val trafficKeySaved by viewModel.trafficApiKeySaved.collectAsStateWithLifecycle()
             val trafficKeyStatus by viewModel.trafficKeyStatus.collectAsStateWithLifecycle()
             var trafficKeyInput by rememberSaveable { mutableStateOf("") }
             Card(Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Traffico live (TomTom)", style = MaterialTheme.typography.bodyMedium)
-                        androidx.compose.material3.Switch(
-                            checked = liveTrafficEnabled,
-                            onCheckedChange = viewModel::setLiveTrafficEnabled,
-                        )
-                    }
+                    Text("Account TomTom", style = MaterialTheme.typography.bodyMedium)
                     Text(
-                        "Spento di default. Mostra il traffico reale sulla mappa interna di " +
-                            "JARVIS Drive (non un overlay su Google Maps) usando il tuo account " +
-                            "gratuito TomTom. La chiave resta cifrata sul telefono e non viene " +
-                            "mai condivisa con nient'altro.",
+                        "Nessuna chiave salvata = tutto resta offline, come oggi. Appena salvi " +
+                            "la tua chiave gratuita TomTom, JARVIS Drive la usa automaticamente " +
+                            "per traffico live, ricerca destinazioni e instradamento online dove " +
+                            "manca una mappa offline — nessun interruttore da ricordare di accendere. " +
+                            "La chiave resta cifrata sul telefono e non viene mai condivisa con nient'altro.",
                         style = MaterialTheme.typography.bodySmall,
                     )
                     if (trafficKeySaved) {

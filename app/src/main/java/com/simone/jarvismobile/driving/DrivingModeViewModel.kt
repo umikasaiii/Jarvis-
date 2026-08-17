@@ -28,7 +28,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -74,10 +73,10 @@ class DrivingModeViewModel @Inject constructor(
     val onlineSourceJson: StateFlow<String?> = _onlineSourceJson.asStateFlow()
 
     /**
-     * TomTom live-traffic vector source (opt-in, off by default — see
-     * [SettingsRepository.liveTrafficEnabled] and [TomTomTrafficFetcher]). Null
-     * whenever the setting is off or no API key is saved — the map then shows
-     * no traffic layer at all, never a broken one.
+     * TomTom live-traffic vector source ([TomTomTrafficFetcher]) — active
+     * automatically whenever a TomTom API key is saved ([TrafficApiKeyStore]),
+     * no separate toggle. Null when no key is saved — the map then shows no
+     * traffic layer at all, never a broken one.
      */
     private val _trafficSourceJson = MutableStateFlow<String?>(null)
     val trafficSourceJson: StateFlow<String?> = _trafficSourceJson.asStateFlow()
@@ -92,11 +91,9 @@ class DrivingModeViewModel @Inject constructor(
                 }
         }
 
-        viewModelScope.launch {
-            settings.liveTrafficEnabled.collect { enabled ->
-                _trafficSourceJson.value = if (enabled) trafficFetcher.trafficSourceJson() else null
-            }
-        }
+        // No separate toggle: a saved TomTom key is itself the opt-in, so
+        // traffic is on automatically whenever one is present.
+        _trafficSourceJson.value = trafficFetcher.trafficSourceJson()
 
         viewModelScope.launch {
             coordinator.state.collect { conv ->
@@ -155,19 +152,19 @@ class DrivingModeViewModel @Inject constructor(
      * list ("non introdurre liste lunghe"). Blank query returns no results
      * rather than every known place.
      *
-     * When the offline index doesn't fill the list, and only while "Traffico
-     * live (TomTom)" is on ([SettingsRepository.liveTrafficEnabled] — the
-     * same TomTom account already used for the traffic layer), the remaining
-     * slots are filled from [TomTomSearchFetcher]'s online geocoding — a
+     * When the offline index doesn't fill the list, the remaining slots are
+     * filled from [TomTomSearchFetcher]'s online geocoding — active
+     * automatically whenever a TomTom key is saved, no separate toggle. A
      * different kind of exception from the traffic tiles: it sends the
      * user's typed text, not just anonymous coordinates (`docs/PRIVACY.md`).
-     * Offline results always come first and are never replaced.
+     * Offline results always come first and are never replaced; with no key
+     * saved, [TomTomSearchFetcher] itself just returns nothing.
      */
     suspend fun searchDestinations(query: String): List<PlaceHit> {
         if (query.isBlank()) return emptyList()
         val here = fix.value?.location
         val offline = placeSearch.search(query, here, limit = 5)
-        if (offline.size >= 5 || !settings.liveTrafficEnabled.first()) return offline
+        if (offline.size >= 5) return offline
         val known = offline.mapTo(HashSet()) { it.place.location }
         val online = searchFetcher.search(query, here, limit = 5 - offline.size)
             .filter { it.location !in known }
