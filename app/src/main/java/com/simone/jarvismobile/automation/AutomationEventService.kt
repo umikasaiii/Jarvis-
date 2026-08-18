@@ -251,6 +251,13 @@ class AutomationEventService : Service() {
             .setContentIntent(open)
             .setPriority(NotificationCompat.PRIORITY_MIN)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            // Android requires a foreground service to keep showing this
+            // notification for as long as the service runs — it cannot be
+            // suppressed while background event automations stay enabled. What
+            // CAN go away is its lock-screen appearance, which is what actually
+            // bothered the user: SECRET keeps it out of the lock screen entirely
+            // (it still shows, collapsed at IMPORTANCE_MIN, once unlocked).
+            .setVisibility(NotificationCompat.VISIBILITY_SECRET)
             .build()
     }
 
