@@ -15,6 +15,7 @@ import com.simone.jarvismobile.core.state.ConversationState
 import com.simone.jarvismobile.data.SettingsRepository
 import com.simone.jarvismobile.document.DocumentImportManager
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -53,6 +54,23 @@ class HomeViewModel @Inject constructor(
     val messages: StateFlow<List<ChatMessage>> = coordinator.messages
     val sending: StateFlow<Boolean> = combine(coordinator.sending, taskQueue.activeCount) { direct, queued ->
         direct || queued > 0
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    private val _stopRequested = MutableStateFlow(false)
+
+    /**
+     * True from the moment Stop is tapped until [sending] actually catches up.
+     * The cancel itself is real and synchronous (LlmRouter.cancel() →
+     * LitertLmEngine.cancel() → the native Conversation.cancelProcess(), see
+     * LitertLmEngine's doc comment) — but that native call is a blocking JNI
+     * call the local model can take several seconds to unwind from once asked
+     * to stop, and [sending] only flips false once it actually has. Without
+     * this flag the Stop button looks like it did nothing for those seconds;
+     * with it, the UI can show "Fermando…" immediately so the tap is visibly
+     * acknowledged while the model finishes stopping in the background.
+     */
+    val stopping: StateFlow<Boolean> = combine(_stopRequested, sending) { requested, isSending ->
+        requested && isSending
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
     val llmLoadState: StateFlow<com.simone.jarvismobile.llm.LlmLoadState> = coordinator.llmLoadState
     val loadedModelName: StateFlow<String?> = coordinator.loadedModelName
@@ -108,6 +126,7 @@ class HomeViewModel @Inject constructor(
 
     /** Stops the active typed response in WorkManager and inside LiteRT-LM. */
     fun onStopResponse() {
+        _stopRequested.value = true
         coordinator.cancelTextGeneration()
         viewModelScope.launch { taskQueue.cancelActive() }
     }
@@ -123,6 +142,7 @@ class HomeViewModel @Inject constructor(
      * along as a tag on the queued text and is stripped before the message shows.
      */
     fun onSendText(text: String, focus: ChatFocus = ChatFocus.ALL) {
+        _stopRequested.value = false
         viewModelScope.launch { taskQueue.enqueueResponse(focus.tag(text)) }
     }
 }
