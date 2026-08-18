@@ -41,13 +41,19 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.simone.jarvismobile.BuildConfig
 import com.simone.jarvismobile.core.driving.DrivingCameraController
 import com.simone.jarvismobile.core.driving.DrivingCameraMode
 import com.simone.jarvismobile.core.driving.DrivingCameraUiState
 import com.simone.jarvismobile.core.driving.DrivingExpandedPanel
+import com.simone.jarvismobile.core.driving.golden.JarvisDriveMockState
 import com.simone.jarvismobile.core.navigation.Geo
 import com.simone.jarvismobile.driving.DrivingMapsLauncher
 import com.simone.jarvismobile.driving.DrivingModeViewModel
+import com.simone.jarvismobile.ui.driving.golden.JarvisDriveDebugControls
+import com.simone.jarvismobile.ui.driving.golden.JarvisDriveReferenceOverlay
+import com.simone.jarvismobile.ui.driving.golden.JarvisDriveVisualDebug
+import com.simone.jarvismobile.ui.driving.golden.REFERENCE_OVERLAY_DEFAULT_OPACITY_PERCENT
 import com.simone.jarvismobile.ui.navigation.JarvisMapView
 import kotlin.math.roundToInt
 
@@ -66,7 +72,21 @@ fun DrivingModeScreen(
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
-    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val realState by viewModel.uiState.collectAsStateWithLifecycle()
+
+    // Debug-only golden-reference tooling (never in a release build — see
+    // JarvisDriveReferenceOverlay/JarvisDriveVisualDebug's own doc comments).
+    // Mock mode swaps only the HUD data (JarvisDriveMockState mirrors every
+    // value the golden reference itself shows); it never touches fix/route,
+    // since faking a route would mean reaching into NavigationRepository,
+    // out of scope for this pass. It's a local Compose toggle, not a change
+    // to the ViewModel's real state pipeline, so production data is never at risk.
+    var mockStateEnabled by remember { mutableStateOf(false) }
+    var referenceOverlayEnabled by remember { mutableStateOf(false) }
+    var referenceOverlayOpacity by remember { mutableStateOf(REFERENCE_OVERLAY_DEFAULT_OPACITY_PERCENT) }
+    var visualDebugEnabled by remember { mutableStateOf(false) }
+    val state = if (BuildConfig.DEBUG && mockStateEnabled) JarvisDriveMockState.state else realState
+
     val fix by viewModel.fix.collectAsStateWithLifecycle()
     val route by viewModel.route.collectAsStateWithLifecycle()
     val coveringRegion by viewModel.coveringRegion.collectAsStateWithLifecycle()
@@ -312,6 +332,26 @@ fun DrivingModeScreen(
                     OutlinedButton(onClick = onClose, modifier = Modifier.fillMaxWidth()) { Text("Torna indietro") }
                 }
             }
+        }
+
+        // Golden-reference tooling (spec §3/§4): drawn last so it sits on top
+        // of the real UI. Both composables are inert (no click/pointer-input
+        // modifiers of their own) and gated behind BuildConfig.DEBUG here, the
+        // same convention this project already uses for DebugGpsSimulator.
+        if (BuildConfig.DEBUG) {
+            JarvisDriveReferenceOverlay(opacityPercent = if (referenceOverlayEnabled) referenceOverlayOpacity else 0)
+            if (visualDebugEnabled) JarvisDriveVisualDebug()
+            JarvisDriveDebugControls(
+                mockStateEnabled = mockStateEnabled,
+                onMockStateToggle = { mockStateEnabled = it },
+                referenceOverlayEnabled = referenceOverlayEnabled,
+                onReferenceOverlayToggle = { referenceOverlayEnabled = it },
+                referenceOverlayOpacity = referenceOverlayOpacity,
+                onReferenceOverlayOpacityChange = { referenceOverlayOpacity = it },
+                visualDebugEnabled = visualDebugEnabled,
+                onVisualDebugToggle = { visualDebugEnabled = it },
+                modifier = Modifier.align(Alignment.TopCenter).padding(top = 60.dp),
+            )
         }
     }
 }
