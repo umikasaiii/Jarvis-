@@ -15,8 +15,13 @@ import com.simone.jarvismobile.BuildConfig
 import com.simone.jarvismobile.core.driving.DrivingNavigationMode
 import com.simone.jarvismobile.core.navigation.GpxParser
 import com.simone.jarvismobile.core.navigation.GpxReplayRoute
+import com.simone.jarvismobile.core.tts.SupertonicQuality
 import com.simone.jarvismobile.data.SettingsRepository
 import com.simone.jarvismobile.navigation.debug.DebugGpsSimulator
+import com.simone.jarvismobile.tts.AudioFocusGate
+import com.simone.jarvismobile.tts.PcmPlayer
+import com.simone.jarvismobile.tts.SupertonicTtsEngine
+import com.simone.jarvismobile.tts.TtsLoadResult
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -38,6 +43,9 @@ class DiagnosticsViewModel @Inject constructor(
     application: Application,
     private val coordinator: SessionCoordinator,
     private val settings: SettingsRepository,
+    private val supertonic: SupertonicTtsEngine,
+    private val pcmPlayer: PcmPlayer,
+    private val audioFocus: AudioFocusGate,
 ) : AndroidViewModel(application) {
 
     /**
@@ -174,5 +182,62 @@ class DiagnosticsViewModel @Inject constructor(
         _micStatus.value = ""
         _voiceStatus.value = ""
         _sttStatus.value = ""
+    }
+
+    // --- Supertonic debug panel (BuildConfig.DEBUG only, see DiagnosticsScreen) ---
+    // Deliberately bypasses NeuralTtsRepository/SettingsRepository: this must
+    // never perturb the user's actual selected TTS engine or persisted voice
+    // choice, only exercise SupertonicTtsEngine directly for an A/B listen.
+    // SupertonicTtsEngine IS a Hilt @Singleton, though — the same session real
+    // replies use — so the chosen profile is restored to the real default right
+    // after playback instead of silently leaking into the next real reply.
+
+    private val _supertonicBusy = MutableStateFlow(false)
+    val supertonicBusy: StateFlow<Boolean> = _supertonicBusy.asStateFlow()
+
+    private val _supertonicStatus = MutableStateFlow("")
+    val supertonicStatus: StateFlow<String> = _supertonicStatus.asStateFlow()
+
+    /** Synthesises and plays [SUPERTONIC_SAMPLE] at [profile], for a live A/B comparison. */
+    fun runSupertonicProfile(profile: SupertonicQuality) {
+        if (!BuildConfig.DEBUG || _supertonicBusy.value) return
+        _supertonicBusy.value = true
+        _supertonicStatus.value = "Sintesi $profile in corso…"
+        viewModelScope.launch {
+            val startedAt = System.currentTimeMillis()
+            if (!supertonic.isLoaded) {
+                val result = supertonic.load(java.io.File(""), null, null)
+                if (result is TtsLoadResult.Failed) {
+                    _supertonicStatus.value = "Supertonic non disponibile: ${result.reason}"
+                    _supertonicBusy.value = false
+                    return@launch
+                }
+            }
+            supertonic.setQualityProfile(profile)
+            val pcm = supertonic.synthesize(SUPERTONIC_SAMPLE, voice = "supertonic", speed = 1.0f)
+            if (pcm == null || pcm.isEmpty()) {
+                _supertonicStatus.value = "Sintesi $profile non riuscita."
+                _supertonicBusy.value = false
+                return@launch
+            }
+            val elapsed = System.currentTimeMillis() - startedAt
+            audioFocus.acquire { pcmPlayer.stop() }
+            try {
+                pcmPlayer.start(supertonic.sampleRate)
+                pcmPlayer.write(pcm)
+                pcmPlayer.drain()
+            } finally {
+                audioFocus.release()
+            }
+            val seconds = pcm.size.toFloat() / supertonic.sampleRate
+            _supertonicStatus.value =
+                "$profile (passi=${profile.numSteps}): %.2fs audio in %dms".format(seconds, elapsed)
+            supertonic.setQualityProfile(SupertonicQuality.BALANCED)
+            _supertonicBusy.value = false
+        }
+    }
+
+    private companion object {
+        const val SUPERTONIC_SAMPLE = "Ciao. Sono JARVIS. Il nuovo sistema vocale locale è attivo."
     }
 }

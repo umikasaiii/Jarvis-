@@ -100,6 +100,14 @@ android {
         buildConfig = true
     }
 
+    // The Supertonic ONNX graphs (app/src/main/assets/models/supertonic3/) are
+    // already compressed model weights; AAPT's default zip compression only adds
+    // packaging time and a doubled peak-memory footprint at asset-extraction time
+    // for no size benefit. Kept for future large-model assets too, not just this one.
+    androidResources {
+        noCompress += listOf("onnx", "bin")
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -112,6 +120,15 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+        // sherpa-onnx-1.13.5.aar (Supertonic TTS) bundles its own native ONNX
+        // Runtime; this app also depends on onnxruntime-android directly (Kokoro/
+        // Piper). A same-named .so from both would otherwise fail the merge with
+        // "More than one file was found with OS independent path". This cannot be
+        // verified against the real AAR in this environment (see app/libs/README.md)
+        // so it is a defensive pickFirst, not a confirmed fix.
+        jniLibs {
+            pickFirsts += listOf("**/libonnxruntime.so", "**/libc++_shared.so")
         }
     }
 
@@ -166,6 +183,15 @@ dependencies {
     implementation(libs.litertlm.android)
     implementation(libs.androidx.documentfile)
     implementation(libs.onnxruntime.android)
+
+    // Supertonic 3 TTS (offline, bundled model — see app/src/main/assets/models/
+    // supertonic3/ and docs/VOICE.md). sherpa-onnx has no published Maven Central
+    // coordinate for this build, so it ships as a local AAR rather than a version
+    // catalog entry — the exact vendoring pattern the task specified. The file
+    // itself is NOT checked into this environment (no network access to fetch a
+    // binary artifact); see app/libs/README.md for what must be added before this
+    // resolves. Do not add a second sherpa-onnx AAR/version alongside it.
+    implementation(files("libs/sherpa-onnx-1.13.5.aar"))
 
     // Live Translator: ML Kit on-device translation + language identification.
     // Models are downloaded at runtime via RemoteModelManager, never bundled.

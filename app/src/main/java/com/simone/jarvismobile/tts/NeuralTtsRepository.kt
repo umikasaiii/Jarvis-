@@ -69,11 +69,13 @@ data class NeuralTtsState(
  * Owns the external voice: which engine, which files, which voice, and the
  * loaded session.
  *
- * Two engines live here — Kokoro and Piper — and they do not share files. Each
- * one declares the slots it needs and its file paths are stored under its own
- * keys, so switching engines can never hand one engine the other's model. A
- * Piper voice is a model plus its `.onnx.json`; Kokoro's `voices-v1.0.bin`
- * belongs to Kokoro alone and is never offered to Piper.
+ * Three engines live here — Supertonic, Kokoro and Piper — and the two
+ * file-based ones do not share files. Each declares the slots it needs and
+ * its file paths are stored under its own keys, so switching engines can
+ * never hand one engine the other's model. A Piper voice is a model plus its
+ * `.onnx.json`; Kokoro's `voices-v1.0.bin` belongs to Kokoro alone and is
+ * never offered to Piper. Supertonic needs no slots at all — see its own
+ * class doc for why.
  *
  * Loading is lazy and sticky: the session is built the first time something asks
  * to speak and then kept for the life of the process, so consecutive replies pay
@@ -87,6 +89,7 @@ data class NeuralTtsState(
 class NeuralTtsRepository @Inject constructor(
     private val settings: SettingsRepository,
     private val assets: TtsAssetStore,
+    private val supertonic: SupertonicTtsEngine,
     private val kokoro: KokoroTtsEngine,
     private val piper: PiperTtsEngine,
     private val player: PcmPlayer,
@@ -97,8 +100,28 @@ class NeuralTtsRepository @Inject constructor(
     private val _state = MutableStateFlow(NeuralTtsState())
     val state: StateFlow<NeuralTtsState> = _state.asStateFlow()
 
-    /** All engines this build offers, in the order Settings shows them. */
-    fun engines(): List<NeuralTtsEngine> = listOf(kokoro, piper)
+    /**
+     * All engines this build offers, in the order Settings shows them.
+     * Supertonic first: it is the bundled default (spec — "Supertonic 3 deve
+     * diventare il TTS principale"), Kokoro/Piper stay available but are no
+     * longer implied as the primary pick by list order.
+     */
+    fun engines(): List<NeuralTtsEngine> = listOf(supertonic, kokoro, piper)
+
+    /** Diagnostics-only direct handle, for the FAST/BALANCED/QUALITY debug comparison. */
+    fun supertonicEngine(): SupertonicTtsEngine = supertonic
+
+    /**
+     * Asks every loaded engine to stop generating, immediately. Called from
+     * [HybridTtsEngine][com.simone.jarvismobile.audio.HybridTtsEngine].stop() —
+     * cheap and safe to call across all engines rather than just the selected
+     * one, since [NeuralTtsEngine.cancelSynthesis] is a no-op on an engine that
+     * is not mid-synthesis (Kokoro/Piper always; the currently unselected
+     * engines here).
+     */
+    fun cancelActiveSynthesis() {
+        engines().forEach { if (it.isLoaded) it.cancelSynthesis() }
+    }
 
     private fun engineFor(id: String): NeuralTtsEngine? = engines().firstOrNull { it.id == id }
 
@@ -148,7 +171,7 @@ class NeuralTtsRepository @Inject constructor(
                 asset = assets.describe(pathFor(id, kind), kind),
             )
         }
-        val complete = slots.filter { it.required }.all { it.asset != null }
+        val complete = slots.filter { it.required }.all { it.asset != null } && engine.isReadyToLoad()
         val loaded = engine.isLoaded
 
         val status = when {
@@ -220,9 +243,17 @@ class NeuralTtsRepository @Inject constructor(
         return mutex.withLock {
             if (engine.isLoaded) return@withLock engine
 
-            val model = fileFor(id, TtsAssetKind.MODEL) ?: run {
-                _state.value = _state.value.copy(status = NeuralTtsStatus.INCOMPLETE)
-                return@withLock null
+            // A self-contained engine (Supertonic: bundled, requiredAssets is
+            // empty) resolves its own files internally and never had a MODEL
+            // slot to check here — requiring one unconditionally would report
+            // "file mancanti" for an engine that has nothing to import.
+            val model = if (TtsAssetKind.MODEL in engine.requiredAssets) {
+                fileFor(id, TtsAssetKind.MODEL) ?: run {
+                    _state.value = _state.value.copy(status = NeuralTtsStatus.INCOMPLETE)
+                    return@withLock null
+                }
+            } else {
+                SELF_CONTAINED_PLACEHOLDER
             }
             val voices = fileFor(id, TtsAssetKind.VOICES)
             val vocabulary = fileFor(id, TtsAssetKind.VOCABULARY)
@@ -369,5 +400,14 @@ class NeuralTtsRepository @Inject constructor(
         const val SAMPLE =
             "Buonasera Simone. Sono JARVIS: alle 15:30 hai la revisione dell'auto, " +
                 "e la batteria è al 68 per cento."
+
+        /**
+         * Passed to [NeuralTtsEngine.load] for an engine whose [NeuralTtsEngine.requiredAssets]
+         * does not include [TtsAssetKind.MODEL] — a self-contained, bundled engine
+         * (Supertonic) resolves its real files itself and never reads this value;
+         * it exists only so `load()`'s non-nullable `model: File` parameter has
+         * something to bind to.
+         */
+        val SELF_CONTAINED_PLACEHOLDER = File("")
     }
 }

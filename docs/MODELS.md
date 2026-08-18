@@ -62,6 +62,18 @@ explicitly with checksum verification; licenses shown first. `AndroidOnDeviceSpe
 (`SpeechRecognizer.createOnDeviceSpeechRecognizer()`) is a fallback **only when
 the on-device service is available** — a cloud recognizer is never used silently.
 
+## TTS (Supertonic 3, Kokoro, Piper)
+
+See `docs/VOICE.md` for the full architecture, fallback chain and how to
+update the voice. Summary: **Supertonic 3** (sherpa-onnx `1.13.5`,
+`sherpa-onnx-supertonic-3-tts-int8-2026-05-11`, INT8) is the default engine —
+the one model bundled in the APK (`app/src/main/assets/models/supertonic3/`,
+`app/libs/sherpa-onnx-1.13.5.aar`) rather than user-imported, a deliberate
+exception to this file's own §11 rule made for this engine specifically.
+Kokoro and Piper remain available, still always user-imported, never bundled.
+Falls back to the Android system voice automatically if Supertonic's model or
+AAR is missing/corrupt/fails to initialise.
+
 ## Response protocol (§12)
 
 The local system prompt lives at

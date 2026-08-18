@@ -30,6 +30,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.simone.jarvismobile.BuildConfig
 import com.simone.jarvismobile.core.driving.DrivingNavigationMode
+import com.simone.jarvismobile.core.tts.SupertonicQuality
 import com.simone.jarvismobile.driving.DrivingModeActivity
 import com.simone.jarvismobile.navigation.debug.DebugGpsSimulator
 
@@ -157,6 +158,35 @@ fun DiagnosticsScreen(
 
         OutlinedButton(onClick = viewModel::onResetAudio, modifier = Modifier.fillMaxWidth()) {
             Text("Reset audio")
+        }
+
+        // Supertonic FAST/BALANCED/QUALITY A/B comparison (spec §"TEST"). Debug-only
+        // like the GPS simulator below: not something a shipped build should expose.
+        if (BuildConfig.DEBUG) {
+            val supertonicBusy by viewModel.supertonicBusy.collectAsStateWithLifecycle()
+            val supertonicStatus by viewModel.supertonicStatus.collectAsStateWithLifecycle()
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Supertonic (debug)", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "Sintetizza “Ciao. Sono JARVIS. Il nuovo sistema vocale locale è attivo.” " +
+                            "con ciascun profilo, per confrontarli a orecchio.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SupertonicQuality.entries.forEach { profile ->
+                            OutlinedButton(
+                                onClick = { viewModel.runSupertonicProfile(profile) },
+                                enabled = !supertonicBusy,
+                                modifier = Modifier.weight(1f),
+                            ) { Text(profile.name) }
+                        }
+                    }
+                    if (supertonicStatus.isNotEmpty()) {
+                        Text(supertonicStatus, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
         }
 
         // Driving Mode V2 (sviluppo): la modalità overlay su Google Maps resta il

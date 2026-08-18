@@ -57,6 +57,18 @@ interface NeuralTtsEngine {
     /** Slots this engine can use but does not need. */
     val optionalAssets: Set<TtsAssetKind> get() = emptySet()
 
+    /**
+     * True when this engine could plausibly load right now, for an engine with
+     * no [requiredAssets] to check a file for — [NeuralTtsRepository] cannot
+     * otherwise tell "bundled and present" apart from "bundled build without
+     * the model", since both have zero required slots and neither is loaded
+     * yet. Default true: every file-slot engine's real check is already
+     * [requiredAssets] plus a file existing, so this only matters for a
+     * self-contained engine like Supertonic, which overrides it to check its
+     * actual bundle.
+     */
+    fun isReadyToLoad(): Boolean = true
+
     /** What to call a slot in Settings, in the engine's own terms. */
     fun assetLabel(kind: TtsAssetKind): String = kind.label
 
@@ -88,6 +100,19 @@ interface NeuralTtsEngine {
      */
     suspend fun synthesize(text: String, voice: String, speed: Float): FloatArray?
 
+    /**
+     * Asks an in-flight [synthesize] call to stop early, if the engine supports
+     * it. Called by [HybridTtsEngine][com.simone.jarvismobile.audio.HybridTtsEngine].stop()
+     * so a cancelled reply does not keep spending CPU on a chunk nobody will
+     * hear. A default no-op: Kokoro and Piper run one blocking ONNX Runtime
+     * call per chunk with no native cancellation hook, so the existing
+     * loop-level `stopped` flag (which already skips the *next* chunk) is all
+     * they can offer. An engine with a real streaming callback — Supertonic's
+     * `generateWithCallback` — overrides this to interrupt the current chunk
+     * too, not just the ones after it.
+     */
+    fun cancelSynthesis() {}
+
     /** Frees the session and its memory. */
     fun release()
 }
@@ -96,7 +121,12 @@ interface NeuralTtsEngine {
 object NeuralTtsEngines {
     const val KOKORO = "kokoro"
     const val PIPER = "piper"
+    const val SUPERTONIC = "supertonic"
     const val NONE = ""
 
-    val ALL = listOf(KOKORO, PIPER)
+    // Supertonic first: it is the bundled, no-import-needed default (spec —
+    // "Supertonic 3 deve diventare il TTS principale... Non utilizzare Piper
+    // come motore predefinito"). Kokoro/Piper remain fully available, just no
+    // longer implied as the primary choice by list order.
+    val ALL = listOf(SUPERTONIC, KOKORO, PIPER)
 }

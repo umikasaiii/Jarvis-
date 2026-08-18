@@ -170,6 +170,9 @@ class HybridTtsEngine @Inject constructor(
 
     override fun stop() {
         stopped = true
+        // Interrupts an in-flight native synthesis call, not just the loop that
+        // hands its output to the player — see NeuralTtsEngine.cancelSynthesis().
+        neural.cancelActiveSynthesis()
         player.stop()
         android.stop()
         focus.release()

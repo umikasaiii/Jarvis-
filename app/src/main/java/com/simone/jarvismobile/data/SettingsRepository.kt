@@ -505,8 +505,16 @@ class SettingsRepository @Inject constructor(
     // the moment the user switched engines. The pre-Piper keys are still read as
     // a fallback for Kokoro so an existing import is not lost.
 
+    /**
+     * Defaults to Supertonic (bundled, no import needed) rather than the Android
+     * voice, per spec — "Supertonic 3 deve diventare il TTS principale". A user
+     * on a build without the model bundled still ends up on the Android voice:
+     * [com.simone.jarvismobile.tts.NeuralTtsRepository.ensureLoaded] fails
+     * closed and [com.simone.jarvismobile.audio.HybridTtsEngine] falls back
+     * automatically, so this default is safe even before the model is added.
+     */
     val ttsEngineId: Flow<String> =
-        context.settingsDataStore.data.map { it[Keys.TTS_ENGINE_ID] ?: "" }
+        context.settingsDataStore.data.map { it[Keys.TTS_ENGINE_ID] ?: DEFAULT_TTS_ENGINE }
 
     private fun modelKey(engine: String) = stringPreferencesKey("tts_model_path_$engine")
     private fun voicesKey(engine: String) = stringPreferencesKey("tts_voices_path_$engine")
@@ -903,6 +911,8 @@ class SettingsRepository @Inject constructor(
         const val DEFAULT_TTS_VOLUME = 1.0f
         /** Engine the pre-Piper preference keys belonged to. */
         const val LEGACY_ENGINE = "kokoro"
+        /** Matches [com.simone.jarvismobile.tts.NeuralTtsEngines.SUPERTONIC] — see [ttsEngineId]. */
+        const val DEFAULT_TTS_ENGINE = "supertonic"
         const val DEFAULT_TTS_RATE = 0.95f
         const val DEFAULT_TTS_PITCH = 0.98f
         const val MIN_TTS_RATE = 0.6f
