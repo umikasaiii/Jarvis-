@@ -50,16 +50,23 @@ class ProactiveNotifier @Inject constructor(
                 .putExtra(ProactiveActionReceiver.EXTRA_KIND, suggestion.kind.name),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
+        // A digest (morning/evening) is content the user actually asked to be
+        // told, not an optional nudge — it belongs on the same normal, audible
+        // channel as agenda reminders and automation results, not the deliberately
+        // muted "Suggerimenti" channel that BATTERY_BEFORE_ALARM and future tip-like
+        // kinds stay on.
+        val isDigest = suggestion.kind == ProactiveKind.MORNING_DIGEST ||
+            suggestion.kind == ProactiveKind.EVENING_DIGEST
         val notification = JarvisNotifications.styled(
             context = context,
-            channelId = JarvisNotifications.CHANNEL_SUGGESTIONS,
+            channelId = if (isDigest) JarvisNotifications.CHANNEL_REMINDERS else JarvisNotifications.CHANNEL_SUGGESTIONS,
             title = "JARVIS",
             text = suggestion.message,
             contentIntent = open,
             expandableText = suggestion.message,
         )
             .addAction(0, "Non avvisarmi più di questo", mute)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setPriority(if (isDigest) NotificationCompat.PRIORITY_DEFAULT else NotificationCompat.PRIORITY_LOW)
             .setCategory(NotificationCompat.CATEGORY_RECOMMENDATION)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .build()
