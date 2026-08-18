@@ -1151,7 +1151,10 @@ object CommandMatcher {
     /** "che impegni ho", "cosa devo fare oggi", "cosa ho in agenda" → the calendar. */
     private val AGENDA_RE = Regex(
         """\b(che|quali|quanti)\s+(impegni|appuntamenti|promemoria|attivita|task)\b|""" +
-            """\bcosa\s+(devo|ho da)\s+fare\b|""" +
+            // "che" is the colloquial "cosa" ("che facciamo?" = "cosa facciamo?"):
+            // "che ho da fare"/"che devo fare" must be understood exactly like
+            // "cosa ho da fare"/"cosa devo fare", not only the literal word "cosa".
+            """\b(?:cosa|che)\s+(devo|ho da)\s+fare\b|""" +
             """\bcosa\s+ho\s+(in\s+)?(agenda|programma|previsto)\b|""" +
             """\bne\s+ho\s+(uno|una|qualcuno|qualcuna|qualcosa)(\s+in\s+programma)?\b|""" +
             """\bin\s+agenda\b|\bla mia agenda\b|\bi miei (impegni|appuntamenti|promemoria|task)\b|""" +

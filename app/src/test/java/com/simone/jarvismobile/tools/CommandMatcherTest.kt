@@ -89,6 +89,17 @@ class CommandMatcherTest {
     }
 
     @Test
+    fun cheHoDaFareIsUnderstoodLikeCosaHoDaFare() {
+        // Real device bug: "che" as the colloquial "cosa" was only wired for
+        // "che impegni/appuntamenti…", not "che ho da fare"/"che devo fare".
+        for (q in listOf("Che ho da fare domani?", "Che devo fare?")) {
+            val match = CommandMatcher.match(q)
+            assertTrue("no match for: $q", match is Match.Run)
+            assertEquals(q, "list_agenda", (match as Match.Run).call.name)
+        }
+    }
+
+    @Test
     fun supportedAppIsOpenedWithoutTheModel() {
         val match = CommandMatcher.match("Apri Google Maps") as Match.Run
 
@@ -107,6 +118,22 @@ class CommandMatcherTest {
         assertEquals("dentista", match.call.arguments["text"]?.jsonPrimitive?.content)
         assertEquals("2026-08-07", match.call.arguments["date"]?.jsonPrimitive?.content)
         assertEquals("15:00", match.call.arguments["time"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun reminderTitleDoesNotKeepTheDanglingConnectiveFromAMidSentenceDate() {
+        // Real device bug: "domani alle 21" sits between "ricordami" and the verb,
+        // so the leftover "di" must not become part of the saved title.
+        val match = CommandMatcher.match(
+            "Ricordami domani alle 21 di sistemare tubo cameretta e lasciare chiavi della cantina",
+            now = LocalDateTime.of(2026, 8, 6, 10, 0),
+        ) as Match.Run
+
+        assertEquals("add_reminder", match.call.name)
+        assertEquals(
+            "sistemare tubo cameretta e lasciare chiavi della cantina",
+            match.call.arguments["text"]?.jsonPrimitive?.content,
+        )
     }
 
     @Test

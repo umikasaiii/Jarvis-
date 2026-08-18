@@ -22,6 +22,34 @@ class ItalianDateTimeParserTest {
     }
 
     @Test
+    fun `a leading connective left over from a mid-sentence date is stripped`() {
+        // Real device bug: "domani alle 21" sits in the MIDDLE of the sentence,
+        // so once it's removed the dangling "di" that connected it to the verb
+        // must not survive into the title ("di sistemare…" -> "sistemare…").
+        val r = ItalianDateTimeParser.parse(
+            "domani alle 21 di sistemare tubo cameretta e lasciare chiavi della cantina",
+            now,
+        )
+        assertEquals("sistemare tubo cameretta e lasciare chiavi della cantina", r.remainder)
+    }
+
+    @Test
+    fun `a leading che connective is stripped the same way`() {
+        // The parser lowercases its remainder unconditionally (see `lower` above),
+        // so the expectation is lowercase regardless of the input's casing.
+        val r = ItalianDateTimeParser.parse("domani alle 9 che devo chiamare Luca", now)
+        assertEquals("devo chiamare luca", r.remainder)
+    }
+
+    @Test
+    fun `a non-leading della is never touched`() {
+        // "della cantina" mid-sentence must survive — only a LEADING connective
+        // is grammatical scaffolding; the same word later is real content.
+        val r = ItalianDateTimeParser.parse("lasciare le chiavi della cantina domani", now)
+        assertEquals("lasciare le chiavi della cantina", r.remainder)
+    }
+
+    @Test
     fun `dopodomani wins over domani`() {
         val r = ItalianDateTimeParser.parse("dopodomani", now)
         assertEquals(LocalDate.of(2026, 8, 8), r.date)

@@ -38,6 +38,16 @@ object ItalianDateTimeParser {
      */
     private fun word(pattern: String) = Regex("""(?<!\p{L})(?:$pattern)(?!\p{L})""")
 
+    /**
+     * Purely grammatical connectives left dangling at the START of the
+     * remainder once the date/time phrase in the middle of the sentence is
+     * removed — "il fatto che"/"il fatto di" first (longest match), then the
+     * bare che/di/del/della/dei/degli/delle/d'.
+     */
+    private val LEADING_CONNECTIVE_RE = Regex(
+        """^\s*(?:il\s+fatto\s+che|il\s+fatto\s+di|che|di|del|della|dei|degli|delle|d')\s+""",
+    )
+
     private val WEEKDAYS: List<Pair<Regex, DayOfWeek>> = listOf(
         word("luned[iì]") to DayOfWeek.MONDAY,
         word("marted[iì]") to DayOfWeek.TUESDAY,
@@ -219,6 +229,18 @@ object ItalianDateTimeParser {
             .replace(Regex("""\s{2,}"""), " ")
             .trim()
             .trim(',', '.', ';', '—', '-', ' ')
+
+        // A leading connective is what's left over when the date/time phrase sat
+        // in the MIDDLE of the sentence ("domani alle 21 di sistemare…" → after
+        // removing "domani alle 21", "di sistemare…" remains) — the trailing-only
+        // strip above never catches this. Looped since more than one can stack
+        // ("che di sistemare…" is unlikely but not impossible after cleanup).
+        var changedLeading = true
+        while (changedLeading) {
+            val stripped = LEADING_CONNECTIVE_RE.replaceFirst(rest, "")
+            changedLeading = stripped != rest
+            rest = stripped
+        }
 
         return WhenParsed(date, time, period, rest, dateExplicit)
     }
