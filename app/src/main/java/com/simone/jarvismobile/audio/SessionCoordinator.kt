@@ -362,10 +362,17 @@ class SessionCoordinator @Inject constructor(
     @Volatile private var translatorTakingOver = false
 
     /**
-     * Entry point for the orb/tile/wake word. Launches the turn on the
-     * coordinator's own scope and remembers the job, first waiting for any
-     * previous turn to fully unwind (so its [sessionMutex] is released) — this is
-     * what lets a stopped session restart instead of freezing on "Pronto".
+     * The ONLY entry point for starting a voice turn — orb, tile, wake word and
+     * Modalità Guida all call this, never [runSession] directly, so that every
+     * running turn is always reachable through [sessionJob] and therefore always
+     * cancellable by [cancel]. A turn started by calling [runSession] directly
+     * would run untracked: [cancel] would stop the recognizer but have no job to
+     * cancel, leaving the orb stuck until the STT engine's own timeout.
+     *
+     * Launches the turn on the coordinator's own scope and remembers the job,
+     * first waiting for any previous turn to fully unwind (so its
+     * [sessionMutex] is released) — this is what lets a stopped session restart
+     * instead of freezing on "Pronto".
      */
     fun startSession() {
         val previous = sessionJob
@@ -375,8 +382,8 @@ class SessionCoordinator @Inject constructor(
         }
     }
 
-    /** Runs one conversation turn. Safe to call repeatedly; ignores overlap. */
-    suspend fun runSession() {
+    /** Runs one conversation turn. Safe to call repeatedly; ignores overlap. Only reachable via [startSession] — see its doc. */
+    private suspend fun runSession() {
         // A visible talk press always wins over optional background speech.
         if (tts.state.value == TtsState.SPEAKING && state.value != ConversationState.Speaking) {
             tts.stop()
@@ -467,7 +474,19 @@ class SessionCoordinator @Inject constructor(
      */
     private suspend fun processTurn(result: SttResult, isFollowUp: Boolean): Boolean =
         when (result) {
-            is SttResult.Text -> {
+            is SttResult.Text -> if (
+                pendingConfirmation == null && pendingSlot == null && pendingPick == null &&
+                pendingDestinationPick == null && !awaitingAnswer &&
+                com.simone.jarvismobile.core.intent.IntentAliases.isListeningCancelWord(result.text)
+            ) {
+                // A stray/automatic "Ok" — wake word or an accidental press — with
+                // nothing actually pending means "stop listening", not a request:
+                // no LLM call, no chat-log entry, no spoken reply. Same quiet
+                // return-to-Idle as SttResult.NoSpeech below.
+                _diagnostic.value = "ascolto interrotto (\"ok\")"
+                machine.dispatch(ConversationEvent.Reset) // -> Idle
+                false
+            } else {
                 _transcript.value = result.text
                 appendMessage(fromUser = true, text = result.text)
                 _diagnostic.value = "heard: ${result.text.take(40)}"
@@ -1911,8 +1930,19 @@ class SessionCoordinator @Inject constructor(
         // Stop the running turn itself, not just the recognizer, so it unwinds out
         // of stt.transcribe() and releases sessionMutex — otherwise the next press
         // sees the mutex still locked and the orb stays on "Pronto".
-        sessionJob?.cancel()
-        sessionJob = null
+        //
+        // sessionJob is deliberately NOT nulled out here. Nulling it immediately
+        // used to race a rapid stop-then-restart: startSession() reads sessionJob
+        // as `previous` to cancelAndJoin() before starting the new turn, and a
+        // premature null made it skip that wait entirely, so the new turn could
+        // start while the old one was still unwinding and find sessionMutex still
+        // locked — the orb looked stopped but silently ignored the restart tap.
+        // invokeOnCompletion clears the reference once the coroutine has actually
+        // finished (guarded so it never clobbers a newer job a restart already
+        // installed in the meantime).
+        val cancelled = sessionJob
+        cancelled?.cancel()
+        cancelled?.invokeOnCompletion { if (sessionJob === cancelled) sessionJob = null }
         machine.dispatch(ConversationEvent.CancelRequested)
     }
 

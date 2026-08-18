@@ -209,4 +209,20 @@ object IntentAliases {
         "cancella tutto", "annulla tutto", "cancella operazione", "annulla operazione",
         "cancella l'operazione", "annulla l'operazione", "non importa",
     )
+
+    /**
+     * True when the entire utterance is a bare "ok"/"okay" — the one thing a
+     * wake word (or an accidentally-triggered listening session) can hand the
+     * microphone to JARVIS with, with nothing the user actually wants to say.
+     * Deliberately a separate check from [AFFIRMATIVE]/[isAffirmative]: "ok"
+     * means "stop listening" here, but "yes, go ahead" when answering a real
+     * pending confirmation — callers must only use this when nothing is
+     * pending, never as a blanket replacement for [isAffirmative].
+     */
+    fun isListeningCancelWord(text: String): Boolean {
+        val t = TextNormalizer.normalize(text).trim('.', '!', ' ')
+        return t in LISTENING_CANCEL_WORDS
+    }
+
+    private val LISTENING_CANCEL_WORDS = setOf("ok", "okay")
 }

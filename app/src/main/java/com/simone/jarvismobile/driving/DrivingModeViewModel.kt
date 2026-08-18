@@ -202,7 +202,10 @@ class DrivingModeViewModel @Inject constructor(
     fun promptReply(n: DrivingNotification) {
         viewModelScope.launch {
             runCatching { coordinator.speakBackgroundResponse("Cosa vuoi rispondere a ${n.sender}?") }
-            runCatching { coordinator.runSession() }
+            // startSession(), not runSession(): only startSession() tracks the turn
+            // as a cancellable sessionJob, so a later orb/mic stop can actually
+            // reach this session instead of leaving it stuck listening.
+            coordinator.startSession()
         }
     }
 

@@ -93,7 +93,14 @@ class WakeWordController @Inject constructor(
                     // hit ERROR_RECOGNIZER_BUSY and the orb flashes an error.
                     engine.cancel()
                     delay(RELEASE_MS)
-                    runCatching { coordinator.runSession() }
+                    // startSession(), not runSession() directly: only startSession()
+                    // registers the turn as sessionJob, which is what makes it
+                    // reliably cancellable by a later orb tap. A direct runSession()
+                    // call here used to leave a wake-triggered session untracked, so
+                    // stopping it could only ever cancel the recognizer (which
+                    // delivers no callback) and the orb stayed stuck until the 20s
+                    // STT timeout.
+                    coordinator.startSession()
                 }
                 delay(GAP_MS)
             }
