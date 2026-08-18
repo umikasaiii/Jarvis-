@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -36,6 +37,7 @@ import com.simone.jarvismobile.core.driving.golden.JarvisDriveGoldenLayout
  * whether to place it at all — this composable has no `BuildConfig.DEBUG`
  * check of its own, same as [JarvisDriveReferenceOverlay].
  */
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun JarvisDriveVisualDebug(modifier: Modifier = Modifier) {
     val density = LocalDensity.current

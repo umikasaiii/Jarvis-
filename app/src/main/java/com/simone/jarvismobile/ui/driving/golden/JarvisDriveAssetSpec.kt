@@ -21,7 +21,7 @@ enum class JarvisDriveAssetKind {
 /**
  * One entry in the classification table spec §5 asks for: what kind of
  * asset backs a given JARVIS Drive visual element, and — for real files —
- * where it lives. Android's flat `res/drawable*/` resource system doesn't
+ * where it lives. Android's flat `res/drawable` resource system doesn't
  * support subfolders (AAPT rejects them), so "a clear directory" here means
  * a consistent name prefix inside `res/drawable-nodpi/` (`drive_hud_*` for
  * this batch) rather than a `res/drawable/jarvis_drive/` path, which would

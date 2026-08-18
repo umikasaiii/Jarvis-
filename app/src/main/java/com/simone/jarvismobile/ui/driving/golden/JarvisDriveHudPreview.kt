@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.simone.jarvismobile.core.driving.DrivingExpandedPanel
+import com.simone.jarvismobile.core.driving.golden.JarvisDriveMockState
 import com.simone.jarvismobile.ui.driving.DrivingMediaPanel
 import com.simone.jarvismobile.ui.driving.DrivingSportColors
 import com.simone.jarvismobile.ui.driving.EtaBar

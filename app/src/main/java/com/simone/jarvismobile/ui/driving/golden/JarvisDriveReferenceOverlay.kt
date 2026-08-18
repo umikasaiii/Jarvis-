@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.layout.ContentScale
@@ -39,6 +40,7 @@ import com.simone.jarvismobile.core.driving.golden.JarvisDriveGoldenLayout
  * stretching would silently invalidate every [com.simone.jarvismobile.core.driving.golden.GoldenRect]
  * measured from the reference at its own proportions.
  */
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun JarvisDriveReferenceOverlay(
     opacityPercent: Int,
