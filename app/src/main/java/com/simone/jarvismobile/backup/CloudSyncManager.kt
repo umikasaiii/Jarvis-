@@ -43,6 +43,15 @@ class CloudSyncManager @Inject constructor(
 
     val availableProviders: List<CloudBackupProvider> get() = providers.values.toList()
 
+    /**
+     * The reason the most recent [processQueue] call didn't fully succeed, for a
+     * caller (like the manual "Esegui backup ora" button) that wants to tell the
+     * user *why* rather than just that it happened — null when cloud sync is off,
+     * not configured, or the last run uploaded everything.
+     */
+    var lastFailureReason: String? = null
+        private set
+
     /** Marks a freshly-made backup as needing upload (deduplicated). */
     fun enqueue(backupId: String) {
         val ids = readQueue()
@@ -55,11 +64,13 @@ class CloudSyncManager @Inject constructor(
      * uploaded ones are removed and their manifest is marked UPLOADED.
      */
     suspend fun processQueue(): Boolean = withContext(Dispatchers.IO) {
+        lastFailureReason = null
         if (!settings.backupCloudEnabled.first()) return@withContext true
         val provider = providers[settings.backupCloudProvider.first()] ?: return@withContext true
         if (provider.id == NoCloudProvider.ID) return@withContext true
         if (!provider.isConfigured()) {
             Log.i(TAG, "cloud_skip provider=${provider.id} not_configured")
+            lastFailureReason = "Account ${provider.label} non collegato"
             return@withContext false
         }
         val remaining = ArrayList<String>()
@@ -74,8 +85,8 @@ class CloudSyncManager @Inject constructor(
                     markUploaded(manifest)
                     Log.i(TAG, "cloud_uploaded id=$id remote=${res.remoteId}")
                 }
-                is CloudResult.Unavailable -> { remaining += id; allOk = false }
-                is CloudResult.Failed -> { remaining += id; allOk = false; Log.w(TAG, "cloud_failed id=$id") }
+                is CloudResult.Unavailable -> { remaining += id; allOk = false; lastFailureReason = res.reason }
+                is CloudResult.Failed -> { remaining += id; allOk = false; lastFailureReason = res.reason; Log.w(TAG, "cloud_failed id=$id") }
             }
         }
         writeQueue(remaining)

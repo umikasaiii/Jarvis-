@@ -247,8 +247,15 @@ class BackupViewModel @Inject constructor(
         _message.value = null
         val manifest = runCatching { repository.runBackup() }.getOrNull()
         if (manifest != null) {
-            runCatching { cloud.enqueue(manifest.id); cloud.processQueue() }
-            _message.value = "Backup completato."
+            cloud.enqueue(manifest.id)
+            val cloudOk = runCatching { cloud.processQueue() }.getOrDefault(false)
+            _message.value = when {
+                cloudOk -> "Backup completato."
+                ui.value.cloudEnabled && ui.value.provider != NoCloudProvider.ID ->
+                    "Backup locale completato, ma la copia su ${providers.firstOrNull { it.id == ui.value.provider }?.label ?: "cloud"} non è riuscita" +
+                        (cloud.lastFailureReason?.let { ": $it" } ?: "") + ". Verrà ritentata."
+                else -> "Backup completato."
+            }
         } else {
             _message.value = "Backup non riuscito. Riprova."
         }

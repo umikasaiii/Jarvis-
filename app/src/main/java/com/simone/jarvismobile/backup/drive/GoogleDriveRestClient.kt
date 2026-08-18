@@ -13,6 +13,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.File
+import java.io.IOException
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
@@ -130,11 +131,13 @@ class GoogleDriveRestClient @Inject constructor() {
             .header("Authorization", "Bearer $accessToken")
             .get()
             .build()
-        client.newCall(request).execute().use { response ->
-            when {
-                response.code == 401 -> DriveResult.Unauthorized
-                !response.isSuccessful -> DriveResult.Error("HTTP ${response.code}")
-                else -> response.body?.bytes()?.let { DriveResult.Ok(it) } ?: DriveResult.Error("corpo vuoto")
+        runCatchingIo {
+            client.newCall(request).execute().use { response ->
+                when {
+                    response.code == 401 -> DriveResult.Unauthorized
+                    !response.isSuccessful -> DriveResult.Error("HTTP ${response.code}")
+                    else -> response.body?.bytes()?.let { DriveResult.Ok(it) } ?: DriveResult.Error("corpo vuoto")
+                }
             }
         }
     }
@@ -145,13 +148,15 @@ class GoogleDriveRestClient @Inject constructor() {
             .header("Authorization", "Bearer $accessToken")
             .delete()
             .build()
-        client.newCall(request).execute().use { response ->
-            when {
-                response.code == 401 -> DriveResult.Unauthorized
-                // A file already gone (e.g. deleted from another device) counts
-                // as successfully deleted here, not as an error to retry forever.
-                response.isSuccessful || response.code == 404 -> DriveResult.Ok(Unit)
-                else -> DriveResult.Error("HTTP ${response.code}")
+        runCatchingIo {
+            client.newCall(request).execute().use { response ->
+                when {
+                    response.code == 401 -> DriveResult.Unauthorized
+                    // A file already gone (e.g. deleted from another device) counts
+                    // as successfully deleted here, not as an error to retry forever.
+                    response.isSuccessful || response.code == 404 -> DriveResult.Ok(Unit)
+                    else -> DriveResult.Error("HTTP ${response.code}")
+                }
             }
         }
     }
@@ -170,10 +175,10 @@ class GoogleDriveRestClient @Inject constructor() {
         return md.digest().joinToString("") { "%02x".format(it) }
     }
 
-    private inline fun <T> execute(request: Request, parse: (String) -> T): DriveResult<T> {
+    private inline fun <T> execute(request: Request, parse: (String) -> T): DriveResult<T> = runCatchingIo {
         client.newCall(request).execute().use { response ->
             val text = response.body?.string()
-            return when {
+            when {
                 response.code == 401 -> DriveResult.Unauthorized
                 !response.isSuccessful || text == null -> {
                     Log.w(TAG, "drive_http_error code=${response.code}")
@@ -183,6 +188,20 @@ class GoogleDriveRestClient @Inject constructor() {
                     .getOrElse { DriveResult.Error("risposta non valida") }
             }
         }
+    }
+
+    /**
+     * A network hiccup (no connectivity, DNS failure, timeout, TLS error) throws
+     * a raw [IOException] out of OkHttp's blocking [okhttp3.Call.execute] — this
+     * turns that into a real [DriveResult.Error] instead of letting it propagate
+     * as an uncaught exception, which previously meant a backup that failed
+     * purely on flaky network reported nothing to the caller at all.
+     */
+    private inline fun <T> runCatchingIo(block: () -> DriveResult<T>): DriveResult<T> = try {
+        block()
+    } catch (e: IOException) {
+        Log.w(TAG, "drive_io_error ${e.javaClass.simpleName}")
+        DriveResult.Error("connessione a Google Drive non riuscita")
     }
 
     /** A double-quoted, escaped JSON string literal. */
