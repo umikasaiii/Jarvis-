@@ -4,6 +4,8 @@ import android.content.Context
 import com.simone.jarvismobile.core.tools.ToolRegistry
 import com.simone.jarvismobile.core.tools.builtin.CalculateTool
 import com.simone.jarvismobile.agenda.AgendaRepository
+import com.simone.jarvismobile.archive.ArchiveRepository
+import com.simone.jarvismobile.document.DocumentImportManager
 import com.simone.jarvismobile.knowledge.KnowledgeRepository
 import com.simone.jarvismobile.memory.MemoryIndex
 import com.simone.jarvismobile.memory.VaultRepository
@@ -11,13 +13,22 @@ import com.simone.jarvismobile.tools.AddReminderTool
 import com.simone.jarvismobile.tools.AddTaskTool
 import com.simone.jarvismobile.tools.AlarmTool
 import com.simone.jarvismobile.tools.BatteryTool
+import com.simone.jarvismobile.tools.CreateNoteTool
+import com.simone.jarvismobile.tools.CreateWatchItemTool
+import com.simone.jarvismobile.tools.DeleteNoteTool
 import com.simone.jarvismobile.tools.FlashlightTool
+import com.simone.jarvismobile.tools.GetAttachmentContextTool
 import com.simone.jarvismobile.tools.ListAgendaTool
 import com.simone.jarvismobile.tools.ForgetMemoryTool
 import com.simone.jarvismobile.tools.ListMemoriesTool
+import com.simone.jarvismobile.tools.ReadNoteTool
+import com.simone.jarvismobile.tools.SearchDocumentsTool
 import com.simone.jarvismobile.tools.SearchKnowledgeTool
+import com.simone.jarvismobile.tools.SearchMemoryTool
 import com.simone.jarvismobile.tools.RememberTool
 import com.simone.jarvismobile.tools.UpdateMemoryTool
+import com.simone.jarvismobile.tools.UpdateNoteTool
+import com.simone.jarvismobile.tools.UpdateWatchItemTool
 import com.simone.jarvismobile.tools.TimeTool
 import com.simone.jarvismobile.tools.TimeUntilTool
 import com.simone.jarvismobile.tools.TimerTool
@@ -69,6 +80,8 @@ object ToolsModule {
         vault: VaultRepository,
         agenda: AgendaRepository,
         knowledge: KnowledgeRepository,
+        archive: ArchiveRepository,
+        documents: DocumentImportManager,
         drivingMode: DrivingModeManager,
         drivingNotifications: DrivingNotificationController,
     ): ToolRegistry = ToolRegistry(
@@ -92,6 +105,15 @@ object ToolsModule {
             ListMemoriesTool(memory),
             MoveMemoryTool(memory),
             SearchKnowledgeTool(knowledge),
+            SearchMemoryTool(memory),
+            SearchDocumentsTool(documents),
+            GetAttachmentContextTool(documents),
+            CreateNoteTool(archive),
+            ReadNoteTool(archive),
+            UpdateNoteTool(archive),
+            DeleteNoteTool(archive),
+            CreateWatchItemTool(archive),
+            UpdateWatchItemTool(archive),
             OpenAppTool(context),
             OpenSettingsTool(context),
             CalendarDraftTool(context),

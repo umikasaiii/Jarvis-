@@ -215,6 +215,7 @@ fun DashboardScreen(
     val timeline by viewModel.timeline.collectAsStateWithLifecycle()
     val allEntries by viewModel.allEntries.collectAsStateWithLifecycle()
     val lastError by viewModel.lastError.collectAsStateWithLifecycle()
+    val proModeActive by viewModel.proModeActive.collectAsStateWithLifecycle()
     val battery = rememberBatteryStatus()
     val context = LocalContext.current
 
@@ -287,6 +288,11 @@ fun DashboardScreen(
                 ),
                 modifier = Modifier.fillMaxWidth(),
             )
+            if (proModeActive) {
+                com.simone.jarvismobile.ui.components.ProModeBadge(
+                    modifier = Modifier.align(Alignment.TopEnd),
+                )
+            }
             }
 
             // --- Status line + orb, alone --------------------------------

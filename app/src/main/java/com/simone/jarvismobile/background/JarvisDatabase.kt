@@ -2,6 +2,8 @@ package com.simone.jarvismobile.background
 
 import androidx.room.Database
 import androidx.room.RoomDatabase
+import com.simone.jarvismobile.archive.ArchiveDao
+import com.simone.jarvismobile.archive.ArchiveItemEntity
 import com.simone.jarvismobile.automation.rule.AutomationExecutionDao
 import com.simone.jarvismobile.automation.rule.AutomationExecutionEntity
 import com.simone.jarvismobile.automation.rule.AutomationPlaceDao
@@ -24,8 +26,9 @@ import com.simone.jarvismobile.navigation.PlaceFtsEntity
         PlaceFtsEntity::class, NavFavoriteEntity::class, NavHistoryEntity::class,
         AutomationRuleEntity::class, AutomationPlaceEntity::class,
         AutomationExecutionEntity::class, ParkingLocationEntity::class,
+        ArchiveItemEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = false,
 )
 abstract class JarvisDatabase : RoomDatabase() {
@@ -40,4 +43,8 @@ abstract class JarvisDatabase : RoomDatabase() {
     abstract fun automationPlaceDao(): AutomationPlaceDao
     abstract fun automationExecutionDao(): AutomationExecutionDao
     abstract fun parkingLocationDao(): ParkingLocationDao
+
+    // Modalità Pro's personal archive (notes/to-watch) — user-typed data, same
+    // "never destructive" rule as the automation tables. See ArchiveMigrations.
+    abstract fun archiveDao(): ArchiveDao
 }

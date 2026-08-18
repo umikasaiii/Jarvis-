@@ -327,6 +327,27 @@ class DocumentImportManager @Inject constructor(
     suspend fun hasReadyDocuments(): Boolean =
         (retriever ?: rebuildRetriever().let { retriever }) != null
 
+    /**
+     * Every chunk of the one READY document whose name matches [needle], joined
+     * in order — a specific-attachment lookup ("cosa c'è scritto nel PDF X?"),
+     * as opposed to [documentEvidence]'s cross-document relevance search. Fails
+     * closed (null) on no match or on ambiguity, same rule as every other
+     * by-name lookup in this app (see [com.simone.jarvismobile.memory.MemoryIndex.deleteByText]).
+     */
+    suspend fun contextFor(needle: String, maxChars: Int = 1_500): Pair<DocumentRecord, String>? {
+        val n = needle.trim()
+        if (n.length < 2) return null
+        val match = _documents.value.filter {
+            it.status == DocumentStatus.READY &&
+                (it.displayName.contains(n, ignoreCase = true) || it.title?.contains(n, ignoreCase = true) == true)
+        }
+        val doc = match.singleOrNull() ?: return null
+        val chunks = runCatching { dao.chunksFor(listOf(doc.id)) }.getOrDefault(emptyList())
+        if (chunks.isEmpty()) return null
+        val text = chunks.sortedBy { it.chunkIndex }.joinToString("\n") { it.text }.take(maxChars)
+        return doc to text
+    }
+
     private suspend fun rebuildRetriever(): Unit = withContext(Dispatchers.Default) {
         val chunks = runCatching { dao.readyChunks().map { it.toChunk() } }.getOrDefault(emptyList())
         retriever = if (chunks.isEmpty()) null else HybridDocumentRetriever(chunks)

@@ -32,7 +32,14 @@ class SettingsViewModel @Inject constructor(
     private val neural: NeuralTtsRepository,
     private val automationService: com.simone.jarvismobile.automation.AutomationServiceController,
     private val embeddings: com.simone.jarvismobile.memory.EmbeddingRepository,
+    private val proMode: com.simone.jarvismobile.promode.ProModeManager,
 ) : ViewModel() {
+
+    /** Manual on/off (spec §1: "controllo manuale nell'interfaccia"). */
+    val proModeActive: StateFlow<Boolean> = proMode.isActive
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    fun setProModeActive(value: Boolean) = viewModelScope.launch { proMode.setActive(value) }
 
     val embeddingStatus: StateFlow<com.simone.jarvismobile.memory.EmbeddingRepository.Status> =
         embeddings.status.stateIn(

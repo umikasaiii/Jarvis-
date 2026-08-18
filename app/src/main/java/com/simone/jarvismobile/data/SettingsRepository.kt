@@ -45,6 +45,7 @@ class SettingsRepository @Inject constructor(
         val KNOWLEDGE_URI = stringPreferencesKey("knowledge_tree_uri")
         val EMBEDDING_MODEL_PATH = stringPreferencesKey("embedding_model_path")
         val EMBEDDING_VOCAB_PATH = stringPreferencesKey("embedding_vocab_path")
+        val PRO_MODE_ACTIVE = booleanPreferencesKey("pro_mode_active")
         val RESPONSE_NOTIFICATIONS = booleanPreferencesKey("response_notifications")
         val SHOW_RESPONSE_PREVIEW = booleanPreferencesKey("show_response_preview")
         val REMINDER_NOTIFICATIONS = booleanPreferencesKey("reminder_notifications")
@@ -549,6 +550,18 @@ class SettingsRepository @Inject constructor(
     /** Whether JARVIS answers out loud at all. */
     val ttsSpeechEnabled: Flow<Boolean> =
         context.settingsDataStore.data.map { it[Keys.TTS_SPEECH_ENABLED] ?: true }
+
+    /**
+     * Modalità Pro (NORMAL/PRO — see [com.simone.jarvismobile.promode.ProModeManager]):
+     * persistent and app-wide by design, so the state survives a process death
+     * mid-conversation instead of silently reverting to NORMAL.
+     */
+    val proModeActive: Flow<Boolean> =
+        context.settingsDataStore.data.map { it[Keys.PRO_MODE_ACTIVE] ?: false }
+
+    suspend fun setProModeActive(value: Boolean) {
+        context.settingsDataStore.edit { it[Keys.PRO_MODE_ACTIVE] = value }
+    }
 
     /** Sentence-by-sentence synthesis; off means one take for the whole reply. */
     val ttsStreamingEnabled: Flow<Boolean> =

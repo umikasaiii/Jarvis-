@@ -2,6 +2,8 @@ package com.simone.jarvismobile.di
 
 import android.content.Context
 import androidx.room.Room
+import com.simone.jarvismobile.archive.ArchiveDao
+import com.simone.jarvismobile.archive.ArchiveMigrations
 import com.simone.jarvismobile.automation.rule.AutomationExecutionDao
 import com.simone.jarvismobile.automation.rule.AutomationPlaceDao
 import com.simone.jarvismobile.automation.rule.AutomationRuleDao
@@ -29,7 +31,7 @@ object DatabaseModule {
             // holds automation rules and places, which the user typed and which
             // nothing can rebuild. Losing those to a schema bump is not
             // acceptable, so every version from here must ship a migration.
-            .addMigrations(*RuleMigrations.ALL)
+            .addMigrations(*RuleMigrations.ALL, *ArchiveMigrations.ALL)
             // The fallback remains only for the older, cache-only versions (the
             // document and navigation tables can be regenerated from the vault
             // and the original files).
@@ -63,4 +65,8 @@ object DatabaseModule {
     @Provides
     fun provideParkingLocationDao(database: JarvisDatabase): ParkingLocationDao =
         database.parkingLocationDao()
+
+    @Provides
+    fun provideArchiveDao(database: JarvisDatabase): ArchiveDao =
+        database.archiveDao()
 }

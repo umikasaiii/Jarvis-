@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.simone.jarvismobile.data.SettingsRepository
+import com.simone.jarvismobile.ui.components.ProModeBadge
 
 /**
  * Settings screen. Phase-1 exposes the preferences that actually take effect:
@@ -66,6 +67,7 @@ fun SettingsScreen(
     onOpenMaps: () -> Unit = {},
     onOpenFavorites: () -> Unit = {},
     onOpenBackup: () -> Unit = {},
+    onOpenArchive: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val name by viewModel.assistantName.collectAsStateWithLifecycle()
@@ -91,6 +93,7 @@ fun SettingsScreen(
     val ttsRate by viewModel.ttsSpeechRate.collectAsStateWithLifecycle()
     val ttsPitch by viewModel.ttsPitch.collectAsStateWithLifecycle()
     val speakBackground by viewModel.speakBackgroundResponses.collectAsStateWithLifecycle()
+    val proModeActive by viewModel.proModeActive.collectAsStateWithLifecycle()
 
     var nameField by remember(name) { mutableStateOf(name) }
     var personaField by remember(persona) { mutableStateOf(persona) }
@@ -131,6 +134,34 @@ fun SettingsScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Text("Impostazioni", style = MaterialTheme.typography.headlineSmall)
+
+        CollapsibleSection("Modalità Pro", initiallyExpanded = true) {
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                ) {
+                    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        Text("Modalità Pro", style = MaterialTheme.typography.titleMedium)
+                        if (proModeActive) {
+                            Spacer(Modifier.size(8.dp))
+                            ProModeBadge()
+                        }
+                    }
+                    Switch(checked = proModeActive, onCheckedChange = viewModel::setProModeActive)
+                }
+                Text(
+                    "Quando è attiva, ogni messaggio va direttamente al modello locale " +
+                        "(niente scorciatoie né alias): puoi parlare liberamente di appunti, " +
+                        "note, cose da fare e cose da vedere. Nessuna richiesta esce mai online. " +
+                        "Si attiva/disattiva anche a voce: «attiva/esci dalla modalità pro».",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+        }
 
         CollapsibleSection("Assistente e personalità", initiallyExpanded = true) {
         Card(Modifier.fillMaxWidth()) {
@@ -713,6 +744,9 @@ fun SettingsScreen(
         }
         OutlinedButton(onClick = onOpenMemory, modifier = Modifier.fillMaxWidth()) {
             Text("Memoria (appunti Obsidian)")
+        }
+        OutlinedButton(onClick = onOpenArchive, modifier = Modifier.fillMaxWidth()) {
+            Text("Archivio (note e da vedere)")
         }
         OutlinedButton(onClick = onOpenAutomations, modifier = Modifier.fillMaxWidth()) {
             Text("Automazioni")

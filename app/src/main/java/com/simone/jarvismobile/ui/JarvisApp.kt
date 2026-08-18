@@ -51,6 +51,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.simone.jarvismobile.ui.archive.ArchiveScreen
 import com.simone.jarvismobile.ui.commands.CommandsScreen
 import com.simone.jarvismobile.ui.dashboard.DashboardScreen
 import com.simone.jarvismobile.ui.diagnostics.DiagnosticsScreen
@@ -77,7 +78,7 @@ private enum class Tab(val label: String, val icon: ImageVector) {
     IMPOSTAZIONI("Impostazioni", Icons.Filled.Settings),
 }
 
-private enum class Overlay { CHAT, MODELS, MEMORY, DIAGNOSTICS, AUTOMATIONS, RULES, TRANSLATOR, DOCUMENTS, NAVIGATION, MAPS, FAVORITES, BACKUP }
+private enum class Overlay { CHAT, MODELS, MEMORY, DIAGNOSTICS, AUTOMATIONS, RULES, TRANSLATOR, DOCUMENTS, NAVIGATION, MAPS, FAVORITES, BACKUP, ARCHIVE }
 
 /**
  * Top-level navigation. The dashboard shell is always present; the written chat
@@ -239,6 +240,7 @@ fun JarvisApp(
                         onOpenMaps = { overlay = Overlay.MAPS },
                         onOpenFavorites = { overlay = Overlay.FAVORITES },
                         onOpenBackup = { overlay = Overlay.BACKUP },
+                        onOpenArchive = { overlay = Overlay.ARCHIVE },
                     )
                 }
             }
@@ -295,7 +297,8 @@ fun JarvisApp(
             overlay == Overlay.RULES ||
             overlay == Overlay.TRANSLATOR || overlay == Overlay.DOCUMENTS ||
             overlay == Overlay.NAVIGATION || overlay == Overlay.MAPS ||
-            overlay == Overlay.FAVORITES || overlay == Overlay.BACKUP
+            overlay == Overlay.FAVORITES || overlay == Overlay.BACKUP ||
+            overlay == Overlay.ARCHIVE
         ) {
             BackHandler { overlay = null }
             Box(Modifier.fillMaxSize().background(Color(0xFF071119))) {
@@ -317,6 +320,7 @@ fun JarvisApp(
                     Overlay.MAPS -> MapsScreen(onBack = { overlay = null })
                     Overlay.FAVORITES -> FavoritesScreen(onBack = { overlay = null })
                     Overlay.BACKUP -> BackupScreen(onBack = { overlay = null })
+                    Overlay.ARCHIVE -> ArchiveScreen(onBack = { overlay = null })
                     else -> Unit
                 }
             }

@@ -12,6 +12,7 @@ import com.simone.jarvismobile.core.state.ConversationState
 import com.simone.jarvismobile.data.SettingsRepository
 import com.simone.jarvismobile.llm.LlmLoadState
 import com.simone.jarvismobile.memory.MemoryIndex
+import com.simone.jarvismobile.promode.ProModeManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -29,9 +30,14 @@ class DashboardViewModel @Inject constructor(
     private val wakeWord: WakeWordController,
     memory: MemoryIndex,
     settings: SettingsRepository,
+    proMode: ProModeManager,
 ) : ViewModel() {
 
     val state: StateFlow<ConversationState> = coordinator.state
+
+    /** The "piccolo segnale" for the dashboard header — same source as the Settings toggle. */
+    val proModeActive: StateFlow<Boolean> = proMode.isActive
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     /** True while listening for the wake word (foreground only), for the orb hint. */
     val listeningForWake: StateFlow<Boolean> = wakeWord.listeningForWake

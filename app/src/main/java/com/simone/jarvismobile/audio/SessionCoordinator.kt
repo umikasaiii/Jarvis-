@@ -108,6 +108,8 @@ class SessionCoordinator @Inject constructor(
     private val navigation: com.simone.jarvismobile.navigation.NavigationRepository,
     private val placeSearch: com.simone.jarvismobile.navigation.PlaceSearchRepository,
     private val drivingMode: com.simone.jarvismobile.driving.DrivingModeManager,
+    private val proModeManager: com.simone.jarvismobile.promode.ProModeManager,
+    private val proModeCoordinator: com.simone.jarvismobile.promode.ProModeCoordinator,
 ) {
 
     /** Long-lived scope for fire-and-forget persistence; lives as long as the app. */
@@ -547,6 +549,29 @@ class SessionCoordinator @Inject constructor(
      * points the user to the Models screen.
      */
     private suspend fun generateAnswer(transcript: String): String {
+        // Modalità Pro (spec §1/§2): the on/off phrase is checked before ANY
+        // other routing decision, in both NORMAL and PRO, so "esci dalla
+        // modalità pro" always works — including with a Pro-mode tool
+        // confirmation pending, since that lives in proModeCoordinator, not
+        // here, and this check runs before proModeCoordinator is ever asked.
+        proModeManager.interceptSystemCommand(transcript)?.let { spoken ->
+            if (com.simone.jarvismobile.core.promode.ProModeCommands.parse(transcript) ==
+                com.simone.jarvismobile.core.promode.ProModeCommand.DEACTIVATE
+            ) {
+                proModeCoordinator.reset()
+            }
+            return spoken
+        }
+        // PRO bypasses every deterministic/alias path below (CommandMatcher,
+        // TurnPlanner, LlmIntentClassifier, the translator/navigation/automation
+        // phrase parsers, offerFactCapture): the local model is the sole router,
+        // reached through its own tool-call loop. This is the ONLY place PRO
+        // mode is checked in the whole turn pipeline — see ProModeCoordinator's
+        // class doc for why the behavior itself is not scattered here too.
+        if (proModeManager.currentlyActive()) {
+            return proModeCoordinator.handle(transcript)
+        }
+
         // If JARVIS asked "Tra quali lingue?" the previous turn, this message is
         // the answer — handle it before anything else, since the question mark set
         // the generic awaitingAnswer flag that would otherwise route it to chat.
