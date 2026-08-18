@@ -4,31 +4,38 @@ import android.content.Context
 import com.simone.jarvismobile.core.tools.ToolRegistry
 import com.simone.jarvismobile.core.tools.builtin.CalculateTool
 import com.simone.jarvismobile.agenda.AgendaRepository
+import com.simone.jarvismobile.archive.ArchiveListRepository
 import com.simone.jarvismobile.archive.ArchiveRepository
+import com.simone.jarvismobile.archive.PersonalArchiveSearch
 import com.simone.jarvismobile.document.DocumentImportManager
 import com.simone.jarvismobile.knowledge.KnowledgeRepository
 import com.simone.jarvismobile.memory.MemoryIndex
 import com.simone.jarvismobile.memory.VaultRepository
+import com.simone.jarvismobile.tools.AddListItemTool
 import com.simone.jarvismobile.tools.AddReminderTool
 import com.simone.jarvismobile.tools.AddTaskTool
 import com.simone.jarvismobile.tools.AlarmTool
 import com.simone.jarvismobile.tools.BatteryTool
-import com.simone.jarvismobile.tools.CreateNoteTool
-import com.simone.jarvismobile.tools.CreateWatchItemTool
-import com.simone.jarvismobile.tools.DeleteNoteTool
+import com.simone.jarvismobile.tools.CreateArchiveItemTool
+import com.simone.jarvismobile.tools.CreateListTool
+import com.simone.jarvismobile.tools.DeleteArchiveItemTool
 import com.simone.jarvismobile.tools.FlashlightTool
-import com.simone.jarvismobile.tools.GetAttachmentContextTool
 import com.simone.jarvismobile.tools.ListAgendaTool
 import com.simone.jarvismobile.tools.ForgetMemoryTool
+import com.simone.jarvismobile.tools.ListItemsTool
 import com.simone.jarvismobile.tools.ListMemoriesTool
-import com.simone.jarvismobile.tools.ReadNoteTool
+import com.simone.jarvismobile.tools.ReadArchiveItemTool
+import com.simone.jarvismobile.tools.ReadDocumentContextTool
+import com.simone.jarvismobile.tools.RemoveListItemTool
+import com.simone.jarvismobile.tools.SearchArchiveTool
 import com.simone.jarvismobile.tools.SearchDocumentsTool
+import com.simone.jarvismobile.tools.SearchImagesTool
 import com.simone.jarvismobile.tools.SearchKnowledgeTool
 import com.simone.jarvismobile.tools.SearchMemoryTool
 import com.simone.jarvismobile.tools.RememberTool
+import com.simone.jarvismobile.tools.UpdateArchiveItemTool
+import com.simone.jarvismobile.tools.UpdateListItemTool
 import com.simone.jarvismobile.tools.UpdateMemoryTool
-import com.simone.jarvismobile.tools.UpdateNoteTool
-import com.simone.jarvismobile.tools.UpdateWatchItemTool
 import com.simone.jarvismobile.tools.TimeTool
 import com.simone.jarvismobile.tools.TimeUntilTool
 import com.simone.jarvismobile.tools.TimerTool
@@ -81,6 +88,8 @@ object ToolsModule {
         agenda: AgendaRepository,
         knowledge: KnowledgeRepository,
         archive: ArchiveRepository,
+        archiveLists: ArchiveListRepository,
+        archiveSearch: PersonalArchiveSearch,
         documents: DocumentImportManager,
         drivingMode: DrivingModeManager,
         drivingNotifications: DrivingNotificationController,
@@ -106,14 +115,19 @@ object ToolsModule {
             MoveMemoryTool(memory),
             SearchKnowledgeTool(knowledge),
             SearchMemoryTool(memory),
+            SearchArchiveTool(archiveSearch),
             SearchDocumentsTool(documents),
-            GetAttachmentContextTool(documents),
-            CreateNoteTool(archive),
-            ReadNoteTool(archive),
-            UpdateNoteTool(archive),
-            DeleteNoteTool(archive),
-            CreateWatchItemTool(archive),
-            UpdateWatchItemTool(archive),
+            ReadDocumentContextTool(documents),
+            SearchImagesTool(documents),
+            CreateArchiveItemTool(archive),
+            ReadArchiveItemTool(archive),
+            UpdateArchiveItemTool(archive),
+            DeleteArchiveItemTool(archive),
+            ListItemsTool(archiveLists, archive),
+            CreateListTool(archiveLists),
+            AddListItemTool(archiveLists),
+            UpdateListItemTool(archiveLists),
+            RemoveListItemTool(archiveLists),
             OpenAppTool(context),
             OpenSettingsTool(context),
             CalendarDraftTool(context),

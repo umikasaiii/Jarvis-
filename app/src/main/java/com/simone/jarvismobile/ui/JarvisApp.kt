@@ -320,7 +320,11 @@ fun JarvisApp(
                     Overlay.MAPS -> MapsScreen(onBack = { overlay = null })
                     Overlay.FAVORITES -> FavoritesScreen(onBack = { overlay = null })
                     Overlay.BACKUP -> BackupScreen(onBack = { overlay = null })
-                    Overlay.ARCHIVE -> ArchiveScreen(onBack = { overlay = null })
+                    Overlay.ARCHIVE -> ArchiveScreen(
+                        onBack = { overlay = null },
+                        onOpenTasks = { overlay = null; tab = Tab.NOTIFICHE },
+                        onOpenDocuments = { overlay = Overlay.DOCUMENTS },
+                    )
                     else -> Unit
                 }
             }

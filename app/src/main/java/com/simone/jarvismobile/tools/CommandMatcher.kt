@@ -176,6 +176,29 @@ object CommandMatcher {
         // --- Delete a saved memory ("dimentica …") ------------------------
         forgetMemoryCall(raw)?.let { return it }
 
+        // --- Personal Archive: shopping, custom lists, to-watch, notes ----
+        // Checked before the generic remember/calculator fallbacks. Shopping
+        // is checked first since its phrasing ("alla lista della spesa") is a
+        // strict subset of the generic list phrasing ("alla lista X") — most
+        // specific first, same rule as the driving-mode block above.
+        shoppingCreateCall(raw)?.let { return it }
+        shoppingListCall(raw)?.let { return it }
+        shoppingCompleteCall(raw)?.let { return it }
+        shoppingDeleteCall(raw)?.let { return it }
+        watchCreateCall(raw)?.let { return it }
+        watchListCall(raw)?.let { return it }
+        watchCompleteCall(raw)?.let { return it }
+        watchDeleteCall(raw)?.let { return it }
+        listCreateCall(raw)?.let { return it }
+        listReadCall(raw)?.let { return it }
+        listAddItemCall(raw)?.let { return it }
+        listRemoveItemCall(raw)?.let { return it }
+        noteCreateCall(raw)?.let { return it }
+        searchArchiveCall(raw)?.let { return it }
+        searchDocumentsCall(raw)?.let { return it }
+        searchKnowledgeCall(raw)?.let { return it }
+        photoSearchCall(raw)?.let { return it }
+
         // --- Remember (checked before the calculator) ---------------------
         rememberContent(raw)?.let { note ->
             val kind = MemoryStructure.classify(note)
@@ -477,6 +500,174 @@ object CommandMatcher {
         }
     }
 
+    /** "il/la/lo/i/gli/le X" → "X". Mirrors [cleanCalendarTitle]'s article strip so a shopping/list/watch title reads naturally. */
+    private fun stripLeadingArticle(s: String): String = s.replace(LEADING_ARTICLE_RE, "")
+
+    // --- Personal Archive: shopping list -------------------------------
+
+    /** "aggiungi X alle cose da comprare", "devo comprare X", "mi serve acquistare X". */
+    fun shoppingCreateCall(raw: String): Match? {
+        val t = normalize(raw)
+        val match = SHOPPING_ADD_RE.find(t) ?: return null
+        val item = stripLeadingArticle(
+            match.groupValues.drop(1).firstOrNull(String::isNotBlank).orEmpty().trim().trim('.', '?', '!'),
+        ).replaceFirstChar { it.uppercase() }
+        return if (item.length >= 2) {
+            call("add_list_item", "list" to "spesa", "title" to item)
+        } else {
+            Match.Ask("Cosa devo aggiungere alla lista della spesa?", "add_list_item", "title", mapOf("list" to "spesa"))
+        }
+    }
+
+    /** "cosa devo comprare", "mostra la lista della spesa". */
+    fun shoppingListCall(raw: String): Match? {
+        if (!SHOPPING_LIST_RE.containsMatchIn(normalize(raw))) return null
+        return call("list_items", "list" to "spesa")
+    }
+
+    /** "ho comprato X", "segna X come comprato". */
+    fun shoppingCompleteCall(raw: String): Match? {
+        val match = SHOPPING_COMPLETE_RE.find(normalize(raw)) ?: return null
+        val target = stripLeadingArticle(
+            match.groupValues.drop(1).firstOrNull(String::isNotBlank).orEmpty().trim().trim('.', '?', '!'),
+        )
+        return if (target.length >= 2) {
+            call("update_list_item", "list" to "spesa", "item" to target, "completed" to "true")
+        } else {
+            null
+        }
+    }
+
+    /** "rimuovi X dalle cose da comprare", "togli X dalla lista della spesa". */
+    fun shoppingDeleteCall(raw: String): Match? {
+        val match = SHOPPING_DELETE_RE.find(normalize(raw)) ?: return null
+        val target = stripLeadingArticle(
+            match.groupValues.drop(1).firstOrNull(String::isNotBlank).orEmpty().trim().trim('.', '?', '!'),
+        )
+        return if (target.length >= 2) call("remove_list_item", "list" to "spesa", "item" to target) else null
+    }
+
+    // --- Personal Archive: custom lists ---------------------------------
+
+    /** "crea una lista Ricambi moto", "crea una lista chiamata Regali". */
+    fun listCreateCall(raw: String): Match? {
+        val match = LIST_CREATE_RE.find(normalize(raw)) ?: return null
+        val name = match.groupValues.getOrNull(1).orEmpty().trim().trim('.', '?', '!').replaceFirstChar { it.uppercase() }
+        return if (name.length >= 2) call("create_list", "name" to name) else null
+    }
+
+    /** "cosa c'è nella lista Ricambi moto", "apri la lista Regali". */
+    fun listReadCall(raw: String): Match? {
+        val match = LIST_READ_RE.find(normalize(raw)) ?: return null
+        val name = match.groupValues.drop(1).firstOrNull(String::isNotBlank).orEmpty().trim().trim('.', '?', '!')
+        return if (name.length >= 2) call("list_items", "list" to name) else null
+    }
+
+    /** "aggiungi filtro olio alla lista Ricambi moto". Skipped when the target list is the shopping list. */
+    fun listAddItemCall(raw: String): Match? {
+        val t = normalize(raw)
+        val match = LIST_ADD_ITEM_RE.find(t) ?: return null
+        val item = stripLeadingArticle(match.groupValues.getOrNull(1).orEmpty().trim())
+        val listName = match.groupValues.getOrNull(2).orEmpty().trim().trim('.', '?', '!')
+        if (item.length < 2 || listName.length < 2) return null
+        return call("add_list_item", "list" to listName, "title" to item.replaceFirstChar { it.uppercase() })
+    }
+
+    /** "togli filtro olio dalla lista Ricambi moto". */
+    fun listRemoveItemCall(raw: String): Match? {
+        val match = LIST_REMOVE_ITEM_RE.find(normalize(raw)) ?: return null
+        val item = stripLeadingArticle(match.groupValues.getOrNull(1).orEmpty().trim())
+        val listName = match.groupValues.getOrNull(2).orEmpty().trim().trim('.', '?', '!')
+        if (item.length < 2 || listName.length < 2) return null
+        return call("remove_list_item", "list" to listName, "item" to item)
+    }
+
+    // --- Personal Archive: to-watch --------------------------------------
+
+    /** "metti Dune nelle cose da vedere", "aggiungi X alla watchlist", "aggiungi X ai libri da leggere". */
+    fun watchCreateCall(raw: String): Match? {
+        val match = WATCH_CREATE_RE.find(normalize(raw)) ?: return null
+        val title = stripLeadingArticle(match.groupValues.getOrNull(1).orEmpty().trim().trim('.', '?', '!'))
+            .replaceFirstChar { it.uppercase() }
+        return if (title.length >= 2) call("create_archive_item", "type" to "to_watch", "title" to title) else null
+    }
+
+    /** "cosa devo vedere", "mostra la watchlist". */
+    fun watchListCall(raw: String): Match? {
+        if (!WATCH_LIST_RE.containsMatchIn(normalize(raw))) return null
+        return call("list_items", "type" to "to_watch")
+    }
+
+    /** "segna Dune come visto/letto/ascoltato". */
+    fun watchCompleteCall(raw: String): Match? {
+        val match = WATCH_COMPLETE_RE.find(normalize(raw)) ?: return null
+        val title = stripLeadingArticle(match.groupValues.getOrNull(1).orEmpty().trim().trim('.', '?', '!'))
+        return if (title.length >= 2) {
+            call("update_archive_item", "type" to "to_watch", "title" to title, "completed" to "true")
+        } else {
+            null
+        }
+    }
+
+    /** "rimuovi X dalla watchlist", "togli X dalle cose da vedere". */
+    fun watchDeleteCall(raw: String): Match? {
+        val match = WATCH_DELETE_RE.find(normalize(raw)) ?: return null
+        val title = stripLeadingArticle(match.groupValues.getOrNull(1).orEmpty().trim().trim('.', '?', '!'))
+        return if (title.length >= 2) call("delete_archive_item", "type" to "to_watch", "title" to title) else null
+    }
+
+    // --- Personal Archive: quick notes ------------------------------------
+
+    /**
+     * Only genuinely new phrasings ("crea/scrivi/salva una nota", "crea/aggiungi
+     * appunto") route here. "segnati che"/"prendi nota"/"annota" keep going to
+     * Memory V2 via [rememberContent], unchanged — see docs/PERSONAL_ARCHIVE.md
+     * for why that overlap with the alias table was deliberately not touched.
+     */
+    fun noteCreateCall(raw: String): Match? {
+        val match = NOTE_CREATE_RE.find(raw.trim()) ?: return null
+        val content = match.groupValues.drop(1).firstOrNull(String::isNotBlank).orEmpty().trim()
+        if (content.length < 2) return Match.Ask("Cosa scrivo nella nota?", "create_archive_item", "content", mapOf("type" to "note"))
+        return call("create_archive_item", "type" to "note", "title" to deriveNoteTitle(content), "content" to content)
+    }
+
+    private fun deriveNoteTitle(content: String): String {
+        val words = content.split(Regex("""\s+""")).filter { it.isNotBlank() }
+        val short = words.take(6).joinToString(" ")
+        val title = if (words.size > 6) "$short…" else short
+        return title.replaceFirstChar { it.uppercase() }.take(60)
+    }
+
+    // --- Search: archive / documents / knowledge / photos -----------------
+
+    /** "cosa avevo scritto su X", "cerca nel mio archivio X" → the Personal Archive layer only. */
+    fun searchArchiveCall(raw: String): Match? {
+        val match = SEARCH_ARCHIVE_RE.find(normalize(raw)) ?: return null
+        val query = match.groupValues.drop(1).firstOrNull(String::isNotBlank).orEmpty().trim().trim('.', '?', '!')
+        return if (query.length >= 2) call("search_archive", "query" to query) else null
+    }
+
+    /** "cerca nei miei documenti X", "cosa dice il documento su X" → Personal Documents only. */
+    fun searchDocumentsCall(raw: String): Match? {
+        val match = SEARCH_DOCUMENTS_RE.find(normalize(raw)) ?: return null
+        val query = match.groupValues.drop(1).firstOrNull(String::isNotBlank).orEmpty().trim().trim('.', '?', '!')
+        return if (query.length >= 2) call("search_documents", "query" to query) else null
+    }
+
+    /** "cerca nella wiki X", "cosa dice la wikipedia su X" → the existing offline library only. */
+    fun searchKnowledgeCall(raw: String): Match? {
+        val match = SEARCH_KNOWLEDGE_RE.find(normalize(raw)) ?: return null
+        val query = match.groupValues.drop(1).firstOrNull(String::isNotBlank).orEmpty().trim().trim('.', '?', '!')
+        return if (query.length >= 2) call("search_knowledge", "query" to query) else null
+    }
+
+    /** "trova la foto di X", "cosa c'era scritto nella foto di X". */
+    fun photoSearchCall(raw: String): Match? {
+        val match = PHOTO_SEARCH_RE.find(normalize(raw)) ?: return null
+        val query = match.groupValues.drop(1).firstOrNull(String::isNotBlank).orEmpty().trim().trim('.', '?', '!')
+        return if (query.length >= 2) call("search_images", "query" to query) else null
+    }
+
     /** Public so callers can reuse the reminder-body extraction. */
     fun rememberBody(raw: String): String? = rememberContent(raw)
 
@@ -713,6 +904,97 @@ object CommandMatcher {
     private val TASK_LEAD_RE = Regex(
         """^(?:(?:aggiung\w*|crea\w*|mett\w*|segna\w*|inserisc\w*|nuov[ao]|un[' ]?|una)\s+)*""" +
             """(?:(?:attivit[àa]|task|impegno|cosa)\s+)?(?:(?:di|da|come|:)\s+)*""",
+    )
+
+    // --- Personal Archive: shared helpers --------------------------------
+    private val LEADING_ARTICLE_RE = Regex("""^(?:il|lo|la|i|gli|le|l')\s*""")
+
+    // --- Personal Archive: shopping list --------------------------------
+    private val SHOPPING_ADD_RE = Regex(
+        """^(?:aggiung\w*|mett\w*|segnami)\s+(.+?)\s+(?:alle?\s+cose\s+da\s+(?:comprare|acquistare)|""" +
+            """alla\s+lista\s+della\s+spesa|agli\s+acquisti|tra\s+gli\s+acquisti)$|""" +
+            """^devo\s+comprare\s+(.+)$|^devo\s+acquistare\s+(.+)$|""" +
+            """^mi\s+serve\s+comprare\s+(.+)$|^mi\s+serve\s+acquistare\s+(.+)$|""" +
+            """^ricordami\s+di\s+comprare\s+(.+)$|^ricordami\s+di\s+acquistare\s+(.+)$""",
+    )
+    private val SHOPPING_LIST_RE = Regex(
+        """\bcosa\s+devo\s+comprare\b|\bcosa\s+devo\s+acquistare\b|\bcosa\s+c'?e\s+da\s+comprare\b|""" +
+            """\bmostra\w*\s+(?:le\s+)?cose\s+da\s+comprare\b|\bmostra\w*\s+(?:la\s+)?lista\s+della\s+spesa\b|""" +
+            """\bapri\w*\s+(?:la\s+)?lista\s+della\s+spesa\b|\bcosa\s+manca\s+da\s+comprare\b|\bquali\s+acquisti\s+ho\b""",
+    )
+    private val SHOPPING_COMPLETE_RE = Regex(
+        """^ho\s+comprato\s+(.+)$|^ho\s+acquistato\s+(.+)$|""" +
+            """^segna\w*\s+(.+?)\s+come\s+(?:comprat[oa]|acquistat[oa]|pres[oa])$""",
+    )
+    private val SHOPPING_DELETE_RE = Regex(
+        """^(?:rimuovi|togli|elimina|cancella)\w*\s+(.+?)\s+(?:dalle?\s+cose\s+da\s+(?:comprare|acquistare)|""" +
+            """dalla\s+lista\s+della\s+spesa|dagli\s+acquisti)$""",
+    )
+
+    // --- Personal Archive: custom lists -----------------------------------
+    private val LIST_CREATE_RE = Regex(
+        """^(?:crea|fai|prepara|apri)\w*\s+(?:una\s+)?(?:nuova\s+)?lista(?:\s+chiamata)?\s+(.+)$""",
+    )
+    private val LIST_READ_RE = Regex(
+        """\bcosa\s+c'?e\s+nella\s+lista\s+(.+)$|\bcosa\s+ho\s+nella\s+lista\s+(.+)$|""" +
+            """^apri\w*\s+la\s+lista\s+(.+)$|^mostra\w*\s+la\s+lista\s+(.+)$""",
+    )
+    private val LIST_ADD_ITEM_RE = Regex(
+        """^(?:aggiung\w*|mett\w*|inserisc\w*)\s+(.+?)\s+alla\s+lista\s+(.+)$""",
+    )
+    private val LIST_REMOVE_ITEM_RE = Regex(
+        """^(?:togli|rimuovi|elimina|cancella)\w*\s+(.+?)\s+dalla\s+lista\s+(.+)$""",
+    )
+
+    // --- Personal Archive: to-watch ----------------------------------------
+    private val WATCH_CREATE_RE = Regex(
+        """^(?:mett\w*|aggiung\w*|salva\w*)\s+(.+?)\s+(?:nelle\s+cose\s+da\s+vedere|alle\s+cose\s+da\s+vedere|""" +
+            """alla\s+watchlist|in\s+watchlist|tra\s+le\s+cose\s+da\s+guardare|""" +
+            """ai\s+film\s+da\s+vedere|alle\s+serie\s+da\s+vedere|ai\s+video\s+da\s+vedere|""" +
+            """ai\s+libri\s+da\s+leggere|da\s+leggere|da\s+ascoltare|da\s+vedere)$""",
+    )
+    private val WATCH_LIST_RE = Regex(
+        """\bcosa\s+devo\s+vedere\b|\bcosa\s+ho\s+da\s+vedere\b|\bmostra\w*\s+(?:la\s+)?watchlist\b|""" +
+            """\bmostra\w*\s+(?:le\s+)?cose\s+da\s+vedere\b|\bcosa\s+devo\s+leggere\b|\bcosa\s+devo\s+ascoltare\b""",
+    )
+    private val WATCH_COMPLETE_RE = Regex(
+        """^segna\w*\s+(.+?)\s+come\s+(?:vist[oa]|lett[oa]|ascoltat[oa])$""",
+    )
+    private val WATCH_DELETE_RE = Regex(
+        """^(?:rimuovi|togli|elimina|cancella)\w*\s+(.+?)\s+(?:dalla\s+watchlist|dalle\s+cose\s+da\s+vedere|dai\s+libri\s+da\s+leggere)$""",
+    )
+
+    // --- Personal Archive: quick notes ------------------------------------
+    private val NOTE_CREATE_RE = Regex(
+        """^(?:crea|scrivi|salva|aggiungi)\w*\s+(?:una\s+)?nota(?:\s+(?:chiamata|che\s+dice))?\s*[:]?\s*(.+)$|""" +
+            """^crea\w*\s+(?:un\s+)?appunto\s*[:]?\s*(.+)$|^aggiungi\w*\s+(?:un\s+)?appunto\s*[:]?\s*(.+)$""",
+        RegexOption.IGNORE_CASE,
+    )
+
+    // --- Search: archive / documents / knowledge / photos -----------------
+    private val SEARCH_ARCHIVE_RE = Regex(
+        """\bcosa\s+avevo\s+scritto\s+(?:io\s+)?(?:su|sul|sullo|sulla|sull)['\s]+(.+)$|""" +
+            """\bcosa\s+avevo\s+scritto\s+(?:io\s+)?(?:riguardo\s+a|circa)\s+(.+)$|""" +
+            """\bcosa\s+(?:ho|avevo)\s+salvato\s+(?:io\s+)?(?:su|sul|sullo|sulla|sull)['\s]+(.+)$|""" +
+            """\bcosa\s+(?:ho|avevo)\s+salvato\s+(?:io\s+)?riguardo\s+a\s+(.+)$|""" +
+            """\b(?:cerca|trova)\w*\s+(?:nel\s+mio\s+archivio|nell'archivio\s+personale|""" +
+            """nei\s+miei\s+appunti|nelle\s+mie\s+note|nelle\s+mie\s+liste)\s+(.+)$""",
+    )
+    private val SEARCH_DOCUMENTS_RE = Regex(
+        """\b(?:cerca|trova)\w*\s+nei\s+(?:miei\s+)?documenti(?:\s+personali)?\s+(.+)$|""" +
+            """\b(?:cerca|trova)\w*\s+nei\s+pdf\s+(.+)$|""" +
+            """\bcosa\s+dice\s+il\s+documento\s+(?:su\s+)?(.+)$|""" +
+            """\bcerca\w*\s+nell'assicurazione\s+(.+)$|\bcerca\w*\s+nella\s+garanzia\s+(.+)$|""" +
+            """\bcerca\w*\s+nel\s+contratto\s+(.+)$|\bcerca\w*\s+nella\s+ricevuta\s+(.+)$""",
+    )
+    private val SEARCH_KNOWLEDGE_RE = Regex(
+        """\b(?:cerca|trova|consulta)\w*\s+(?:nella\s+)?(?:wiki|wikipedia)\s+(?:locale\s+)?(?:su\s+)?(.+)$|""" +
+            """\bcosa\s+dice\s+(?:la\s+)?wiki(?:pedia)?\s+su\s+(.+)$""",
+    )
+    private val PHOTO_SEARCH_RE = Regex(
+        """^(?:trova|cerca|mostra)\w*\s+la\s+foto\s+(?:di\s+|dove\s+|in\s+cui\s+)?(.+)$|""" +
+            """^(?:trova|cerca)\w*\s+la\s+ricevuta\s+(?:di\s+)?(.+)$|""" +
+            """\bcosa\s+c'?era\s+scritto\s+nella\s+foto\s+(?:di\s+|del\s+|della\s+)?(.+)$""",
     )
 
     private val SUPPORTED_APPS = setOf(

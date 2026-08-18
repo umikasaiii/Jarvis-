@@ -77,7 +77,19 @@ alongside every existing tool (all reachable from NORMAL mode too, since
 the only mode that reaches them purely through model-chosen JSON instead of
 also being reachable via a fixed alias):
 
-| Tool | Policy | Backed by |
+**Superseded by the Personal Archive follow-up** (same day, see
+`docs/PERSONAL_ARCHIVE.md`): `create_note`/`read_note`/`update_note`/
+`delete_note` were generalised into `create_archive_item`/`read_archive_item`/
+`update_archive_item`/`delete_archive_item` (a `type` argument selects
+note vs. to-watch, replacing `create_watch_item`/`update_watch_item` too),
+`get_attachment_context` was renamed `read_document_context` to match that
+follow-up's exact spec, and `search_archive`/`list_items`/`create_list`/
+`add_list_item`/`update_list_item`/`remove_list_item`/`search_images` were
+added for the new generic shopping/custom-list layer. The table below is the
+original, as shipped in this doc's first version; see
+`docs/PERSONAL_ARCHIVE.md` §5 for the current, authoritative tool list.
+
+| Tool (original) | Policy | Backed by |
 |---|---|---|
 | `search_memory` | READ_ONLY | `MemoryIndex.retrieveSmart` (Memory V2, unchanged) |
 | `search_documents` | READ_ONLY | `DocumentImportManager.documentEvidence` (unchanged) |

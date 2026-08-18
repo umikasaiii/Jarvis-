@@ -4,6 +4,11 @@ import androidx.room.Database
 import androidx.room.RoomDatabase
 import com.simone.jarvismobile.archive.ArchiveDao
 import com.simone.jarvismobile.archive.ArchiveItemEntity
+import com.simone.jarvismobile.archive.ArchiveLinkDao
+import com.simone.jarvismobile.archive.ArchiveLinkEntity
+import com.simone.jarvismobile.archive.ArchiveListDao
+import com.simone.jarvismobile.archive.ArchiveListEntity
+import com.simone.jarvismobile.archive.ArchiveListItemEntity
 import com.simone.jarvismobile.automation.rule.AutomationExecutionDao
 import com.simone.jarvismobile.automation.rule.AutomationExecutionEntity
 import com.simone.jarvismobile.automation.rule.AutomationPlaceDao
@@ -26,9 +31,9 @@ import com.simone.jarvismobile.navigation.PlaceFtsEntity
         PlaceFtsEntity::class, NavFavoriteEntity::class, NavHistoryEntity::class,
         AutomationRuleEntity::class, AutomationPlaceEntity::class,
         AutomationExecutionEntity::class, ParkingLocationEntity::class,
-        ArchiveItemEntity::class,
+        ArchiveItemEntity::class, ArchiveListEntity::class, ArchiveListItemEntity::class, ArchiveLinkEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = false,
 )
 abstract class JarvisDatabase : RoomDatabase() {
@@ -47,4 +52,9 @@ abstract class JarvisDatabase : RoomDatabase() {
     // Modalità Pro's personal archive (notes/to-watch) — user-typed data, same
     // "never destructive" rule as the automation tables. See ArchiveMigrations.
     abstract fun archiveDao(): ArchiveDao
+
+    // Personal Archive lists (shopping + custom) and cross-entity links — same
+    // non-destructive migration rule. See ArchiveMigrations.MIGRATION_5_6.
+    abstract fun archiveListDao(): ArchiveListDao
+    abstract fun archiveLinkDao(): ArchiveLinkDao
 }

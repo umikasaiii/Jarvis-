@@ -348,6 +348,30 @@ class DocumentImportManager @Inject constructor(
         return doc to text
     }
 
+    /**
+     * Photos/scans only (mimeType `image/*`), matched by title/tag/OCR text
+     * (spec §8/§9: "search_images" as a distinct, narrower search than
+     * [documentEvidence]'s cross-document relevance ranking — a "trova la
+     * ricevuta delle gomme" should not also surface a PDF that happens to
+     * mention gomme). Lexical only, same as the rest of this pragmatic photo
+     * feature; no visual embedding model exists to rank by yet.
+     */
+    suspend fun searchImages(query: String, limit: Int = 5): List<DocumentRecord> {
+        val n = query.trim()
+        if (n.length < 2) return emptyList()
+        val images = _documents.value.filter { it.status == DocumentStatus.READY && it.mimeType.startsWith("image/") }
+        if (images.isEmpty()) return emptyList()
+        val byMetadata = images.filter {
+            it.displayName.contains(n, ignoreCase = true) ||
+                it.title?.contains(n, ignoreCase = true) == true ||
+                it.tags.any { tag -> tag.contains(n, ignoreCase = true) }
+        }
+        val chunks = runCatching { dao.chunksFor(images.map { it.id }) }.getOrDefault(emptyList())
+        val byOcr = chunks.filter { it.text.contains(n, ignoreCase = true) }
+            .mapNotNull { chunk -> images.firstOrNull { it.id == chunk.documentId } }
+        return (byMetadata + byOcr).distinctBy { it.id }.take(limit)
+    }
+
     private suspend fun rebuildRetriever(): Unit = withContext(Dispatchers.Default) {
         val chunks = runCatching { dao.readyChunks().map { it.toChunk() } }.getOrDefault(emptyList())
         retriever = if (chunks.isEmpty()) null else HybridDocumentRetriever(chunks)

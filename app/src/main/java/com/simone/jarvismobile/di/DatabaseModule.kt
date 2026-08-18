@@ -3,6 +3,8 @@ package com.simone.jarvismobile.di
 import android.content.Context
 import androidx.room.Room
 import com.simone.jarvismobile.archive.ArchiveDao
+import com.simone.jarvismobile.archive.ArchiveLinkDao
+import com.simone.jarvismobile.archive.ArchiveListDao
 import com.simone.jarvismobile.archive.ArchiveMigrations
 import com.simone.jarvismobile.automation.rule.AutomationExecutionDao
 import com.simone.jarvismobile.automation.rule.AutomationPlaceDao
@@ -69,4 +71,12 @@ object DatabaseModule {
     @Provides
     fun provideArchiveDao(database: JarvisDatabase): ArchiveDao =
         database.archiveDao()
+
+    @Provides
+    fun provideArchiveListDao(database: JarvisDatabase): ArchiveListDao =
+        database.archiveListDao()
+
+    @Provides
+    fun provideArchiveLinkDao(database: JarvisDatabase): ArchiveLinkDao =
+        database.archiveLinkDao()
 }

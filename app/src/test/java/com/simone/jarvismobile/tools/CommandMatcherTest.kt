@@ -315,4 +315,118 @@ class CommandMatcherTest {
         // Same verb, no note cue: must stay with the agenda path.
         assertNull(CommandMatcher.match("sposta il dentista a venerdì"))
     }
+
+    // --- Personal Archive: shopping list ---------------------------------
+
+    @Test
+    fun addingAnItemToTheShoppingListWorksThroughSeveralPhrasings() {
+        for (q in listOf(
+            "Aggiungi filtro olio alle cose da comprare",
+            "Devo comprare due lampadine",
+            "Ricordami di comprare il latte",
+        )) {
+            val m = CommandMatcher.match(q)
+            assertTrue("no match for: $q", m is Match.Run)
+            assertEquals(q, "add_list_item", (m as Match.Run).call.name)
+            assertEquals(q, "spesa", m.call.arguments["list"]?.jsonPrimitive?.content)
+        }
+    }
+
+    @Test
+    fun whatToBuyListsTheShoppingList() {
+        val m = CommandMatcher.match("Cosa devo comprare?") as Match.Run
+        assertEquals("list_items", m.call.name)
+        assertEquals("spesa", m.call.arguments["list"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun boughtItemCompletesTheShoppingListEntry() {
+        val m = CommandMatcher.match("Ho comprato il casco") as Match.Run
+        assertEquals("update_list_item", m.call.name)
+        assertEquals("casco", m.call.arguments["item"]?.jsonPrimitive?.content)
+        assertEquals("true", m.call.arguments["completed"]?.jsonPrimitive?.content)
+    }
+
+    // --- Personal Archive: custom lists -----------------------------------
+
+    @Test
+    fun creatingACustomListIsRecognised() {
+        val m = CommandMatcher.match("Crea una lista Ricambi moto") as Match.Run
+        assertEquals("create_list", m.call.name)
+        assertEquals("Ricambi moto", m.call.arguments["name"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun addingAnItemToACustomListCapturesBothNames() {
+        val m = CommandMatcher.match("Aggiungi pastiglie freno alla lista Ricambi moto") as Match.Run
+        assertEquals("add_list_item", m.call.name)
+        assertEquals("ricambi moto", m.call.arguments["list"]?.jsonPrimitive?.content)
+        assertEquals("Pastiglie freno", m.call.arguments["title"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun removingAnItemFromACustomListCapturesBothNames() {
+        val m = CommandMatcher.match("Togli filtro olio dalla lista Ricambi moto") as Match.Run
+        assertEquals("remove_list_item", m.call.name)
+        assertEquals("ricambi moto", m.call.arguments["list"]?.jsonPrimitive?.content)
+        assertEquals("filtro olio", m.call.arguments["item"]?.jsonPrimitive?.content)
+    }
+
+    // --- Personal Archive: to-watch ----------------------------------------
+
+    @Test
+    fun addingAMovieToTheWatchlistIsRecognised() {
+        val m = CommandMatcher.match("Metti Dune nelle cose da vedere") as Match.Run
+        assertEquals("create_archive_item", m.call.name)
+        assertEquals("to_watch", m.call.arguments["type"]?.jsonPrimitive?.content)
+        assertEquals("Dune", m.call.arguments["title"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun markingAWatchlistItemAsSeenIsRecognised() {
+        val m = CommandMatcher.match("Segna Dune come visto") as Match.Run
+        assertEquals("update_archive_item", m.call.name)
+        assertEquals("to_watch", m.call.arguments["type"]?.jsonPrimitive?.content)
+        assertEquals("dune", m.call.arguments["title"]?.jsonPrimitive?.content)
+        assertEquals("true", m.call.arguments["completed"]?.jsonPrimitive?.content)
+    }
+
+    // --- Personal Archive: quick notes --------------------------------------
+
+    @Test
+    fun creatingANoteDerivesAShortTitleFromTheContent() {
+        val m = CommandMatcher.match("Crea una nota: il filtro del condizionatore è stato cambiato ad agosto") as Match.Run
+        assertEquals("create_archive_item", m.call.name)
+        assertEquals("note", m.call.arguments["type"]?.jsonPrimitive?.content)
+        assertTrue(m.call.arguments["content"]?.jsonPrimitive?.content?.contains("condizionatore") == true)
+    }
+
+    @Test
+    fun ordinaryRememberPhrasingStillGoesToMemoryNotTheArchive() {
+        // "segnati che"/"prendi nota" are deliberately left on the existing
+        // Memory V2 path — see CommandMatcher's noteCreateCall doc comment.
+        val m = CommandMatcher.match("Segnati che il pezzo di ricambio compatibile è XYZ") as Match.Run
+        assertEquals("remember", m.call.name)
+    }
+
+    // --- Search: archive / documents / knowledge ----------------------------
+
+    @Test
+    fun whatDidIWriteSearchesThePersonalArchiveNotMemory() {
+        val m = CommandMatcher.match("Cosa avevo scritto io sull'OAuth?") as Match.Run
+        assertEquals("search_archive", m.call.name)
+        assertTrue(m.call.arguments["query"]?.jsonPrimitive?.content?.contains("oauth", ignoreCase = true) == true)
+    }
+
+    @Test
+    fun searchingPersonalDocumentsIsDistinctFromTheArchive() {
+        val m = CommandMatcher.match("Cerca nei miei documenti quello che parla di OAuth") as Match.Run
+        assertEquals("search_documents", m.call.name)
+    }
+
+    @Test
+    fun searchingTheWikiIsDistinctFromTheArchive() {
+        val m = CommandMatcher.match("Cerca nella wiki OAuth") as Match.Run
+        assertEquals("search_knowledge", m.call.name)
+    }
 }
