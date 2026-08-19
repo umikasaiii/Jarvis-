@@ -164,3 +164,18 @@ lint is clean, docs/decisions updated. Never leave the main branch uncompilable.
   :app:assembleDebug` cannot succeed until the user adds both. Do not promote
   this from "written" to "verified" until a build with both present has
   actually run. See `docs/VOICE.md`.
+- **Update, 2026-08-19 — Supertonic TEMPORARILY DISABLED at build level, by
+  explicit user request**, to unblock every other feature on this branch
+  (Modalità Pro, Personal Archive, the intent-understanding fixes, the stop-
+  button fix, the third classifier slot — none of which had ever reached an
+  installable APK because of the missing AAR above). `SupertonicTtsEngine.kt`
+  was replaced with a stub that keeps its exact public API but always returns
+  `TtsLoadResult.Failed` (so `HybridTtsEngine`'s existing Android-TTS fallback
+  takes over, unchanged); `app/build.gradle.kts`'s
+  `implementation(files("libs/sherpa-onnx-1.13.5.aar"))` line is commented
+  out. Nothing else changed — `NeuralTtsRepository`/`DiagnosticsViewModel`
+  only depend on the class type and public methods, both preserved. This is a
+  straight `git revert` away from being undone once the user supplies the AAR
+  and the seven model files; the real sherpa-onnx implementation is intact in
+  git history. `cd core && ./gradlew test` stays green (no `:core` file was
+  touched).
