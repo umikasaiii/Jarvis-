@@ -402,7 +402,11 @@ private fun TaskTimePicker(
             TextButton(onClick = { onPick(java.time.LocalTime.of(state.hour, state.minute)) }) { Text("OK") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Annulla") } },
-        text = { androidx.compose.material3.TimePicker(state = state) },
+        // TimeInput (numeric hour/minute fields), not the analog TimePicker
+        // dial: the dial's hour-to-minute step is an animated crossfade of the
+        // whole clock face, which felt slow and laggy on-device. TimeInput has
+        // no such transition and is also faster to use for a specific time.
+        text = { androidx.compose.material3.TimeInput(state = state) },
     )
 }
 
