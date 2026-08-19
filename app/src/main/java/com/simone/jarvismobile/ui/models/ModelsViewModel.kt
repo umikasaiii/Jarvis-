@@ -30,6 +30,8 @@ class ModelsViewModel @Inject constructor(
     val loadedModelName: StateFlow<String?> = llm.loadedModelName
     val advancedLoadState: StateFlow<LlmLoadState> = router.advancedLoadState
     val advancedModelName: StateFlow<String?> = router.advancedModelName
+    val classifierLoadState: StateFlow<LlmLoadState> = router.classifierLoadState
+    val classifierModelName: StateFlow<String?> = router.classifierModelName
 
     private val _models = MutableStateFlow<List<LocalModel>>(emptyList())
     val models: StateFlow<List<LocalModel>> = _models.asStateFlow()
@@ -113,6 +115,46 @@ class ModelsViewModel @Inject constructor(
         router.advanced.unload()
         viewModelScope.launch { settings.clearAdvancedModel() }
         _status.value = "Modello avanzato scaricato"
+    }
+
+    /**
+     * Assigns a model to the optional "classificatore" slot — used ONLY to
+     * decide which comando/tool an utterance means when the deterministic
+     * aliases don't recognise it (spec: "quando JARVIS non rileva subito
+     * alias rapidi"), never for an actual conversational answer. Isolated
+     * from the fast slot so a tiny model dedicated purely to classification
+     * doesn't also become the model that answers ordinary chat.
+     */
+    fun loadClassifier(model: LocalModel) {
+        if (_busy.value) return
+        _busy.value = true
+        _status.value = "Caricamento del modello classificatore…"
+        viewModelScope.launch {
+            if (model.path == settings.modelPath.first()) {
+                router.classifier.unload()
+                settings.clearClassifierModel()
+                _status.value = "È già il modello rapido: JARVIS lo userà anche per " +
+                    "la classificazione, senza caricarlo due volte."
+                _busy.value = false
+                return@launch
+            }
+            val ok = router.classifier.load(model.path, model.name)
+            if (ok) settings.setClassifierModel(model.path, model.name)
+            _status.value = if (ok) {
+                "Modello classificatore pronto: ${model.name}. Verrà usato solo per capire " +
+                    "quale comando intendi quando gli alias rapidi non bastano, mai per rispondere."
+            } else {
+                "Caricamento del classificatore fallito. Dettaglio: " +
+                    router.classifier.lastLoadDetail.value.ifBlank { "errore sconosciuto" }
+            }
+            _busy.value = false
+        }
+    }
+
+    fun unloadClassifier() {
+        router.classifier.unload()
+        viewModelScope.launch { settings.clearClassifierModel() }
+        _status.value = "Modello classificatore scaricato"
     }
 
     fun unload() {

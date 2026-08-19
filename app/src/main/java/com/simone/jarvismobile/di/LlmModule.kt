@@ -9,11 +9,14 @@ import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
 
 /**
- * The two brains. `LitertLmEngine` is unscoped, so [LlmRouter] receives two
- * distinct instances: a small always-on model and an optional larger one.
+ * The three brains. `LitertLmEngine` is unscoped, so [LlmRouter] receives three
+ * distinct instances: a small always-on model, an optional larger one for hard
+ * questions, and an optional third one dedicated purely to intent
+ * classification (see `LlmRouter.classifierEngine`).
  *
- * Anything that just needs "the model" (model management, intent classification)
- * gets the fast engine; only conversation routing goes through the router.
+ * Anything that just needs "the model" (model management) gets the fast
+ * engine; conversation routing and intent classification go through the
+ * router, which picks the right instance.
  */
 @Module
 @InstallIn(SingletonComponent::class)

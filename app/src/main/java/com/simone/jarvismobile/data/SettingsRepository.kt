@@ -41,6 +41,8 @@ class SettingsRepository @Inject constructor(
         val MODEL_NAME = stringPreferencesKey("llm_model_name")
         val ADV_MODEL_PATH = stringPreferencesKey("llm_adv_model_path")
         val ADV_MODEL_NAME = stringPreferencesKey("llm_adv_model_name")
+        val CLASSIFIER_MODEL_PATH = stringPreferencesKey("llm_classifier_model_path")
+        val CLASSIFIER_MODEL_NAME = stringPreferencesKey("llm_classifier_model_name")
         val VAULT_URI = stringPreferencesKey("vault_tree_uri")
         val KNOWLEDGE_URI = stringPreferencesKey("knowledge_tree_uri")
         val EMBEDDING_MODEL_PATH = stringPreferencesKey("embedding_model_path")
@@ -228,6 +230,33 @@ class SettingsRepository @Inject constructor(
         context.settingsDataStore.edit {
             it.remove(Keys.ADV_MODEL_PATH)
             it.remove(Keys.ADV_MODEL_NAME)
+        }
+    }
+
+    /**
+     * Optional third model, used only by [com.simone.jarvismobile.tools.LlmIntentClassifier]
+     * to decide which tool an utterance means — never for an actual answer.
+     * Isolated from the fast slot so a tiny model dedicated purely to
+     * classification can be imported without becoming the model that answers
+     * ordinary conversation.
+     */
+    val classifierModelPath: Flow<String> =
+        context.settingsDataStore.data.map { it[Keys.CLASSIFIER_MODEL_PATH] ?: "" }
+
+    val classifierModelName: Flow<String> =
+        context.settingsDataStore.data.map { it[Keys.CLASSIFIER_MODEL_NAME] ?: "" }
+
+    suspend fun setClassifierModel(path: String, name: String) {
+        context.settingsDataStore.edit {
+            it[Keys.CLASSIFIER_MODEL_PATH] = path
+            it[Keys.CLASSIFIER_MODEL_NAME] = name
+        }
+    }
+
+    suspend fun clearClassifierModel() {
+        context.settingsDataStore.edit {
+            it.remove(Keys.CLASSIFIER_MODEL_PATH)
+            it.remove(Keys.CLASSIFIER_MODEL_NAME)
         }
     }
 

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -41,6 +42,7 @@ fun ModelsScreen(
     val loadState by viewModel.loadState.collectAsStateWithLifecycle()
     val loadedName by viewModel.loadedModelName.collectAsStateWithLifecycle()
     val advancedName by viewModel.advancedModelName.collectAsStateWithLifecycle()
+    val classifierName by viewModel.classifierModelName.collectAsStateWithLifecycle()
     val status by viewModel.status.collectAsStateWithLifecycle()
     val busy by viewModel.busy.collectAsStateWithLifecycle()
 
@@ -65,6 +67,7 @@ fun ModelsScreen(
                 Text("Stato: ${loadStateLabel(loadState)}", style = MaterialTheme.typography.titleMedium)
                 Text("Rapido: ${loadedName ?: "—"}", style = MaterialTheme.typography.bodyMedium)
                 Text("Avanzato: ${advancedName ?: "—"}", style = MaterialTheme.typography.bodyMedium)
+                Text("Classificatore: ${classifierName ?: "—"}", style = MaterialTheme.typography.bodyMedium)
                 if (status.isNotEmpty()) {
                     Text(status, style = MaterialTheme.typography.bodyMedium)
                 }
@@ -90,9 +93,13 @@ fun ModelsScreen(
                     Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(model.name, style = MaterialTheme.typography.titleSmall)
                         Text("${model.sizeBytes / (1024 * 1024)} MB", style = MaterialTheme.typography.bodySmall)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        ) {
                             Button(onClick = { viewModel.load(model) }, enabled = !busy) { Text("Rapido") }
                             Button(onClick = { viewModel.loadAdvanced(model) }, enabled = !busy) { Text("Avanzato") }
+                            Button(onClick = { viewModel.loadClassifier(model) }, enabled = !busy) { Text("Classificatore") }
                             OutlinedButton(onClick = { viewModel.delete(model) }, enabled = !busy) { Text("Elimina") }
                         }
                     }
@@ -106,19 +113,26 @@ fun ModelsScreen(
                     Text("Scarica avanzato")
                 }
             }
+            OutlinedButton(onClick = viewModel::unloadClassifier, modifier = Modifier.fillMaxWidth()) {
+                Text("Scarica classificatore")
+            }
         }
 
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("Due modelli: rapido e avanzato", style = MaterialTheme.typography.titleMedium)
+                Text("Tre modelli: rapido, avanzato, classificatore", style = MaterialTheme.typography.titleMedium)
                 HorizontalDivider()
                 Text(
                     "Assegna un modello piccolo (es. Gemma 1B) allo slot «Rapido»: gestisce " +
                         "comandi e risposte brevi, sempre reattivo. Assegnane uno grande " +
                         "(es. Gemma 4 E4B) allo slot «Avanzato»: verrà usato solo per le domande " +
-                        "che richiedono ragionamento, spiegazioni o consigli. Se imposti solo " +
-                        "il rapido, funziona tutto come prima. Nota: due modelli caricati " +
-                        "occupano più memoria.",
+                        "che richiedono ragionamento, spiegazioni o consigli. Assegnane uno " +
+                        "minuscolo (es. Qwen 0.5B/0.8B quantizzato) allo slot «Classificatore»: " +
+                        "entra in gioco SOLO quando dici qualcosa che gli alias rapidi non " +
+                        "riconoscono subito, per capire quale comando intendi — non risponde mai " +
+                        "in chat, non tocca la conversazione normale. Se imposti solo il rapido, " +
+                        "funziona tutto come prima (il rapido fa anche da classificatore). Nota: " +
+                        "ogni modello caricato in più occupa memoria.",
                     style = MaterialTheme.typography.bodySmall,
                 )
                 Spacer(Modifier.size(8.dp))

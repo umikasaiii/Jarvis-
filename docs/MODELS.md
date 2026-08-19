@@ -18,10 +18,25 @@ verified sources: the **Google AI Edge Gallery** app or the **LiteRT community o
 Hugging Face**. The `LlmEngine` seam keeps a llama.cpp/GGUF engine (below) a
 drop-in alternative for later.
 
-For the current two-brain phone setup, use **Gemma 3 1B Instruct** as the fast
-slot and a mobile LiteRT-LM **Gemma 4 E4B** build as the advanced slot. "E4B" is
-the official effective-parameter name; it is not a dense desktop 4B package.
-Both files must be instruction-tuned, mobile-compatible `.litertlm` artifacts.
+For the current phone setup, use **Gemma 3 1B Instruct** as the fast slot and a
+mobile LiteRT-LM **Gemma 4 E4B** build as the advanced slot. "E4B" is the
+official effective-parameter name; it is not a dense desktop 4B package. Both
+files must be instruction-tuned, mobile-compatible `.litertlm` artifacts.
+
+### Optional third brain: the classifier slot
+
+`LlmRouter` also carries an optional third, independent `LitertLmEngine`
+instance, used **only** by `LlmIntentClassifier` — the one-line-answer model
+that decides which tool an utterance means once `CommandMatcher`'s
+deterministic aliases don't recognise it. It never answers a real question and
+never touches the conversation. When no classifier model is imported (the
+default), classification silently falls back to the fast engine, so behaviour
+is unchanged. When one *is* imported, it is completely isolated from ordinary
+chat — it can be much smaller than the fast slot, since its only job is to
+output one short line, e.g. a heavily quantized **Qwen 0.5B/0.8B** or similarly
+tiny instruction-tuned `.litertlm` build. Manage it from Impostazioni ›
+Modelli, "Classificatore" — same import/load/unload pattern as the other two
+slots.
 
 ## LLM (llama.cpp, GGUF)
 

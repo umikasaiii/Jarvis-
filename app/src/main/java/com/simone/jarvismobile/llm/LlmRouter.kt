@@ -23,6 +23,7 @@ enum class ModelSlot { FAST, ADVANCED }
 class LlmRouter @Inject constructor(
     val fast: LitertLmEngine,
     val advanced: LitertLmEngine,
+    val classifier: LitertLmEngine,
 ) {
     /** The fast engine backs the UI's load indicator — it is the always-on brain. */
     val loadState: StateFlow<LlmLoadState> get() = fast.loadState
@@ -32,8 +33,28 @@ class LlmRouter @Inject constructor(
     val advancedLoadState: StateFlow<LlmLoadState> get() = advanced.loadState
     val advancedModelName: StateFlow<String?> get() = advanced.loadedModelName
 
+    /**
+     * Optional third brain, used ONLY by [com.simone.jarvismobile.tools.LlmIntentClassifier]
+     * — never for an actual conversational answer. Isolated from [fast] so a
+     * tiny model dedicated purely to "which tool did the user mean" can be
+     * imported without also becoming the model that answers ordinary chat.
+     */
+    val classifierLoadState: StateFlow<LlmLoadState> get() = classifier.loadState
+    val classifierModelName: StateFlow<String?> get() = classifier.loadedModelName
+
     /** True when a second, larger model is loaded and can take hard questions. */
     val hasAdvanced: Boolean get() = advanced.loadState.value == LlmLoadState.LOADED
+
+    /** True when a dedicated classifier model is loaded. */
+    val hasClassifier: Boolean get() = classifier.loadState.value == LlmLoadState.LOADED
+
+    /**
+     * The engine [com.simone.jarvismobile.tools.LlmIntentClassifier] should use:
+     * the dedicated classifier model when one is loaded, otherwise the fast
+     * engine — so the app behaves exactly as before when no third model is
+     * imported.
+     */
+    fun classifierEngine(): LlmEngine = if (hasClassifier) classifier else fast
 
     fun engineFor(slot: ModelSlot): LitertLmEngine = when (slot) {
         ModelSlot.FAST -> fast
@@ -75,6 +96,7 @@ class LlmRouter @Inject constructor(
     fun cancel() {
         fast.cancel()
         advanced.cancel()
+        classifier.cancel()
     }
 
     private companion object {

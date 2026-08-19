@@ -1809,6 +1809,7 @@ class SessionCoordinator @Inject constructor(
         _diagnostic.value = "carico modello…"
         llm.load(path, name)
         loadAdvancedIfConfigured()
+        loadClassifierIfConfigured()
     }
 
     /**
@@ -1834,6 +1835,31 @@ class SessionCoordinator @Inject constructor(
         val name = settings.advancedModelName.first().ifBlank { file.name }
         _diagnostic.value = "carico modello avanzato…"
         router.advanced.load(path, name)
+    }
+
+    /**
+     * Loads the optional third model dedicated to intent classification (see
+     * `LlmRouter.classifierEngine`). Never used for an actual answer, so it is
+     * safe to keep tiny; the app works exactly as before (classification falls
+     * back to the fast engine) when none is configured.
+     */
+    private suspend fun loadClassifierIfConfigured() {
+        if (router.classifierLoadState.value == LlmLoadState.LOADED) return
+        val path = settings.classifierModelPath.first()
+        if (path.isBlank()) return
+        if (path == settings.modelPath.first()) {
+            // The fast engine already owns this exact model — loading it again
+            // just for classification would double RAM for no benefit.
+            router.classifier.unload()
+            settings.clearClassifierModel()
+            _diagnostic.value = "un solo modello: rapido e classificatore coincidono"
+            return
+        }
+        val file = File(path)
+        if (!file.exists()) return
+        val name = settings.classifierModelName.first().ifBlank { file.name }
+        _diagnostic.value = "carico modello classificatore…"
+        router.classifier.load(path, name)
     }
 
     fun newConversation() {
