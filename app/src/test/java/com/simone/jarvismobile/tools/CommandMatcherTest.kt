@@ -213,13 +213,10 @@ class CommandMatcherTest {
         assertNull(match.call.arguments["time"])
     }
 
-    @Test
-    fun completedTaskUsesThePersonalCalendarTool() {
-        val match = CommandMatcher.match("Segna comprare il latte come completato") as Match.Run
-
-        assertEquals("complete_agenda", match.call.name)
-        assertEquals("comprare il latte", match.call.arguments["text"]?.jsonPrimitive?.content)
-    }
+    // "Segna X come completato" is handled entirely by the structured
+    // AgendaIntentRouter path now (see AgendaCommandParserTest's COMPLETE
+    // cases), the same as delete/move/rename — CommandMatcher no longer
+    // matches it at all.
 
     @Test
     fun contactsAreNotAnOpenableCapability() {

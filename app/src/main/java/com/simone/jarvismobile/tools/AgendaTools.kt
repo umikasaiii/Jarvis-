@@ -188,6 +188,13 @@ class ListAgendaTool(private val agenda: AgendaRepository) : Tool {
  * already fails closed on ambiguity — so "segna X come completato" is honoured at
  * once, without a second confirmation the user found redundant.
  */
+/**
+ * Marks one planner entry done, addressed by **id** — never by words. Like
+ * [DeleteAgendaTool]/[MoveAgendaTool]/[RenameAgendaTool], resolving the user's
+ * phrasing to an actual entry (and asking which one when more than one fits)
+ * happens earlier, in [AgendaIntentRouter]; by the time a call reaches this
+ * tool the target is already unambiguous.
+ */
 class CompleteAgendaTool(private val agenda: AgendaRepository) : Tool {
     override val name = "complete_agenda"
     override val description = "Segna come completata un'attività del calendario personale."
@@ -196,15 +203,12 @@ class CompleteAgendaTool(private val agenda: AgendaRepository) : Tool {
     override val requiresNetwork = false
     override val timeoutMs = 5_000L
 
-    override fun validate(arguments: JsonObject): String? {
-        val text = arguments.text("text") ?: return "manca il campo 'text'"
-        if (text.length < 2) return "testo troppo corto"
-        return null
-    }
+    override fun validate(arguments: JsonObject): String? =
+        if (arguments.text("id") == null) "manca il campo 'id'" else null
 
     override suspend fun execute(arguments: JsonObject): ToolResult {
-        val text = arguments.text("text") ?: return ToolResult.Failure("missing_text")
-        val completed = runCatching { agenda.markDone(text) }.getOrNull()
+        val id = arguments.text("id") ?: return ToolResult.Failure("missing_id")
+        val completed = runCatching { agenda.setDone(id, true) }.getOrNull()
             ?: return ToolResult.Failure("agenda_item_not_found")
         return okJson(
             "id" to completed.id,

@@ -1744,8 +1744,8 @@ class SessionCoordinator @Inject constructor(
         pendingCompletion?.let { entry ->
             pendingCompletion = null
             if (yes) {
-                val done = runCatching { agenda.markDone(entry.text) }.getOrNull()
-                return if (done != null) "Fatto, ho segnato “${done.text}” come completata." 
+                val done = runCatching { agenda.setDone(entry.id, true) }.getOrNull()
+                return if (done != null) "Fatto, ho segnato “${done.text}” come completata."
                 else "Non sono riuscito a segnarla: controlla in Agenda."
             }
             if (no) return "Va bene, la lascio aperta."

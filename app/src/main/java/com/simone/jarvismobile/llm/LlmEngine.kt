@@ -8,6 +8,14 @@ enum class LlmLoadState { UNLOADED, LOADING, LOADED, ERROR }
 class LlmGenerationTimeoutException : RuntimeException("generation_timeout")
 
 /**
+ * Default per-call deadline for a full conversational generation. Callers that
+ * only need a short, single-line completion (e.g. intent classification)
+ * should pass a much smaller value to [LlmEngine.generate] instead — see
+ * [com.simone.jarvismobile.tools.LlmIntentClassifier].
+ */
+const val DEFAULT_GENERATION_TIMEOUT_SECONDS = 90L
+
+/**
  * Local, on-device language model (docs/ARCHITECTURE.md §5). Phase 3 ships
  * [LitertLmEngine] (LiteRT-LM, `.litertlm` models); the interface stays swappable
  * so another backend can replace it later. Everything runs offline; the model
@@ -26,8 +34,13 @@ interface LlmEngine {
     /** Frees the model and its memory. */
     fun unload()
 
-    /** Generates a full reply for [prompt] with no memory (stateless). Null on failure. */
-    suspend fun generate(prompt: String): String?
+    /**
+     * Generates a full reply for [prompt] with no memory (stateless). Null on
+     * failure. [timeoutSeconds] bounds the native call — shorten it for a
+     * short, single-line completion so a stuck/slow model fails fast instead
+     * of blocking the caller for the full conversational deadline.
+     */
+    suspend fun generate(prompt: String, timeoutSeconds: Long = DEFAULT_GENERATION_TIMEOUT_SECONDS): String?
 
     /**
      * Multi-turn chat: sends [userText] within a conversation that persists across

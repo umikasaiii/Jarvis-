@@ -81,27 +81,10 @@ class AgendaRepository @Inject constructor(
     }
 
     /**
-     * Marks an open entry only when [needle] identifies exactly one candidate.
-     * Ambiguity fails closed instead of completing the wrong same-named task.
-     */
-    suspend fun markDone(needle: String): AgendaEntry? = mutex.withLock {
-        val current = loadLocked()
-        val matches = current.filter {
-            !it.done && it.text.contains(needle.trim(), ignoreCase = true)
-        }
-        val target = matches.singleOrNull() ?: return@withLock null
-        val updated = Agenda.sorted(current - target + target.copy(done = true))
-        if (!writeRaw(Agenda.renderFile(updated))) return@withLock null
-        _entries.value = updated
-        reminderScheduler.cancelEntry(target.id)
-        reminderScheduler.sync(updated)
-        target
-    }
-
-    /**
-     * Sets the done flag on one entry by id. The chat path has to identify an
-     * item by its words; the dashboard already knows exactly which one was
-     * tapped, so it must never go through text matching.
+     * Sets the done flag on one entry by id. Every caller — the dashboard tap,
+     * and the chat/voice path via [com.simone.jarvismobile.tools.AgendaIntentRouter],
+     * which resolves the user's own words to a real entry first — already knows
+     * exactly which one it means, so this never does its own text matching.
      */
     suspend fun setDone(id: String, done: Boolean): AgendaEntry? = mutex.withLock {
         val current = loadLocked()

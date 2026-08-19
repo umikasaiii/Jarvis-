@@ -118,7 +118,10 @@ class LitertLmEngine @Inject constructor(
         _loadedModelName.value = null
     }
 
-    override suspend fun generate(prompt: String): String? = withContext(Dispatchers.Default) {
+    override suspend fun generate(
+        prompt: String,
+        timeoutSeconds: Long,
+    ): String? = withContext(Dispatchers.Default) {
         val e = engine ?: return@withContext null
         try {
             // A fresh conversation per call keeps generation stateless (no memory).
@@ -126,7 +129,7 @@ class LitertLmEngine @Inject constructor(
                 // sendMessage returns a Message; Message.toString() concatenates its
                 // text Contents into the plain reply string (Content.Text.toString()
                 // is the raw text). Blocking call — we are on Dispatchers.Default.
-                runGeneration(conv, prompt)
+                runGeneration(conv, prompt, timeoutSeconds)
             }
         } catch (e: CancellationException) {
             throw e
@@ -189,12 +192,16 @@ class LitertLmEngine @Inject constructor(
      * remains held until native code acknowledges the stop, preventing a second
      * request from entering the same Conversation concurrently.
      */
-    private fun runGeneration(conv: Conversation, text: String): String {
+    private fun runGeneration(
+        conv: Conversation,
+        text: String,
+        timeoutSeconds: Long = GENERATION_TIMEOUT_SECONDS,
+    ): String {
         val active = ActiveGeneration(conv)
         check(activeGeneration.compareAndSet(null, active)) { "generation_already_running" }
         val timeout = watchdog.schedule(
             { active.request(StopReason.TIMEOUT) },
-            GENERATION_TIMEOUT_SECONDS,
+            timeoutSeconds,
             TimeUnit.SECONDS,
         )
         try {

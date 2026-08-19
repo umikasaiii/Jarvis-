@@ -166,8 +166,10 @@ object CommandMatcher {
             return Match.Ask("A che ora?", "set_alarm", "time")
         }
 
-        // --- Finish a personal-calendar task ----------------------------
-        completeAgendaCall(raw)?.let { return it }
+        // --- Finish a personal-calendar task --------------------------------
+        // Handled entirely by the structured path (AgendaIntentRouter, checked
+        // in SessionCoordinator before the LLM classifier) — same as
+        // delete/move/rename, which also aren't matched here.
 
         // --- What's on the calendar ---------------------------------------
         if (AGENDA_RE.containsMatchIn(t)) return agendaCall(raw, now)
@@ -354,24 +356,6 @@ object CommandMatcher {
             )
         }
         return call(tool, *partial.entries.map { it.key to it.value }.toTypedArray())
-    }
-
-    /** Marks one open activity as done, using its own words as the lookup key. */
-    fun completeAgendaCall(raw: String): Match? {
-        val t = normalize(raw)
-        if (COMPLETE_AGENDA_BARE_RE.matches(t)) {
-            return Match.Ask("Quale attività devo segnare come completata?", "complete_agenda", "text")
-        }
-        val match = COMPLETE_AGENDA_RE.matchEntire(t) ?: return null
-        val target = match.groupValues.drop(1).firstOrNull(String::isNotBlank)
-            .orEmpty()
-            .replace(AGENDA_TARGET_PREFIX_RE, "")
-            .trim(' ', '.', '?', '!', ':')
-        return if (target.length >= 2) {
-            call("complete_agenda", "text" to target)
-        } else {
-            Match.Ask("Quale attività devo segnare come completata?", "complete_agenda", "text")
-        }
     }
 
     /** "chiama 333..." opens only ACTION_DIAL; contact-name guessing is forbidden. */
@@ -1043,18 +1027,6 @@ object CommandMatcher {
     private val CALENDAR_WORDS_RE = Regex(
         """\b(?:(?:su|nel|nello|sul|al|in)\s+)?(?:google\s+calendar|calendario(?:\s+(?:del\s+)?telefono|\s+android)?)\b|""" +
             """\b(?:un|una)\s+(?:evento|appuntamento|attivita|task)\b""",
-    )
-
-    private val COMPLETE_AGENDA_RE = Regex(
-        """^(?:segna|imposta|considera)\w*\s+(.+?)\s+come\s+(?:fatt[oa]|completat[oa]|conclus[oa])$|""" +
-            """^(?:ho\s+)?(?:completat[oa]|fatto|finito)\s+(.+)$|""" +
-            """^spunta\w*\s+(.+)$""",
-    )
-    private val COMPLETE_AGENDA_BARE_RE = Regex(
-        """^(?:segna|imposta)\w*\s+come\s+(?:fatt[oa]|completat[oa])$|^spunt\w*$""",
-    )
-    private val AGENDA_TARGET_PREFIX_RE = Regex(
-        """^(?:(?:l[' ]?)?attivita|(?:il\s+)?task|(?:l[' ]?)?impegno)\s+""",
     )
 
     private val DIAL_REQUEST_RE = Regex(

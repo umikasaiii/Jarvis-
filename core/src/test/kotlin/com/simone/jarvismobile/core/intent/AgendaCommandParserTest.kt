@@ -202,6 +202,57 @@ class AgendaCommandParserTest {
         assertTrue(intent.target.fromContext)
     }
 
+    // --- COMPLETE --------------------------------------------------------
+
+    @Test
+    fun completeWithTargetBeforeTheStatusWords() {
+        val intent = assertNotNull(parse("segna comprare il latte come completato"))
+        assertEquals(Action.COMPLETE, intent.action)
+        assertTrue(intent.target.needle.contains("comprare"), intent.target.needle)
+        assertTrue(intent.target.needle.contains("latte"), intent.target.needle)
+    }
+
+    @Test
+    fun completeWithStatusWordsBeforeTheTarget() {
+        // The word order the user actually spoke: "segna come completata
+        // l'attività X", not "segna X come completata".
+        val intent = assertNotNull(parse("segna come completata l'attività sistemare le scadenze"))
+        assertEquals(Action.COMPLETE, intent.action)
+        assertTrue(intent.target.needle.contains("sistemare"), intent.target.needle)
+        assertTrue(intent.target.needle.contains("scadenze"), intent.target.needle)
+    }
+
+    @Test
+    fun completeAliasesAllReachTheSameIntent() {
+        val phrases = listOf(
+            "segna il dentista come fatto",
+            "imposta il dentista come completato",
+            "considera il dentista come concluso",
+            "ho completato il dentista",
+            "ho fatto il dentista",
+            "ho finito il dentista",
+            "finito il dentista",
+            "spunta il dentista",
+        )
+        for (p in phrases) {
+            val intent = assertNotNull(parse(p), "no intent for: $p")
+            assertEquals(Action.COMPLETE, intent.action, p)
+            assertTrue(intent.target.needle.contains("dentista"), "$p → ${intent.target.needle}")
+        }
+    }
+
+    @Test
+    fun completionNeedsNoPlannerNounUnlikeTheGenericVerbPath() {
+        // Deliberately different from the generic MOVE/DELETE/UPDATE verb path
+        // above, which refuses "cambia la lingua" with no planner noun and no
+        // pronoun: completion is never destructive, so "ho finito il dentista"
+        // is accepted even though "dentista" alone names no planner domain —
+        // the router either finds a real matching entry or says it found none.
+        val intent = assertNotNull(parse("ho finito il dentista"))
+        assertEquals(Action.COMPLETE, intent.action)
+        assertTrue(intent.target.needle.contains("dentista"), intent.target.needle)
+    }
+
     // --- Collisions and refusals ---------------------------------------
 
     @Test

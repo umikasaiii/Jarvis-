@@ -47,6 +47,16 @@ object AgendaCommandParser {
             )
         }
 
+        // "segna X come completata" / "segna come completata l'attività X" /
+        // "ho completato/fatto/finito X" / "spunta X" — checked before the
+        // generic single-verb lookup below, since completion is a two-part
+        // phrase (a verb plus a status cue) in either word order, which
+        // findVerb()'s one-word-to-one-Action model can't express. "segna" by
+        // itself already means Action.CREATE in the verb table (used elsewhere
+        // for reminders/notes/lists), so this must be resolved as its own
+        // pattern rather than by adding "segna" to a COMPLETE verb group.
+        completeIntent(raw, norm, now)?.let { return it }
+
         val verb = findVerb(norm) ?: return null
         val action = verb.action
         if (action !in HANDLED) return null
@@ -167,6 +177,40 @@ object AgendaCommandParser {
             )
         }
         return null
+    }
+
+    // --- COMPLETE --------------------------------------------------------
+
+    /**
+     * "segna X come completata/fatta" / "segna come completata l'attività X" /
+     * "ho completato/fatto/finito X" / "spunta X". Unlike the generic verb path
+     * below, this is deliberately not gated on a planner noun or a day/time:
+     * completion is never destructive (the router only ever finds a real entry
+     * or says it found none — see [com.simone.jarvismobile.tools.AgendaIntentRouter]),
+     * so an occasional false trigger on a stray "ho finito X" statement costs an
+     * odd reply, not a wrong write — the same trade-off this exact pattern
+     * already made before this parser existed.
+     */
+    private fun completeIntent(raw: String, norm: String, now: LocalDateTime): ResolvedIntent? {
+        val strong = COMPLETE_STATUS_FIRST_RE.find(norm) ?: COMPLETE_TARGET_FIRST_RE.find(norm)
+        val weak = if (strong == null) {
+            COMPLETE_VERB_ONLY_RE.find(norm) ?: COMPLETE_SPUNTA_RE.find(norm)
+        } else {
+            null
+        }
+        val body = (strong ?: weak)?.groupValues?.getOrNull(1) ?: return null
+
+        val target = buildTarget(body, now)
+        if (target.isEmpty) return null
+        return ResolvedIntent(
+            domain = domainOf(norm) ?: Domain.AGENDA,
+            action = Action.COMPLETE,
+            score = if (strong != null) 0.85f else 0.65f,
+            source = IntentSource.STRUCTURED,
+            rawText = raw,
+            normalizedText = norm,
+            target = target,
+        )
     }
 
     // --- Target / destination extraction -------------------------------
@@ -390,15 +434,38 @@ object AgendaCommandParser {
         """(?<!\p{L})non\s+(?:voglio|vorrei|mi\s+serve)\s+(?:piu\s+)?(.+)$""",
     )
 
+    /** "segna X come completata/fatta/conclusa" — target named before the status. */
+    private val COMPLETE_TARGET_FIRST_RE = Regex(
+        """^(?:segna|imposta|considera)\w*\s+(.+?)\s+come\s+(?:fatt[oa]|completat[oa]|conclus[oa])$""",
+    )
+
+    /** "segna come completata/fatta l'attività X" — status words before the target. */
+    private val COMPLETE_STATUS_FIRST_RE = Regex(
+        """^(?:segna|imposta|considera)\w*\s+come\s+(?:fatt[oa]|completat[oa]|conclus[oa])\s+(.+)$""",
+    )
+
+    /** "(ho) completato/fatto/finito X" — a weaker signal, gated in [completeIntent]. */
+    private val COMPLETE_VERB_ONLY_RE = Regex(
+        """^(?:ho\s+)?(?:completat[oa]|fatto|finito)\s+(.+)$""",
+    )
+
+    /** "spunta X" — same weak-signal gating as [COMPLETE_VERB_ONLY_RE]. */
+    private val COMPLETE_SPUNTA_RE = Regex("""^spunta\w*\s+(.+)$""")
+
     private val REFERENCE_PREFIX = listOf(
         Regex("""^(?:quell[oaie]|quest[oaie])\s+(?:d[eia]l?l?[oaie']?\s*)?"""),
         Regex("""^(?:lo\s+stesso|la\s+stessa)\s+"""),
     )
 
     /** Planner nouns removed from a needle when other words remain. */
+    // NB: "scadenza"/"scadenze" is deliberately NOT here. Unlike "appuntamento"/
+    // "impegno"/"riunione" (generic words for "a thing on the calendar"),
+    // "scadenza" usually names WHAT is due ("scadenza IVA", "controllare le
+    // scadenze") — stripping it as filler can throw away the one word that
+    // still matches the entry's real saved title.
     private val PLANNER_NOUNS = Regex(
         """(?<!\p{L})(?:l')?(?:appuntament[oi]|event[oi]|impegn[oi]|riunion[ei]|meeting|""" +
-            """promemoria|attivit[àa]|task|agenda|calendario|scadenz[ae]|""" +
+            """promemoria|attivit[àa]|task|agenda|calendario|""" +
             """appunt[oi]|not[ae]|memo|annotazion[ei])(?!\p{L})""",
     )
 

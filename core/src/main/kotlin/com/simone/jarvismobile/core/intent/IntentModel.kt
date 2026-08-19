@@ -36,6 +36,7 @@ enum class Action {
     UPDATE,
     DELETE,
     MOVE,
+    COMPLETE,
     OPEN,
     CLOSE,
     START,
@@ -151,7 +152,7 @@ data class ResolvedIntent(
 
     val isWrite: Boolean
         get() = action in setOf(
-            Action.CREATE, Action.UPDATE, Action.DELETE, Action.MOVE,
+            Action.CREATE, Action.UPDATE, Action.DELETE, Action.MOVE, Action.COMPLETE,
             Action.SET, Action.ENABLE, Action.DISABLE,
         )
 

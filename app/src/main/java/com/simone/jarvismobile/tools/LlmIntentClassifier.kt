@@ -85,7 +85,12 @@ class LlmIntentClassifier @Inject constructor(
         }
 
         val generated = try {
-            llm.generate(prompt(utterance, recentContext))
+            // A short deadline, not the full conversational one: this call's only
+            // job is one short line, so a stuck/slow classifier model must fail
+            // fast and fall through to the real answer instead of costing the
+            // user up to the full 90s conversational timeout before that answer
+            // even starts generating.
+            llm.generate(prompt(utterance, recentContext), timeoutSeconds = CLASSIFIER_TIMEOUT_SECONDS)
         } catch (e: CancellationException) {
             // Never turn a user's Stop into an unreadable classifier result and
             // then accidentally start a second generation for the answer.
@@ -174,9 +179,6 @@ class LlmIntentClassifier @Inject constructor(
 
             "list_agenda" -> CommandMatcher.agendaCall(utterance)
 
-            "complete_agenda" -> CommandMatcher.completeAgendaCall(utterance)
-                ?: Match.Ask("Quale attività devo segnare come completata?", "complete_agenda", "text")
-
             "open_app" -> CommandMatcher.appCall(utterance)
                 ?: Match.Ask("Quale app supportata devo aprire?", "open_app", "app")
 
@@ -225,7 +227,7 @@ class LlmIntentClassifier @Inject constructor(
         dove fiducia è un numero da 0 a 100. Non aggiungere spiegazioni.
 
         Intenti ammessi: get_time, battery_status, set_timer, set_alarm,
-        flashlight, add_reminder, list_agenda, complete_agenda, time_until, remember,
+        flashlight, add_reminder, list_agenda, time_until, remember,
         forget_memory, update_memory,
         list_memories, calculate, open_app, open_settings,
         create_calendar_event, prepare_call, compose_sms, navigate,
@@ -241,7 +243,6 @@ class LlmIntentClassifier @Inject constructor(
         o un promemoria, anche se non dice il giorno.
         Usa "list_agenda" per sapere cosa c'è in programma (impegni, appuntamenti,
         "cosa devo fare oggi pomeriggio").
-        Usa "complete_agenda" per segnare come conclusa un'attività già presente.
         Usa "time_until" per "quanto manca alle …" o "fra quanto".
         Usa "search_knowledge" per domande di conoscenza a cui rispondono guide,
         manuali o voci di enciclopedia importati offline: come si fa una cosa,
@@ -306,8 +307,6 @@ class LlmIntentClassifier @Inject constructor(
         Risposta: add_reminder|98
         Richiesta: esporta su Google Calendar dentista domani alle 15
         Risposta: create_calendar_event|98
-        Richiesta: segna comprare il latte come completato
-        Risposta: complete_agenda|98
         Richiesta: prepara un SMS al 3331234567 dicendo arrivo tra poco
         Risposta: compose_sms|99
         Richiesta: chiama il 061234567
@@ -355,11 +354,15 @@ class LlmIntentClassifier @Inject constructor(
     private companion object {
         const val TAG = "JarvisIntent"
         const val MAX_CONTEXT_CHARS = 900
+
+        /** One short line, not a conversational answer — a stuck/slow classifier
+         *  model must fail fast, not cost the user the full 90s deadline. */
+        const val CLASSIFIER_TIMEOUT_SECONDS = 15L
         const val DEFAULT_MODEL_CONFIDENCE = 0.72
         const val LOW_CONFIDENCE = 0.58
         val KNOWN_INTENTS = setOf(
             "get_time", "battery_status", "set_timer", "set_alarm", "flashlight",
-            "add_reminder", "list_agenda", "complete_agenda", "time_until", "remember",
+            "add_reminder", "list_agenda", "time_until", "remember",
             "forget_memory", "update_memory",
             "list_memories", "search_knowledge", "calculate", "open_app", "open_settings",
             "create_calendar_event", "prepare_call", "compose_sms", "navigate",
