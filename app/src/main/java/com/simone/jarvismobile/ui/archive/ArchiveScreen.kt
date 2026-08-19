@@ -19,6 +19,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -63,6 +64,7 @@ private enum class ArchiveTab(val label: String) {
  * Everything else here works as a normal notes/lists app with no AI involved,
  * backed by the same [ArchiveRepository]/[ArchiveListRepository] the AI tools use.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ArchiveScreen(
     onBack: () -> Unit,
