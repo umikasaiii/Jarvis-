@@ -57,6 +57,13 @@ object AgendaCommandParser {
         // pattern rather than by adding "segna" to a COMPLETE verb group.
         completeIntent(raw, norm, now)?.let { return it }
 
+        // "quando ho il dentista" / "quando devo andare dal dentista" / "a che
+        // ora è il dentista" / "che giorno ho il dentista" — a named lookup,
+        // not the general "what's on today" listing (AGENDA_RE, matched
+        // earlier in CommandMatcher, owns that). Also checked before the
+        // generic verb lookup: there is no verb here at all in "quando è X".
+        queryIntent(raw, norm, now)?.let { return it }
+
         val verb = findVerb(norm) ?: return null
         val action = verb.action
         if (action !in HANDLED) return null
@@ -206,6 +213,31 @@ object AgendaCommandParser {
             domain = domainOf(norm) ?: Domain.AGENDA,
             action = Action.COMPLETE,
             score = if (strong != null) 0.85f else 0.65f,
+            source = IntentSource.STRUCTURED,
+            rawText = raw,
+            normalizedText = norm,
+            target = target,
+        )
+    }
+
+    // --- QUERY -----------------------------------------------------------
+
+    /**
+     * "quando ho/è X" / "quando devo (andare) X" / "a che ora è X" / "che
+     * giorno ho X" — asks when one specific, named item is, as opposed to
+     * AGENDA_RE's "che impegni ho"/"cosa devo fare oggi" general listing
+     * (matched earlier, in CommandMatcher, before this parser ever runs).
+     * Read-only, so — like [completeIntent] — this is not gated on a planner
+     * noun: the router either finds a real entry or says it found none.
+     */
+    private fun queryIntent(raw: String, norm: String, now: LocalDateTime): ResolvedIntent? {
+        val body = QUERY_WHEN_RE.find(norm)?.groupValues?.getOrNull(1) ?: return null
+        val target = buildTarget(body, now)
+        if (target.isEmpty) return null
+        return ResolvedIntent(
+            domain = domainOf(norm) ?: Domain.AGENDA,
+            action = Action.QUERY,
+            score = 0.85f,
             source = IntentSource.STRUCTURED,
             rawText = raw,
             normalizedText = norm,
@@ -451,6 +483,18 @@ object AgendaCommandParser {
 
     /** "spunta X" — same weak-signal gating as [COMPLETE_VERB_ONLY_RE]. */
     private val COMPLETE_SPUNTA_RE = Regex("""^spunta\w*\s+(.+)$""")
+
+    /**
+     * "quando ho/è X" / "quando devo (andare) X" / "a che ora è X" / "che
+     * giorno ho X". "andare" is folded into the fixed prefix (not the capture)
+     * so "quando devo andare dal dentista" targets "dal dentista", not
+     * "andare dal dentista" — buildTarget()/TextNormalizer.matches() require
+     * every needle word to appear in the saved title, so a stray "andare"
+     * would otherwise sink an exact match.
+     */
+    private val QUERY_WHEN_RE = Regex(
+        """^(?:quando|a\s+che\s+ora|che\s+giorno)\s+(?:ho|e|c'?e|devo(?:\s+andare)?)\s+(.+)$""",
+    )
 
     private val REFERENCE_PREFIX = listOf(
         Regex("""^(?:quell[oaie]|quest[oaie])\s+(?:d[eia]l?l?[oaie']?\s*)?"""),

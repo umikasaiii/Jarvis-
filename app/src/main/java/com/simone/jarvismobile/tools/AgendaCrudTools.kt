@@ -13,7 +13,7 @@ import java.time.LocalDateTime
 import java.time.LocalTime
 
 /**
- * Delete / move / rename for the personal planner.
+ * Query / delete / move / rename for the personal planner.
  *
  * Every tool here addresses its entry by **id**, never by words. Resolving the
  * user's phrasing to an actual entry — and asking which one they meant when more
@@ -47,6 +47,34 @@ private val MONTH_NAMES = listOf(
     "gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno",
     "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre",
 )
+
+/**
+ * Answers "when is X" for one already-resolved planner entry — read-only, so it
+ * needs no confirmation. [AgendaIntentRouter] does the actual name lookup (and
+ * the disambiguation question when more than one entry fits); this tool only
+ * speaks the date/time of the one id it is given.
+ */
+class QueryAgendaTool(private val agenda: AgendaRepository) : Tool {
+    override val name = "query_agenda"
+    override val description = "Dice quando è previsto un impegno o un'attività del calendario personale."
+    override val policy = ToolPolicy.READ_ONLY
+    override val sensitivity = SensitivityLevel.PERSONAL
+    override val requiresNetwork = false
+    override val timeoutMs = 5_000L
+
+    override fun validate(arguments: JsonObject): String? =
+        if (arguments.str("id") == null) "manca il campo 'id'" else null
+
+    override suspend fun execute(arguments: JsonObject): ToolResult {
+        val id = arguments.str("id") ?: return ToolResult.Failure("missing_id")
+        val entry = agenda.entries.value.firstOrNull { it.id == id }
+            ?: return ToolResult.Failure("agenda_item_not_found")
+        return okJson(
+            "id" to entry.id,
+            "spoken" to "${entry.text}: ${describeWhen(entry.date, entry.time)}.",
+        )
+    }
+}
 
 /**
  * Removes one planner entry. Deleting cannot be undone, so this is a confirming

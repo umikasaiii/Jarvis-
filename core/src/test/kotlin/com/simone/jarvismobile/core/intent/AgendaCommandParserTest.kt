@@ -253,6 +253,44 @@ class AgendaCommandParserTest {
         assertTrue(intent.target.needle.contains("dentista"), intent.target.needle)
     }
 
+    // --- QUERY -----------------------------------------------------------
+
+    @Test
+    fun queryAliasesAllReachTheSameIntent() {
+        val phrases = listOf(
+            "quando ho il dentista",
+            "quando è il dentista",
+            "quando devo andare dal dentista",
+            "a che ora ho il dentista",
+            "a che ora è il dentista",
+            "che giorno ho il dentista",
+        )
+        for (p in phrases) {
+            val intent = assertNotNull(parse(p), "no intent for: $p")
+            assertEquals(Action.QUERY, intent.action, p)
+            assertTrue(intent.target.needle.contains("dentista"), "$p → ${intent.target.needle}")
+        }
+    }
+
+    @Test
+    fun queryDropsAndareSoItDoesNotBecomeARequiredNeedleWord() {
+        // "quando devo andare dal dentista" must target "dentista" alone, not
+        // "andare dentista" — a real saved title ("togliere le carie dal
+        // dentista e fare pulizia denti") contains "dentista" but not "andare",
+        // and TextNormalizer.matches() requires every needle word to appear.
+        val intent = assertNotNull(parse("quando devo andare dal dentista"))
+        assertEquals(Action.QUERY, intent.action)
+        assertTrue(!intent.target.needle.contains("andare"), intent.target.needle)
+    }
+
+    @Test
+    fun theGeneralAgendaListingIsNotHandledHere() {
+        // "che impegni ho"/"cosa devo fare oggi" stay on the existing AGENDA_RE
+        // path in CommandMatcher — this parser only owns a NAMED lookup.
+        assertNull(parse("che impegni ho oggi"))
+        assertNull(parse("cosa devo fare oggi pomeriggio"))
+    }
+
     // --- Collisions and refusals ---------------------------------------
 
     @Test

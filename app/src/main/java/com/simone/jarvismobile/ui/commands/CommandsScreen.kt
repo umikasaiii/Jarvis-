@@ -70,6 +70,7 @@ private val HINTS = mapOf(
         "«Ricordami la revisione domani alle 15»",
     ),
     "list_agenda" to Hint(Icons.Filled.CalendarMonth, "Agenda", "«Cosa devo fare oggi pomeriggio?»"),
+    "query_agenda" to Hint(Icons.Filled.CalendarMonth, "Quando è", "«Quando ho il dentista?»"),
     "complete_agenda" to Hint(
         Icons.Filled.CalendarMonth,
         "Completa attività",

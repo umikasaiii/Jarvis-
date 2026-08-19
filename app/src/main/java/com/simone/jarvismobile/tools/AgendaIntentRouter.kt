@@ -179,6 +179,7 @@ class AgendaIntentRouter @Inject constructor(
         Action.DELETE -> "delete_agenda"
         Action.MOVE -> "move_agenda"
         Action.COMPLETE -> "complete_agenda"
+        Action.QUERY -> "query_agenda"
         else -> "rename_agenda"
     }
 
@@ -232,7 +233,7 @@ class AgendaIntentRouter @Inject constructor(
     private companion object {
         const val TAG = "JarvisIntent"
         const val MAX_CANDIDATES = 5
-        val HANDLED = setOf(Action.DELETE, Action.MOVE, Action.UPDATE, Action.COMPLETE)
+        val HANDLED = setOf(Action.DELETE, Action.MOVE, Action.UPDATE, Action.COMPLETE, Action.QUERY)
         val ORDINALS = linkedMapOf(
             "primo" to 0, "prima" to 0, "secondo" to 1, "seconda" to 1,
             "terzo" to 2, "terza" to 2, "quarto" to 3, "quinta" to 4,

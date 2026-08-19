@@ -52,6 +52,7 @@ import com.simone.jarvismobile.tools.NavigationTool
 import com.simone.jarvismobile.tools.OpenAppTool
 import com.simone.jarvismobile.tools.OpenSettingsTool
 import com.simone.jarvismobile.tools.PlayMediaTool
+import com.simone.jarvismobile.tools.QueryAgendaTool
 import com.simone.jarvismobile.tools.RenameAgendaTool
 import com.simone.jarvismobile.tools.ReplyMessageTool
 import com.simone.jarvismobile.tools.SearchVaultTool
@@ -104,6 +105,7 @@ object ToolsModule {
             AddReminderTool(agenda),
             AddTaskTool(agenda),
             ListAgendaTool(agenda),
+            QueryAgendaTool(agenda),
             CompleteAgendaTool(agenda),
             DeleteAgendaTool(agenda),
             MoveAgendaTool(agenda),
