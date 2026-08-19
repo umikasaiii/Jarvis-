@@ -1,5 +1,6 @@
 package com.simone.jarvismobile.tools
 
+import com.simone.jarvismobile.llm.ClassifierEngineProvider
 import com.simone.jarvismobile.llm.LlmEngine
 import com.simone.jarvismobile.llm.LlmLoadState
 import kotlinx.coroutines.CancellationException
@@ -16,7 +17,7 @@ import org.junit.Test
 class LlmIntentClassifierTest {
     @Test
     fun highConfidenceToolMayExecute() = runTest {
-        val understanding = LlmIntentClassifier(FakeLlm("battery_status|96"))
+        val understanding = LlmIntentClassifier(ClassifierEngineProvider { FakeLlm("battery_status|96") })
             .understand("È in carica in questo momento?", "Batteria al 80 per cento")
 
         assertEquals("battery_status", understanding.intent)
@@ -26,7 +27,7 @@ class LlmIntentClassifierTest {
 
     @Test
     fun lowConfidenceToolIsKeptOutOfExecution() = runTest {
-        val understanding = LlmIntentClassifier(FakeLlm("flashlight|35"))
+        val understanding = LlmIntentClassifier(ClassifierEngineProvider { FakeLlm("flashlight|35") })
             .understand("Non so se parlavo della luce o di altro")
 
         assertFalse(understanding.mayExecute)
@@ -35,7 +36,7 @@ class LlmIntentClassifierTest {
 
     @Test
     fun reasoningIntentEscalatesWithoutInventingATool() = runTest {
-        val understanding = LlmIntentClassifier(FakeLlm("ragiona|94"))
+        val understanding = LlmIntentClassifier(ClassifierEngineProvider { FakeLlm("ragiona|94") })
             .understand("Confronta due modi per fare questo lavoro")
 
         assertNull(understanding.match)
@@ -44,7 +45,7 @@ class LlmIntentClassifierTest {
 
     @Test
     fun phoneDraftUsesOnlyTheNumberFromTheUser() = runTest {
-        val understanding = LlmIntentClassifier(FakeLlm("prepare_call|97"))
+        val understanding = LlmIntentClassifier(ClassifierEngineProvider { FakeLlm("prepare_call|97") })
             .understand("Potresti telefonare al +39 333 123 4567?")
 
         assertTrue(understanding.mayExecute)
@@ -60,7 +61,7 @@ class LlmIntentClassifierTest {
     fun cancellationIsNeverTurnedIntoAClassifierMiss() = runTest {
         var propagated = false
         try {
-            LlmIntentClassifier(FakeLlm("", CancellationException("stop")))
+            LlmIntentClassifier(ClassifierEngineProvider { FakeLlm("", CancellationException("stop")) })
                 .understand("Accendi qualcosa")
         } catch (_: CancellationException) {
             propagated = true

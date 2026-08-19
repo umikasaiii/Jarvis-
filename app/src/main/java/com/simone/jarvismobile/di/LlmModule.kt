@@ -1,5 +1,6 @@
 package com.simone.jarvismobile.di
 
+import com.simone.jarvismobile.llm.ClassifierEngineProvider
 import com.simone.jarvismobile.llm.LlmEngine
 import com.simone.jarvismobile.llm.LlmRouter
 import dagger.Module
@@ -25,4 +26,8 @@ object LlmModule {
     @Provides
     @Singleton
     fun provideLlmEngine(router: LlmRouter): LlmEngine = router.fast
+
+    @Provides
+    @Singleton
+    fun provideClassifierEngineProvider(router: LlmRouter): ClassifierEngineProvider = router
 }

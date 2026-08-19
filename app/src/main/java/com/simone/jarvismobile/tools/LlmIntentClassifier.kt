@@ -4,9 +4,9 @@ import android.util.Log
 import com.simone.jarvismobile.core.protocol.ToolCall
 import com.simone.jarvismobile.core.memory.MemoryStructure
 import com.simone.jarvismobile.core.routing.ComplexityHeuristic
+import com.simone.jarvismobile.llm.ClassifierEngineProvider
 import com.simone.jarvismobile.llm.LlmGenerationTimeoutException
 import com.simone.jarvismobile.llm.LlmLoadState
-import com.simone.jarvismobile.llm.LlmRouter
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -47,7 +47,7 @@ data class IntentUnderstanding(
  */
 @Singleton
 class LlmIntentClassifier @Inject constructor(
-    private val router: LlmRouter,
+    private val engineProvider: ClassifierEngineProvider,
 ) {
 
     /**
@@ -79,7 +79,7 @@ class LlmIntentClassifier @Inject constructor(
         lastNeedsReasoning = ComplexityHeuristic.needsReasoning(utterance)
         // The dedicated classifier model when one is imported, otherwise the
         // fast engine — see LlmRouter.classifierEngine's doc comment.
-        val llm = router.classifierEngine()
+        val llm = engineProvider.classifierEngine()
         if (llm.loadState.value != LlmLoadState.LOADED || utterance.isBlank()) {
             return IntentUnderstanding("unavailable", null, 0.0, lastNeedsReasoning)
         }

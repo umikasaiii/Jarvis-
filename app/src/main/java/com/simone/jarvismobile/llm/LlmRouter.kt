@@ -9,6 +9,16 @@ import javax.inject.Singleton
 enum class ModelSlot { FAST, ADVANCED }
 
 /**
+ * What [com.simone.jarvismobile.tools.LlmIntentClassifier] actually needs from
+ * [LlmRouter]: just the one engine to classify with. Kept as its own interface
+ * (implemented by [LlmRouter] below) so the classifier can be unit-tested with
+ * a plain fake instead of a real, Android-`Context`-dependent [LlmRouter].
+ */
+fun interface ClassifierEngineProvider {
+    fun classifierEngine(): LlmEngine
+}
+
+/**
  * Routes work between a small, quick model and an optional larger one.
  *
  * Rationale: a 4B model gives real reasoning but is slow for every "che ore
@@ -24,7 +34,7 @@ class LlmRouter @Inject constructor(
     val fast: LitertLmEngine,
     val advanced: LitertLmEngine,
     val classifier: LitertLmEngine,
-) {
+) : ClassifierEngineProvider {
     /** The fast engine backs the UI's load indicator — it is the always-on brain. */
     val loadState: StateFlow<LlmLoadState> get() = fast.loadState
     val loadedModelName: StateFlow<String?> get() = fast.loadedModelName
@@ -54,7 +64,7 @@ class LlmRouter @Inject constructor(
      * engine — so the app behaves exactly as before when no third model is
      * imported.
      */
-    fun classifierEngine(): LlmEngine = if (hasClassifier) classifier else fast
+    override fun classifierEngine(): LlmEngine = if (hasClassifier) classifier else fast
 
     fun engineFor(slot: ModelSlot): LitertLmEngine = when (slot) {
         ModelSlot.FAST -> fast
