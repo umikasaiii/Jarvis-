@@ -176,7 +176,7 @@ fun JarvisChatWindow(
     val partial by viewModel.partial.collectAsStateWithLifecycle()
     val messages by viewModel.messages.collectAsStateWithLifecycle()
     val sending by viewModel.sending.collectAsStateWithLifecycle()
-    val stopping by viewModel.stopping.collectAsStateWithLifecycle()
+    val composerBusy by viewModel.composerBusy.collectAsStateWithLifecycle()
     val documents by viewModel.documents.collectAsStateWithLifecycle()
     val duplicate by viewModel.duplicatePrompt.collectAsStateWithLifecycle()
 
@@ -296,8 +296,7 @@ fun JarvisChatWindow(
                 text = textInput,
                 onTextChange = { textInput = it },
                 status = status,
-                sending = sending,
-                stopping = stopping,
+                busy = composerBusy,
                 onMic = ::onMicTap,
                 onAttach = { showAttachSheet = true },
                 micDescription = when {
@@ -306,12 +305,7 @@ fun JarvisChatWindow(
                     else -> "Parla"
                 },
                 onSend = {
-                    if (stopping) {
-                        // Already stopping — the tap is acknowledged (see the
-                        // "Fermando…" state below); a second tap would only
-                        // re-issue the same cancel while the model unwinds.
-                        Unit
-                    } else if (sending) {
+                    if (composerBusy) {
                         viewModel.onStopResponse()
                     } else {
                         val msg = textInput.trim()
@@ -835,8 +829,15 @@ private fun ChatComposer(
     text: String,
     onTextChange: (String) -> Unit,
     status: ChatStatus,
-    sending: Boolean,
-    stopping: Boolean,
+    /**
+     * Whether the composer should present as "busy" — true only while a
+     * response is genuinely running AND no stop has been requested yet. The
+     * moment Stop is tapped this goes false again (see
+     * HomeViewModel.composerBusy's doc comment): the abandoned response
+     * finishes discarding itself in the background, but the composer must
+     * not stay locked waiting for that.
+     */
+    busy: Boolean,
     micDescription: String,
     onMic: () -> Unit,
     onAttach: () -> Unit,
@@ -850,15 +851,14 @@ private fun ChatComposer(
         AttachButton(onClick = onAttach)
         MicrophoneButton(
             status = status,
-            enabled = !sending,
+            enabled = !busy,
             contentDescription = micDescription,
             onClick = onMic,
         )
-        MessageInput(value = text, onValueChange = onTextChange, enabled = !sending)
+        MessageInput(value = text, onValueChange = onTextChange, enabled = !busy)
         SendButton(
-            enabled = sending || text.isNotBlank(),
-            sending = sending,
-            stopping = stopping,
+            enabled = busy || text.isNotBlank(),
+            sending = busy,
             onClick = onSend,
         )
     }
@@ -899,14 +899,10 @@ private fun MicrophoneButton(
 
 /** Asset 4, same footprint as the microphone so the composer stays symmetric. */
 @Composable
-private fun SendButton(enabled: Boolean, sending: Boolean, stopping: Boolean, onClick: () -> Unit) {
+private fun SendButton(enabled: Boolean, sending: Boolean, onClick: () -> Unit) {
     AssetButton(
         res = R.drawable.chat_send,
-        contentDescription = when {
-            stopping -> "Fermando…"
-            sending -> "Ferma risposta"
-            else -> "Invia"
-        },
+        contentDescription = if (sending) "Ferma risposta" else "Invia",
         enabled = enabled,
         pressedScale = 0.92f,
         glow = if (enabled) 0.24f else 0f,
@@ -916,17 +912,7 @@ private fun SendButton(enabled: Boolean, sending: Boolean, stopping: Boolean, on
         artworkAlpha = if (sending) 0.3f else 1f,
         onClick = onClick,
     ) {
-        if (stopping) {
-            // The native model can take a few seconds to unwind after the
-            // tap (see HomeViewModel.stopping's doc comment) — a spinner
-            // instead of the static stop mark shows the tap was heard
-            // instead of looking unresponsive while that finishes.
-            androidx.compose.material3.CircularProgressIndicator(
-                modifier = Modifier.size(20.dp),
-                strokeWidth = 2.dp,
-                color = Coral,
-            )
-        } else if (sending) {
+        if (sending) {
             Icon(
                 Icons.Filled.Stop,
                 contentDescription = null,

@@ -64,13 +64,29 @@ class HomeViewModel @Inject constructor(
      * LitertLmEngine.cancel() → the native Conversation.cancelProcess(), see
      * LitertLmEngine's doc comment) — but that native call is a blocking JNI
      * call the local model can take several seconds to unwind from once asked
-     * to stop, and [sending] only flips false once it actually has. Without
-     * this flag the Stop button looks like it did nothing for those seconds;
-     * with it, the UI can show "Fermando…" immediately so the tap is visibly
-     * acknowledged while the model finishes stopping in the background.
+     * to stop, and [sending] only flips false once it actually has.
      */
-    val stopping: StateFlow<Boolean> = combine(_stopRequested, sending) { requested, isSending ->
+    private val stopping: StateFlow<Boolean> = combine(_stopRequested, sending) { requested, isSending ->
         requested && isSending
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    /**
+     * What the composer treats as "busy" — [sending], but only until a stop
+     * has actually been requested. A true native stop can take several
+     * seconds (see [stopping]), and the user should never be stuck staring at
+     * a frozen composer for that whole window: the moment Stop is tapped, the
+     * in-flight response is abandoned (the cancellation path already
+     * guarantees an abandoned answer is never appended to the chat or spoken
+     * — see LitertLmEngine.runGeneration's `throwIfStopped()` right after
+     * `sendMessage()` returns, which fires even if the model finished a
+     * genuine answer in the same instant a stop was requested) and the
+     * composer re-opens immediately so a new message can be typed and sent
+     * right away. That new request naturally queues behind the abandoned one
+     * on the model's own conversation mutex — it is not itself instant — but
+     * the app stops feeling stuck the moment you ask it to.
+     */
+    val composerBusy: StateFlow<Boolean> = combine(sending, stopping) { isSending, isStopping ->
+        isSending && !isStopping
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
     val llmLoadState: StateFlow<com.simone.jarvismobile.llm.LlmLoadState> = coordinator.llmLoadState
     val loadedModelName: StateFlow<String?> = coordinator.loadedModelName
