@@ -284,6 +284,19 @@ class AgendaCommandParserTest {
     }
 
     @Test
+    fun aPivotingFollowUpQuestionIsStillRecognised() {
+        // Real device bug: "Invece quando devo andare dal dentista?" fell
+        // through the structured path entirely (missed by ^-anchored
+        // QUERY_WHEN_RE) and hit the full LLM path instead, which then also
+        // timed out — a slow failure where a fast, correct one was available.
+        // "invece"/"comunque" are now stripped as leading pivot words, same as
+        // "dai"/"allora"/"quindi" already were, in TextNormalizer.
+        val intent = assertNotNull(parse("invece quando devo andare dal dentista?"))
+        assertEquals(Action.QUERY, intent.action)
+        assertTrue(intent.target.needle.contains("dentista"), intent.target.needle)
+    }
+
+    @Test
     fun theGeneralAgendaListingIsNotHandledHere() {
         // "che impegni ho"/"cosa devo fare oggi" stay on the existing AGENDA_RE
         // path in CommandMatcher — this parser only owns a NAMED lookup.

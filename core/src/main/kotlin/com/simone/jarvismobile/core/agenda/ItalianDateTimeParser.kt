@@ -42,10 +42,15 @@ object ItalianDateTimeParser {
      * Purely grammatical connectives left dangling at the START of the
      * remainder once the date/time phrase in the middle of the sentence is
      * removed — "il fatto che"/"il fatto di" first (longest match), then the
-     * bare che/di/del/della/dei/degli/delle/d'.
+     * bare che/di/del/della/dei/degli/delle/d'. Also "ho il/la/un/…" — "sabato
+     * ho il dentista" left "ho il dentista" as the whole reminder title
+     * instead of just "dentista": stating that you HAVE something scheduled
+     * ("ho il dentista", "ho la palestra") is as much a leftover auxiliary as
+     * "il fatto che", just with a verb instead of a conjunction.
      */
     private val LEADING_CONNECTIVE_RE = Regex(
-        """^\s*(?:il\s+fatto\s+che|il\s+fatto\s+di|che|di|del|della|dei|degli|delle|d')\s+""",
+        """^\s*(?:il\s+fatto\s+che|il\s+fatto\s+di|che|di|del|della|dei|degli|delle|d'|""" +
+            """ho\s+(?:il|lo|la|i|gli|le|un|uno|una))\s+""",
     )
 
     private val WEEKDAYS: List<Pair<Regex, DayOfWeek>> = listOf(

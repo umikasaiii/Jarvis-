@@ -50,6 +50,23 @@ class ItalianDateTimeParserTest {
     }
 
     @Test
+    fun `a leading ho plus article is stripped, real device bug`() {
+        // "sabato ho il dentista" saved a reminder literally titled "ho il
+        // dentista": stating that you HAVE something scheduled is the same
+        // kind of leftover auxiliary as "il fatto che", just with a verb.
+        val r = ItalianDateTimeParser.parse("sabato ho il dentista", now)
+        assertEquals("dentista", r.remainder)
+    }
+
+    @Test
+    fun `ho without a following article is real content, not stripped`() {
+        // "ho fatto la spesa" is a genuine statement — only "ho" + a bare
+        // article is the narrow leftover-auxiliary pattern being stripped.
+        val r = ItalianDateTimeParser.parse("domani ho fatto la spesa", now)
+        assertEquals("ho fatto la spesa", r.remainder)
+    }
+
+    @Test
     fun `dopodomani wins over domani`() {
         val r = ItalianDateTimeParser.parse("dopodomani", now)
         assertEquals(LocalDate.of(2026, 8, 8), r.date)

@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Subject
 import androidx.compose.material.icons.filled.Add
@@ -52,9 +53,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -383,7 +390,15 @@ fun AgendaScreen(viewModel: AgendaViewModel = hiltViewModel()) {
     }
 }
 
-@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+/**
+ * Numeric hour/minute fields, not Material3's analog TimePicker dial or its
+ * TimeInput: the dial's hour-to-minute step is an animated crossfade of the
+ * whole clock face, which felt slow and laggy on-device, and even TimeInput's
+ * two fields left the user tapping over to "Minuto" by hand. This auto-
+ * advances focus to the minute field the moment two digits are typed into the
+ * hour field, so entering a time is two short digit-runs with no taps between
+ * them.
+ */
 @Composable
 private fun TaskTimePicker(
     initial: java.time.LocalTime?,
@@ -391,22 +406,60 @@ private fun TaskTimePicker(
     onPick: (java.time.LocalTime) -> Unit,
 ) {
     val base = initial ?: java.time.LocalTime.of(9, 0)
-    val state = androidx.compose.material3.rememberTimePickerState(
-        initialHour = base.hour,
-        initialMinute = base.minute,
-        is24Hour = true,
-    )
+    var hourValue by remember { mutableStateOf(TextFieldValue("%02d".format(base.hour))) }
+    var minuteValue by remember { mutableStateOf(TextFieldValue("%02d".format(base.minute))) }
+    val minuteFocus = remember { FocusRequester() }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
-            TextButton(onClick = { onPick(java.time.LocalTime.of(state.hour, state.minute)) }) { Text("OK") }
+            TextButton(onClick = {
+                val hour = hourValue.text.toIntOrNull()?.coerceIn(0, 23) ?: base.hour
+                val minute = minuteValue.text.toIntOrNull()?.coerceIn(0, 59) ?: base.minute
+                onPick(java.time.LocalTime.of(hour, minute))
+            }) { Text("OK") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Annulla") } },
-        // TimeInput (numeric hour/minute fields), not the analog TimePicker
-        // dial: the dial's hour-to-minute step is an animated crossfade of the
-        // whole clock face, which felt slow and laggy on-device. TimeInput has
-        // no such transition and is also faster to use for a specific time.
-        text = { androidx.compose.material3.TimeInput(state = state) },
+        text = {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = hourValue,
+                    onValueChange = { new ->
+                        val digits = new.text.filter { it.isDigit() }.take(2)
+                        hourValue = TextFieldValue(digits, selection = TextRange(digits.length))
+                        if (digits.length == 2) minuteFocus.requestFocus()
+                    },
+                    label = { Text("Ora") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.width(72.dp)
+                        // The field starts pre-filled with the current hour, so
+                        // select it all on focus — the first digit typed then
+                        // replaces it outright instead of inserting into it.
+                        .onFocusChanged {
+                            if (it.isFocused) {
+                                hourValue = hourValue.copy(selection = TextRange(0, hourValue.text.length))
+                            }
+                        },
+                )
+                Text(":")
+                OutlinedTextField(
+                    value = minuteValue,
+                    onValueChange = { new ->
+                        val digits = new.text.filter { it.isDigit() }.take(2)
+                        minuteValue = TextFieldValue(digits, selection = TextRange(digits.length))
+                    },
+                    label = { Text("Minuto") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.width(72.dp)
+                        .focusRequester(minuteFocus)
+                        .onFocusChanged {
+                            if (it.isFocused) {
+                                minuteValue = minuteValue.copy(selection = TextRange(0, minuteValue.text.length))
+                            }
+                        },
+                )
+            }
+        },
     )
 }
 

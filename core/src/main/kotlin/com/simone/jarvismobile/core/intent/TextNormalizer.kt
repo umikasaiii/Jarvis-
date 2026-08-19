@@ -86,6 +86,10 @@ object TextNormalizer {
         Regex("""^(?:puoi|potresti|riesci\s+a|sai|vorrei\s+che|voglio\s+che|ti\s+va\s+di|mi\s+puoi|""" +
             """mi\s+potresti|per\s+cortesia)\s+"""),
         Regex("""^(?:dai|allora|quindi)\s+"""),
+        // A follow-up question that pivots from what was just said ("invece
+        // quando devo andare dal dentista?") — the real question starts after
+        // it, exactly like "dai"/"allora"/"quindi" above.
+        Regex("""^(?:invece|comunque)\s+"""),
     )
 
     /**
