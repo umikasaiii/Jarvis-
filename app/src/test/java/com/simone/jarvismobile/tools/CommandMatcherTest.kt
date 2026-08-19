@@ -177,9 +177,12 @@ class CommandMatcherTest {
 
     @Test
     fun plainReminderIsNotHijackedByTheTaskPath() {
-        // No list, no "speciale" → stays a reminder, not add_task.
+        // No list, no "speciale" → stays a reminder, not add_task. Deliberately
+        // avoids "comprare" here: "ricordami di comprare X" is its own documented
+        // behavior change (§34, docs/PERSONAL_ARCHIVE.md) that routes to the
+        // shopping list instead — see addingAnItemToTheShoppingListWorksThroughSeveralPhrasings.
         val match = CommandMatcher.match(
-            "Ricordami di comprare il pane domani",
+            "Ricordami di chiamare il dottore domani",
             now = LocalDateTime.of(2026, 8, 6, 10, 0),
         ) as Match.Run
         assertEquals("add_reminder", match.call.name)

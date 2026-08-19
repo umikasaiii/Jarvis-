@@ -82,6 +82,16 @@ object CommandMatcher {
         // come from the user's own words; missing details become a follow-up
         // question instead of an inferred phone number, destination or title.
         settingsCall(raw)?.let { return it }
+        // Personal Archive custom lists (create/read/add-item/remove-item),
+        // checked before the task path below: taskCreateCall's TASK_LIST_RE
+        // matches "lista X" anywhere in the phrase with no anchor, so it would
+        // otherwise swallow "crea una lista X" / "aggiungi X alla lista Y" —
+        // more specific pattern first, same rule already used for the rest of
+        // the Personal Archive block further down.
+        listCreateCall(raw)?.let { return it }
+        listReadCall(raw)?.let { return it }
+        listAddItemCall(raw)?.let { return it }
+        listRemoveItemCall(raw)?.let { return it }
         // A task aimed at a named list or flagged "speciale" is a Google-Tasks
         // style task, not a calendar event — intercept before the calendar rule,
         // which would otherwise swallow "aggiungi (un')attività …".
@@ -189,10 +199,8 @@ object CommandMatcher {
         watchListCall(raw)?.let { return it }
         watchCompleteCall(raw)?.let { return it }
         watchDeleteCall(raw)?.let { return it }
-        listCreateCall(raw)?.let { return it }
-        listReadCall(raw)?.let { return it }
-        listAddItemCall(raw)?.let { return it }
-        listRemoveItemCall(raw)?.let { return it }
+        // Custom lists (create/read/add-item/remove-item) are checked earlier,
+        // above, before taskCreateCall — see that comment.
         noteCreateCall(raw)?.let { return it }
         searchArchiveCall(raw)?.let { return it }
         searchDocumentsCall(raw)?.let { return it }
@@ -1145,7 +1153,7 @@ object CommandMatcher {
     private val BARE_REMEMBER_RE = Regex("""^(ricorda(mi|ti)?|prendi (una )?nota|annota|segna(ti)?)\s*$""")
 
     private val MEMORY_ONLY_RE = Regex(
-        """^(?:ricorda(?:ti)? che|prendi (?:una )?nota|annota|nota che)\b|\bsolo per (?:questa|la) conversazione\b""",
+        """^(?:ricorda(?:ti)? che|prendi (?:una )?nota|annota|nota che|segna(?:ti)? che)\b|\bsolo per (?:questa|la) conversazione\b""",
     )
 
     /** "che impegni ho", "cosa devo fare oggi", "cosa ho in agenda" → the calendar. */
