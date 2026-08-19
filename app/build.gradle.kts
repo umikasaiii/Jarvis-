@@ -184,14 +184,16 @@ dependencies {
     implementation(libs.androidx.documentfile)
     implementation(libs.onnxruntime.android)
 
-    // Supertonic 3 TTS (offline, bundled model — see app/src/main/assets/models/
-    // supertonic3/ and docs/VOICE.md). sherpa-onnx has no published Maven Central
-    // coordinate for this build, so it ships as a local AAR rather than a version
-    // catalog entry — the exact vendoring pattern the task specified. The file
-    // itself is NOT checked into this environment (no network access to fetch a
-    // binary artifact); see app/libs/README.md for what must be added before this
-    // resolves. Do not add a second sherpa-onnx AAR/version alongside it.
-    implementation(files("libs/sherpa-onnx-1.13.5.aar"))
+    // Supertonic 3 TTS — TEMPORARILY COMMENTED OUT (user request, 2026-08-19):
+    // this dependency does not resolve without app/libs/sherpa-onnx-1.13.5.aar,
+    // which needs two binary artifacts this environment cannot fetch (see
+    // app/libs/README.md) and was blocking every other change on the branch
+    // from ever reaching a build. SupertonicTtsEngine.kt was stubbed to compile
+    // without this AAR (see that file's doc comment) so this line could come
+    // out. Uncomment once the real AAR is added, and revert the stubbing commit
+    // to restore the real sherpa-onnx implementation — see app/src/main/assets/
+    // models/supertonic3/README.md for the model files it also needs.
+    // implementation(files("libs/sherpa-onnx-1.13.5.aar"))
 
     // Live Translator: ML Kit on-device translation + language identification.
     // Models are downloaded at runtime via RemoteModelManager, never bundled.
