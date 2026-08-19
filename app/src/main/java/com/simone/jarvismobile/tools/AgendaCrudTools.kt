@@ -201,3 +201,41 @@ class RenameAgendaTool(private val agenda: AgendaRepository) : Tool {
         return okJson("id" to updated.id, "spoken" to "Rinominato in: ${updated.text}.")
     }
 }
+
+/**
+ * Replaces the free-text notes of an entry, keeping its id, title, date and
+ * alerts untouched. Overwrite semantics, same as [RenameAgendaTool] for
+ * `text` — the caller (`JarvisBrain`, given the entry's current notes in its
+ * context) composes the full new value, e.g. appending "carta vetrata" to
+ * what was already there; this tool does not itself merge or append.
+ *
+ * Added for the Conversational AI engine's multi-turn example ("Ricordami
+ * domani di comprare il fissativo" → "anzi, alle 18" → "e aggiungi anche la
+ * carta vetrata"): `move_agenda`/`rename_agenda` already existed for the
+ * first two turns, but nothing could write [com.simone.jarvismobile.core.agenda.AgendaEntry.notes]
+ * without mangling the title — this is the one genuinely new tool that gap
+ * needed, and it goes through the same shared `ToolRegistry`, so Classic
+ * mode gains it too rather than the engines diverging on capability.
+ */
+class UpdateAgendaNotesTool(private val agenda: AgendaRepository) : Tool {
+    override val name = "update_agenda_notes"
+    override val description = "Aggiorna le note libere di un impegno o un'attività del calendario personale."
+    override val policy = ToolPolicy.LOW_RISK_WRITE
+    override val sensitivity = SensitivityLevel.PERSONAL
+    override val requiresNetwork = false
+    override val timeoutMs = 5_000L
+
+    override fun validate(arguments: JsonObject): String? {
+        if (arguments.str("id") == null) return "manca il campo 'id'"
+        if (arguments.str("notes") == null) return "mancano le nuove note"
+        return null
+    }
+
+    override suspend fun execute(arguments: JsonObject): ToolResult {
+        val id = arguments.str("id") ?: return ToolResult.Failure("missing_id")
+        val notes = arguments.str("notes") ?: return ToolResult.Failure("missing_notes")
+        val updated = runCatching { agenda.update(id) { it.copy(notes = notes.trim()) } }.getOrNull()
+            ?: return ToolResult.Failure("agenda_item_not_found")
+        return okJson("id" to updated.id, "spoken" to "Note aggiornate per: ${updated.text}.")
+    }
+}

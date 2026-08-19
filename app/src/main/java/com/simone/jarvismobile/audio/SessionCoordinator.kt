@@ -110,6 +110,8 @@ class SessionCoordinator @Inject constructor(
     private val drivingMode: com.simone.jarvismobile.driving.DrivingModeManager,
     private val proModeManager: com.simone.jarvismobile.promode.ProModeManager,
     private val proModeCoordinator: com.simone.jarvismobile.promode.ProModeCoordinator,
+    private val engineRouter: com.simone.jarvismobile.engine.JarvisEngineRouter,
+    private val conversationalEngine: com.simone.jarvismobile.engine.ConversationalJarvisEngine,
 ) {
 
     /** Long-lived scope for fire-and-forget persistence; lives as long as the app. */
@@ -543,12 +545,31 @@ class SessionCoordinator @Inject constructor(
         }
 
     /**
-     * Generates the reply. When a local model is loaded it answers for real via a
-     * multi-turn [LlmEngine.chat] that REMEMBERS the earlier exchanges (the model
-     * keeps the conversation history); otherwise it falls back to the echo and
-     * points the user to the Models screen.
+     * The single switch between Classic and Conversational AI (Motore JARVIS —
+     * see `docs/CONVERSATIONAL_ENGINE.md`), the exact one-`if` gate pattern
+     * `engineRouter` itself documents. [classicAnswer] below is Classic mode's
+     * entire existing behaviour, untouched; `conversationalEngine` is the new
+     * LLM-first orchestrator. Neither knows about the other directly — the
+     * router is the only place that chooses.
      */
-    private suspend fun generateAnswer(transcript: String): String {
+    private suspend fun generateAnswer(transcript: String): String =
+        engineRouter.route(
+            transcript,
+            classic = com.simone.jarvismobile.engine.ClassicJarvisEngine { classicAnswer(it) },
+            conversational = conversationalEngine,
+        )
+
+    /**
+     * Classic mode's entire turn-dispatch behaviour (deterministic command
+     * matching, Modalità Pro, the translator/navigation/automation phrase
+     * parsers, `TurnPlanner`, chat fallback) — moved here unedited from what
+     * used to be `generateAnswer`'s own body when the Conversational AI engine
+     * switch was introduced. When a local model is loaded it answers for real
+     * via a multi-turn [LlmEngine.chat] that REMEMBERS the earlier exchanges
+     * (the model keeps the conversation history); otherwise it falls back to
+     * the echo and points the user to the Models screen.
+     */
+    private suspend fun classicAnswer(transcript: String): String {
         // Modalità Pro (spec §1/§2): the on/off phrase is checked before ANY
         // other routing decision, in both NORMAL and PRO, so "esci dalla
         // modalità pro" always works — including with a Pro-mode tool

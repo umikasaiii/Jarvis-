@@ -69,6 +69,7 @@ class AddReminderTool(private val agenda: AgendaRepository) : Tool {
         val whenSaid = Agenda.humanDate(date, today) +
             (time?.let { " alle ${Agenda.humanTime(it)}" } ?: "")
         return okJson(
+            "id" to entry.id,
             "date" to date.toString(),
             "time" to (time?.toString() ?: ""),
             "text" to text,
@@ -129,10 +130,12 @@ class AddTaskTool(private val agenda: AgendaRepository) : Tool {
         } ?: ""
         val star = if (starred) " ⭐" else ""
         return okJson(
+            "id" to entry.id,
             "text" to text,
             "list" to list,
             "starred" to starred.toString(),
             "date" to (date?.toString() ?: ""),
+            "time" to (time?.toString() ?: ""),
             "spoken" to "Aggiunta$star: $text$where$whenSaid.",
         )
     }

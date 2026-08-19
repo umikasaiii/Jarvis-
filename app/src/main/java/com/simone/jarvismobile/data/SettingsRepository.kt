@@ -1,6 +1,8 @@
 package com.simone.jarvismobile.data
 
 import com.simone.jarvismobile.core.driving.DrivingNavigationMode
+import com.simone.jarvismobile.core.engine.JarvisEngineMode
+import com.simone.jarvismobile.core.engine.ReasoningMode
 import com.simone.jarvismobile.core.speech.SpeechStyle
 import com.simone.jarvismobile.core.translate.TranslationAudioOutput
 import com.simone.jarvismobile.core.translate.TranslationLanguage
@@ -136,6 +138,19 @@ class SettingsRepository @Inject constructor(
         val TTS_VOLUME = floatPreferencesKey("tts_volume")
         val TTS_SPEECH_ENABLED = booleanPreferencesKey("tts_speech_enabled")
         val TTS_STREAMING = booleanPreferencesKey("tts_streaming")
+
+        // --- Conversational AI engine (Motore JARVIS: Classico/Conversazionale) --
+        val JARVIS_ENGINE_MODE = stringPreferencesKey("jarvis_engine_mode")
+        val JARVIS_REASONING_MODE = stringPreferencesKey("jarvis_reasoning_mode")
+        val JARVIS_MEMORY_ENABLED = booleanPreferencesKey("jarvis_memory_enabled")
+        val JARVIS_STREAMING_ENABLED = booleanPreferencesKey("jarvis_streaming_enabled")
+        val JARVIS_TOOL_LOOP_CAP = intPreferencesKey("jarvis_tool_loop_cap")
+        val JARVIS_MEMORY_TOPN = intPreferencesKey("jarvis_memory_topn")
+        val JARVIS_CONTEXT_BUDGET_CHARS = intPreferencesKey("jarvis_context_budget_chars")
+        val JARVIS_FASTPATH_ENABLED = booleanPreferencesKey("jarvis_fastpath_enabled")
+        val JARVIS_AUTO_CONTEXT_ENABLED = booleanPreferencesKey("jarvis_auto_context_enabled")
+        val JARVIS_CONVERSATIONAL_MODEL_SLOT = stringPreferencesKey("jarvis_conversational_model_slot")
+        val JARVIS_ENGINE_DIAGNOSTICS_VERBOSE = booleanPreferencesKey("jarvis_engine_diagnostics_verbose")
     }
 
     /**
@@ -942,6 +957,113 @@ class SettingsRepository @Inject constructor(
         context.settingsDataStore.edit { it.remove(Keys.BACKUP_FOLDER_URI) }
     }
 
+    // --- Conversational AI engine ----------------------------------------
+    // "Motore JARVIS": Classico (default, today's behaviour, unchanged) or
+    // Conversazionale AI (the new LLM-first orchestrator). Same persistent,
+    // app-wide, survives-process-death posture as [proModeActive] — this is
+    // also a mode switch the user should never see silently revert.
+
+    val jarvisEngineMode: Flow<JarvisEngineMode> =
+        context.settingsDataStore.data.map {
+            it[Keys.JARVIS_ENGINE_MODE]?.let { name ->
+                runCatching { JarvisEngineMode.valueOf(name) }.getOrNull()
+            } ?: JarvisEngineMode.CLASSICO
+        }
+
+    suspend fun setJarvisEngineMode(value: JarvisEngineMode) {
+        context.settingsDataStore.edit { it[Keys.JARVIS_ENGINE_MODE] = value.name }
+    }
+
+    val jarvisReasoningMode: Flow<ReasoningMode> =
+        context.settingsDataStore.data.map {
+            it[Keys.JARVIS_REASONING_MODE]?.let { name ->
+                runCatching { ReasoningMode.valueOf(name) }.getOrNull()
+            } ?: ReasoningMode.AUTO
+        }
+
+    suspend fun setJarvisReasoningMode(value: ReasoningMode) {
+        context.settingsDataStore.edit { it[Keys.JARVIS_REASONING_MODE] = value.name }
+    }
+
+    /** Whether ConversationalJarvisEngine retrieves/stores memory at all. */
+    val jarvisMemoryEnabled: Flow<Boolean> =
+        context.settingsDataStore.data.map { it[Keys.JARVIS_MEMORY_ENABLED] ?: true }
+
+    suspend fun setJarvisMemoryEnabled(value: Boolean) {
+        context.settingsDataStore.edit { it[Keys.JARVIS_MEMORY_ENABLED] = value }
+    }
+
+    /** Sentence-chunked incremental delivery of the reply (see BrainEvent). */
+    val jarvisStreamingEnabled: Flow<Boolean> =
+        context.settingsDataStore.data.map { it[Keys.JARVIS_STREAMING_ENABLED] ?: true }
+
+    suspend fun setJarvisStreamingEnabled(value: Boolean) {
+        context.settingsDataStore.edit { it[Keys.JARVIS_STREAMING_ENABLED] = value }
+    }
+
+    /** Max tool calls ToolRouter executes in a single conversational turn. */
+    val jarvisToolLoopCap: Flow<Int> =
+        context.settingsDataStore.data.map {
+            (it[Keys.JARVIS_TOOL_LOOP_CAP] ?: DEFAULT_JARVIS_TOOL_LOOP_CAP).coerceIn(1, 20)
+        }
+
+    suspend fun setJarvisToolLoopCap(value: Int) {
+        context.settingsDataStore.edit { it[Keys.JARVIS_TOOL_LOOP_CAP] = value.coerceIn(1, 20) }
+    }
+
+    /** Max memories MemoryEngine.retrieve() returns per turn. */
+    val jarvisMemoryTopN: Flow<Int> =
+        context.settingsDataStore.data.map {
+            (it[Keys.JARVIS_MEMORY_TOPN] ?: DEFAULT_JARVIS_MEMORY_TOPN).coerceIn(0, 50)
+        }
+
+    suspend fun setJarvisMemoryTopN(value: Int) {
+        context.settingsDataStore.edit { it[Keys.JARVIS_MEMORY_TOPN] = value.coerceIn(0, 50) }
+    }
+
+    /** ContextAssembler's max prompt-context size, in characters (a proxy for a
+     * token budget — the LLM stack surfaces no tokenizer to count real tokens). */
+    val jarvisContextBudgetChars: Flow<Int> =
+        context.settingsDataStore.data.map {
+            (it[Keys.JARVIS_CONTEXT_BUDGET_CHARS] ?: DEFAULT_JARVIS_CONTEXT_BUDGET_CHARS).coerceAtLeast(500)
+        }
+
+    suspend fun setJarvisContextBudgetChars(value: Int) {
+        context.settingsDataStore.edit { it[Keys.JARVIS_CONTEXT_BUDGET_CHARS] = value.coerceAtLeast(500) }
+    }
+
+    /** Whether FastPathRouter is allowed to short-circuit before JarvisBrain. */
+    val jarvisFastPathEnabled: Flow<Boolean> =
+        context.settingsDataStore.data.map { it[Keys.JARVIS_FASTPATH_ENABLED] ?: true }
+
+    suspend fun setJarvisFastPathEnabled(value: Boolean) {
+        context.settingsDataStore.edit { it[Keys.JARVIS_FASTPATH_ENABLED] = value }
+    }
+
+    /** Whether ContextAssembler auto-retrieves memory/vault context per turn. */
+    val jarvisAutoContextEnabled: Flow<Boolean> =
+        context.settingsDataStore.data.map { it[Keys.JARVIS_AUTO_CONTEXT_ENABLED] ?: true }
+
+    suspend fun setJarvisAutoContextEnabled(value: Boolean) {
+        context.settingsDataStore.edit { it[Keys.JARVIS_AUTO_CONTEXT_ENABLED] = value }
+    }
+
+    /** Which LlmRouter model slot ("fast"/"advanced") JarvisBrain uses by default. */
+    val jarvisConversationalModelSlot: Flow<String> =
+        context.settingsDataStore.data.map { it[Keys.JARVIS_CONVERSATIONAL_MODEL_SLOT] ?: "fast" }
+
+    suspend fun setJarvisConversationalModelSlot(value: String) {
+        context.settingsDataStore.edit { it[Keys.JARVIS_CONVERSATIONAL_MODEL_SLOT] = value.trim() }
+    }
+
+    /** Shows per-turn engine telemetry in the existing Diagnostics screen. */
+    val jarvisEngineDiagnosticsVerbose: Flow<Boolean> =
+        context.settingsDataStore.data.map { it[Keys.JARVIS_ENGINE_DIAGNOSTICS_VERBOSE] ?: false }
+
+    suspend fun setJarvisEngineDiagnosticsVerbose(value: Boolean) {
+        context.settingsDataStore.edit { it[Keys.JARVIS_ENGINE_DIAGNOSTICS_VERBOSE] = value }
+    }
+
     companion object {
         const val DEFAULT_NAME = "JARVIS"
         /** A deliberately opinionated default so JARVIS has a character out of the box. */
@@ -968,5 +1090,8 @@ class SettingsRepository @Inject constructor(
         const val DEFAULT_RETENTION_WEEKLY = 4
         const val DEFAULT_RETENTION_MONTHLY = 6
         const val DEFAULT_PROACTIVE_MAX = 3
+        const val DEFAULT_JARVIS_TOOL_LOOP_CAP = 4
+        const val DEFAULT_JARVIS_MEMORY_TOPN = 6
+        const val DEFAULT_JARVIS_CONTEXT_BUDGET_CHARS = 6000
     }
 }

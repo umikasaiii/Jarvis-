@@ -20,6 +20,8 @@ import com.simone.jarvismobile.automation.rule.ParkingLocationEntity
 import com.simone.jarvismobile.document.DocumentChunkEntity
 import com.simone.jarvismobile.document.DocumentDao
 import com.simone.jarvismobile.document.DocumentEntity
+import com.simone.jarvismobile.engine.memory.ConversationalMemoryDao
+import com.simone.jarvismobile.engine.memory.ConversationalMemoryEntity
 import com.simone.jarvismobile.navigation.NavDao
 import com.simone.jarvismobile.navigation.NavFavoriteEntity
 import com.simone.jarvismobile.navigation.NavHistoryEntity
@@ -32,8 +34,9 @@ import com.simone.jarvismobile.navigation.PlaceFtsEntity
         AutomationRuleEntity::class, AutomationPlaceEntity::class,
         AutomationExecutionEntity::class, ParkingLocationEntity::class,
         ArchiveItemEntity::class, ArchiveListEntity::class, ArchiveListItemEntity::class, ArchiveLinkEntity::class,
+        ConversationalMemoryEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = false,
 )
 abstract class JarvisDatabase : RoomDatabase() {
@@ -57,4 +60,8 @@ abstract class JarvisDatabase : RoomDatabase() {
     // non-destructive migration rule. See ArchiveMigrations.MIGRATION_5_6.
     abstract fun archiveListDao(): ArchiveListDao
     abstract fun archiveLinkDao(): ArchiveLinkDao
+
+    // Conversational AI engine's Episodic memory tier — same non-destructive
+    // migration rule. See EngineMemoryMigrations.MIGRATION_6_7.
+    abstract fun conversationalMemoryDao(): ConversationalMemoryDao
 }

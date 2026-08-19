@@ -13,10 +13,12 @@ import com.simone.jarvismobile.audio.SttResult
 import com.simone.jarvismobile.audio.TtsState
 import com.simone.jarvismobile.BuildConfig
 import com.simone.jarvismobile.core.driving.DrivingNavigationMode
+import com.simone.jarvismobile.core.engine.EngineTurnDiagnostics
 import com.simone.jarvismobile.core.navigation.GpxParser
 import com.simone.jarvismobile.core.navigation.GpxReplayRoute
 import com.simone.jarvismobile.core.tts.SupertonicQuality
 import com.simone.jarvismobile.data.SettingsRepository
+import com.simone.jarvismobile.engine.ConversationalJarvisEngine
 import com.simone.jarvismobile.navigation.debug.DebugGpsSimulator
 import com.simone.jarvismobile.tts.AudioFocusGate
 import com.simone.jarvismobile.tts.PcmPlayer
@@ -46,6 +48,7 @@ class DiagnosticsViewModel @Inject constructor(
     private val supertonic: SupertonicTtsEngine,
     private val pcmPlayer: PcmPlayer,
     private val audioFocus: AudioFocusGate,
+    private val conversationalEngine: ConversationalJarvisEngine,
 ) : AndroidViewModel(application) {
 
     /**
@@ -55,6 +58,14 @@ class DiagnosticsViewModel @Inject constructor(
      */
     val drivingNavigationMode: StateFlow<DrivingNavigationMode> = settings.drivingNavigationMode
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DrivingNavigationMode.EXTERNAL_MAPS_OVERLAY)
+
+    /**
+     * Per-turn telemetry from the Conversational AI engine (Motore JARVIS ›
+     * Conversazionale): which engine answered, fast-path hits, timing, memory/
+     * tool counts. Empty until at least one conversational turn has run.
+     * Classic mode has no equivalent feed yet — see `docs/CONVERSATIONAL_ENGINE.md`.
+     */
+    val engineDiagnostics: StateFlow<List<EngineTurnDiagnostics>> = conversationalEngine.diagnostics
 
     fun setDrivingNavigationMode(mode: DrivingNavigationMode) {
         viewModelScope.launch { settings.setDrivingNavigationMode(mode) }

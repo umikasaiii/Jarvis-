@@ -187,6 +187,27 @@ fun DiagnosticsScreen(
                     }
                 }
             }
+
+            // Motore JARVIS › Conversazionale: per-turn telemetry (spec §12),
+            // debug-only like the panels above — never the reply text itself,
+            // only counts/booleans/tool names (see EngineTurnDiagnostics).
+            val engineTurns by viewModel.engineDiagnostics.collectAsStateWithLifecycle()
+            if (engineTurns.isNotEmpty()) {
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Motore conversazionale (debug)", style = MaterialTheme.typography.titleMedium)
+                        engineTurns.takeLast(5).reversed().forEach { turn ->
+                            Text(
+                                "fastPath=${turn.fastPathHit} · fallback=${turn.fallbackOccurred} · " +
+                                    "parseError=${turn.parseError} · memorie=${turn.memoriesRetrieved} · " +
+                                    "tool=${turn.toolsExecuted.size}/${turn.toolsRequested.size} · " +
+                                    "primo=${turn.timeToFirstEmitMs}ms · totale=${turn.totalTurnMs}ms",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                    }
+                }
+            }
         }
 
         // Driving Mode V2 (sviluppo): la modalità overlay su Google Maps resta il

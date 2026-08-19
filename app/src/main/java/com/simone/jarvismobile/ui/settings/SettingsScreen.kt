@@ -22,12 +22,15 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -46,6 +49,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.simone.jarvismobile.core.engine.JarvisEngineMode
+import com.simone.jarvismobile.core.engine.ReasoningMode
 import com.simone.jarvismobile.data.SettingsRepository
 import com.simone.jarvismobile.ui.components.ProModeBadge
 
@@ -709,6 +714,10 @@ fun SettingsScreen(
         }
         }
 
+        CollapsibleSection("Motore JARVIS") {
+        EngineSettingsSection()
+        }
+
         CollapsibleSection("Proattività") {
         ProactiveSettingsSection()
         }
@@ -897,6 +906,136 @@ private fun SemanticMemorySection(
             if (modelPath.isNotBlank() || vocabPath.isNotBlank()) {
                 TextButton(onClick = viewModel::clearEmbeddingModel, modifier = Modifier.fillMaxWidth()) {
                     Text("Rimuovi il modello")
+                }
+            }
+        }
+    }
+}
+
+/**
+ * «Motore JARVIS»: Classico (oggi, invariato) vs Conversazionale AI (il nuovo
+ * orchestratore LLM-first). Un solo switch, esattamente come Modalità Pro —
+ * quando è su Conversazionale, Modalità Pro (sotto, nella sezione Modello AI)
+ * resta comunque raggiungibile solo passando a Classico: le due cose sono
+ * indipendenti per design (vedi `docs/CONVERSATIONAL_ENGINE.md`).
+ * Self-contained (its own ViewModel).
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun EngineSettingsSection(
+    viewModel: EngineSettingsViewModel = hiltViewModel(),
+) {
+    val engineMode by viewModel.engineMode.collectAsStateWithLifecycle()
+    val reasoningMode by viewModel.reasoningMode.collectAsStateWithLifecycle()
+    val memoryEnabled by viewModel.memoryEnabled.collectAsStateWithLifecycle()
+    val streamingEnabled by viewModel.streamingEnabled.collectAsStateWithLifecycle()
+    val fastPathEnabled by viewModel.fastPathEnabled.collectAsStateWithLifecycle()
+    val autoContextEnabled by viewModel.autoContextEnabled.collectAsStateWithLifecycle()
+    val diagnosticsVerbose by viewModel.diagnosticsVerbose.collectAsStateWithLifecycle()
+    val toolLoopCap by viewModel.toolLoopCap.collectAsStateWithLifecycle()
+    val memoryTopN by viewModel.memoryTopN.collectAsStateWithLifecycle()
+    val conversationalSlot by viewModel.conversationalModelSlot.collectAsStateWithLifecycle()
+    val conversational = engineMode == JarvisEngineMode.CONVERSAZIONALE
+    var confirmClearMemory by remember { mutableStateOf(false) }
+
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            SwitchRow(
+                "Motore conversazionale AI",
+                conversational,
+                { on -> viewModel.setEngineMode(if (on) JarvisEngineMode.CONVERSAZIONALE else JarvisEngineMode.CLASSICO) },
+            )
+            Text(
+                "Classico (predefinito): comandi deterministici, con l'AI dove già la usi oggi " +
+                    "(classificatore, Modalità Pro). Conversazionale: il modello locale ragiona " +
+                    "prima, con memoria e più turni — usa comunque gli stessi strumenti. Se il " +
+                    "modello non è caricato, JARVIS torna automaticamente al motore Classico.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+
+            if (conversational) {
+                HorizontalDivider()
+                Text("Modalità di ragionamento", style = MaterialTheme.typography.titleSmall)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    val labels = mapOf(
+                        ReasoningMode.FAST to "Veloce",
+                        ReasoningMode.AUTO to "Automatica",
+                        ReasoningMode.DEEP to "Approfondita",
+                    )
+                    labels.forEach { (mode, label) ->
+                        FilterChip(
+                            selected = reasoningMode == mode,
+                            onClick = { viewModel.setReasoningMode(mode) },
+                            label = { Text(label) },
+                        )
+                    }
+                }
+
+                HorizontalDivider()
+                SwitchRow("Memoria conversazionale", memoryEnabled, viewModel::setMemoryEnabled)
+                SwitchRow("Risposta a frasi (streaming)", streamingEnabled, viewModel::setStreamingEnabled)
+                SwitchRow("Comandi rapidi (fast path)", fastPathEnabled, viewModel::setFastPathEnabled)
+                SwitchRow("Contesto automatico dalla memoria", autoContextEnabled, viewModel::setAutoContextEnabled)
+                SwitchRow("Diagnostica dettagliata in Diagnostica", diagnosticsVerbose, viewModel::setDiagnosticsVerbose)
+
+                HorizontalDivider()
+                Text("Slot modello per il motore conversazionale", style = MaterialTheme.typography.titleSmall)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = conversationalSlot == "fast",
+                        onClick = { viewModel.setConversationalModelSlot("fast") },
+                        label = { Text("Rapido") },
+                    )
+                    FilterChip(
+                        selected = conversationalSlot == "advanced",
+                        onClick = { viewModel.setConversationalModelSlot("advanced") },
+                        label = { Text("Avanzato") },
+                    )
+                }
+
+                HorizontalDivider()
+                var loopSlider by remember(toolLoopCap) { mutableStateOf(toolLoopCap.toFloat()) }
+                Text("Massimo operazioni per turno: ${loopSlider.toInt()}")
+                Slider(
+                    value = loopSlider,
+                    onValueChange = { loopSlider = it },
+                    onValueChangeFinished = { viewModel.setToolLoopCap(loopSlider.toInt()) },
+                    valueRange = 1f..12f,
+                    steps = 10,
+                )
+                var memorySlider by remember(memoryTopN) { mutableStateOf(memoryTopN.toFloat()) }
+                Text("Memorie recuperate per turno: ${memorySlider.toInt()}")
+                Slider(
+                    value = memorySlider,
+                    onValueChange = { memorySlider = it },
+                    onValueChangeFinished = { viewModel.setMemoryTopN(memorySlider.toInt()) },
+                    valueRange = 0f..20f,
+                    steps = 19,
+                    enabled = memoryEnabled,
+                )
+
+                HorizontalDivider()
+                Text("Gestisci memoria conversazionale", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    "Cancella solo la memoria episodica del motore conversazionale (operazioni in " +
+                        "corso, richiami recenti). I ricordi permanenti nel vault non sono toccati.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                OutlinedButton(
+                    onClick = {
+                        if (confirmClearMemory) {
+                            viewModel.clearConversationalMemory()
+                            confirmClearMemory = false
+                        } else {
+                            confirmClearMemory = true
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        if (confirmClearMemory) "Conferma cancellazione" else "Cancella memoria conversazionale",
+                        color = MaterialTheme.colorScheme.error,
+                    )
                 }
             }
         }

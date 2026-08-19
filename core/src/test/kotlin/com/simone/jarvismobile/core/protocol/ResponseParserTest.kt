@@ -96,4 +96,48 @@ class ResponseParserTest {
         assertTrue(result is ParseResult.Valid)
         assertEquals("ok", (result as ParseResult.Valid).response.assistantText)
     }
+
+    // --- ConversationalJarvisEngine's closed response shapes ----------------
+    // No schema change was needed for §3 of the Conversational AI spec: the
+    // four required shapes (Response / ToolCall / Clarification /
+    // MultiToolPlan) already fall out of the existing fields. These tests pin
+    // the exact combination each shape reads as, so a future field change
+    // cannot silently blur the distinction.
+
+    @Test
+    fun `a plain response has no tool calls and does not expect a follow-up`() {
+        val raw = """{"assistant_text": "Fatto.", "tool_calls": [], "follow_up_expected": false}"""
+        val result = parser.parse(raw)
+        val response = (result as ParseResult.Valid).response
+        assertTrue(response.toolCalls.isEmpty())
+        assertTrue(!response.followUpExpected)
+    }
+
+    @Test
+    fun `a clarification has no tool calls but does expect a follow-up`() {
+        val raw = """{"assistant_text": "Per quando lo sposto?", "tool_calls": [], "follow_up_expected": true}"""
+        val result = parser.parse(raw)
+        val response = (result as ParseResult.Valid).response
+        assertTrue(response.toolCalls.isEmpty())
+        assertTrue(response.followUpExpected)
+    }
+
+    @Test
+    fun `a single tool call and a multi tool plan share the same shape, differing only in count`() {
+        val single = """
+            {"assistant_text": "", "tool_calls": [
+              {"id": "a1", "name": "move_agenda", "arguments": {"id": "x"}, "requires_confirmation": false}
+            ]}
+        """.trimIndent()
+        val plan = """
+            {"assistant_text": "", "tool_calls": [
+              {"id": "a1", "name": "move_agenda", "arguments": {"id": "x"}, "requires_confirmation": false},
+              {"id": "a2", "name": "update_agenda_notes", "arguments": {"id": "x"}, "requires_confirmation": false}
+            ]}
+        """.trimIndent()
+        val singleCalls = ((parser.parse(single)) as ParseResult.Valid).response.toolCalls
+        val planCalls = ((parser.parse(plan)) as ParseResult.Valid).response.toolCalls
+        assertEquals(1, singleCalls.size)
+        assertEquals(2, planCalls.size)
+    }
 }

@@ -8,14 +8,22 @@ import com.simone.jarvismobile.core.tools.ToolResolution
 import com.simone.jarvismobile.core.tools.ToolResult
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /** What the assistant should say/do after attempting a tool. */
 sealed interface ToolOutcome {
-    /** Executed successfully; [spoken] is ready to be said aloud. */
-    data class Done(val spoken: String) : ToolOutcome
+    /**
+     * Executed successfully; [spoken] is ready to be said aloud. [raw] is the
+     * tool's full structured output (e.g. a newly created entry's `id`) for
+     * callers that need more than the spoken sentence — today only
+     * `ConversationManager`, tracking which agenda entry a fast-path
+     * `add_reminder`/`add_task` call just created. Every other caller keeps
+     * reading only [spoken], unaffected by this field's addition.
+     */
+    data class Done(val spoken: String, val raw: JsonObject = JsonObject(emptyMap())) : ToolOutcome
 
     /** The tool needs explicit user confirmation before it may run. */
     data class NeedsConfirmation(val call: ToolCall, val prompt: String) : ToolOutcome
@@ -70,7 +78,7 @@ class ToolRunner @Inject constructor(
                                     ?.let { "Risultato: ${prettyNumber(it)}" }
                                 ?: "Fatto."
                             Log.i(TAG, "tool_ok ${tool.name}")
-                            ToolOutcome.Done(spoken)
+                            ToolOutcome.Done(spoken, raw = result.output)
                         }
                         is ToolResult.Failure -> {
                             Log.w(TAG, "tool_fail ${tool.name} ${result.code}")
