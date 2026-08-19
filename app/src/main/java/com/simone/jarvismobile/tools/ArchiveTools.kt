@@ -249,6 +249,8 @@ class ReadArchiveItemTool(private val archive: ArchiveRepository) : Tool {
     override val requiresNetwork = false
     override val timeoutMs = 5_000L
 
+    override fun validate(arguments: JsonObject): String? = null
+
     override suspend fun execute(arguments: JsonObject): ToolResult {
         val kind = arguments.archiveKind()
         val needle = arguments.text("title")
@@ -356,6 +358,8 @@ class ListItemsTool(
     override val sensitivity = SensitivityLevel.PERSONAL
     override val requiresNetwork = false
     override val timeoutMs = 5_000L
+
+    override fun validate(arguments: JsonObject): String? = null
 
     override suspend fun execute(arguments: JsonObject): ToolResult {
         arguments.text("list")?.let { listNeedle ->

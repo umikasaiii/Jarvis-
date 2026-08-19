@@ -85,7 +85,7 @@ class ArchiveRepository @Inject constructor(
         val existing = get(id) ?: return null
         val updated = existing.copy(
             title = title?.trim()?.takeIf { it.isNotBlank() } ?: existing.title,
-            content = content ?? existing.content,
+            content = content ?: existing.content,
             tags = tags ?: existing.tags,
             watchType = watchType ?: existing.watchType,
             status = status ?: existing.status,
