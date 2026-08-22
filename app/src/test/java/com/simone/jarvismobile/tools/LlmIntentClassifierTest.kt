@@ -82,7 +82,7 @@ class LlmIntentClassifierTest {
             failure?.let { throw it }
             return answer
         }
-        override suspend fun chat(userText: String, systemPrompt: String): String = answer
+        override suspend fun chat(userText: String, systemPrompt: String, timeoutSeconds: Long): String = answer
         override fun resetConversation() = Unit
         override fun cancel() = Unit
     }

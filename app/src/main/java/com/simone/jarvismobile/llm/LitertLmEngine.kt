@@ -141,7 +141,11 @@ class LitertLmEngine @Inject constructor(
         }
     }
 
-    override suspend fun chat(userText: String, systemPrompt: String): String? =
+    override suspend fun chat(
+        userText: String,
+        systemPrompt: String,
+        timeoutSeconds: Long,
+    ): String? =
         withContext(Dispatchers.Default) {
             val e = engine ?: return@withContext null
             chatMutex.withLock {
@@ -161,7 +165,7 @@ class LitertLmEngine @Inject constructor(
                     }
                     // Only the new user message is sent; the conversation keeps the
                     // whole history internally, so the model remembers the context.
-                    runGeneration(conv, userText)
+                    runGeneration(conv, userText, timeoutSeconds)
                 } catch (e: CancellationException) {
                     discardConversation(conversation)
                     throw e

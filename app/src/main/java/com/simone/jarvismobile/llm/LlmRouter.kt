@@ -79,17 +79,28 @@ class LlmRouter @Inject constructor(
 
     /**
      * Answers [userText]. [needsReasoning] routes to the larger model when one is
-     * loaded; simple exchanges stay on the fast one.
+     * loaded; simple exchanges stay on the fast one. [timeoutSeconds] bounds the
+     * native call — see [LlmEngine.chat].
      */
-    suspend fun chat(userText: String, systemPrompt: String, needsReasoning: Boolean): String? {
+    suspend fun chat(
+        userText: String,
+        systemPrompt: String,
+        needsReasoning: Boolean,
+        timeoutSeconds: Long = DEFAULT_GENERATION_TIMEOUT_SECONDS,
+    ): String? {
         val slot = selectSlot(needsReasoning)
-        return chat(userText, systemPrompt, slot)
+        return chat(userText, systemPrompt, slot, timeoutSeconds)
     }
 
     /** Chats with an already resolved [slot]. */
-    suspend fun chat(userText: String, systemPrompt: String, slot: ModelSlot): String? {
+    suspend fun chat(
+        userText: String,
+        systemPrompt: String,
+        slot: ModelSlot,
+        timeoutSeconds: Long = DEFAULT_GENERATION_TIMEOUT_SECONDS,
+    ): String? {
         Log.i(TAG, "chat_slot=$slot")
-        return engineFor(slot).chat(userText, systemPrompt)
+        return engineFor(slot).chat(userText, systemPrompt, timeoutSeconds)
     }
 
     /** Clears one brain without discarding the other brain's warm conversation. */

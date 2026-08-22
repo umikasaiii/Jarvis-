@@ -49,9 +49,12 @@ interface LlmEngine {
      * [systemPrompt]; later calls IGNORE it — changing the instruction mid-chat
      * would mean rebuilding the conversation and losing everything said so far.
      * Call [resetConversation] when the instruction really must change.
-     * Returns null on failure.
+     * Returns null on failure. [timeoutSeconds] bounds the native call, same as
+     * [generate] — shorten it for a follow-up turn that only needs to phrase an
+     * already-known result, so a stuck/slow model fails fast instead of costing
+     * the full conversational deadline on every round of a multi-round turn.
      */
-    suspend fun chat(userText: String, systemPrompt: String): String?
+    suspend fun chat(userText: String, systemPrompt: String, timeoutSeconds: Long = DEFAULT_GENERATION_TIMEOUT_SECONDS): String?
 
     /** Drops the multi-turn history and starts a fresh conversation next [chat]. */
     fun resetConversation()

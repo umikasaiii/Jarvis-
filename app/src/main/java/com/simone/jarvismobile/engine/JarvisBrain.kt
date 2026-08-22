@@ -10,6 +10,7 @@ import com.simone.jarvismobile.core.protocol.AssistantResponse
 import com.simone.jarvismobile.core.protocol.ParseResult
 import com.simone.jarvismobile.core.protocol.ResponseParser
 import com.simone.jarvismobile.core.routing.ComplexityHeuristic
+import com.simone.jarvismobile.llm.DEFAULT_GENERATION_TIMEOUT_SECONDS
 import com.simone.jarvismobile.llm.LlmRouter
 import com.simone.jarvismobile.llm.ModelSlot
 import com.simone.jarvismobile.tools.ToolRunner
@@ -54,11 +55,21 @@ class JarvisBrain @Inject constructor(
      * whatever `ContextAssembler` decided is worth including (memory,
      * pending-task state, prior tool results) — appended, never silently
      * merged into [userText], so a caller can log/inspect them separately.
-     * Returns null only when the model itself is unavailable.
+     * Returns null only when the model itself is unavailable. [timeoutSeconds]
+     * bounds this one native call — see [com.simone.jarvismobile.llm.LlmEngine.chat].
+     * A follow-up "compose the final answer from these tool results" round only
+     * needs to phrase already-known text, so callers should pass a shorter
+     * budget there than the full [DEFAULT_GENERATION_TIMEOUT_SECONDS] a first,
+     * real-reasoning round needs.
      */
-    suspend fun reply(userText: String, contextBlock: String, slot: ModelSlot): BrainReply {
+    suspend fun reply(
+        userText: String,
+        contextBlock: String,
+        slot: ModelSlot,
+        timeoutSeconds: Long = DEFAULT_GENERATION_TIMEOUT_SECONDS,
+    ): BrainReply {
         val prompt = if (contextBlock.isBlank()) userText else "$contextBlock\n\n$userText"
-        val raw = router.chat(prompt, systemPrompt, slot) ?: return BrainReply.Unavailable
+        val raw = router.chat(prompt, systemPrompt, slot, timeoutSeconds) ?: return BrainReply.Unavailable
         return when (val parsed = parser.parse(raw)) {
             is ParseResult.Valid -> BrainReply.Ready(parsed.response, parsedCleanly = true)
             is ParseResult.Repaired -> BrainReply.Ready(parsed.response, parsedCleanly = true)
