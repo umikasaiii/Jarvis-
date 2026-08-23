@@ -13,8 +13,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.CancellationException
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -148,34 +148,45 @@ class LitertLmEngine @Inject constructor(
     ): String? =
         withContext(Dispatchers.Default) {
             val e = engine ?: return@withContext null
-            chatMutex.withLock {
-                try {
-                    // The conversation is NOT re-created when [systemPrompt] differs
-                    // from the seeded one. It used to be, and that quietly destroyed
-                    // the chat memory: the caller rebuilds the system instruction
-                    // every turn (it carries retrieved notes, which change with the
-                    // question), so almost every message threw away the KV cache and
-                    // the model could not even remember the previous line. The
-                    // instruction is seeded once; use [resetConversation] to change it.
-                    val conv = conversation ?: e.createConversation(
-                        ConversationConfig(systemInstruction = Contents.of(systemPrompt)),
-                    ).also {
-                        conversation = it
-                        seededSystemPrompt = systemPrompt
-                    }
-                    // Only the new user message is sent; the conversation keeps the
-                    // whole history internally, so the model remembers the context.
-                    runGeneration(conv, userText, timeoutSeconds)
-                } catch (e: CancellationException) {
-                    discardConversation(conversation)
-                    throw e
-                } catch (e: LlmGenerationTimeoutException) {
-                    discardConversation(conversation)
-                    throw e
-                } catch (t: Throwable) {
-                    Log.w(TAG, "llm_chat_failed ${t.javaClass.simpleName}")
-                    null
+            // Bounded acquire, not chatMutex.withLock's unbounded wait. A just-cancelled
+            // generation's native call may not actually unwind the moment cancelProcess()
+            // is requested (that native latency is outside this app's control) — but the
+            // app itself must not stay stuck waiting for it: a lock that isn't free within
+            // LOCK_WAIT_TIMEOUT_MS is treated as "unavailable right now" (same as no model
+            // loaded), so the next turn fails fast and the app is interactable again in
+            // seconds, not minutes, even while the orphaned call finishes in the background.
+            if (withTimeoutOrNull(LOCK_WAIT_TIMEOUT_MS) { chatMutex.lock() } == null) {
+                Log.w(TAG, "llm_chat_busy")
+                return@withContext null
+            }
+            try {
+                // The conversation is NOT re-created when [systemPrompt] differs
+                // from the seeded one. It used to be, and that quietly destroyed
+                // the chat memory: the caller rebuilds the system instruction
+                // every turn (it carries retrieved notes, which change with the
+                // question), so almost every message threw away the KV cache and
+                // the model could not even remember the previous line. The
+                // instruction is seeded once; use [resetConversation] to change it.
+                val conv = conversation ?: e.createConversation(
+                    ConversationConfig(systemInstruction = Contents.of(systemPrompt)),
+                ).also {
+                    conversation = it
+                    seededSystemPrompt = systemPrompt
                 }
+                // Only the new user message is sent; the conversation keeps the
+                // whole history internally, so the model remembers the context.
+                runGeneration(conv, userText, timeoutSeconds)
+            } catch (e: CancellationException) {
+                discardConversation(conversation)
+                throw e
+            } catch (e: LlmGenerationTimeoutException) {
+                discardConversation(conversation)
+                throw e
+            } catch (t: Throwable) {
+                Log.w(TAG, "llm_chat_failed ${t.javaClass.simpleName}")
+                null
+            } finally {
+                chatMutex.unlock()
             }
         }
 
@@ -258,5 +269,14 @@ class LitertLmEngine @Inject constructor(
 
         /** Prevents a damaged native turn from spinning forever in background. */
         const val GENERATION_TIMEOUT_SECONDS = 90L
+
+        /**
+         * How long a new [chat] call waits for [chatMutex] before giving up.
+         * Only matters right after a cancel/timeout: the previous native call may
+         * still be unwinding in the background (native cancellation latency this
+         * app cannot control), but the app itself must recover in seconds, not
+         * however long that takes — see [chat]'s own doc comment at the call site.
+         */
+        const val LOCK_WAIT_TIMEOUT_MS = 4_000L
     }
 }
