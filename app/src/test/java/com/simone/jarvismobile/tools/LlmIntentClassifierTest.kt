@@ -76,6 +76,7 @@ class LlmIntentClassifierTest {
         override val loadState: StateFlow<LlmLoadState> = MutableStateFlow(LlmLoadState.LOADED)
         override val loadedModelName: StateFlow<String?> = MutableStateFlow("fake")
         override val lastLoadDetail: StateFlow<String> = MutableStateFlow("")
+        override val generating: StateFlow<Boolean> = MutableStateFlow(false)
         override suspend fun load(modelPath: String, modelName: String) = true
         override fun unload() = Unit
         override suspend fun generate(prompt: String, timeoutSeconds: Long): String {

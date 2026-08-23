@@ -1,7 +1,9 @@
 package com.simone.jarvismobile.llm
 
 import android.util.Log
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -57,6 +59,15 @@ class LlmRouter @Inject constructor(
 
     /** True when a dedicated classifier model is loaded. */
     val hasClassifier: Boolean get() = classifier.loadState.value == LlmLoadState.LOADED
+
+    /**
+     * True while ANY of the three brains has a native call in flight — including
+     * the window right after a cancel/timeout was requested but the native call
+     * hasn't actually unwound yet. Lets the UI show "still finishing up" distinctly
+     * from a conversation state that already reset to idle. See [LlmEngine.generating].
+     */
+    val generating: Flow<Boolean> =
+        combine(fast.generating, advanced.generating, classifier.generating) { f, a, c -> f || a || c }
 
     /**
      * The engine [com.simone.jarvismobile.tools.LlmIntentClassifier] should use:

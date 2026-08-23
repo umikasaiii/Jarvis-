@@ -46,6 +46,16 @@ class DashboardViewModel @Inject constructor(
     fun setWakeActive(active: Boolean) = wakeWord.setForegroundActive(active)
     val llmLoadState: StateFlow<LlmLoadState> = coordinator.llmLoadState
     val loadedModelName: StateFlow<String?> = coordinator.loadedModelName
+
+    /**
+     * True while a brain is still finishing a native call — including right
+     * after a cancel, before the orphaned call has actually unwound. The
+     * "Sistema" tile uses this to show something other than "OK" so a user who
+     * just cancelled can tell JARVIS isn't fully free yet, even though the orb
+     * above already reads "Pronto". See `SessionCoordinator.llmGenerating`.
+     */
+    val llmGenerating: StateFlow<Boolean> = coordinator.llmGenerating
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
     val memoryStatus: StateFlow<MemoryIndex.Status> = memory.status
 
     /** Last recoverable failure, so the orb can show it instead of idling. */

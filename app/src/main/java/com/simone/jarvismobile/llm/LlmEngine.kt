@@ -28,6 +28,15 @@ interface LlmEngine {
     /** Technical detail of the last load attempt (real engine error; for diagnostics). */
     val lastLoadDetail: StateFlow<String>
 
+    /**
+     * True while a native call ([generate]/[chat]) is actually in flight — including
+     * the window after a cancel/timeout has been REQUESTED but the native call hasn't
+     * actually unwound yet (that latency is outside this app's control). Lets the UI
+     * show "still finishing up" distinctly from a conversation state that already
+     * reset to idle, instead of looking stuck with no explanation.
+     */
+    val generating: StateFlow<Boolean>
+
     /** Loads a model from an app-private file path. Returns true on success. */
     suspend fun load(modelPath: String, modelName: String): Boolean
 

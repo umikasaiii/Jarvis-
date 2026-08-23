@@ -46,6 +46,9 @@ class LitertLmEngine @Inject constructor(
     private val _lastLoadDetail = MutableStateFlow("")
     override val lastLoadDetail = _lastLoadDetail.asStateFlow()
 
+    private val _generating = MutableStateFlow(false)
+    override val generating = _generating.asStateFlow()
+
     @Volatile private var engine: Engine? = null
 
     // A single conversation reused across turns so the model REMEMBERS the chat
@@ -214,6 +217,7 @@ class LitertLmEngine @Inject constructor(
     ): String {
         val active = ActiveGeneration(conv)
         check(activeGeneration.compareAndSet(null, active)) { "generation_already_running" }
+        _generating.value = true
         val timeout = watchdog.schedule(
             { active.request(StopReason.TIMEOUT) },
             timeoutSeconds,
@@ -230,6 +234,7 @@ class LitertLmEngine @Inject constructor(
         } finally {
             timeout.cancel(false)
             activeGeneration.compareAndSet(active, null)
+            _generating.value = false
         }
     }
 

@@ -208,6 +208,7 @@ fun DashboardScreen(
     val name by viewModel.assistantName.collectAsStateWithLifecycle()
     val loadState by viewModel.llmLoadState.collectAsStateWithLifecycle()
     val loadedModel by viewModel.loadedModelName.collectAsStateWithLifecycle()
+    val llmGenerating by viewModel.llmGenerating.collectAsStateWithLifecycle()
     val memory by viewModel.memoryStatus.collectAsStateWithLifecycle()
     val unread by viewModel.unread.collectAsStateWithLifecycle()
     val upcoming by viewModel.upcoming.collectAsStateWithLifecycle()
@@ -370,10 +371,25 @@ fun DashboardScreen(
                 StatTile(
                     icon = Icons.Filled.Memory,
                     label = "Sistema",
-                    value = if (loadState == LlmLoadState.LOADED) "OK" else "—",
-                    unit = if (loadState == LlmLoadState.LOADED) "attivo" else "modello",
+                    // "Occupato" covers exactly the window a cancel/timeout leaves
+                    // behind: the orb/state above already reads "Pronto", but the
+                    // native call hasn't actually unwound yet, so a new request
+                    // would still fail fast rather than really being answered —
+                    // this tile is the one place that says so honestly instead of
+                    // a flat "OK" that looks identical whether JARVIS is truly
+                    // free or not. See SessionCoordinator.llmGenerating.
+                    value = when {
+                        llmGenerating -> "Occupato"
+                        loadState == LlmLoadState.LOADED -> "OK"
+                        else -> "—"
+                    },
+                    unit = when {
+                        llmGenerating -> "un attimo"
+                        loadState == LlmLoadState.LOADED -> "attivo"
+                        else -> "modello"
+                    },
                     footer = "Batteria ${battery.percent}%",
-                    accent = Green,
+                    accent = if (llmGenerating) Amber else Green,
                     onClick = onOpenModels,
                     modifier = Modifier.weight(1f),
                 )

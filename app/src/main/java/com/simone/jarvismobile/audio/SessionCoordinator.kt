@@ -49,8 +49,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -59,6 +59,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -155,6 +156,14 @@ class SessionCoordinator @Inject constructor(
 
     val llmLoadState: StateFlow<LlmLoadState> = llm.loadState
     val loadedModelName: StateFlow<String?> = llm.loadedModelName
+
+    /**
+     * True while any brain has a native call in flight, including the window
+     * right after a cancel was requested but the call hasn't unwound yet — see
+     * [LlmRouter.generating]. Lets the dashboard show "still finishing up"
+     * distinctly from a conversation state that already reset to "Pronto".
+     */
+    val llmGenerating: Flow<Boolean> = router.generating
 
     private val systemPrompt: String by lazy {
         runCatching {
@@ -374,14 +383,24 @@ class SessionCoordinator @Inject constructor(
      * cancel, leaving the orb stuck until the STT engine's own timeout.
      *
      * Launches the turn on the coordinator's own scope and remembers the job,
-     * first waiting for any previous turn to fully unwind (so its
-     * [sessionMutex] is released) — this is what lets a stopped session restart
-     * instead of freezing on "Pronto".
+     * first waiting (up to [SESSION_HANDOFF_TIMEOUT_MS]) for any previous turn
+     * to fully unwind so its [sessionMutex] is released — this is what lets a
+     * stopped session restart instead of freezing on "Pronto". The wait is
+     * bounded, not `cancelAndJoin()`'s unbounded one: a blocking native LLM
+     * call cannot be interrupted by cancelling this coroutine alone (see
+     * [SESSION_HANDOFF_TIMEOUT_MS]'s doc), so an unbounded wait here meant the
+     * new session could never actually start until that orphaned call
+     * finished on its own. If the bound is hit, the new session is attempted
+     * anyway; [runSession] handles the (rarer, now bounded) case where the
+     * mutex genuinely still isn't free.
      */
     fun startSession() {
         val previous = sessionJob
         sessionJob = scope.launch {
-            runCatching { previous?.cancelAndJoin() }
+            if (previous != null) {
+                previous.cancel()
+                withTimeoutOrNull(SESSION_HANDOFF_TIMEOUT_MS) { previous.join() }
+            }
             runSession()
         }
     }
@@ -393,7 +412,15 @@ class SessionCoordinator @Inject constructor(
             tts.stop()
         }
         if (sessionMutex.isLocked) {
+            // The previous turn's blocking native call still hasn't returned even
+            // after startSession()'s bounded wait — say so plainly instead of
+            // silently doing nothing, which used to look identical to a genuine
+            // freeze (the orb already reads "Pronto" from CancelRequested, so a
+            // silent no-op here gave no signal anything was still wrong).
             Log.i(TAG, "session_skip already_running")
+            _diagnostic.value = "sto ancora concludendo la richiesta precedente…"
+            _lastError.value = "still_finishing_previous"
+            machine.dispatch(ConversationEvent.RecoverableFailure("still_finishing_previous"))
             return
         }
         sessionMutex.withLock {
@@ -2073,6 +2100,20 @@ class SessionCoordinator @Inject constructor(
     companion object {
         const val DEFAULT_RECORD_MS = 3_000L
         const val FIXED_REPLY = "Sistema audio operativo. Sono pronto."
+
+        /**
+         * How long [startSession] waits for a just-cancelled previous turn to
+         * actually finish before starting the new one regardless. A blocking
+         * native LLM call cannot be interrupted by coroutine cancellation alone
+         * (only [com.simone.jarvismobile.llm.LlmEngine.cancel]'s native
+         * cancelProcess() can, and its own latency is outside this app's
+         * control) — an unbounded `cancelAndJoin()` here used to mean a new
+         * session could never start until that orphaned call finished on its
+         * own, however long that took, even though the visible state had
+         * already reset to "Pronto". See [runSession]'s still-locked branch for
+         * what happens if this bound is hit.
+         */
+        const val SESSION_HANDOFF_TIMEOUT_MS = 4_000L
 
         /**
          * How long the orb shows a transient error before it clears itself back to
