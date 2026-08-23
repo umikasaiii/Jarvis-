@@ -145,6 +145,24 @@ class ConversationalJarvisEngine @Inject constructor(
      * a tool that (by design, see `AgendaCrudTools`) only ever accepts one —
      * so they could only ever fail or hallucinate an id when left to
      * [runBrainLoop] alone.
+     *
+     * Only [AgendaRouting.Call] and [AgendaRouting.Disambiguate] answer here
+     * directly — both are a genuine, successful structured-path result.
+     * [AgendaRouting.NotFound] deliberately does NOT: the lexical matcher
+     * behind it (`TextNormalizer.matches`) requires every significant word of
+     * the phrase to appear in the saved title, so a real entry can exist under
+     * slightly different wording and still miss ("sposta dal dentista
+     * venerdì" against a wrong-day guess, or a title worded differently than
+     * the request). Unlike Classic — which stops here by design, because it
+     * has no other way to look — the conversational engine still has
+     * `runBrainLoop` next, and the model's tool catalog includes the
+     * read-only `list_agenda`: it can look at the real titles itself and
+     * match by meaning where the literal matcher couldn't, then act on the
+     * id it actually saw. That is strictly safer than it sounds — every
+     * write tool here still goes through the same `ToolRouter`/confirmation
+     * policy regardless of which path proposed it (a wrong `move_agenda`/
+     * `complete_agenda` guess just fails with "not found"; a wrong
+     * `delete_agenda` guess still stops at "confirm deleting X?").
      */
     private suspend fun runStructuredPath(transcript: String, turn: TurnState): String? {
         val routing = runCatching {
@@ -157,7 +175,10 @@ class ConversationalJarvisEngine @Inject constructor(
                 pendingDisambiguation = PendingDisambiguation(routing.candidateIds, routing.pending)
                 routing.question
             }
-            is AgendaRouting.NotFound -> routing.spoken
+            is AgendaRouting.NotFound -> {
+                turn.structuredMissHint = routing.spoken
+                null
+            }
         }
     }
 
@@ -196,6 +217,17 @@ class ConversationalJarvisEngine @Inject constructor(
         val assembled = contextAssembler.assemble(transcript, conversationManager.snapshotText())
         turn.memoriesRetrieved = assembled.memoriesRetrieved
         var contextBlock = assembled.text
+        // The structured path already tried a literal name match against the
+        // calendar and missed — a real entry may still exist under different
+        // wording, so nudge the model towards list_agenda + a real id instead
+        // of repeating the same literal lookup itself.
+        turn.structuredMissHint?.let { hint ->
+            contextBlock = (
+                "Una ricerca diretta per nome nel calendario non ha trovato una corrispondenza esatta " +
+                    "($hint). Se la richiesta riguarda un impegno esistente, usa prima list_agenda per vedere " +
+                    "i titoli reali e trova quello giusto prima di agire, invece di inventare un id.\n\n" + contextBlock
+            ).trim()
+        }
         var currentText = transcript
         var rounds = 0
 
@@ -272,6 +304,9 @@ class ConversationalJarvisEngine @Inject constructor(
         var firstEmitAt: Long? = null
         var memoriesRetrieved = 0
 
+        /** Set by [runStructuredPath] on a lexical miss, read by [runBrainLoop]. */
+        var structuredMissHint: String? = null
+
         /** Never includes the reply text itself — only counts/booleans, per [EngineTurnDiagnostics]'s contract. */
         fun toDiagnostics(): EngineTurnDiagnostics {
             val now = System.currentTimeMillis()
@@ -295,9 +330,11 @@ class ConversationalJarvisEngine @Inject constructor(
 
         // Bounded so a flaky multi-round turn cannot silently run for minutes:
         // worst case is now DEFAULT_GENERATION_TIMEOUT_SECONDS (round 1) plus
-        // (MAX_BRAIN_ROUNDS - 1) * FOLLOWUP_TIMEOUT_SECONDS, ~150s instead of
-        // the previous up-to-6-rounds-at-90s-each (~9 minutes).
-        const val MAX_BRAIN_ROUNDS = 3
+        // (MAX_BRAIN_ROUNDS - 1) * FOLLOWUP_TIMEOUT_SECONDS, ~180s instead of
+        // the previous up-to-6-rounds-at-90s-each (~9 minutes). 4 rounds gives
+        // the structured-path-miss recovery (list_agenda -> act -> compose the
+        // final sentence, 3 rounds) one round of margin.
+        const val MAX_BRAIN_ROUNDS = 4
         const val FOLLOWUP_TIMEOUT_SECONDS = 30L
 
         const val MAX_DIAGNOSTICS_HISTORY = 20

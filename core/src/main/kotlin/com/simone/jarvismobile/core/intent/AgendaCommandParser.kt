@@ -109,9 +109,28 @@ object AgendaCommandParser {
         // 2. Otherwise the last temporal clause introduced by a destination marker
         //    is the new date/time; everything before it describes the target.
         val split = splitDestination(body, now) ?: run {
+            // No explicit marker ("a"/"al"/"alle"/"per"/…) was found, but a bare
+            // date/time may still be sitting in the target text: "sposta il
+            // dentista venerdì" (real device phrasing — Italian regularly drops
+            // "a" before a destination day). Treating that date as an
+            // IDENTIFYING qualifier instead can only ever produce a MOVE with an
+            // empty [IntentChanges], which `MoveAgendaTool.validate()` always
+            // rejects ("manca la nuova data o il nuovo orario") — so this
+            // branch never actually worked before either way, and reinterpreting
+            // the date as the destination can only turn a previously-broken
+            // phrasing into a working one.
+            val target = buildTarget(body, now)
+            if (target.date != null || target.time != null) {
+                val changes = IntentChanges(date = target.date, time = target.time)
+                val retargeted = target.copy(date = null, time = null)
+                if (retargeted.isEmpty && !verb.hasPronoun) return null
+                return intent(
+                    domain, Action.MOVE, raw, norm, retargeted, changes, verb,
+                    scoreFor(retargeted, domain, verb, changed = true),
+                )
+            }
             // "rimandalo" with no destination at all — recognised, but the app
             // has to ask when. Only worth returning if we know what to move.
-            val target = buildTarget(body, now)
             if (target.isEmpty && !verb.hasPronoun) return null
             return intent(
                 domain, Action.MOVE, raw, norm, target, IntentChanges(), verb,

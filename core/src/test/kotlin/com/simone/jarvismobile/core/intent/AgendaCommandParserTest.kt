@@ -114,6 +114,21 @@ class AgendaCommandParserTest {
     }
 
     @Test
+    fun aBareDestinationDayWithNoMarkerIsStillTheDestination() {
+        // Real device bug: "sposta il dentista venerdì" (no "a") was reading
+        // "venerdì" as an IDENTIFYING qualifier instead of the destination,
+        // producing a MOVE with an empty IntentChanges the tool layer always
+        // rejects — and if the real entry wasn't actually ON that day, resolving
+        // to zero candidates ("Non trovo «dentista»") even though the entry
+        // plainly existed under a different day.
+        val intent = assertNotNull(parse("sposta il dentista venerdì"))
+        assertEquals(Action.MOVE, intent.action)
+        assertTrue(intent.target.needle.contains("dentista"), intent.target.needle)
+        assertNull(intent.target.date, "must not be read as an identifying date")
+        assertEquals("2026-08-07", intent.changes.date, "must be read as the destination")
+    }
+
+    @Test
     fun theTargetsOwnDayIsNotConfusedWithTheDestination() {
         // "di domani" identifies the entry; "a lunedì" is where it goes.
         val intent = assertNotNull(parse("porta l'appuntamento di domani a lunedì"))
