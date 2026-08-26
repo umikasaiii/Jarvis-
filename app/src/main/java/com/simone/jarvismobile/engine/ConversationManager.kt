@@ -5,6 +5,7 @@ import com.simone.jarvismobile.core.memory.MemoryEntry
 import com.simone.jarvismobile.core.memory.MemoryTier
 import com.simone.jarvismobile.core.protocol.ToolCall
 import com.simone.jarvismobile.tools.ToolOutcome
+import com.simone.jarvismobile.util.runCancellable
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import javax.inject.Inject

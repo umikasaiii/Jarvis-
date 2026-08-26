@@ -42,6 +42,7 @@ import com.simone.jarvismobile.tools.ItalianNumbers
 import com.simone.jarvismobile.tools.LlmIntentClassifier
 import com.simone.jarvismobile.tools.Match
 import com.simone.jarvismobile.tools.ToolOutcome
+import com.simone.jarvismobile.util.runCancellable
 import com.simone.jarvismobile.tools.ToolRunner
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
@@ -942,7 +943,7 @@ class SessionCoordinator @Inject constructor(
         // venerdì", "cancella la riunione delle 18", "spostalo di due ore").
         // Deterministic and instant — the model is not involved, and the target is
         // resolved to a real entry id before any tool can touch the calendar.
-        runCatching { agendaIntents.route(transcript, contextEntryId = lastAgendaEntryId) }
+        runCancellable { agendaIntents.route(transcript, contextEntryId = lastAgendaEntryId) }
             .getOrNull()
             ?.let { routing ->
                 when (routing) {
@@ -1067,7 +1068,7 @@ class SessionCoordinator @Inject constructor(
         conversationHint: String = "",
     ): String {
         lastAskedSlot = null
-        val retrieved = runCatching { memory.retrieveSmart(transcript, MEMORY_TOP_K) }.getOrDefault(emptyList())
+        val retrieved = runCancellable { memory.retrieveSmart(transcript, MEMORY_TOP_K) }.getOrDefault(emptyList())
         val notes = retrieved.map { it.chunk.text.replace('\n', ' ').trim().take(600) }
 
         val slot = router.selectSlot(needsReasoning)
@@ -1113,11 +1114,11 @@ class SessionCoordinator @Inject constructor(
         // passages it was given, not from what it half-remembers. When the
         // library holds nothing relevant, nothing is injected and the system
         // prompt's "say you don't know" rule applies unaided.
-        val evidence = runCatching { knowledgeEvidence(transcript) }.getOrNull()
+        val evidence = runCancellable { knowledgeEvidence(transcript) }.getOrNull()
         // Imported documents/attachments are searched on the same pre-generation
         // path as the offline library, so an answer about "this PDF" is grounded
         // in cited passages rather than improvised.
-        val docEvidence = runCatching { documents.documentEvidence(transcript) }.getOrNull()
+        val docEvidence = runCancellable { documents.documentEvidence(transcript) }.getOrNull()
 
         val message = buildString {
             if (conversationHint.isNotBlank()) {
@@ -1208,8 +1209,8 @@ class SessionCoordinator @Inject constructor(
         val candidate = com.simone.jarvismobile.core.memory.FactCapture.detect(transcript) ?: return null
         val key = candidate.fact.lowercase()
         if (!offeredFacts.add(key)) return null // already offered this session
-        if (!runCatching { memory.isConfigured() }.getOrDefault(false)) return null
-        val known = runCatching { memory.listRecords() }.getOrDefault(emptyList())
+        if (!runCancellable { memory.isConfigured() }.getOrDefault(false)) return null
+        val known = runCancellable { memory.listRecords() }.getOrDefault(emptyList())
         if (known.any { it.text.equals(candidate.fact, ignoreCase = true) }) return null
 
         pendingConfirmation = com.simone.jarvismobile.core.protocol.ToolCall(
@@ -1341,13 +1342,13 @@ class SessionCoordinator @Inject constructor(
         val source = when (focus) {
             // Memoria + documenti importati.
             ChatFocus.MEMORY -> {
-                val hits = runCatching { memory.retrieveSmart(query, MEMORY_TOP_K) }.getOrDefault(emptyList())
+                val hits = runCancellable { memory.retrieveSmart(query, MEMORY_TOP_K) }.getOrDefault(emptyList())
                 val mem = hits.joinToString("\n") { "• ${it.chunk.text.replace('\n', ' ').trim().take(500)}" }
-                val docs = runCatching { documents.documentEvidence(query) }.getOrNull().orEmpty()
+                val docs = runCancellable { documents.documentEvidence(query) }.getOrNull().orEmpty()
                 listOf(mem, docs).filter { it.isNotBlank() }.joinToString("\n\n")
             }
             // Solo la conoscenza offline (wiki/guide), non i documenti personali.
-            ChatFocus.KNOWLEDGE -> runCatching { knowledgeEvidence(query) }.getOrNull().orEmpty()
+            ChatFocus.KNOWLEDGE -> runCancellable { knowledgeEvidence(query) }.getOrNull().orEmpty()
             ChatFocus.ALL -> ""
         }.trim()
 
@@ -1371,7 +1372,7 @@ class SessionCoordinator @Inject constructor(
             append("\n\nDomanda: ").append(query)
             append("\nRisposta:")
         }
-        return runCatching { llm.generate(prompt) }.getOrNull()
+        return runCancellable { llm.generate(prompt) }.getOrNull()
             ?.let(AssistantReplyCleaner::clean)?.ifBlank { null }
             ?: "$heading\n$source"
     }

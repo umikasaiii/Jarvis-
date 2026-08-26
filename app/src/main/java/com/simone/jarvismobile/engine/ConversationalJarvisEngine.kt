@@ -10,6 +10,7 @@ import com.simone.jarvismobile.core.protocol.ToolCall
 import com.simone.jarvismobile.data.SettingsRepository
 import com.simone.jarvismobile.llm.DEFAULT_GENERATION_TIMEOUT_SECONDS
 import com.simone.jarvismobile.tools.AgendaIntentRouter
+import com.simone.jarvismobile.util.runCancellable
 import com.simone.jarvismobile.tools.AgendaRouting
 import com.simone.jarvismobile.tools.ToolOutcome
 import kotlinx.coroutines.CancellationException

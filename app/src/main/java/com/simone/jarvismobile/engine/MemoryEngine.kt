@@ -9,6 +9,7 @@ import com.simone.jarvismobile.engine.memory.toModel
 import com.simone.jarvismobile.memory.ConversationMemoryStore
 import com.simone.jarvismobile.memory.MemoryIndex
 import kotlinx.coroutines.flow.first
+import com.simone.jarvismobile.util.runCancellable
 import javax.inject.Inject
 import javax.inject.Singleton
 
