@@ -77,6 +77,41 @@ bump from 4 on must ship one**.
   signal decay made the dwell unsatisfiable (standing still would never confirm
   an arrival), and source weights sat exactly on the entry threshold.
 
+## Audit, 26 August 2026
+
+A pass over the engine looking for behaviour that misbehaves quietly rather than
+failing loudly. Six defects were real and are fixed (CI-verified):
+
+1. `executionPolicy` was honoured by the gate and ignored by the executor, so
+   `QUEUE` behaved exactly like `SKIP_IF_RUNNING` — the gate said "fire", the
+   executor said "no", and nothing in between could notice. `QUEUE` now
+   serialises per rule through a per-rule `Mutex`.
+2. **`REPLACE` was removed from `ExecutionPolicy`.** Cancelling an in-flight run
+   requires the executor to own its `Job`, which it does not; leaving the option
+   would give the user a setting that silently does something else. Unknown
+   values decode to `SKIP_IF_RUNNING`, so re-adding it later costs no migration.
+3. `CancellationException` was swallowed in the executor and three handlers, so
+   a cancel became a "failed action" and the loop carried on with the remaining
+   ones — "stop" did not stop. Now rethrown, as `LitertLmEngine` already did.
+4. `armable()` pre-filtered candidates by cooldown and expiry *before* the gate,
+   so those rules never reached the execution log: the history could not answer
+   "perché non è scattata?" for the most common reason, and the gate's
+   `SKIP_COOLDOWN`/`SKIP_EXPIRED` branches were unreachable. Replaced by
+   `candidatesFor(triggerType)`, which leaves deciding to the gate.
+5. `importLegacy` used a row count as its has-this-run guard, so deleting every
+   imported rule resurrected them on the next pass. Now a persisted flag.
+6. Introduced by the fix for (1) and caught on re-reading it: the cleanup in the
+   `finally` went through a *suspending* `withLock`. Suspending in a `finally`
+   of an already-cancelled coroutine throws at once, so the running flag would
+   never clear and the rule would stay "running" for ever.
+
+Checked and found clean: the migration chain (3→7, every step registered, and
+every migration's SQL matches its `@Entity` column for column — a mismatch would
+crash on first open after an upgrade); secrets (Keystore-backed
+`EncryptedSharedPreferences`, no plaintext, none logged); the manifest (no
+accidental exports, both `specialUse` services declare their subtype); and the
+absence of empty catches or suspending cleanup anywhere else.
+
 ## Status and known gaps
 
 Phases 1–4 are done and CI-verified. **Phases 5 and 6 are now done and
