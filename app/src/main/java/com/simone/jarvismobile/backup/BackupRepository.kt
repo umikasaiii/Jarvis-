@@ -171,9 +171,7 @@ class BackupRepository @Inject constructor(
     suspend fun verify(id: String): Boolean = withContext(Dispatchers.IO) {
         if (readManifest(id) == null) runCatching { external.importInto(root, id) }
         if (readManifest(id) == null) runCatching { cloud.importInto(root, id) }
-        val manifest = readManifest(id) ?: return@withContext false
-        val enc = File(File(root, id), "backup.enc")
-        enc.exists() && sha256File(enc).equals(manifest.archiveSha256, ignoreCase = true)
+        verifyArchive(id)
     }
 
     suspend fun delete(id: String) = withContext(Dispatchers.IO) {
@@ -196,24 +194,54 @@ class BackupRepository @Inject constructor(
         if (readManifest(id) == null) runCatching { external.importInto(root, id) }
         if (readManifest(id) == null) runCatching { cloud.importInto(root, id) }
         val manifest = readManifest(id) ?: return@withContext false
-        runBackup() // pre-restore safety snapshot
-        var ok = true
         val wanted = manifest.entries.filter { it.kind == EntryKind.FILE && (paths == null || it.relPath in paths) }
-        for (entry in wanted) {
-            val sourceBackup = entry.storedInBackupId.ifBlank { id }
-            // Incremental backups reference earlier archives for unchanged files;
-            // those too may only exist in the destination folder or the cloud.
+
+        // Fetch every archive this restore will read BEFORE touching anything.
+        // An incremental backup references earlier archives for files that did
+        // not change, and those may live only in the destination folder or the
+        // cloud.
+        val sources = wanted.map { it.storedInBackupId.ifBlank { id } }.toSet()
+        for (sourceBackup in sources) {
             if (!File(File(root, sourceBackup), "backup.enc").exists()) {
                 runCatching { external.importInto(root, sourceBackup) }
             }
             if (!File(File(root, sourceBackup), "backup.enc").exists()) {
                 runCatching { cloud.importInto(root, sourceBackup) }
             }
+        }
+
+        // Then check them, still before writing a single byte. Without this a
+        // truncated archive would decrypt some entries and fail on others,
+        // leaving the app half old and half new and only then reporting failure
+        // — the worst possible outcome, because the damage is already done and
+        // the user has to know to reach for the safety snapshot. Refusing up
+        // front costs one hash per archive and leaves the device untouched.
+        val unverifiable = sources.filterNot { verifyArchive(it) }
+        if (unverifiable.isNotEmpty()) {
+            Log.w(TAG, "restore_refused id=$id unverifiable=${unverifiable.size}")
+            return@withContext false
+        }
+
+        runBackup() // pre-restore safety snapshot
+        var ok = true
+        for (entry in wanted) {
+            val sourceBackup = entry.storedInBackupId.ifBlank { id }
             val bytes = extract(sourceBackup, entry.relPath)
             if (bytes == null) { ok = false; continue }
             if (!writeTarget(entry.relPath, bytes)) ok = false
         }
         ok
+    }
+
+    /**
+     * True when [backupId]'s archive is present and matches the SHA-256 its own
+     * manifest recorded. Shared by [verify] and [restore] so the check the user
+     * can run by hand is exactly the one a restore performs.
+     */
+    private fun verifyArchive(backupId: String): Boolean {
+        val manifest = readManifest(backupId) ?: return false
+        val enc = File(File(root, backupId), "backup.enc")
+        return enc.exists() && sha256File(enc).equals(manifest.archiveSha256, ignoreCase = true)
     }
 
     // --- sources ------------------------------------------------------------
