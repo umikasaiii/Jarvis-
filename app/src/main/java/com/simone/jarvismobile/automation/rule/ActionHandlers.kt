@@ -18,6 +18,7 @@ import com.simone.jarvismobile.tools.CommandMatcher
 import com.simone.jarvismobile.tools.Match
 import com.simone.jarvismobile.tools.ToolOutcome
 import com.simone.jarvismobile.tools.ToolRunner
+import kotlinx.coroutines.CancellationException
 import java.time.LocalDate
 import java.time.LocalTime
 import javax.inject.Inject
@@ -106,6 +107,8 @@ class NotifyActionHandler @Inject constructor(
             ActionOutcome.Done
         } catch (_: SecurityException) {
             ActionOutcome.Failed("permesso notifiche revocato")
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             ActionOutcome.Failed(e.javaClass.simpleName)
         }
@@ -131,7 +134,15 @@ class SpeakActionHandler @Inject constructor(
     override suspend fun handle(spec: ActionSpec, dryRun: Boolean): ActionOutcome {
         val message = spec.param("message") ?: return ActionOutcome.Failed("testo mancante")
         if (dryRun) return ActionOutcome.Skipped("dry-run: direi «${message.take(40)}»")
-        val spoken = runCatching { coordinator.speakBackgroundResponse(message) }.getOrDefault(false)
+        // Not runCatching: that would swallow a CancellationException and let the
+        // engine carry on running actions after a stop.
+        val spoken = try {
+            coordinator.speakBackgroundResponse(message)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            false
+        }
         if (spoken) return ActionOutcome.Done
         return notifier.handle(
             ActionSpec(ActionRegistry.SHOW_NOTIFICATION, mapOf("message" to message)),
@@ -153,8 +164,13 @@ class CreateReminderActionHandler @Inject constructor(
             ?: LocalDate.now()
         val time = spec.param("time")?.let { runCatching { LocalTime.parse(it) }.getOrNull() }
         if (dryRun) return ActionOutcome.Skipped("dry-run: creerei «$text» il $date")
-        val added = runCatching { agenda.add(AgendaEntry(date = date, time = time, text = text)) }
-            .getOrDefault(false)
+        val added = try {
+            agenda.add(AgendaEntry(date = date, time = time, text = text))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            false
+        }
         return if (added) ActionOutcome.Done else ActionOutcome.Failed("agenda non scrivibile")
     }
 }
@@ -183,7 +199,14 @@ class RunToolActionHandler @Inject constructor(
             return ActionOutcome.Failed("comando non permesso in automatico")
         }
         if (dryRun) return ActionOutcome.Skipped("dry-run: eseguirei ${match.call.name}")
-        return when (val outcome = runCatching { tools.run(match.call) }.getOrNull()) {
+        val outcome = try {
+            tools.run(match.call)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
+        return when (outcome) {
             is ToolOutcome.Done -> ActionOutcome.Done
             is ToolOutcome.Failed -> ActionOutcome.Failed(outcome.code)
             // A confirming tool cannot be confirmed by nobody at 3am.

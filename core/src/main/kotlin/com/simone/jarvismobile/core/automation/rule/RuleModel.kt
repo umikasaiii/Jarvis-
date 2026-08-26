@@ -38,15 +38,22 @@ data class ActionSpec(
     fun int(key: String): Int? = param(key)?.trim()?.toIntOrNull()
 }
 
-/** What to do when a rule fires again while a previous run is still going. */
+/**
+ * What to do when a rule fires again while a previous run is still going.
+ *
+ * A "REPLACE" (cancel the in-flight run, latest wins) is deliberately **not**
+ * offered. Implementing it honestly means the executor must own the Job of every
+ * run so it can cancel one, which changes how a firing is dispatched; offering
+ * the option before that exists would give the user a setting that silently
+ * behaves like [SKIP_IF_RUNNING]. It can be added when there is a rule that
+ * needs it — unknown values decode to [SKIP_IF_RUNNING], so adding it later
+ * costs no migration.
+ */
 enum class ExecutionPolicy {
     /** Ignore the new firing (the safe default: no duplicate side effects). */
     SKIP_IF_RUNNING,
 
-    /** Cancel the in-flight run and start again — for "latest wins" rules. */
-    REPLACE,
-
-    /** Run them one after the other. */
+    /** Run them one after the other, in arrival order. */
     QUEUE,
 }
 

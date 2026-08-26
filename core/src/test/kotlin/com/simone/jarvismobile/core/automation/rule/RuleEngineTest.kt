@@ -347,4 +347,22 @@ class RuleEngineTest {
         assertTrue(TriggerRegistry.DEVICE_CHARGING in offered)
         assertTrue(TriggerRegistry.RECURRING_TIME in offered)
     }
+
+    @Test
+    fun onlyExecutionPoliciesTheExecutorImplementsAreOffered() {
+        // Same principle as the action registry: an option the user can pick must
+        // do what it says. A "REPLACE" policy was declared but the executor could
+        // not cancel a run it does not own, so it silently behaved like
+        // SKIP_IF_RUNNING — the gate said "fire" and the executor said "no".
+        assertEquals(
+            setOf(ExecutionPolicy.SKIP_IF_RUNNING, ExecutionPolicy.QUEUE),
+            ExecutionPolicy.entries.toSet(),
+        )
+    }
+
+    @Test
+    fun theDefaultPolicyIsTheSafeOne() {
+        // Defaulting to QUEUE would let a burst of events pile up side effects.
+        assertEquals(ExecutionPolicy.SKIP_IF_RUNNING, rule().executionPolicy)
+    }
 }

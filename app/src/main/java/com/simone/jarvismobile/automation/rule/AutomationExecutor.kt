@@ -7,10 +7,12 @@ import com.simone.jarvismobile.core.automation.rule.ConflictResolver
 import com.simone.jarvismobile.core.automation.rule.EvaluationContext
 import com.simone.jarvismobile.core.automation.rule.ExecutionDecision
 import com.simone.jarvismobile.core.automation.rule.ExecutionHistory
+import com.simone.jarvismobile.core.automation.rule.ExecutionPolicy
 import com.simone.jarvismobile.core.automation.rule.GateResult
 import com.simone.jarvismobile.core.automation.rule.RuleGate
 import com.simone.jarvismobile.core.automation.rule.TriggerEvent
 import com.simone.jarvismobile.core.automation.rule.TriggerMatching
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -54,6 +56,13 @@ class AutomationExecutor @Inject constructor(
     private val fireMutex = Mutex()
 
     /**
+     * One lock per rule, so [ExecutionPolicy.QUEUE] can actually queue: the
+     * second firing waits for the first instead of being dropped. A single
+     * global lock would serialise unrelated rules against each other.
+     */
+    private val ruleLocks = ConcurrentHashMap<String, Mutex>()
+
+    /**
      * Handles one trigger firing end to end.
      *
      * [dryRun] evaluates and logs exactly as usual but performs no side effects,
@@ -64,10 +73,20 @@ class AutomationExecutor @Inject constructor(
         context: EvaluationContext,
         dryRun: Boolean = false,
     ): List<ExecutionReport> {
-        val candidates = runCatching { rules.armable(event.at) }.getOrElse {
-            Log.w(TAG, "rules_unreadable ${it.javaClass.simpleName}")
+        // Deliberately NOT pre-filtered by eligibility: a rule blocked by its
+        // cooldown must still reach the gate, so the log records why it did not
+        // run. Filtering here would make that reason invisible.
+        val candidates = try {
+            rules.candidatesFor(event.type)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "rules_unreadable ${e.javaClass.simpleName}")
             return emptyList()
-        }.filter { rule -> TriggerMatching.ruleListens(rule, event) }
+        }
+            // A place rule must fire for ITS place, not merely for a place event
+            // of the same kind — type-only matching would cross the wires.
+            .filter { rule -> TriggerMatching.ruleListens(rule, event) }
         if (candidates.isEmpty()) return emptyList()
 
         // Gate first: only rules that may actually run get to compete for the
@@ -118,26 +137,53 @@ class AutomationExecutor @Inject constructor(
         event: TriggerEvent,
         dryRun: Boolean,
     ): ExecutionReport {
-        // Claim the key and the running flag together, so two deliveries racing
-        // on different threads cannot both get past the gate.
         val key = event.idempotencyKey(rule.id)
-        val claimed = fireMutex.withLock {
-            if (rule.id in running) {
-                false
-            } else {
-                running += rule.id
-                rememberKey(key, event.at)
-                true
+        return when (rule.executionPolicy) {
+            ExecutionPolicy.SKIP_IF_RUNNING -> {
+                // Claim the key and the running flag together, so two deliveries
+                // racing on different threads cannot both get past the gate.
+                val claimed = fireMutex.withLock {
+                    if (rule.id in running) {
+                        false
+                    } else {
+                        running += rule.id
+                        rememberKey(key, event.at)
+                        true
+                    }
+                }
+                if (!claimed) {
+                    record(
+                        rule, event,
+                        GateResult(ExecutionDecision.SKIP_DUPLICATE, "esecuzione già in corso"),
+                        emptyList(), dryRun,
+                    )
+                } else {
+                    runActions(rule, event, dryRun)
+                }
+            }
+
+            ExecutionPolicy.QUEUE -> {
+                // Wait for the previous run of THIS rule rather than dropping the
+                // firing. Without the per-rule lock the executor refused the
+                // second run anyway, so QUEUE silently behaved like
+                // SKIP_IF_RUNNING — the gate said "fire" and this said "no".
+                ruleLocks.getOrPut(rule.id) { Mutex() }.withLock {
+                    fireMutex.withLock {
+                        running += rule.id
+                        rememberKey(key, event.at)
+                    }
+                    runActions(rule, event, dryRun)
+                }
             }
         }
-        if (!claimed) {
-            return record(
-                rule, event,
-                GateResult(ExecutionDecision.SKIP_DUPLICATE, "esecuzione già in corso"),
-                emptyList(), dryRun,
-            )
-        }
+    }
 
+    /** Runs every action of [rule], always releasing the running flag. */
+    private suspend fun runActions(
+        rule: AutomationRule,
+        event: TriggerEvent,
+        dryRun: Boolean,
+    ): ExecutionReport {
         val outcomes = mutableListOf<Pair<String, ActionOutcome>>()
         try {
             for (spec in rule.actions) {
@@ -151,7 +197,13 @@ class AutomationExecutor @Inject constructor(
                 val outcome = try {
                     withTimeout(ACTION_TIMEOUT_MS) { handler.handle(spec, dryRun) }
                 } catch (e: TimeoutCancellationException) {
+                    // A timeout is this action giving up, not the engine being
+                    // cancelled — checked first because it is a CancellationException.
                     ActionOutcome.Failed("timeout")
+                } catch (e: CancellationException) {
+                    // Someone stopped us. Swallowing this would make the loop
+                    // carry on running the remaining actions after a cancel.
+                    throw e
                 } catch (e: Exception) {
                     // One misbehaving action must not take JARVIS down (§25).
                     Log.w(TAG, "action_crash ${spec.type} ${e.javaClass.simpleName}")
@@ -160,14 +212,17 @@ class AutomationExecutor @Inject constructor(
                 outcomes += spec.type to outcome
             }
         } finally {
+            // NOT through fireMutex: withLock suspends, and suspending inside a
+            // finally of an already-cancelled coroutine throws immediately — the
+            // flag would never be cleared and the rule would look "running"
+            // for ever, blocking every later firing. The set is concurrent, and
+            // the lock was only ever needed for the atomic check-and-claim.
             running -= rule.id
         }
 
         val anyDone = outcomes.any { it.second is ActionOutcome.Done }
         if (anyDone && !dryRun) {
-            runCatching { rules.markFired(rule.id, event.at) }
-            // A one-shot rule has now spent itself.
-            if (rule.oneShot) runCatching { rules.setEnabled(rule.id, false, event.at) }
+            markFiredQuietly(rule, event)
         }
 
         // The rule did fire, whatever the actions made of it; the truth about
@@ -178,6 +233,19 @@ class AutomationExecutor @Inject constructor(
             GateResult(ExecutionDecision.FIRE, if (dryRun) "prova (dry-run)" else "trigger ${event.type}"),
             outcomes, dryRun,
         )
+    }
+
+    /** Records the firing; a storage hiccup must not lose the actions already done. */
+    private suspend fun markFiredQuietly(rule: AutomationRule, event: TriggerEvent) {
+        try {
+            rules.markFired(rule.id, event.at)
+            // A one-shot rule has now spent itself.
+            if (rule.oneShot) rules.setEnabled(rule.id, false, event.at)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "mark_fired_failed ${rule.id} ${e.javaClass.simpleName}")
+        }
     }
 
     /**
@@ -208,8 +276,13 @@ class AutomationExecutor @Inject constructor(
             actions = outcomes,
             dryRun = dryRun,
         )
-        runCatching { log.write(report) }
-            .onFailure { Log.w(TAG, "execution_log_failed ${it.javaClass.simpleName}") }
+        try {
+            log.write(report)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "execution_log_failed ${e.javaClass.simpleName}")
+        }
         Log.i(TAG, "automation ${rule.id} ${result.decision} actions=${outcomes.size} dry=$dryRun")
         return report
     }

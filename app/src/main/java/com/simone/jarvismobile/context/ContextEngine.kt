@@ -8,6 +8,7 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.BatteryManager
 import android.util.Log
+import androidx.core.content.ContextCompat
 import com.simone.jarvismobile.core.automation.rule.EvaluationContext
 import com.simone.jarvismobile.core.context.ContextState
 import com.simone.jarvismobile.core.context.ContextTransition
@@ -278,7 +279,15 @@ class PowerContextSource @Inject constructor(
             addAction(Intent.ACTION_BATTERY_LOW)
             addAction(Intent.ACTION_BATTERY_OKAY)
         }
-        runCatching { context.registerReceiver(handler, filter) }
+        // ContextCompat with an explicit export flag, matching
+        // AutomationEventService. These are protected system broadcasts so the
+        // flag is not strictly required, but being explicit keeps the app off
+        // the path where a stricter ROM or a future SDK refuses the plain call.
+        runCatching {
+            ContextCompat.registerReceiver(
+                context, handler, filter, ContextCompat.RECEIVER_NOT_EXPORTED,
+            )
+        }
             .onSuccess { receiver = handler }
             .onFailure { Log.w(TAG, "power_source_failed ${it.javaClass.simpleName}") }
         engine.refreshDeviceState()

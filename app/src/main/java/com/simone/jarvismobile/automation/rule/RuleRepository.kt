@@ -6,6 +6,7 @@ import com.simone.jarvismobile.core.automation.rule.LegacyRuleConverter
 import com.simone.jarvismobile.core.automation.rule.RuleCodec
 import com.simone.jarvismobile.core.automation.rule.validationErrors
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import java.time.LocalDateTime
 import javax.inject.Inject
@@ -31,6 +32,7 @@ data class QuarantinedRule(val id: String, val name: String)
 @Singleton
 class RuleRepository @Inject constructor(
     private val dao: AutomationRuleDao,
+    private val settings: com.simone.jarvismobile.data.SettingsRepository,
 ) {
 
     /** Rules that decoded cleanly, newest schema first. */
@@ -46,9 +48,20 @@ class RuleRepository @Inject constructor(
 
     suspend fun all(): List<AutomationRule> = dao.all().mapNotNull { it.toDomainOrNull() }
 
-    /** Rules eligible to be armed: enabled, decodable, not expired. */
-    suspend fun armable(now: LocalDateTime = LocalDateTime.now()): List<AutomationRule> =
-        dao.enabled().mapNotNull { it.toDomainOrNull() }.filter { it.isEligible(now) }
+    /**
+     * Rules that listen for [triggerType] and could be decoded — **without**
+     * filtering on cooldown or expiry.
+     *
+     * Those checks belong to the gate, not here. Dropping an on-cooldown rule at
+     * this level would keep it out of the execution log entirely, so the history
+     * could never answer "perché non è scattata?" for the single most common
+     * reason; it also left the gate's SKIP_COOLDOWN/SKIP_EXPIRED branches
+     * unreachable.
+     */
+    suspend fun candidatesFor(triggerType: String): List<AutomationRule> =
+        dao.enabled().mapNotNull { it.toDomainOrNull() }
+            .filter { rule -> rule.triggers.any { it.type == triggerType } }
+
 
     suspend fun byId(id: String): AutomationRule? = dao.byId(id)?.toDomainOrNull()
 
@@ -97,7 +110,10 @@ class RuleRepository @Inject constructor(
         legacy: List<com.simone.jarvismobile.core.automation.Automation>,
         now: LocalDateTime = LocalDateTime.now(),
     ): ImportReport {
-        if (dao.count() > 0) return ImportReport(alreadyDone = true)
+        // A row count cannot answer "has this already run?": deleting every
+        // imported rule would drop it to zero and resurrect rules the user
+        // deliberately threw away. The answer has to be remembered explicitly.
+        if (settings.legacyAutomationsImported.first()) return ImportReport(alreadyDone = true)
         val imported = mutableListOf<String>()
         val skipped = mutableListOf<String>()
         for (old in legacy) {
@@ -116,6 +132,7 @@ class RuleRepository @Inject constructor(
             dao.upsert(converted.toEntity())
             imported += old.name
         }
+        settings.markLegacyAutomationsImported()
         Log.i(TAG, "legacy_import done=${imported.size} skipped=${skipped.size}")
         return ImportReport(imported = imported, skipped = skipped)
     }

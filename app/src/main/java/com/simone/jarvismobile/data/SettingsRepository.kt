@@ -39,6 +39,13 @@ class SettingsRepository @Inject constructor(
         val RECORD_SECONDS = intPreferencesKey("record_seconds")
         val USE_BLUETOOTH = booleanPreferencesKey("use_bluetooth")
         val FOLLOW_UP = booleanPreferencesKey("follow_up_enabled")
+
+        /**
+         * Set once the one-time import of the old Markdown automations has run.
+         * A row count cannot stand in for this: deleting every imported rule
+         * would drop the count back to zero and resurrect them on the next pass.
+         */
+        val LEGACY_AUTOMATIONS_IMPORTED = booleanPreferencesKey("legacy_automations_imported")
         val MODEL_PATH = stringPreferencesKey("llm_model_path")
         val MODEL_NAME = stringPreferencesKey("llm_model_name")
         val ADV_MODEL_PATH = stringPreferencesKey("llm_adv_model_path")
@@ -412,6 +419,14 @@ class SettingsRepository @Inject constructor(
 
     suspend fun setUseBluetooth(value: Boolean) {
         context.settingsDataStore.edit { it[Keys.USE_BLUETOOTH] = value }
+    }
+
+    /** True once the legacy automation import has been performed. */
+    val legacyAutomationsImported: Flow<Boolean> =
+        context.settingsDataStore.data.map { it[Keys.LEGACY_AUTOMATIONS_IMPORTED] ?: false }
+
+    suspend fun markLegacyAutomationsImported() {
+        context.settingsDataStore.edit { it[Keys.LEGACY_AUTOMATIONS_IMPORTED] = true }
     }
 
     suspend fun setFollowUpEnabled(value: Boolean) {
