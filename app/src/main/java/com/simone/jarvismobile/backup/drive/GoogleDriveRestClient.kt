@@ -112,16 +112,55 @@ class GoogleDriveRestClient @Inject constructor() {
     }
 
     /** Every file JARVIS has stored in [parentFolderId]. */
+    /**
+     * Every file in the backup folder, following Drive's pagination.
+     *
+     * The page token matters more than the file count suggests. Drive returns at
+     * most one page per call, and a truncated listing is not a cosmetic problem
+     * here: `listBackups()` builds the restore picker from it, so a backup the
+     * app cannot see is a backup the user cannot restore — and `pruneRemote()`
+     * computes retention over what it sees, so a partial view could delete
+     * copies a full view would have kept. The previous `fields` did not even ask
+     * for `nextPageToken`, so the client could not tell a complete listing from
+     * a truncated one.
+     *
+     * The loop is capped: a server that kept returning the same token must end
+     * the call, not spin.
+     */
     suspend fun list(accessToken: String, parentFolderId: String): DriveResult<List<DriveFile>> =
         withContext(Dispatchers.IO) {
-            val url = FILES_ENDPOINT.toHttpUrl().newBuilder()
-                .addQueryParameter("q", "${driveQuote(parentFolderId)} in parents and trashed=false")
-                .addQueryParameter("spaces", "drive")
-                .addQueryParameter("pageSize", "1000")
-                .addQueryParameter("fields", "files(id,name,size,md5Checksum)")
-                .build()
-            val request = Request.Builder().url(url).header("Authorization", "Bearer $accessToken").get().build()
-            execute(request) { json.decodeFromString(DriveListResponse.serializer(), it).files.map { f -> f.toDriveFile() } }
+            val all = mutableListOf<DriveFile>()
+            var pageToken: String? = null
+            var pages = 0
+            while (true) {
+                val url = FILES_ENDPOINT.toHttpUrl().newBuilder()
+                    .addQueryParameter("q", "${driveQuote(parentFolderId)} in parents and trashed=false")
+                    .addQueryParameter("spaces", "drive")
+                    .addQueryParameter("pageSize", "1000")
+                    .addQueryParameter("fields", "nextPageToken,files(id,name,size,md5Checksum)")
+                    .apply { pageToken?.let { addQueryParameter("pageToken", it) } }
+                    .build()
+                val request = Request.Builder()
+                    .url(url).header("Authorization", "Bearer $accessToken").get().build()
+                val page = execute(request) {
+                    json.decodeFromString(DriveListResponse.serializer(), it)
+                }
+                when (page) {
+                    is DriveResult.Ok -> {
+                        all += page.value.files.map { f -> f.toDriveFile() }
+                        pageToken = page.value.nextPageToken?.takeIf { it.isNotBlank() }
+                    }
+                    // A failed page means the listing is incomplete; say so rather
+                    // than hand back a partial list that looks complete. No cast
+                    // needed: DriveResult is covariant and both failures are
+                    // DriveResult<Nothing>.
+                    DriveResult.Unauthorized -> return@withContext DriveResult.Unauthorized
+                    is DriveResult.Error -> return@withContext page
+                }
+                pages++
+                if (pageToken == null || pages >= MAX_LIST_PAGES) break
+            }
+            DriveResult.Ok(all)
         }
 
     /** Raw bytes of [fileId]. */
@@ -246,13 +285,19 @@ class GoogleDriveRestClient @Inject constructor() {
     }
 
     @Serializable
-    private data class DriveListResponse(val files: List<DriveFileResponse> = emptyList())
+    private data class DriveListResponse(
+        val files: List<DriveFileResponse> = emptyList(),
+        val nextPageToken: String? = null,
+    )
 
     private companion object {
         const val FILES_ENDPOINT = "https://www.googleapis.com/drive/v3/files"
         const val UPLOAD_ENDPOINT = "https://www.googleapis.com/upload/drive/v3/files"
         const val FOLDER_NAME = "JARVIS Backups"
         const val TIMEOUT_SECONDS = 20L
+
+        /** Safety cap: 1000 files per page, so this is far past any real archive. */
+        const val MAX_LIST_PAGES = 20
         const val UPLOAD_TIMEOUT_SECONDS = 120L
         const val TAG = "JarvisDriveRest"
     }
