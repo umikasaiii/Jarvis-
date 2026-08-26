@@ -165,7 +165,7 @@ class ConversationalJarvisEngine @Inject constructor(
      * `delete_agenda` guess still stops at "confirm deleting X?").
      */
     private suspend fun runStructuredPath(transcript: String, turn: TurnState): String? {
-        val routing = runCatching {
+        val routing = runCancellable {
             agendaIntents.route(transcript, contextEntryId = conversationManager.current()?.entryId)
         }.getOrNull() ?: return null
 

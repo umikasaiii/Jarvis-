@@ -100,7 +100,7 @@ class ConversationManager @Inject constructor(
             lastTouchedAt = System.currentTimeMillis(),
         )
         pending = task
-        runCatching { memoryEngine.storeEpisodic(task.toMemoryEntry()) }
+        runCancellable { memoryEngine.storeEpisodic(task.toMemoryEntry()) }
     }
 
     private fun PendingTask.toMemoryEntry(): MemoryEntry = MemoryEntry(

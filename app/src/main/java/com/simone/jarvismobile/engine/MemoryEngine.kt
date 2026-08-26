@@ -63,11 +63,11 @@ class MemoryEngine @Inject constructor(
             )
         }
 
-        val episodicHits = runCatching { episodic.recent(limit) }.getOrDefault(emptyList())
+        val episodicHits = runCancellable { episodic.recent(limit) }.getOrDefault(emptyList())
             .map { it.toModel() }
             .filter { it.content.containsAnyWordOf(query) }
 
-        val semanticHits = runCatching { semantic.retrieveSmart(query, limit) }.getOrDefault(emptyList())
+        val semanticHits = runCancellable { semantic.retrieveSmart(query, limit) }.getOrDefault(emptyList())
             .map { ranked ->
                 MemoryEntry(
                     id = ranked.chunk.notePath,
@@ -89,19 +89,19 @@ class MemoryEngine @Inject constructor(
     /** Persists one Episodic-tier entry (e.g. a `ConversationManager` snapshot). */
     suspend fun storeEpisodic(entry: MemoryEntry, sessionId: String? = null) {
         if (!settings.jarvisMemoryEnabled.first()) return
-        runCatching { episodic.upsert(entry.copy(tier = MemoryTier.EPISODIC).toEntity(sessionId)) }
+        runCancellable { episodic.upsert(entry.copy(tier = MemoryTier.EPISODIC).toEntity(sessionId)) }
     }
 
     suspend fun episodicById(id: String): MemoryEntry? =
-        runCatching { episodic.byId(id)?.toModel() }.getOrNull()
+        runCancellable { episodic.byId(id)?.toModel() }.getOrNull()
 
     suspend fun deleteEpisodic(id: String) {
-        runCatching { episodic.delete(id) }
+        runCancellable { episodic.delete(id) }
     }
 
     /** Destructive: wipes the Episodic tier. Working/Semantic keep their own clear paths. */
     suspend fun clearEpisodic() {
-        runCatching { episodic.clearAll() }
+        runCancellable { episodic.clearAll() }
     }
 
     private fun String.containsAnyWordOf(query: String): Boolean {
