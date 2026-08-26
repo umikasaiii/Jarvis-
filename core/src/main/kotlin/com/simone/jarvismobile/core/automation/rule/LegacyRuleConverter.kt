@@ -65,14 +65,13 @@ object LegacyRuleConverter {
             mapOf("after" to trigger.after.toString()),
         )
 
-        is Trigger.BluetoothConnected -> TriggerSpec(
-            TriggerRegistry.BLUETOOTH_CONNECTED,
-            mapOf("device" to trigger.device),
-        )
-
         // No faithful equivalent yet. Notably Trigger.ArrivedHome: the old model
         // could express it, but no geofencing exists in the app, so it never
         // fired. Migrating it would just move a rule that cannot work.
+        // Bluetooth has a place in the registry but no source delivers it, so a
+        // converted rule would validate as active and never fire. Refusing and
+        // saying so is the whole point of this converter.
+        is Trigger.BluetoothConnected,
         is Trigger.BatteryBelow,
         Trigger.ScreenUnlocked,
         Trigger.HeadphonesConnected,
@@ -100,6 +99,7 @@ object LegacyRuleConverter {
         is Trigger.WifiPower -> "Wi-Fi acceso/spento"
         is Trigger.MobileData -> "dati mobili"
         is Trigger.WifiNetwork -> "rete Wi-Fi ${trigger.ssid}"
+        is Trigger.BluetoothConnected -> "dispositivo Bluetooth ${trigger.device}"
         Trigger.ArrivedHome -> "arrivo a casa"
         else -> trigger::class.simpleName.orEmpty()
     }

@@ -66,10 +66,6 @@ class LegacyRuleConverterTest {
         assertEquals(TriggerRegistry.FIRST_UNLOCK_OF_DAY, unlock.triggers.single().type)
         assertEquals("06:30", unlock.triggers.single().param("after"))
 
-        val bt = assertNotNull(
-            LegacyRuleConverter.convert(legacy(Trigger.BluetoothConnected("Casco")), now),
-        )
-        assertEquals("Casco", bt.triggers.single().param("device"))
     }
 
     @Test
@@ -123,6 +119,9 @@ class LegacyRuleConverterTest {
             Trigger.MobileData(false),
             Trigger.WifiNetwork("CasaWifi"),
             Trigger.ArrivedHome,
+            // No source delivers Bluetooth, so converting it would produce a
+            // rule that looks active and can never fire.
+            Trigger.BluetoothConnected("Casco"),
         )
         for (t in unsupported) {
             assertNull(LegacyRuleConverter.convert(legacy(t), now), "must not approximate: $t")
@@ -152,7 +151,6 @@ class LegacyRuleConverterTest {
             Trigger.Once(now.plusHours(2)),
             Trigger.ChargingStarted,
             Trigger.MorningUnlock(LocalTime.of(7, 0)),
-            Trigger.BluetoothConnected("Casco"),
         )
         for (t in supported) {
             val new = assertNotNull(LegacyRuleConverter.convert(legacy(t), now))

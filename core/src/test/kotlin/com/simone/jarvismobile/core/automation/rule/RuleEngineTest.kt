@@ -334,6 +334,33 @@ class RuleEngineTest {
     }
 
     @Test
+    fun onlyTriggersWithALiveSourceAreOffered() {
+        // The mirror of the action test, and the one that was missing: a trigger
+        // is only real if something in the app actually builds a TriggerEvent of
+        // that type. Five were offered with no source at all — Bluetooth (no
+        // source class), calendar/reminder (RuleSchedule only understands
+        // TIME_AT and RECURRING_TIME) and TIME_WINDOW (a window is a condition,
+        // not an event: it never fires). A rule armed on any of them validated,
+        // listed as active, and could never run.
+        val delivered = setOf(
+            TriggerRegistry.TIME_AT,            // RuleScheduler -> AlarmReceiver
+            TriggerRegistry.RECURRING_TIME,     // RuleScheduler -> AlarmReceiver
+            TriggerRegistry.PLACE_ENTER,        // PlaceProximityReceiver
+            TriggerRegistry.PLACE_EXIT,         // PlaceProximityReceiver
+            TriggerRegistry.DEVICE_CHARGING,    // EnginePowerReceiver
+            TriggerRegistry.DEVICE_UNPLUGGED,   // EnginePowerReceiver
+            TriggerRegistry.FIRST_UNLOCK_OF_DAY,
+            TriggerRegistry.JARVIS_MODE_ENTER,  // JarvisModeManager
+            TriggerRegistry.JARVIS_MODE_EXIT,   // JarvisModeManager
+        )
+        assertEquals(
+            delivered,
+            TriggerRegistry.available().map { it.type }.toSet(),
+            "offered triggers must match the types something actually emits",
+        )
+    }
+
+    @Test
     fun theTriggersOfferedAreOnlyTheOnesWithoutExtraPlumbing() {
         // Activity, notification and place-dwell triggers need subsystems that do
         // not exist yet; they must not be offerable until they do. Place

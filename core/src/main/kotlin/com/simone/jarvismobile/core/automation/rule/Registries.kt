@@ -98,12 +98,18 @@ object TriggerRegistry {
             ),
             requires = Capability.EXACT_ALARM,
         ),
+        // Not merely unimplemented — a modelling mistake. A time *window* never
+        // fires; it is true or false while something else happens. That is
+        // exactly Condition.TimeRange, which exists and is what the builder
+        // already uses for "solo di sera". Kept in the enum so stored rules that
+        // named it still decode, but never offered.
         TriggerDefinition(
             TIME_WINDOW, "In una fascia oraria",
             listOf(
                 ParamSpec("from", "Dalle", ParamKind.TIME),
                 ParamSpec("to", "Alle", ParamKind.TIME),
             ),
+            implemented = false,
         ),
         TriggerDefinition(
             PLACE_ENTER, "Quando arrivo in un luogo",
@@ -123,15 +129,17 @@ object TriggerRegistry {
             ),
             requires = Capability.LOCATION_BACKGROUND, implemented = false,
         ),
+        // No Bluetooth source exists yet: nothing in the app ever builds a
+        // TriggerEvent of these types, so a rule armed on one could not fire.
         TriggerDefinition(
             BLUETOOTH_CONNECTED, "Quando si connette un dispositivo Bluetooth",
             listOf(ParamSpec("device", "Dispositivo", ParamKind.TEXT)),
-            requires = Capability.BLUETOOTH,
+            requires = Capability.BLUETOOTH, implemented = false,
         ),
         TriggerDefinition(
             BLUETOOTH_DISCONNECTED, "Quando si disconnette un dispositivo Bluetooth",
             listOf(ParamSpec("device", "Dispositivo", ParamKind.TEXT)),
-            requires = Capability.BLUETOOTH,
+            requires = Capability.BLUETOOTH, implemented = false,
         ),
         TriggerDefinition(
             ACTIVITY_ENTER, "Quando inizio un'attività",
@@ -145,12 +153,18 @@ object TriggerRegistry {
         ),
         TriggerDefinition(FIRST_UNLOCK_OF_DAY, "Al primo sblocco del giorno",
             listOf(ParamSpec("after", "Non prima delle", ParamKind.TIME, required = false))),
+        // RuleSchedule.nextOccurrence() only understands TIME_AT and
+        // RECURRING_TIME, so neither of these can ever be booked as an alarm.
+        // Wiring them means teaching the scheduler about the agenda.
         TriggerDefinition(
             CALENDAR_EVENT_APPROACHING, "Prima di un impegno",
             listOf(ParamSpec("minutesBefore", "Minuti prima", ParamKind.DURATION_MINUTES)),
-            requires = Capability.EXACT_ALARM,
+            requires = Capability.EXACT_ALARM, implemented = false,
         ),
-        TriggerDefinition(REMINDER_DUE, "Quando scade un promemoria", requires = Capability.EXACT_ALARM),
+        TriggerDefinition(
+            REMINDER_DUE, "Quando scade un promemoria",
+            requires = Capability.EXACT_ALARM, implemented = false,
+        ),
         TriggerDefinition(
             NOTIFICATION_MATCH, "Quando arriva una notifica",
             listOf(
