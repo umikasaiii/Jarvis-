@@ -105,6 +105,19 @@ failing loudly. Six defects were real and are fixed (CI-verified):
    of an already-cancelled coroutine throws at once, so the running flag would
    never clear and the rule would stay "running" for ever.
 
+7. Five trigger kinds were offered (`implemented = true`) while nothing in the
+   app ever builds a `TriggerEvent` of that type: both Bluetooth kinds (no
+   source class exists), `CALENDAR_EVENT_APPROACHING` and `REMINDER_DUE`
+   (`RuleSchedule.nextOccurrence()` understands only `TIME_AT` and
+   `RECURRING_TIME`), and `TIME_WINDOW` — which is not merely unimplemented but
+   a modelling mistake, since a window never fires; that is `Condition.TimeRange`
+   and the builder already uses it. The action registry had a test pinning it to
+   its handlers; the trigger registry had none, so it drifted. It has one now,
+   naming the source for each offered kind. The test immediately caught that
+   `LegacyRuleConverter` translated the legacy Bluetooth trigger, meaning the
+   one-time import would have produced a rule that validated as active and could
+   never run.
+
 Checked and found clean: the migration chain (3→7, every step registered, and
 every migration's SQL matches its `@Entity` column for column — a mismatch would
 crash on first open after an upgrade); secrets (Keystore-backed

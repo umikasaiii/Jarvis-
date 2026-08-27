@@ -152,6 +152,30 @@ lint is clean, docs/decisions updated. Never leave the main branch uncompilable.
   subentro (fase 10) è deliberatamente l'ultimo passo. Restano fasi 7-10
   (activity recognition, parcheggio, rule builder completo con condizioni,
   diagnostica/dry-run, AutomationDraft, hand-over).
+- **Audit trasversale (27 ago 2026), 13 difetti corretti e CI-verified.** Tutti
+  silenziosi: nessuno faceva crashare l'app. Tre famiglie ricorrenti:
+  *(a)* cose offerte che non potevano funzionare — 5 trigger senza sorgente,
+  `ExecutionPolicy.REPLACE`, azioni senza handler (vedi ADR 0013);
+  *(b)* «stop» che non fermava — `CancellationException` ingoiata da `runCatching`
+  attorno a chiamate suspend in 17 punti fra `ConversationalJarvisEngine`,
+  `MemoryEngine`, `ConversationManager` e `SessionCoordinator` (inclusa la
+  generazione delle modalità Focus memoria/wiki). Solo tre punti nel progetto
+  distinguono davvero annullato-da-fallito (`AssistantTaskWorker`,
+  `DocumentImportManager`, `LitertLmEngine`), quindi gli altri ~200 `runCatching`
+  sono stati lasciati com'erano di proposito; usare `util/runCancellable` per
+  ogni nuovo `runCatching` attorno a codice sospendibile;
+  *(c)* dati a rischio — `restore()` sovrascriveva prima di verificare lo SHA-256,
+  `importLegacy` resuscitava le regole cancellate, `GoogleDriveRestClient.list()`
+  troncava in silenzio senza `nextPageToken`.
+  Verificati puliti: catena migrazioni 3→7 (SQL confrontato colonna per colonna
+  con le `@Entity`), segreti (Keystore, mai nei log), manifest (nessun export
+  accidentale, sottotipi FGS dichiarati), assenza di catch vuoti e di cleanup
+  sospensivo nei `finally`.
+- **Lacuna nota, non un difetto:** `jarvisContextBudgetChars` è l'unica delle 11
+  impostazioni del motore conversazionale senza un controllo in Impostazioni —
+  il valore si legge e ha un default sensato, ma non è modificabile.
+- **Non ancora auditate nella logica:** JARVIS Drive (navigazione/HUD) e
+  l'archivio personale. Controllati solo sui pattern strutturali.
 - **Not implemented yet:** local document/Wikipedia knowledge, Room/FTS vault
   index, HA, PC server, custom wake word, benchmarks, release signing and the
   final instrumented/device acceptance suite.
