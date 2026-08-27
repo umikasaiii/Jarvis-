@@ -62,6 +62,7 @@ fun RulesScreen(
     val executions by viewModel.recentExecutions.collectAsStateWithLifecycle()
     val currentMode by viewModel.currentMode.collectAsStateWithLifecycle()
     val weatherEnabled by viewModel.weatherEnabled.collectAsStateWithLifecycle()
+    val weatherPlaceId by viewModel.weatherPlaceId.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
@@ -151,6 +152,39 @@ fun RulesScreen(
                         )
                     }
                     Switch(checked = weatherEnabled, onCheckedChange = { viewModel.setWeatherEnabled(it) })
+                }
+                if (weatherEnabled) {
+                    HorizontalDivider()
+                    Text(
+                        "Luogo da controllare",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Text(
+                        "Senza un luogo scelto usa l'ultima posizione GPS nota, che " +
+                            "può essere vecchia o imprecisa. Scegline uno tra i " +
+                            "luoghi salvati per un meteo affidabile ogni sera.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = weatherPlaceId.isBlank(),
+                            onClick = { viewModel.setWeatherPlaceId("") },
+                            label = { Text("Posizione GPS") },
+                        )
+                        places.forEach { place ->
+                            FilterChip(
+                                selected = weatherPlaceId == place.id,
+                                onClick = { viewModel.setWeatherPlaceId(place.id) },
+                                label = { Text(place.displayName) },
+                            )
+                        }
+                    }
+                    if (places.isEmpty()) {
+                        Text(
+                            "Nessun luogo salvato ancora: salvane uno qui sotto per poterlo scegliere.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
                 }
             }
         }

@@ -49,12 +49,16 @@ class ProactiveManager @Inject constructor(
 
     /**
      * Called at the real first-unlock-of-the-day event (§ "primo sblocco utile
-     * della giornata"). The morning digest is offered regardless of the coarse
-     * 6-10 window used by [evaluate], because the actual signal here — the
-     * unlock — already *is* the trigger; someone unlocking at 05:40 or 11:15
-     * still gets their one "Buongiorno" for the day. The governor's own per-day
-     * dedup (`MORNING_DIGEST:<date>` in [ProactiveState]) is what stops it from
-     * repeating on every later unlock — there is no separate flag to maintain.
+     * della giornata"). The morning digest is offered outside the coarse 6-10
+     * window used by [evaluate] — someone unlocking at 05:40 still gets their
+     * one "Buongiorno" — but never before [MORNING_EARLIEST_HOUR] (see
+     * [candidatesFor]): `ACTION_USER_PRESENT` fires on *every* unlock, so
+     * without a floor, checking the phone at 00:05 — still awake, not yet
+     * asleep — would consume the calendar day's one "Buongiorno" right then,
+     * and the real wake-up hours later would find it already delivered
+     * (`MORNING_DIGEST:<date>` in [ProactiveState] dedups per calendar date,
+     * not per sleep cycle). The governor's per-day dedup still does the rest:
+     * once past the floor, this stays exactly the "once a day" digest.
      */
     suspend fun evaluateOnUnlock(now: LocalDateTime = LocalDateTime.now()) =
         run(now, forceMorning = true)
@@ -81,8 +85,10 @@ class ProactiveManager @Inject constructor(
 
     /**
      * Digests in their natural window, so a midday periodic run stays quiet — but
-     * [forceMorning] (the real unlock event) always offers the morning digest,
-     * whatever the hour.
+     * [forceMorning] (the real unlock event) offers the morning digest outside
+     * the [MORNING_FROM]-[MORNING_TO] window too, down to [MORNING_EARLIEST_HOUR]
+     * — never earlier, so a late-night unlock right after midnight is not
+     * mistaken for waking up.
      */
     private fun candidatesFor(
         now: LocalDateTime,
@@ -92,7 +98,8 @@ class ProactiveManager @Inject constructor(
     ): List<ProactiveSuggestion> {
         val out = ArrayList<ProactiveSuggestion>()
         val hour = now.hour
-        if (forceMorning || hour in MORNING_FROM..MORNING_TO) out += ProactiveComposer.morningDigest(snap, today)
+        val isMorningUnlock = forceMorning && hour >= MORNING_EARLIEST_HOUR
+        if (isMorningUnlock || hour in MORNING_FROM..MORNING_TO) out += ProactiveComposer.morningDigest(snap, today)
         if (hour in EVENING_FROM..EVENING_TO) {
             ProactiveComposer.batteryBeforeAlarm(snap, today)?.let { out += it }
             ProactiveComposer.eveningDigest(snap, today)?.let { out += it }
@@ -171,6 +178,9 @@ class ProactiveManager @Inject constructor(
 
     private companion object {
         const val TAG = "JarvisProactive"
+        // Real unlocks between midnight and this hour never count as "waking up"
+        // (§ evaluateOnUnlock) — that is still the previous night, not morning.
+        const val MORNING_EARLIEST_HOUR = 5
         const val MORNING_FROM = 6
         const val MORNING_TO = 10
         const val EVENING_FROM = 19

@@ -132,6 +132,7 @@ class SettingsRepository @Inject constructor(
         // --- Weather (opt-in, online — the one deliberate exception to
         // offline-first, only ever the rounded coordinate, never anything else) --
         val WEATHER_ENABLED = booleanPreferencesKey("weather_enabled")
+        val WEATHER_PLACE_ID = stringPreferencesKey("weather_place_id")
         // User-picked destination folder (SAF tree URI). Survives uninstall and
         // doubles as the restore source when it already holds backups.
         val BACKUP_FOLDER_URI = stringPreferencesKey("backup_folder_uri")
@@ -888,6 +889,15 @@ class SettingsRepository @Inject constructor(
     val weatherEnabled: Flow<Boolean> =
         context.settingsDataStore.data.map { it[Keys.WEATHER_ENABLED] ?: false }
 
+    /**
+     * Id of the saved place (§ Luoghi) to check the forecast for, chosen by the
+     * user instead of leaving it to whatever GPS/network fix happens to be last
+     * on file. Empty means "no place chosen": [com.simone.jarvismobile.weather.WeatherManager]
+     * then falls back to the last-known position, the original behaviour.
+     */
+    val weatherPlaceId: Flow<String> =
+        context.settingsDataStore.data.map { it[Keys.WEATHER_PLACE_ID] ?: "" }
+
     /** Skip the backup below this battery percentage (0 = no floor). */
     val backupMinBattery: Flow<Int> =
         context.settingsDataStore.data.map { (it[Keys.BACKUP_MIN_BATTERY] ?: DEFAULT_BACKUP_MIN_BATTERY).coerceIn(0, 100) }
@@ -938,6 +948,10 @@ class SettingsRepository @Inject constructor(
 
     suspend fun setWeatherEnabled(value: Boolean) {
         context.settingsDataStore.edit { it[Keys.WEATHER_ENABLED] = value }
+    }
+
+    suspend fun setWeatherPlaceId(value: String) {
+        context.settingsDataStore.edit { it[Keys.WEATHER_PLACE_ID] = value }
     }
 
     suspend fun setBackupChargingOnly(value: Boolean) {

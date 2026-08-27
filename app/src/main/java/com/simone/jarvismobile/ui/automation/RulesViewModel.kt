@@ -70,10 +70,19 @@ class RulesViewModel @Inject constructor(
     val weatherEnabled: StateFlow<Boolean> =
         settings.weatherEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
+    /** Empty means "no place chosen yet" — [com.simone.jarvismobile.weather.WeatherManager] falls back to GPS. */
+    val weatherPlaceId: StateFlow<String> =
+        settings.weatherPlaceId.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
+
     /** Opt-in toggle for the weather feature (§ the deliberate online exception). */
     fun setWeatherEnabled(value: Boolean) = viewModelScope.launch {
         settings.setWeatherEnabled(value)
         runCatching { weatherScheduler.sync() }
+    }
+
+    /** The saved place (among [savedPlaces]) to check the forecast for; "" = last-known GPS fix. */
+    fun setWeatherPlaceId(id: String) = viewModelScope.launch {
+        settings.setWeatherPlaceId(id)
     }
 
     fun hasDndAccess(): Boolean = modes.hasDndAccess()
