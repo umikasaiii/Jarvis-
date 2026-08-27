@@ -35,11 +35,14 @@ import com.simone.jarvismobile.core.automation.Action
 import com.simone.jarvismobile.core.automation.Automation
 import com.simone.jarvismobile.core.automation.AutomationCodec
 import com.simone.jarvismobile.core.automation.Trigger
+import com.simone.jarvismobile.ui.theme.LocalJarvisPalette
 import androidx.compose.ui.graphics.Color
 
 private val Ink = Color(0xFFE3EFF5)
 private val Muted = Color(0xFF9DB0BC)
-private val Cyan = Color(0xFF3FD8F0)
+// The brand accent (§ Impostazioni › Temi).
+private val Cyan: Color
+    @Composable get() = LocalJarvisPalette.current.accent
 private val Warn = Color(0xFFF3A65B)
 
 /**

@@ -47,8 +47,11 @@ import com.simone.jarvismobile.core.translate.LiveTranslationState
 import com.simone.jarvismobile.core.translate.TranslationLanguage
 import com.simone.jarvismobile.core.translate.TranslationMode
 import com.simone.jarvismobile.translate.ModelStatus
+import com.simone.jarvismobile.ui.theme.LocalJarvisPalette
 
-private val Cyan = Color(0xFF3FD8F0)
+// The brand accent (§ Impostazioni › Temi).
+private val Cyan: Color
+    @Composable get() = LocalJarvisPalette.current.accent
 private val Muted = Color(0xFF7C8B95)
 
 /**

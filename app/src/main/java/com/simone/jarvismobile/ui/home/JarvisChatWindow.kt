@@ -97,6 +97,7 @@ import com.simone.jarvismobile.core.document.DocumentRecord
 import com.simone.jarvismobile.core.document.DocumentStatus
 import com.simone.jarvismobile.core.state.ConversationState
 import com.simone.jarvismobile.document.DocumentImportManager
+import com.simone.jarvismobile.ui.theme.LocalJarvisPalette
 import kotlin.math.roundToInt
 
 private const val MAX_VISIBLE_MESSAGES = 40
@@ -105,8 +106,11 @@ private const val MAX_VISIBLE_MESSAGES = 40
 private const val USER_BUBBLE_SHARE = 0.82f
 private const val JARVIS_BUBBLE_SHARE = 0.88f
 
-private val Cyan = Color(0xFF3FD8F0)
-private val CyanBright = Color(0xFF12D9FF)
+// The brand accent (§ Impostazioni › Temi) — everything else here stays fixed.
+private val Cyan: Color
+    @Composable get() = LocalJarvisPalette.current.accent
+private val CyanBright: Color
+    @Composable get() = LocalJarvisPalette.current.accentBright
 private val Violet = Color(0xFF9B7BFF)
 private val Aqua = Color(0xFF4FE3C1)
 private val Amber = Color(0xFFF3B23C)

@@ -32,9 +32,12 @@ import com.simone.jarvismobile.R
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.delay
 import com.simone.jarvismobile.audio.SessionCoordinator
+import com.simone.jarvismobile.data.SettingsRepository
+import com.simone.jarvismobile.ui.theme.JarvisThemeId
 import com.simone.jarvismobile.ui.theme.JarvisTheme
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -47,6 +50,7 @@ import javax.inject.Inject
 class MainActivity : ComponentActivity() {
 
     @Inject lateinit var coordinator: SessionCoordinator
+    @Inject lateinit var settings: SettingsRepository
 
     private val openChatRequests = MutableStateFlow(0)
     private val startListeningRequests = MutableStateFlow(0)
@@ -76,7 +80,9 @@ class MainActivity : ComponentActivity() {
             val openChatRequest by openChatRequests.collectAsState()
             val startListeningRequest by startListeningRequests.collectAsState()
             val openAgendaRequest by openAgendaRequests.collectAsState()
-            JarvisTheme {
+            val themeId by remember { settings.themeId.map { JarvisThemeId.from(it) } }
+                .collectAsState(initial = JarvisThemeId.BLU)
+            JarvisTheme(themeId = themeId) {
                 Box(Modifier.fillMaxSize()) {
                     JarvisApp(
                         initiallyOpenChat = openChat,

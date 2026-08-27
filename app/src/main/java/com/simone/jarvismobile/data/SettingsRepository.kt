@@ -133,6 +133,7 @@ class SettingsRepository @Inject constructor(
         // offline-first, only ever the rounded coordinate, never anything else) --
         val WEATHER_ENABLED = booleanPreferencesKey("weather_enabled")
         val WEATHER_PLACE_ID = stringPreferencesKey("weather_place_id")
+        val THEME_ID = stringPreferencesKey("theme_id")
         // User-picked destination folder (SAF tree URI). Survives uninstall and
         // doubles as the restore source when it already holds backups.
         val BACKUP_FOLDER_URI = stringPreferencesKey("backup_folder_uri")
@@ -898,6 +899,15 @@ class SettingsRepository @Inject constructor(
     val weatherPlaceId: Flow<String> =
         context.settingsDataStore.data.map { it[Keys.WEATHER_PLACE_ID] ?: "" }
 
+    /**
+     * The visual theme's id (§ Impostazioni › Temi), e.g. "blu" (default) or
+     * "rosso". Stored as a plain string rather than an enum so an app downgrade
+     * or a future theme id never fails to decode — an unrecognised value is
+     * simply treated as the default by [com.simone.jarvismobile.ui.theme.JarvisThemeId.from].
+     */
+    val themeId: Flow<String> =
+        context.settingsDataStore.data.map { it[Keys.THEME_ID] ?: "" }
+
     /** Skip the backup below this battery percentage (0 = no floor). */
     val backupMinBattery: Flow<Int> =
         context.settingsDataStore.data.map { (it[Keys.BACKUP_MIN_BATTERY] ?: DEFAULT_BACKUP_MIN_BATTERY).coerceIn(0, 100) }
@@ -952,6 +962,10 @@ class SettingsRepository @Inject constructor(
 
     suspend fun setWeatherPlaceId(value: String) {
         context.settingsDataStore.edit { it[Keys.WEATHER_PLACE_ID] = value }
+    }
+
+    suspend fun setThemeId(value: String) {
+        context.settingsDataStore.edit { it[Keys.THEME_ID] = value }
     }
 
     suspend fun setBackupChargingOnly(value: Boolean) {

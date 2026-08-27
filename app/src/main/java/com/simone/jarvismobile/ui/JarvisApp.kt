@@ -68,7 +68,8 @@ import com.simone.jarvismobile.ui.navigation.NavigationScreen
 import com.simone.jarvismobile.ui.models.ModelsScreen
 import com.simone.jarvismobile.ui.settings.SettingsScreen
 import com.simone.jarvismobile.ui.agenda.AgendaScreen
-import com.simone.jarvismobile.ui.tasks.TasksScreen
+import com.simone.jarvismobile.ui.status.SystemStatusScreen
+import com.simone.jarvismobile.ui.theme.LocalJarvisPalette
 
 private enum class Tab(val label: String, val icon: ImageVector) {
     HOME("Home", Icons.Filled.Home),
@@ -78,7 +79,10 @@ private enum class Tab(val label: String, val icon: ImageVector) {
     IMPOSTAZIONI("Impostazioni", Icons.Filled.Settings),
 }
 
-private enum class Overlay { CHAT, MODELS, MEMORY, DIAGNOSTICS, AUTOMATIONS, RULES, TRANSLATOR, DOCUMENTS, NAVIGATION, MAPS, FAVORITES, BACKUP, ARCHIVE }
+private enum class Overlay {
+    CHAT, MODELS, MEMORY, DIAGNOSTICS, AUTOMATIONS, RULES, TRANSLATOR, DOCUMENTS,
+    NAVIGATION, MAPS, FAVORITES, BACKUP, ARCHIVE, SYSTEM_STATUS,
+}
 
 /**
  * Top-level navigation. The dashboard shell is always present; the written chat
@@ -135,6 +139,10 @@ fun JarvisApp(
         if (openMaps > 0) overlay = Overlay.MAPS
     }
 
+    // The one HUD accent used directly in this file (bottom nav wash + active
+    // tab tint), following the theme the same way the dashboard's Cyan does.
+    val palette = LocalJarvisPalette.current
+
     Box(Modifier.fillMaxSize()) {
         // Base: the tab shell with the bottom navigation.
         Scaffold(
@@ -145,7 +153,7 @@ fun JarvisApp(
                         .fillMaxWidth()
                         .background(
                             androidx.compose.ui.graphics.Brush.verticalGradient(
-                                listOf(Color(0x00000000), Color(0x223FD8F0)),
+                                listOf(Color.Transparent, palette.accent.copy(alpha = 0x22 / 255f)),
                             ),
                         ),
                 ) {
@@ -165,7 +173,7 @@ fun JarvisApp(
                     ) {
                         Tab.entries.forEach { entry ->
                             val active = tab == entry && entry != Tab.CHAT
-                            val tint = if (active) Color(0xFF12D9FF) else Color(0xFF6B7C87)
+                            val tint = if (active) palette.accentBright else Color(0xFF6B7C87)
                             Column(
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 modifier = Modifier
@@ -193,7 +201,7 @@ fun JarvisApp(
                                     style = if (active) {
                                         androidx.compose.ui.text.TextStyle(
                                             shadow = androidx.compose.ui.graphics.Shadow(
-                                                color = Color(0xFF12D9FF),
+                                                color = palette.accentBright,
                                                 blurRadius = 16f,
                                             ),
                                         )
@@ -207,7 +215,7 @@ fun JarvisApp(
                                     Modifier
                                         .width(if (active) 18.dp else 0.dp)
                                         .height(2.dp)
-                                        .background(Color(0xFF12D9FF)),
+                                        .background(palette.accentBright),
                                 )
                             }
                         }
@@ -225,6 +233,7 @@ fun JarvisApp(
                         onOpenAutomations = { overlay = Overlay.AUTOMATIONS },
                         onOpenModels = { overlay = Overlay.MODELS },
                         onOpenTranslator = { overlay = Overlay.TRANSLATOR },
+                        onOpenSystemStatus = { overlay = Overlay.SYSTEM_STATUS },
                     )
                     Tab.CHAT -> Unit
                     Tab.COMANDI -> CommandsScreen()
@@ -298,7 +307,7 @@ fun JarvisApp(
             overlay == Overlay.TRANSLATOR || overlay == Overlay.DOCUMENTS ||
             overlay == Overlay.NAVIGATION || overlay == Overlay.MAPS ||
             overlay == Overlay.FAVORITES || overlay == Overlay.BACKUP ||
-            overlay == Overlay.ARCHIVE
+            overlay == Overlay.ARCHIVE || overlay == Overlay.SYSTEM_STATUS
         ) {
             BackHandler { overlay = null }
             Box(Modifier.fillMaxSize().background(Color(0xFF071119))) {
@@ -325,6 +334,7 @@ fun JarvisApp(
                         onOpenTasks = { overlay = null; tab = Tab.NOTIFICHE },
                         onOpenDocuments = { overlay = Overlay.DOCUMENTS },
                     )
+                    Overlay.SYSTEM_STATUS -> SystemStatusScreen(onBack = { overlay = null })
                     else -> Unit
                 }
             }

@@ -15,9 +15,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import com.simone.jarvismobile.R
+import com.simone.jarvismobile.ui.theme.JarvisThemeId
+import com.simone.jarvismobile.ui.theme.LocalJarvisPalette
+import com.simone.jarvismobile.ui.theme.LocalJarvisThemeId
 
 /**
  * The futuristic frame: four transparent strips that sit ABOVE the fixed
@@ -48,11 +52,17 @@ fun HudOverlay(modifier: Modifier = Modifier, active: Boolean = true) {
     val sides by pulse(4700, 0.40f, 0.80f)
     val bottom by pulse(5300, 0.50f, 0.90f)
 
+    // Same conditional recolour as JarvisCard's frame: untouched on the default
+    // theme, tinted to the theme's accent otherwise. Computed once here rather
+    // than inside each Edge() call.
+    val themeId = LocalJarvisThemeId.current
+    val tint = if (themeId == JarvisThemeId.BLU) null else ColorFilter.tint(LocalJarvisPalette.current.accent)
+
     Box(modifier.fillMaxSize()) {
-        Edge(R.drawable.hud_top, Alignment.TopCenter, top, Modifier.fillMaxWidth())
-        Edge(R.drawable.hud_left, Alignment.TopStart, sides)
-        Edge(R.drawable.hud_right, Alignment.TopEnd, sides)
-        Edge(R.drawable.hud_bottom, Alignment.BottomCenter, bottom, Modifier.fillMaxWidth())
+        Edge(R.drawable.hud_top, Alignment.TopCenter, top, tint, Modifier.fillMaxWidth())
+        Edge(R.drawable.hud_left, Alignment.TopStart, sides, tint)
+        Edge(R.drawable.hud_right, Alignment.TopEnd, sides, tint)
+        Edge(R.drawable.hud_bottom, Alignment.BottomCenter, bottom, tint, Modifier.fillMaxWidth())
     }
 }
 
@@ -61,12 +71,14 @@ private fun BoxScope.Edge(
     res: Int,
     alignment: Alignment,
     alpha: Float,
+    tint: ColorFilter?,
     modifier: Modifier = Modifier,
 ) {
     Image(
         painter = painterResource(res),
         contentDescription = null,
         contentScale = ContentScale.FillWidth,
+        colorFilter = tint,
         modifier = modifier
             .align(alignment)
             .alpha(alpha),

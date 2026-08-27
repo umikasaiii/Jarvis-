@@ -70,9 +70,12 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.simone.jarvismobile.core.agenda.Agenda
 import com.simone.jarvismobile.core.agenda.AgendaEntry
+import com.simone.jarvismobile.ui.theme.LocalJarvisPalette
 import java.time.LocalDate
 
-private val Cyan = Color(0xFF3FD8F0)
+// The brand accent (§ Impostazioni › Temi).
+private val Cyan: Color
+    @Composable get() = LocalJarvisPalette.current.accent
 private val Ink = Color(0xFFE3EFF5)
 private val Muted = Color(0xFF7C8B95)
 private val Gold = Color(0xFFF3C34C)

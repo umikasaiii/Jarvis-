@@ -13,8 +13,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.simone.jarvismobile.ui.theme.JarvisThemeId
+import com.simone.jarvismobile.ui.theme.LocalJarvisPalette
+import com.simone.jarvismobile.ui.theme.LocalJarvisThemeId
 
 /**
  * A dashboard card: the supplied HUD frame with the content laid over it.
@@ -32,6 +36,14 @@ fun JarvisCard(
     badge: (@Composable BoxScope.() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    // The artwork is a near-monochrome blue glow (hue barely varies; the shape
+    // comes from alpha). On the default theme it is left completely untouched —
+    // pixel-identical to before this existed. On another theme (§ Impostazioni ›
+    // Temi) it is recoloured with a straight SrcIn tint: since the source is
+    // already essentially a coloured mask, replacing its hue while keeping its
+    // alpha reproduces the same glow shape in the new accent, no new art needed.
+    val themeId = LocalJarvisThemeId.current
+    val tint = if (themeId == JarvisThemeId.BLU) null else ColorFilter.tint(LocalJarvisPalette.current.accent)
     Box(modifier) {
         // The frame is the supplied artwork. Its interior is transparent, so no
         // panel sits behind the card — that faint slab was the "sfondo dietro".
@@ -42,6 +54,7 @@ fun JarvisCard(
             contentDescription = null,
             modifier = Modifier.matchParentSize(),
             contentScale = ContentScale.FillBounds,
+            colorFilter = tint,
         )
         Column(
             modifier = Modifier.fillMaxWidth().padding(contentPadding),

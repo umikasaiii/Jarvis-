@@ -53,6 +53,7 @@ import com.simone.jarvismobile.core.engine.JarvisEngineMode
 import com.simone.jarvismobile.core.engine.ReasoningMode
 import com.simone.jarvismobile.data.SettingsRepository
 import com.simone.jarvismobile.ui.components.ProModeBadge
+import com.simone.jarvismobile.ui.theme.JarvisThemeId
 
 /**
  * Settings screen. Phase-1 exposes the preferences that actually take effect:
@@ -99,6 +100,7 @@ fun SettingsScreen(
     val ttsPitch by viewModel.ttsPitch.collectAsStateWithLifecycle()
     val speakBackground by viewModel.speakBackgroundResponses.collectAsStateWithLifecycle()
     val proModeActive by viewModel.proModeActive.collectAsStateWithLifecycle()
+    val themeId by viewModel.themeId.collectAsStateWithLifecycle()
 
     var nameField by remember(name) { mutableStateOf(name) }
     var personaField by remember(persona) { mutableStateOf(persona) }
@@ -164,6 +166,28 @@ fun SettingsScreen(
                         "Si attiva/disattiva anche a voce: «attiva/esci dalla modalità pro».",
                     style = MaterialTheme.typography.bodySmall,
                 )
+            }
+        }
+        }
+
+        CollapsibleSection("Temi", initiallyExpanded = true) {
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Tema grafico", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Cambia l'accento HUD di JARVIS — bordi, glow e icone attive. " +
+                        "Tutto il resto (verde/ambra/viola di stato) resta fisso.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    JarvisThemeId.entries.forEach { option ->
+                        FilterChip(
+                            selected = themeId == option,
+                            onClick = { viewModel.setThemeId(option) },
+                            label = { Text(option.label) },
+                        )
+                    }
+                }
             }
         }
         }

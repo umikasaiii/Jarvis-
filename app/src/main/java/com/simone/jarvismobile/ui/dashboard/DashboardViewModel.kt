@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.simone.jarvismobile.agenda.AgendaRepository
 import com.simone.jarvismobile.audio.SessionCoordinator
 import com.simone.jarvismobile.audio.WakeWordController
+import com.simone.jarvismobile.backup.BackupRepository
+import com.simone.jarvismobile.backup.BackupState
 import com.simone.jarvismobile.core.agenda.Agenda
 import com.simone.jarvismobile.core.agenda.AgendaEntry
 import com.simone.jarvismobile.core.agenda.ReminderAlert
@@ -28,10 +30,18 @@ class DashboardViewModel @Inject constructor(
     private val coordinator: SessionCoordinator,
     private val agenda: AgendaRepository,
     private val wakeWord: WakeWordController,
+    private val backup: BackupRepository,
     memory: MemoryIndex,
     settings: SettingsRepository,
     proMode: ProModeManager,
 ) : ViewModel() {
+
+    /** Real backup state for the "Sistema" glass card (§ last backup, no longer DEMO). */
+    val backupState: StateFlow<BackupState> = backup.state
+
+    /** Whether cloud sync is turned on, for the same card's "Sync" row. */
+    val backupCloudEnabled: StateFlow<Boolean> = settings.backupCloudEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     val state: StateFlow<ConversationState> = coordinator.state
 

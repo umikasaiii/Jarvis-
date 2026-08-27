@@ -49,8 +49,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.simone.jarvismobile.ui.theme.LocalJarvisPalette
 
-private val Cyan = Color(0xFF3FD8F0)
+// The brand accent (§ Impostazioni › Temi).
+private val Cyan: Color
+    @Composable get() = LocalJarvisPalette.current.accent
 private val Ink = Color(0xFFE3EFF5)
 private val Muted = Color(0xFF7C8B95)
 

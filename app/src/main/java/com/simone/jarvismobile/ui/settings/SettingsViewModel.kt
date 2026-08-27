@@ -16,9 +16,11 @@ import com.simone.jarvismobile.tts.PreviewOutcome
 import com.simone.jarvismobile.tts.TtsAsset
 import com.simone.jarvismobile.tts.TtsAssetKind
 import com.simone.jarvismobile.tts.TtsImportResult
+import com.simone.jarvismobile.ui.theme.JarvisThemeId
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -40,6 +42,15 @@ class SettingsViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     fun setProModeActive(value: Boolean) = viewModelScope.launch { proMode.setActive(value) }
+
+    /** § Impostazioni › Temi. */
+    val themeId: StateFlow<JarvisThemeId> = settings.themeId
+        .map { JarvisThemeId.from(it) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), JarvisThemeId.BLU)
+
+    fun setThemeId(value: JarvisThemeId) = viewModelScope.launch {
+        settings.setThemeId(value.storageId)
+    }
 
     val embeddingStatus: StateFlow<com.simone.jarvismobile.memory.EmbeddingRepository.Status> =
         embeddings.status.stateIn(

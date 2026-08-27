@@ -1,6 +1,5 @@
 package com.simone.jarvismobile.ui.dashboard
 
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import android.content.BroadcastReceiver
@@ -87,6 +86,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -113,6 +113,9 @@ import com.simone.jarvismobile.ui.components.HudOverlay
 import com.simone.jarvismobile.ui.components.JarvisCard
 import com.simone.jarvismobile.ui.components.JarvisOrb
 import com.simone.jarvismobile.ui.components.OrbState
+import com.simone.jarvismobile.ui.theme.JarvisThemeId
+import com.simone.jarvismobile.ui.theme.LocalJarvisPalette
+import com.simone.jarvismobile.ui.theme.LocalJarvisThemeId
 import com.simone.jarvismobile.llm.LlmLoadState
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -120,7 +123,10 @@ import java.time.format.TextStyle
 import java.util.Locale
 
 // --- Palette ---------------------------------------------------------------
-private val Cyan = Color(0xFF3FD8F0)
+// The brand accent (§ Impostazioni › Temi) — every other name here stays a
+// fixed literal (they are semantic: success, warning, alert, neutral text).
+private val Cyan: Color
+    @Composable get() = LocalJarvisPalette.current.accent
 private val Blue = Color(0xFF3B9EFF)
 private val Green = Color(0xFF2ECC71)
 private val Amber = Color(0xFFF3B23C)
@@ -202,9 +208,12 @@ fun DashboardScreen(
     onOpenAutomations: () -> Unit = {},
     onOpenModels: () -> Unit = {},
     onOpenTranslator: () -> Unit = {},
+    onOpenSystemStatus: () -> Unit = {},
     viewModel: DashboardViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val backupState by viewModel.backupState.collectAsStateWithLifecycle()
+    val backupCloudEnabled by viewModel.backupCloudEnabled.collectAsStateWithLifecycle()
     val name by viewModel.assistantName.collectAsStateWithLifecycle()
     val loadState by viewModel.llmLoadState.collectAsStateWithLifecycle()
     val loadedModel by viewModel.loadedModelName.collectAsStateWithLifecycle()
@@ -249,7 +258,7 @@ fun DashboardScreen(
         prevUnread = unread
     }
 
-    val accent = accentFor(state)
+    val accent = accentFor(state, Cyan)
 
     Box(modifier = Modifier.fillMaxSize().background(Color(0xFF02060B))) {
         Image(
@@ -342,31 +351,27 @@ fun DashboardScreen(
             }
 
 
-            // --- Four stat tiles, as in the reference layout ---------------
+            // --- Three stat tiles --------------------------------------------
             // Every one is a real number and every one opens the screen that
             // owns it: a tile that shows a count but does nothing is furniture.
+            // "Calendario" and "Attività" used to be two separate tiles that
+            // both opened the very same Attività screen — appointments and
+            // tasks are one unified Agenda (§ phase 6b+), so there was never a
+            // second screen for either of them to open on its own. Merged into
+            // one wider "Agenda" tile instead of pretending they led somewhere
+            // different.
+            val todayEvents = today.count { it.time != null }
+            val todayTasks = today.count { it.time == null }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 StatTile(
                     icon = Icons.Filled.CalendarMonth,
-                    label = "Calendario",
-                    value = today.count { it.time != null }.toString(),
-                    unit = "eventi oggi",
-                    footer = upcoming.firstOrNull { it.time != null }
-                        ?.let { "Prossimo alle " + Agenda.humanTime(it.time) }
-                        ?: "Nessun evento",
+                    label = "Agenda",
+                    value = today.size.toString(),
+                    unit = "oggi",
+                    footer = "$todayEvents eventi · $todayTasks attività",
                     accent = Cyan,
                     onClick = onOpenAgenda,
-                    modifier = Modifier.weight(1f),
-                )
-                StatTile(
-                    icon = Icons.Filled.CheckCircle,
-                    label = "Attività",
-                    value = today.count { it.time == null }.toString(),
-                    unit = "attività",
-                    footer = today.count { !it.done }.let { "$it da fare" },
-                    accent = Blue,
-                    onClick = onOpenAgenda,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(2f),
                 )
                 StatTile(
                     icon = Icons.Filled.Memory,
@@ -377,7 +382,10 @@ fun DashboardScreen(
                     // would still fail fast rather than really being answered —
                     // this tile is the one place that says so honestly instead of
                     // a flat "OK" that looks identical whether JARVIS is truly
-                    // free or not. See SessionCoordinator.llmGenerating.
+                    // free or not. See SessionCoordinator.llmGenerating. Tapping
+                    // it opens the full status screen, not the Models screen —
+                    // that used to be the tile's only reachable destination even
+                    // though its label promised general system status.
                     value = when {
                         llmGenerating -> "Occupato"
                         loadState == LlmLoadState.LOADED -> "OK"
@@ -390,7 +398,7 @@ fun DashboardScreen(
                     },
                     footer = "Batteria ${battery.percent}%",
                     accent = if (llmGenerating) Amber else Green,
-                    onClick = onOpenModels,
+                    onClick = onOpenSystemStatus,
                     modifier = Modifier.weight(1f),
                 )
                 StatTile(
@@ -425,6 +433,41 @@ fun DashboardScreen(
                 )
             }
 
+            // --- Agenda: date block + week strip + vertical timeline ------
+            // Right after Automazioni, per the requested order. One cohesive
+            // view of the real Agenda.md: today's date, the week with the
+            // active day ringed, then a timeline of appointments and tasks
+            // with an "In arrivo"/"Completato" badge.
+            AgendaBlock(
+                today = today,
+                week = upcoming,
+                allEntries = allEntries,
+                timeline = timeline,
+                selectedDate = selectedDate,
+                dayEntries = Agenda.sorted(allEntries.filter { it.date == selectedDate }),
+                onEditAlerts = { editingAlerts = it },
+                onDayClick = { selectedDate = it },
+                onToggleDone = { viewModel.toggleDone(it) },
+            )
+
+            // JARVIS Drive: la mappa/navigazione interna di JARVIS (motore
+            // proprio, traffico live, ricerca destinazioni) — sostituisce i
+            // vecchi ingressi separati "Navigazione" (mappa offline semplice)
+            // e "Modalità Guida" (overlay su Google Maps). Full-width like
+            // Automazioni — an entry point, not a metric.
+            Row(Modifier.fillMaxWidth()) {
+                StatTile(
+                    icon = Icons.Filled.DirectionsCar,
+                    label = "JARVIS Drive",
+                    value = "Pronta",
+                    unit = "mappa interna",
+                    footer = "Naviga · traffico live · ricerca",
+                    accent = Rose,
+                    onClick = { context.startActivity(DrivingModeActivity.intent(context)) },
+                    modifier = Modifier.weight(1f),
+                )
+            }
+
             // Live Translator: a full-width entry point, like Automations. Shows
             // how many of the current pair's offline models are ready so the user
             // knows before they open it whether it works in airplane mode.
@@ -448,41 +491,12 @@ fun DashboardScreen(
                 )
             }
 
-            // JARVIS Drive: la mappa/navigazione interna di JARVIS (motore
-            // proprio, traffico live, ricerca destinazioni) — sostituisce i
-            // vecchi ingressi separati "Navigazione" (mappa offline semplice)
-            // e "Modalità Guida" (overlay su Google Maps). Full-width like
-            // Automazioni — an entry point, not a metric.
-            Row(Modifier.fillMaxWidth()) {
-                StatTile(
-                    icon = Icons.Filled.DirectionsCar,
-                    label = "JARVIS Drive",
-                    value = "Pronta",
-                    unit = "mappa interna",
-                    footer = "Naviga · traffico live · ricerca",
-                    accent = Rose,
-                    onClick = { context.startActivity(DrivingModeActivity.intent(context)) },
-                    modifier = Modifier.weight(1f),
-                )
-            }
-
-            // --- Agenda: date block + week strip + vertical timeline ------
-            // One cohesive view of the real Agenda.md, in the reference layout:
-            // today's date, the week with the active day ringed, then a timeline
-            // of appointments and tasks with an "In arrivo"/"Completato" badge.
-            AgendaBlock(
-                today = today,
-                week = upcoming,
-                allEntries = allEntries,
-                timeline = timeline,
-                selectedDate = selectedDate,
-                dayEntries = Agenda.sorted(allEntries.filter { it.date == selectedDate }),
-                onEditAlerts = { editingAlerts = it },
-                onDayClick = { selectedDate = it },
-                onToggleDone = { viewModel.toggleDone(it) },
-            )
-
             // --- Row: Casa + Sistema (2 columns) --------------------------
+            // Casa stays DEMO on purpose: no Home Assistant integration exists
+            // yet (phase 7, not started) — nothing behind it could be made real
+            // without inventing data. Sistema's Sync/Backup rows are no longer
+            // DEMO: they read the real BackupRepository/SettingsRepository state
+            // that already powers the Backup screen, not a placeholder "Off".
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 GlassCard(Modifier.weight(1f), badge = { DemoBadge("F7") }) {
                     CardHeader(Icons.Filled.Home, "CASA")
@@ -507,8 +521,16 @@ fun DashboardScreen(
                         if (memory.configured) "${memory.noteCount}" else "—",
                         if (memory.configured) Cyan else Muted,
                     )
-                    SystemRow(Icons.Filled.Sync, "Sync", "Off", Muted, demo = true)
-                    SystemRow(Icons.Filled.CloudUpload, "Backup", "Off", Muted, demo = true)
+                    SystemRow(
+                        Icons.Filled.Sync, "Sync",
+                        if (backupCloudEnabled) "On" else "Off",
+                        if (backupCloudEnabled) Green else Muted,
+                    )
+                    SystemRow(
+                        Icons.Filled.CloudUpload, "Backup",
+                        relativeBackupLabel(backupState.lastBackupAt),
+                        if (backupState.lastBackupAt > 0L) Green else Muted,
+                    )
                 }
             }
 
@@ -520,19 +542,6 @@ fun DashboardScreen(
                 NoteRow(Icons.Filled.Description, "Frammenti indicizzati",
                     if (memory.configured) "${memory.chunkCount}" else "—", onOpenMemory)
                 NoteRow(Icons.Filled.Star, "Preferiti", "—", onOpenMemory, demo = true)
-            }
-
-            // --- Automazioni -----------------------------------------------
-            GlassCard(badge = { DemoBadge() }) {
-                CardHeader(Icons.Filled.Bolt, "AUTOMAZIONI")
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    AutoChip("Modalità Lavoro", "Giorni feriali", Modifier.weight(1f))
-                    AutoChip("Routine Mattutina", "07:30", Modifier.weight(1f))
-                    AutoChip("Modalità Relax", "Dopo le 22:00", Modifier.weight(1f))
-                }
             }
 
             Spacer(Modifier.height(72.dp)) // room so the FAB never covers the last card
@@ -584,11 +593,15 @@ private fun ChatFab(unread: Int, onClick: () -> Unit, modifier: Modifier = Modif
                 )
             }
         }
+        val themeId = LocalJarvisThemeId.current
         Image(
             painter = painterResource(R.drawable.chat_fab),
             contentDescription = "Chat",
             modifier = Modifier.size(66.dp).clickable(onClick = onClick),
             contentScale = ContentScale.Fit,
+            // Same conditional SrcIn recolour as the shared HUD chrome (see
+            // JarvisCard/HudOverlay) — untouched on the default theme.
+            colorFilter = if (themeId == JarvisThemeId.BLU) null else ColorFilter.tint(Cyan),
         )
         if (unread > 0) {
             // A glass ring with a neon numeral, not a red dot: red is an alarm
@@ -1197,22 +1210,6 @@ private fun NoteRow(icon: ImageVector, title: String, value: String, onClick: ()
 }
 
 @Composable
-private fun AutoChip(title: String, subtitle: String, modifier: Modifier = Modifier) {
-    Column(
-        modifier = modifier
-            .clip(RoundedCornerShape(12.dp))
-            .background(Color(0x33081521))
-            .border(1.dp, Cyan.copy(alpha = 0.18f), RoundedCornerShape(12.dp))
-            .padding(10.dp),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
-        Icon(Icons.Filled.Bolt, null, tint = Cyan, modifier = Modifier.size(16.dp))
-        Text(title, color = Ink, fontSize = 11.sp, fontWeight = FontWeight.Medium)
-        Text(subtitle, color = Muted, fontSize = 9.sp)
-    }
-}
-
-@Composable
 private fun ListenOrb(
     accent: Color,
     title: String,
@@ -1438,11 +1435,23 @@ private fun ConversationState.isRestingLike(): Boolean = when (this) {
     else -> false
 }
 
-private fun accentFor(state: ConversationState): Color = when {
+/** "Mai" / "Oggi" / "Ieri" / "N giorni fa" for the Sistema card's real Backup row. */
+private fun relativeBackupLabel(epochMs: Long): String {
+    if (epochMs <= 0L) return "Mai"
+    val days = (System.currentTimeMillis() - epochMs) / 86_400_000L
+    return when {
+        days <= 0L -> "Oggi"
+        days == 1L -> "Ieri"
+        days < 7L -> "$days giorni fa"
+        else -> "Oltre una settimana fa"
+    }
+}
+
+private fun accentFor(state: ConversationState, cyan: Color): Color = when {
     state == ConversationState.Listening || state == ConversationState.FollowUpWindow -> Green
     state == ConversationState.Speaking -> Blue
     state is ConversationState.RecoverableError || state is ConversationState.FatalError -> Color(0xFFE74C3C)
-    else -> Cyan
+    else -> cyan
 }
 
 private fun orbTitle(state: ConversationState): String = when (state) {

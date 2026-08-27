@@ -18,6 +18,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -26,6 +30,8 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -51,6 +57,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.simone.jarvismobile.core.memory.MemoryCategories
 import com.simone.jarvismobile.core.memory.MemoryKind
 import com.simone.jarvismobile.core.memory.MemoryRecord
+import com.simone.jarvismobile.core.memory.ShortTermMemorySnapshot
+import com.simone.jarvismobile.memory.MemoryIndex
+import com.simone.jarvismobile.ui.theme.LocalJarvisPalette
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -77,6 +86,8 @@ fun MemoryScreen(
 
     var showAdd by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<MemoryRecord?>(null) }
+    var showOptions by remember { mutableStateOf(false) }
+    var query by remember { mutableStateOf("") }
 
     val pickVault = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocumentTree(),
@@ -97,16 +108,44 @@ fun MemoryScreen(
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text("Memoria", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                Text(
-                    "${records.size} ricordi · tutto sul dispositivo",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MUTED,
-                )
+            // Just notes up top, like a phone's Notes app — everything that
+            // isn't a note (the short-term recap, the optional Obsidian mirror)
+            // moved behind the "⋮" button instead of being mixed into the feed.
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("Memoria", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                    Text(
+                        "${records.size} ricordi · tutto sul dispositivo",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MUTED,
+                    )
+                }
+                IconButton(onClick = { showOptions = true }) {
+                    Icon(Icons.Filled.MoreVert, contentDescription = "Altre opzioni")
+                }
             }
 
-            message?.let { Text(it, color = Color(0xFF3FD8F0), fontWeight = FontWeight.Medium) }
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                placeholder = { Text("Cerca nei ricordi…") },
+                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                trailingIcon = {
+                    if (query.isNotEmpty()) {
+                        IconButton(onClick = { query = "" }) {
+                            Icon(Icons.Filled.Close, contentDescription = "Cancella ricerca")
+                        }
+                    }
+                },
+                singleLine = true,
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            message?.let { Text(it, color = LocalJarvisPalette.current.accent, fontWeight = FontWeight.Medium) }
             status.lastError?.let { Text("Errore: $it", color = MaterialTheme.colorScheme.error) }
 
             if (records.any { it.category.isBlank() }) {
@@ -118,12 +157,20 @@ fun MemoryScreen(
             // Notes grouped by category. The four running lists are always shown,
             // then the AI categories alphabetical, then the not-yet-sorted bucket.
             // Each section is collapsible — its open/closed state is kept per name.
+            val filtered = if (query.isBlank()) {
+                records
+            } else {
+                records.filter { it.text.contains(query, ignoreCase = true) }
+            }
             val collapsed = remember { mutableStateMapOf<String, Boolean>() }
-            val byCategory = records.groupBy { it.category.ifBlank { UNCATEGORIZED } }
+            val byCategory = filtered.groupBy { it.category.ifBlank { UNCATEGORIZED } }
             val listCats = MemoryCategories.LISTS
             val otherCats = (byCategory.keys - listCats.toSet() - UNCATEGORIZED).sorted()
             val ordered = listCats + otherCats +
                 listOfNotNull(UNCATEGORIZED.takeIf(byCategory::containsKey))
+            if (query.isNotBlank() && filtered.isEmpty()) {
+                Text("Nessun ricordo trovato per «$query».", style = MaterialTheme.typography.bodySmall, color = MUTED)
+            }
             ordered.forEach { category ->
                 val list = byCategory[category].orEmpty().sortedByDescending { it.updatedAt }
                 val open = collapsed[category] != true
@@ -143,57 +190,6 @@ fun MemoryScreen(
                 }
             }
 
-            HorizontalDivider(Modifier.padding(vertical = 4.dp))
-
-            // Short-term recap — compact, below the notes.
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Memoria breve", style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        "Privata e temporanea: riassume conversazioni lunghe. " +
-                            "Si cancella con “Nuova conversazione”.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MUTED,
-                    )
-                    if (shortTerm.isEmpty) {
-                        Text("Nessun riepilogo temporaneo.", style = MaterialTheme.typography.bodySmall)
-                    } else {
-                        shortTerm.facts.forEach { Text("• $it") }
-                        StructuredFields(shortTerm.topics, shortTerm.people, shortTerm.dates)
-                        OutlinedButton(onClick = viewModel::clearTemporary, enabled = !busy) {
-                            Text("Cancella memoria breve")
-                        }
-                    }
-                }
-            }
-
-            // Optional Obsidian mirror — the memory works fully without it.
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Vault Obsidian (facoltativo)", style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        if (status.configured) "Collegato: ${vaultName ?: "—"}" else "Nessun vault collegato",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MUTED,
-                    )
-                    Button(
-                        onClick = { pickVault.launch(null) },
-                        enabled = !busy,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text(if (status.configured) "Cambia cartella vault" else "Collega un vault") }
-                    if (status.configured) {
-                        OutlinedButton(onClick = viewModel::reindex, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
-                            Text(if (busy) "Sincronizzazione…" else "Sincronizza da Obsidian")
-                        }
-                        OutlinedButton(
-                            onClick = viewModel::disconnect,
-                            enabled = !busy,
-                            modifier = Modifier.fillMaxWidth(),
-                        ) { Text("Disconnetti vault") }
-                    }
-                }
-            }
-
             OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) { Text("Indietro") }
             Text(
                 "Tutto resta sul dispositivo · nessun salvataggio segreto",
@@ -203,6 +199,20 @@ fun MemoryScreen(
                 modifier = Modifier.fillMaxWidth(),
             )
         }
+    }
+
+    if (showOptions) {
+        MemorySettingsDialog(
+            status = status,
+            vaultName = vaultName,
+            shortTerm = shortTerm,
+            busy = busy,
+            onDismiss = { showOptions = false },
+            onPickVault = { pickVault.launch(null) },
+            onReindex = viewModel::reindex,
+            onDisconnect = viewModel::disconnect,
+            onClearTemporary = viewModel::clearTemporary,
+        )
     }
 
     if (showAdd) {
@@ -243,6 +253,81 @@ fun MemoryScreen(
             onDelete = { viewModel.delete(rec.id); editing = null },
         )
     }
+}
+
+/**
+ * "⋮" on the main screen: the short-term recap and the optional Obsidian mirror
+ * — settings-shaped things, not notes — used to sit inline at the bottom of the
+ * notes feed. A classic phone Notes app keeps its screen to just notes and tucks
+ * everything else away; this dialog is that tuck-away, with the exact same
+ * content and callbacks as before, nothing removed.
+ */
+@Composable
+private fun MemorySettingsDialog(
+    status: MemoryIndex.Status,
+    vaultName: String?,
+    shortTerm: ShortTermMemorySnapshot,
+    busy: Boolean,
+    onDismiss: () -> Unit,
+    onPickVault: () -> Unit,
+    onReindex: () -> Unit,
+    onDisconnect: () -> Unit,
+    onClearTemporary: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Altre opzioni") },
+        text = {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                // Short-term recap.
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Memoria breve", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "Privata e temporanea: riassume conversazioni lunghe. " +
+                            "Si cancella con “Nuova conversazione”.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MUTED,
+                    )
+                    if (shortTerm.isEmpty) {
+                        Text("Nessun riepilogo temporaneo.", style = MaterialTheme.typography.bodySmall)
+                    } else {
+                        shortTerm.facts.forEach { Text("• $it") }
+                        StructuredFields(shortTerm.topics, shortTerm.people, shortTerm.dates)
+                        OutlinedButton(onClick = onClearTemporary, enabled = !busy) {
+                            Text("Cancella memoria breve")
+                        }
+                    }
+                }
+
+                HorizontalDivider()
+
+                // Optional Obsidian mirror — the memory works fully without it.
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Vault Obsidian (facoltativo)", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        if (status.configured) "Collegato: ${vaultName ?: "—"}" else "Nessun vault collegato",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MUTED,
+                    )
+                    Button(onClick = onPickVault, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                        Text(if (status.configured) "Cambia cartella vault" else "Collega un vault")
+                    }
+                    if (status.configured) {
+                        OutlinedButton(onClick = onReindex, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                            Text(if (busy) "Sincronizzazione…" else "Sincronizza da Obsidian")
+                        }
+                        OutlinedButton(onClick = onDisconnect, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                            Text("Disconnetti vault")
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Chiudi") } },
+    )
 }
 
 /**
@@ -302,7 +387,9 @@ private fun NoteTile(record: MemoryRecord, enabled: Boolean, onOpen: (MemoryReco
             .fillMaxWidth()
             .heightIn(min = 104.dp)
             .clickable(enabled = enabled) { onOpen(record) },
+        shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = accent.copy(alpha = 0.16f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
     ) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(

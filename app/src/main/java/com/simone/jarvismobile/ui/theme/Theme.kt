@@ -10,24 +10,8 @@ import androidx.compose.ui.graphics.Color
 
 // Discreet, tech-inspired dark palette (docs/ARCHITECTURE.md §22). Deliberately
 // original — no imitation of any protected cinematic interface.
-private val JarvisCyan = Color(0xFF4FD1E0)
 private val JarvisDeep = Color(0xFF0B1116)
 private val JarvisSurface = Color(0xFF121A21)
-
-private val DarkColors = darkColorScheme(
-    primary = JarvisCyan,
-    onPrimary = Color(0xFF06222A),
-    background = JarvisDeep,
-    surface = JarvisSurface,
-    onBackground = Color(0xFFE4EAEE),
-    onSurface = Color(0xFFE4EAEE),
-)
-
-private val LightColors = lightColorScheme(
-    primary = Color(0xFF0F7C8C),
-    background = Color(0xFFF7FAFB),
-    surface = Color(0xFFFFFFFF),
-)
 
 @Composable
 fun JarvisTheme(
@@ -38,9 +22,31 @@ fun JarvisTheme(
     // background, invisible. So the theme is always dark, whatever the phone is
     // set to — onSurface/onBackground stay light everywhere.
     darkTheme: Boolean = true,
+    // The visual theme (§ Impostazioni › Temi). Only the accent hue changes:
+    // Material's `primary` (buttons, switches, selected chips on every screen
+    // that uses default Material styling — Impostazioni, Backup, Regole
+    // avanzate) follows it here, and the HUD-styled screens (Dashboard, Agenda,
+    // Chat, …) read the same palette via [LocalJarvisPalette].
+    themeId: JarvisThemeId = JarvisThemeId.BLU,
     content: @Composable () -> Unit,
 ) {
-    val scheme = if (darkTheme) DarkColors else LightColors
+    val palette = paletteFor(themeId)
+    val scheme = if (darkTheme) {
+        darkColorScheme(
+            primary = palette.accent,
+            onPrimary = Color(0xFF06222A),
+            background = JarvisDeep,
+            surface = JarvisSurface,
+            onBackground = Color(0xFFE4EAEE),
+            onSurface = Color(0xFFE4EAEE),
+        )
+    } else {
+        lightColorScheme(
+            primary = palette.accent,
+            background = Color(0xFFF7FAFB),
+            surface = Color(0xFFFFFFFF),
+        )
+    }
     MaterialTheme(colorScheme = scheme) {
         // MaterialTheme sets the palette but NOT the default text/icon colour —
         // that comes from LocalContentColor, which defaults to black and is only
@@ -48,7 +54,11 @@ fun JarvisTheme(
         // titles in Impostazioni) rendered black on the dark background. Provide
         // the light colour as the app-wide default; Cards and explicit colours
         // still override it locally.
-        CompositionLocalProvider(LocalContentColor provides scheme.onBackground) {
+        CompositionLocalProvider(
+            LocalContentColor provides scheme.onBackground,
+            LocalJarvisPalette provides palette,
+            LocalJarvisThemeId provides themeId,
+        ) {
             content()
         }
     }
