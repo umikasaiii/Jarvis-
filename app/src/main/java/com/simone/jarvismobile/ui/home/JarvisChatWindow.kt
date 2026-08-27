@@ -128,9 +128,14 @@ private val Muted = Color(0xFF7C8B95)
  * genuinely be waiting for a yes/no before writing to the vault, and showing
  * "ELABORAZIONE" there would be a lie: nothing progresses until the user answers.
  */
+// An enum entry's constructor arguments run at class-init, outside any
+// @Composable context, so PRONTO/ASCOLTO cannot read the composable-getter
+// Cyan/CyanBright here (unlike every other reference in this file, which is
+// inside a @Composable function body). They keep the fixed default hue as a
+// known, minor gap: the chat status pill does not follow the theme.
 private enum class ChatStatus(val label: String, val accent: Color) {
-    PRONTO("Pronto", Cyan),
-    ASCOLTO("Ascolto", CyanBright),
+    PRONTO("Pronto", Color(0xFF3FD8F0)),
+    ASCOLTO("Ascolto", Color(0xFF12D9FF)),
     ELABORAZIONE("Elaborazione", Violet),
     CONFERMA("Conferma", Amber),
     PARLO("Parlo", Aqua),

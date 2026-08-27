@@ -572,6 +572,10 @@ fun DashboardScreen(
 
 @Composable
 private fun ChatFab(unread: Int, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    // Read once here (composable context) — Canvas's draw lambda below is a plain
+    // DrawScope block, not @Composable, so it cannot read Cyan (a composable
+    // getter) directly; it closes over this already-resolved value instead.
+    val cyan = Cyan
     Box(modifier.size(78.dp), contentAlignment = Alignment.Center) {
         // A light HUD ring. The previous one was thick and full-circle, and its
         // top-right arc ran straight through the unread badge; this is thin,
@@ -579,11 +583,11 @@ private fun ChatFab(unread: Int, onClick: () -> Unit, modifier: Modifier = Modif
         Canvas(Modifier.size(70.dp)) {
             val r = size.minDimension / 2f - 1.dp.toPx()
             val c = center
-            drawCircle(Cyan.copy(alpha = 0.18f), radius = r, center = c, style = Stroke(0.8.dp.toPx()))
+            drawCircle(cyan.copy(alpha = 0.18f), radius = r, center = c, style = Stroke(0.8.dp.toPx()))
             // Arcs on the left and bottom only; the badge owns the top-right.
             listOf(110f, 175f, 245f).forEach { start ->
                 drawArc(
-                    color = Cyan.copy(alpha = 0.5f),
+                    color = cyan.copy(alpha = 0.5f),
                     startAngle = start,
                     sweepAngle = 38f,
                     useCenter = false,
