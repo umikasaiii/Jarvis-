@@ -93,6 +93,17 @@ class AlarmReceiver : BroadcastReceiver() {
                 CoroutineScope(Dispatchers.Default).launch {
                     try {
                         val now = java.time.LocalDateTime.now()
+                        // Bug reale segnalato dall'utente: un avviso "domani piove"
+                        // sbagliato — la causa reale è che il meteo veniva letto
+                        // solo dalla cache di ContextEngine, aggiornata da un
+                        // worker indipendente ogni 3 ore, mai da un refresh legato
+                        // allo scatto della regola stessa. Un modello meteo che si
+                        // aggiorna nel frattempo lascia una regola "se domani
+                        // piove" a valutare un dato vecchio fino a 3 ore. refresh()
+                        // è già un no-op economico quando il meteo è spento
+                        // (controllato al suo interno), quindi chiamarlo qui prima
+                        // di ogni scatto non costa nulla quando l'utente non lo usa.
+                        runCatching { deps.weather().refresh() }
                         // The occurrence is the dedup key, so a duplicated delivery
                         // of the same firing is collapsed by the gate.
                         val event = TriggerEvent(type = triggerType, at = now, dedupKey = occurrence)
@@ -189,6 +200,7 @@ class AlarmReceiver : BroadcastReceiver() {
         fun contextEngine(): ContextEngine
         fun ruleExecutor(): AutomationExecutor
         fun ruleScheduler(): RuleScheduler
+        fun weather(): com.simone.jarvismobile.weather.WeatherManager
     }
 
     private companion object {

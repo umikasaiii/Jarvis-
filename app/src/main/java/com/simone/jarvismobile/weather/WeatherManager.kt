@@ -67,12 +67,30 @@ class WeatherManager @Inject constructor(
         return fix.latitude to fix.longitude
     }
 
+    /**
+     * `getLastKnownLocation` hands back whatever fix Android happens to have
+     * cached, with no freshness guarantee at all — it could be hours or days
+     * old, from a different city if the phone hasn't moved/reconnected since
+     * (§ bug reale segnalato dall'utente: un avviso pioggia sbagliato che si
+     * ripeteva, e un fix di posizione stantio era una causa reale non ancora
+     * controllata). Same staleness discipline already applied to the forecast
+     * itself ([com.simone.jarvismobile.context.ContextEngine.WEATHER_STALE_HOURS])
+     * — a fix older than [FIX_STALE_MINUTES] is treated as unusable rather
+     * than silently checking the weather for wherever the phone last was.
+     */
     @SuppressLint("MissingPermission")
     private fun lastKnownLocation(): android.location.Location? {
         val manager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return null
         val providers = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
-        return providers.mapNotNull { p -> runCatching { manager.getLastKnownLocation(p) }.getOrNull() }
+        val fix = providers.mapNotNull { p -> runCatching { manager.getLastKnownLocation(p) }.getOrNull() }
             .maxByOrNull { it.time }
+            ?: return null
+        val ageMinutes = (System.currentTimeMillis() - fix.time) / 60_000
+        if (ageMinutes > FIX_STALE_MINUTES) {
+            Log.i(TAG, "weather_fix_stale age_min=$ageMinutes")
+            return null
+        }
+        return fix
     }
 
     private fun hasFineLocation(): Boolean =
@@ -81,5 +99,6 @@ class WeatherManager @Inject constructor(
 
     private companion object {
         const val TAG = "JarvisWeather"
+        const val FIX_STALE_MINUTES = 120L
     }
 }

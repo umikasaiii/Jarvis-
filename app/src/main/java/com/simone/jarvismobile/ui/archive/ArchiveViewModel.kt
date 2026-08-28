@@ -126,6 +126,59 @@ class ArchiveViewModel @Inject constructor(
         .map { docs -> docs.mapNotNull { it.folder().takeIf { f -> f.isNotBlank() } }.distinct().sorted() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /**
+     * Renames a Documenti folder (§ richiesta esplicita: "le cartelle non
+     * sono modificabili") — every document under [oldPath] (including a
+     * nested "oldPath/Child", since a subfolder is just a "/"-prefixed path,
+     * § "non posso creare sottocartelle") is re-filed to [newPath].
+     */
+    fun renameDocumentFolder(oldPath: String, newPath: String) {
+        val from = oldPath.trim()
+        val to = newPath.trim()
+        if (from.isBlank() || to.isBlank() || from == to) return
+        documents.value.filter { it.folder() == from || it.folder().startsWith("$from/") }
+            .forEach { doc ->
+                val next = if (doc.folder() == from) to else to + doc.folder().removePrefix(from)
+                documentManager.moveToFolder(doc.id, next)
+            }
+    }
+
+    /** Un-files every document in [path] (and anything nested under it) back to the Documenti root — the files themselves are untouched. */
+    fun deleteDocumentFolder(path: String) {
+        val target = path.trim()
+        if (target.isBlank()) return
+        documents.value.filter { it.folder() == target || it.folder().startsWith("$target/") }
+            .forEach { doc -> documentManager.moveToFolder(doc.id, "") }
+    }
+
+    /**
+     * Renames an Appunti folder — every NOTE under [oldPath] (including a
+     * nested "oldPath/Child") is re-filed to [newPath]. Same pattern as
+     * [renameDocumentFolder], over [ArchiveItem.folder] instead of a tag.
+     */
+    fun renameNoteFolder(oldPath: String, newPath: String) {
+        val from = oldPath.trim()
+        val to = newPath.trim()
+        if (from.isBlank() || to.isBlank() || from == to) return
+        viewModelScope.launch {
+            allItems.value.filter { it.kind == ArchiveKind.NOTE && (it.folder == from || it.folder.startsWith("$from/")) }
+                .forEach { note ->
+                    val next = if (note.folder == from) to else to + note.folder.removePrefix(from)
+                    repository.update(note.id, folder = next)
+                }
+        }
+    }
+
+    /** Un-files every note in [path] (and anything nested under it) back to "Senza categoria" — the notes themselves are untouched. */
+    fun deleteNoteFolder(path: String) {
+        val target = path.trim()
+        if (target.isBlank()) return
+        viewModelScope.launch {
+            allItems.value.filter { it.kind == ArchiveKind.NOTE && (it.folder == target || it.folder.startsWith("$target/")) }
+                .forEach { note -> repository.update(note.id, folder = "") }
+        }
+    }
+
     private val allLists: StateFlow<List<ArchiveList>> = lists.observeLists()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 

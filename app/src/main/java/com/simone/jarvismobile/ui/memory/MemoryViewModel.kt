@@ -120,6 +120,48 @@ class MemoryViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Renames a folder (§ richiesta esplicita dell'utente: "le cartelle non
+     * sono modificabili") — a folder is just [MemoryRecord.category], so
+     * "renaming" it means re-filing every record that carries [oldPath],
+     * including anything nested one level under it ("oldPath/Child" →
+     * "newPath/Child") since a subfolder's path is literally prefixed with
+     * its parent's name.
+     */
+    fun renameCategory(oldPath: String, newPath: String) {
+        val from = oldPath.trim()
+        val to = newPath.trim()
+        if (from.isBlank() || to.isBlank() || from == to) return
+        viewModelScope.launch {
+            _busy.value = true
+            _records.value.filter { it.category == from || it.category.startsWith("$from/") }
+                .forEach { rec ->
+                    val newCategory = if (rec.category == from) to else to + rec.category.removePrefix(from)
+                    runCatching { memory.setCategory(rec.id, newCategory) }
+                }
+            refreshRecords()
+            _busy.value = false
+        }
+    }
+
+    /**
+     * Un-files every record in [path] (and anything nested under it) back to
+     * "Senza categoria" — a non-destructive "delete a folder": the notes
+     * themselves are never touched, only their category, matching the rest
+     * of the app's reluctance to destroy user data on a folder-level action.
+     */
+    fun deleteCategory(path: String) {
+        val target = path.trim()
+        if (target.isBlank()) return
+        viewModelScope.launch {
+            _busy.value = true
+            _records.value.filter { it.category == target || it.category.startsWith("$target/") }
+                .forEach { rec -> runCatching { memory.setCategory(rec.id, "") } }
+            refreshRecords()
+            _busy.value = false
+        }
+    }
+
     /** Sorts uncategorised records into macro-categories with the on-device model. */
     fun reclassify() {
         viewModelScope.launch {

@@ -14,12 +14,15 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -178,7 +181,7 @@ fun ArchiveScreen(
             .fillMaxSize()
             .background(Brush.verticalGradient(listOf(Color(0xFF050C16), Color(0xFF081420), Color(0xFF03080E)))),
     ) {
-        Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+        Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.statusBars).padding(horizontal = 16.dp)) {
             Spacer(Modifier.size(16.dp))
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = {
@@ -235,6 +238,14 @@ fun ArchiveScreen(
                     onDelete = { doc -> viewModel.removeDocument(doc) },
                     onRename = { doc, name -> viewModel.renameDocument(doc, name) },
                     onMove = { doc, folder -> viewModel.moveDocument(doc, folder) },
+                    onRenameFolder = { old, new ->
+                        viewModel.renameDocumentFolder(old, new)
+                        if (selectedDocFolder == old) selectedDocFolder = new
+                    },
+                    onDeleteFolder = { path ->
+                        viewModel.deleteDocumentFolder(path)
+                        if (selectedDocFolder == path) selectedDocFolder = null
+                    },
                 )
                 ArchiveFolder.NOTES -> NotesTab(
                     notes = notes,
@@ -244,6 +255,14 @@ fun ArchiveScreen(
                     onOpen = { editingNote = it; showNoteEditor = true },
                     onTogglePin = viewModel::togglePinned,
                     onDelete = viewModel::delete,
+                    onRenameFolder = { old, new ->
+                        viewModel.renameNoteFolder(old, new)
+                        if (selectedNoteFolder == old) selectedNoteFolder = new
+                    },
+                    onDeleteFolder = { path ->
+                        viewModel.deleteNoteFolder(path)
+                        if (selectedNoteFolder == path) selectedNoteFolder = null
+                    },
                 )
                 ArchiveFolder.WATCH -> ItemsTab(
                     items = watch,
@@ -459,11 +478,14 @@ private fun DocumentsFolder(
     onDelete: (DocumentRecord) -> Unit,
     onRename: (DocumentRecord, String) -> Unit,
     onMove: (DocumentRecord, String) -> Unit,
+    onRenameFolder: (String, String) -> Unit,
+    onDeleteFolder: (String) -> Unit,
 ) {
     var sortByName by remember { mutableStateOf(false) }
     var menuFor by remember { mutableStateOf<DocumentRecord?>(null) }
     var renameTarget by remember { mutableStateOf<DocumentRecord?>(null) }
     var moveTarget by remember { mutableStateOf<DocumentRecord?>(null) }
+    var showFolderManager by remember { mutableStateOf(false) }
 
     if (documents.isEmpty()) {
         Text(
@@ -478,7 +500,8 @@ private fun DocumentsFolder(
     // Folders here are a tag on the document (§ richiesta esplicita
     // dell'utente: "creare cartelle... come in un archivio classico"), same
     // pattern as Appunti's — a folder only "exists" once at least one file
-    // carries it, created on the fly from the move dialog below.
+    // carries it, created on the fly from the move dialog below. A "/" in the
+    // name nests it one level deep (§ "non posso creare sottocartelle").
     val hasUnfiled = documents.any { it.folder().isBlank() }
     Row(
         modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(bottom = 8.dp),
@@ -487,6 +510,18 @@ private fun DocumentsFolder(
         FolderChip("Tutti", selectedFolder == null) { onSelectFolder(null) }
         if (hasUnfiled) FolderChip("Senza cartella", selectedFolder == ARCHIVE_UNFILED_FOLDER) { onSelectFolder(ARCHIVE_UNFILED_FOLDER) }
         folders.forEach { f -> FolderChip(f, selectedFolder == f) { onSelectFolder(f) } }
+    }
+    if (folders.isNotEmpty()) {
+        Text(
+            "Gestisci cartelle",
+            color = Cyan,
+            fontSize = 12.sp,
+            modifier = Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .clickable { showFolderManager = true }
+                .padding(horizontal = 2.dp, vertical = 4.dp),
+        )
+        Spacer(Modifier.size(4.dp))
     }
     Row(Modifier.fillMaxWidth().padding(bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         FolderChip("Data", !sortByName) { sortByName = false }
@@ -553,6 +588,14 @@ private fun DocumentsFolder(
             current = doc.folder(),
             onDismiss = { moveTarget = null },
             onPick = { picked -> onMove(doc, picked); moveTarget = null },
+        )
+    }
+    if (showFolderManager) {
+        FolderManagerDialog(
+            folders = folders,
+            onRename = onRenameFolder,
+            onDelete = onDeleteFolder,
+            onDismiss = { showFolderManager = false },
         )
     }
 }
@@ -654,7 +697,10 @@ private fun NotesTab(
     onOpen: (ArchiveItem) -> Unit,
     onTogglePin: (ArchiveItem) -> Unit,
     onDelete: (ArchiveItem) -> Unit,
+    onRenameFolder: (String, String) -> Unit,
+    onDeleteFolder: (String) -> Unit,
 ) {
+    var showFolderManager by remember { mutableStateOf(false) }
     val hasUnfiled = notes.any { it.folder == ARCHIVE_UNFILED_FOLDER }
     Row(
         modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(bottom = 8.dp),
@@ -664,29 +710,50 @@ private fun NotesTab(
         if (hasUnfiled) FolderChip("Senza categoria", selectedFolder == ARCHIVE_UNFILED_FOLDER) { onSelectFolder(ARCHIVE_UNFILED_FOLDER) }
         folders.forEach { f -> FolderChip(f, selectedFolder == f) { onSelectFolder(f) } }
     }
+    if (folders.isNotEmpty()) {
+        Text(
+            "Gestisci cartelle",
+            color = Cyan,
+            fontSize = 12.sp,
+            modifier = Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .clickable { showFolderManager = true }
+                .padding(horizontal = 2.dp, vertical = 4.dp),
+        )
+        Spacer(Modifier.size(4.dp))
+    }
 
     val filtered = if (selectedFolder == null) notes else notes.filter { it.folder == selectedFolder }
     if (filtered.isEmpty()) {
         Text("Nessuna nota. Tocca + per crearne una.", color = Muted, modifier = Modifier.padding(24.dp), style = MaterialTheme.typography.bodyMedium)
-        return
-    }
-    val pinned = filtered.filter { it.pinned }
-    val rest = filtered.filterNot { it.pinned }
-    val groups = rest.groupBy { monthLabel(it.updatedAt) } // insertion order == reverse-chronological, notes already sorted
+    } else {
+        val pinned = filtered.filter { it.pinned }
+        val rest = filtered.filterNot { it.pinned }
+        val groups = rest.groupBy { monthLabel(it.updatedAt) } // insertion order == reverse-chronological, notes already sorted
 
-    LazyColumn(contentPadding = PaddingValues(bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        if (pinned.isNotEmpty()) {
-            item(key = "pinned-header") { SectionHeader("In primo piano") }
-            items(pinned, key = { "p:" + it.id }) { note ->
-                NoteCard(note, onClick = { onOpen(note) }, onTogglePin = { onTogglePin(note) }, onDelete = { onDelete(note) })
+        LazyColumn(contentPadding = PaddingValues(bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (pinned.isNotEmpty()) {
+                item(key = "pinned-header") { SectionHeader("In primo piano") }
+                items(pinned, key = { "p:" + it.id }) { note ->
+                    NoteCard(note, onClick = { onOpen(note) }, onTogglePin = { onTogglePin(note) }, onDelete = { onDelete(note) })
+                }
+            }
+            groups.forEach { (label, group) ->
+                item(key = "h:$label") { SectionHeader(label) }
+                items(group, key = { it.id }) { note ->
+                    NoteCard(note, onClick = { onOpen(note) }, onTogglePin = { onTogglePin(note) }, onDelete = { onDelete(note) })
+                }
             }
         }
-        groups.forEach { (label, group) ->
-            item(key = "h:$label") { SectionHeader(label) }
-            items(group, key = { it.id }) { note ->
-                NoteCard(note, onClick = { onOpen(note) }, onTogglePin = { onTogglePin(note) }, onDelete = { onDelete(note) })
-            }
-        }
+    }
+
+    if (showFolderManager) {
+        FolderManagerDialog(
+            folders = folders,
+            onRename = onRenameFolder,
+            onDelete = onDeleteFolder,
+            onDismiss = { showFolderManager = false },
+        )
     }
 }
 
@@ -784,7 +851,7 @@ private fun NoteEditorScreen(
             .background(Brush.verticalGradient(listOf(Color(0xFF050C16), Color(0xFF081420), Color(0xFF03080E))))
             .imePadding(),
     ) {
-        Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
+        Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.statusBars).padding(horizontal = 20.dp)) {
             Spacer(Modifier.size(16.dp))
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onDismiss) {
@@ -883,7 +950,7 @@ private fun FolderPickerDialog(folders: List<String>, current: String, onDismiss
                     OutlinedTextField(
                         value = newFolder,
                         onValueChange = { newFolder = it },
-                        label = { Text("Nuova cartella") },
+                        label = { Text("Nuova (usa “/” per una sottocartella)") },
                         singleLine = true,
                         modifier = Modifier.weight(1f),
                     )
@@ -893,6 +960,71 @@ private fun FolderPickerDialog(folders: List<String>, current: String, onDismiss
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Chiudi") } },
     )
+}
+
+/**
+ * Rename/delete every folder in one list (§ richiesta esplicita dell'utente:
+ * "le cartelle non sono modificabili") — shared between Appunti and
+ * Documenti, since both are just a flat `List<String>` of folder paths with
+ * the same "Parent/Child" convention. Deleting un-files the folder's items
+ * rather than deleting them — same non-destructive rule as everywhere else
+ * a folder can be cleared in this app.
+ */
+@Composable
+private fun FolderManagerDialog(
+    folders: List<String>,
+    onRename: (String, String) -> Unit,
+    onDelete: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var renameTarget by remember { mutableStateOf<String?>(null) }
+    var deleteTarget by remember { mutableStateOf<String?>(null) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Gestisci cartelle") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                if (folders.isEmpty()) {
+                    Text("Nessuna cartella.", style = MaterialTheme.typography.bodySmall)
+                }
+                folders.forEach { f ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(f, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        TextButton(onClick = { renameTarget = f }) { Text("Rinomina") }
+                        TextButton(onClick = { deleteTarget = f }) { Text("Elimina", color = MaterialTheme.colorScheme.error) }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Chiudi") } },
+    )
+    renameTarget?.let { path ->
+        NameDialog(
+            title = "Rinomina cartella",
+            label = "Nome",
+            initial = path.substringAfterLast('/'),
+            onDismiss = { renameTarget = null },
+            onConfirm = { newName ->
+                val parent = path.substringBeforeLast('/', "")
+                onRename(path, if (parent.isBlank()) newName else "$parent/$newName")
+                renameTarget = null
+            },
+        )
+    }
+    deleteTarget?.let { path ->
+        AlertDialog(
+            onDismissRequest = { deleteTarget = null },
+            title = { Text("Eliminare «$path»?") },
+            text = { Text("Gli elementi al suo interno non vengono cancellati: tornano semplicemente senza cartella.") },
+            confirmButton = {
+                TextButton(onClick = { onDelete(path); deleteTarget = null }) { Text("Elimina", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { deleteTarget = null }) { Text("Annulla") } },
+        )
+    }
 }
 
 // --- other folders, unchanged logic, JARVIS-restyled ------------------------

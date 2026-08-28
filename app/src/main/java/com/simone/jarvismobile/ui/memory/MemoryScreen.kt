@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -18,6 +19,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -33,6 +36,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -59,6 +64,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -169,6 +175,7 @@ fun MemoryScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .windowInsetsPadding(WindowInsets.statusBars)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -318,6 +325,14 @@ fun MemoryScreen(
                 selected = selectedCategory,
                 onSelectAll = { selectedCategory = null; showDrawer = false },
                 onSelectCategory = { selectedCategory = it; showDrawer = false },
+                onRenameCategory = { old, new ->
+                    viewModel.renameCategory(old, new)
+                    if (selectedCategory == old) selectedCategory = new
+                },
+                onDeleteCategory = { path ->
+                    viewModel.deleteCategory(path)
+                    if (selectedCategory == path) selectedCategory = null
+                },
                 onDismiss = { showDrawer = false },
             )
         }
@@ -415,12 +430,34 @@ private fun MemorySettingsDialog(
 }
 
 /**
+ * A folder tree with exactly one level of nesting — "Parent/Child", matching
+ * the depth the Samsung Notes reference itself showed ("Cartella personale" >
+ * "Data"/"N8N"/…), not arbitrary depth. [MemoryRecord.category] stays a plain
+ * string (no schema change): a "/" in it is simply read as a path separator.
+ */
+private data class FolderNode(val name: String, val path: String, val children: List<FolderNode>)
+
+private fun buildFolderTree(paths: List<String>): List<FolderNode> {
+    val top = paths.map { it.substringBefore('/') }.distinct().sorted()
+    return top.map { t ->
+        val children = paths.filter { it.startsWith("$t/") }
+            .map { it.substringAfter('/') }
+            .distinct()
+            .sorted()
+            .map { FolderNode(name = it, path = "$t/$it", children = emptyList()) }
+        FolderNode(name = t, path = t, children = children)
+    }
+}
+
+/**
  * The folders side-drawer (§ richiesta esplicita dell'utente: "menu laterale
  * vero e proprio... come nelle foto delle Note del telefono") — "Tutte le
- * note" with the total count, every known folder with its own count, and a
- * "+ Nuova cartella" entry at the bottom. A folder here is just [MemoryRecord.category]
- * — the same field the AI classifier already writes — so a hand-typed name is
- * a real, first-class category, not a second, app-only grouping concept.
+ * note" with the total count, every known folder with its own count and a
+ * "⋮" menu (rinomina/elimina/sottocartella — § "le cartelle non sono
+ * modificabili... non posso creare sottocartelle"), and a "+ Nuova cartella"
+ * entry at the bottom. A folder here is just [MemoryRecord.category] — the
+ * same field the AI classifier already writes — so a hand-typed name is a
+ * real, first-class category, not a second, app-only grouping concept.
  * Creating one selects it as the current filter (0 notes yet); the next "+"
  * note defaults into it, exactly the "make a folder, then fill it" flow a
  * phone Notes app offers, without a separate "known empty folders" store.
@@ -432,8 +469,16 @@ private fun MemoryDrawer(
     selected: String?,
     onSelectAll: () -> Unit,
     onSelectCategory: (String) -> Unit,
+    onRenameCategory: (String, String) -> Unit,
+    onDeleteCategory: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val tree = remember(categories) { buildFolderTree(categories) }
+    val expandedOverride = remember { mutableStateMapOf<String, Boolean>() }
+    var renameTarget by remember { mutableStateOf<String?>(null) }
+    var deleteTarget by remember { mutableStateOf<String?>(null) }
+    var newFolderParent by remember { mutableStateOf<String?>(null) }
+
     Box(Modifier.fillMaxSize()) {
         Box(
             Modifier
@@ -447,12 +492,24 @@ private fun MemoryDrawer(
                 .fillMaxWidth(0.82f)
                 .align(Alignment.CenterStart)
                 .background(Color(0xFF0A121C))
+                .windowInsetsPadding(WindowInsets.statusBars)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 28.dp),
+                .padding(horizontal = 16.dp, vertical = 20.dp),
         ) {
             Text("Memoria", color = Cyan, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Spacer(Modifier.size(18.dp))
-            DrawerRow("Tutte le note", records.size, selected == null, onSelectAll)
+            DrawerFolderRow(
+                label = "Tutte le note",
+                count = records.size,
+                selected = selected == null,
+                hasChildren = false,
+                expanded = false,
+                onToggleExpand = {},
+                onClick = onSelectAll,
+                onRename = null,
+                onDelete = null,
+                onAddSubfolder = null,
+            )
             Spacer(Modifier.size(14.dp))
             Text(
                 "CARTELLE",
@@ -461,70 +518,123 @@ private fun MemoryDrawer(
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.padding(bottom = 4.dp),
             )
-            categories.forEach { c ->
-                val count = records.count { it.category.ifBlank { UNCATEGORIZED } == c }
-                DrawerRow(c, count, selected == c) { onSelectCategory(c) }
+            tree.forEach { node ->
+                val autoExpand = selected == node.path || selected?.startsWith("${node.path}/") == true
+                val expanded = expandedOverride[node.path] ?: autoExpand
+                val directCount = records.count { it.category.ifBlank { UNCATEGORIZED } == node.path }
+                DrawerFolderRow(
+                    label = node.name,
+                    count = directCount,
+                    selected = selected == node.path,
+                    hasChildren = node.children.isNotEmpty(),
+                    expanded = expanded,
+                    onToggleExpand = { expandedOverride[node.path] = !expanded },
+                    onClick = { onSelectCategory(node.path) },
+                    onRename = { renameTarget = node.path },
+                    onDelete = { deleteTarget = node.path },
+                    onAddSubfolder = { newFolderParent = node.path },
+                )
+                if (expanded) {
+                    node.children.forEach { child ->
+                        val childCount = records.count { it.category == child.path }
+                        DrawerFolderRow(
+                            label = child.name,
+                            count = childCount,
+                            selected = selected == child.path,
+                            hasChildren = false,
+                            expanded = false,
+                            indent = 22.dp,
+                            onToggleExpand = {},
+                            onClick = { onSelectCategory(child.path) },
+                            onRename = { renameTarget = child.path },
+                            onDelete = { deleteTarget = child.path },
+                            onAddSubfolder = null,
+                        )
+                    }
+                }
             }
             val uncategorizedCount = records.count { it.category.isBlank() }
             if (uncategorizedCount > 0) {
-                DrawerRow(UNCATEGORIZED, uncategorizedCount, selected == UNCATEGORIZED) { onSelectCategory(UNCATEGORIZED) }
+                DrawerFolderRow(
+                    label = UNCATEGORIZED,
+                    count = uncategorizedCount,
+                    selected = selected == UNCATEGORIZED,
+                    hasChildren = false,
+                    expanded = false,
+                    onToggleExpand = {},
+                    onClick = { onSelectCategory(UNCATEGORIZED) },
+                    onRename = null,
+                    onDelete = null,
+                    onAddSubfolder = null,
+                )
             }
             Spacer(Modifier.size(18.dp))
             HorizontalDivider(color = MUTED.copy(alpha = 0.2f))
             Spacer(Modifier.size(10.dp))
-            var addingFolder by remember { mutableStateOf(false) }
-            var newFolderName by remember { mutableStateOf("") }
-            if (addingFolder) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedTextField(
-                        value = newFolderName,
-                        onValueChange = { newFolderName = it },
-                        placeholder = { Text("Nome cartella", color = MUTED) },
-                        singleLine = true,
-                        textStyle = MaterialTheme.typography.bodyMedium.copy(color = INK),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = Cyan.copy(alpha = 0.7f),
-                            unfocusedBorderColor = MUTED.copy(alpha = 0.4f),
-                            cursorColor = Cyan,
-                            focusedTextColor = INK,
-                            unfocusedTextColor = INK,
-                        ),
-                        modifier = Modifier.weight(1f),
-                    )
-                    TextButton(
-                        onClick = {
-                            val name = newFolderName.trim()
-                            if (name.isNotBlank()) onSelectCategory(name)
-                        },
-                        enabled = newFolderName.isNotBlank(),
-                    ) { Text("Crea", color = Cyan) }
-                }
-            } else {
-                Text(
-                    "+ Nuova cartella",
-                    color = Cyan,
-                    style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { addingFolder = true }
-                        .padding(vertical = 10.dp),
-                )
-            }
+            NewFolderField(
+                parentHint = newFolderParent,
+                onClearParentHint = { newFolderParent = null },
+                onCreate = onSelectCategory,
+            )
         }
+    }
+
+    renameTarget?.let { path ->
+        MemoryFolderRenameDialog(
+            currentName = path.substringAfterLast('/'),
+            onDismiss = { renameTarget = null },
+            onConfirm = { newName ->
+                val parent = path.substringBeforeLast('/', "")
+                onRenameCategory(path, if (parent.isBlank()) newName else "$parent/$newName")
+                renameTarget = null
+            },
+        )
+    }
+    deleteTarget?.let { path ->
+        MemoryFolderDeleteDialog(
+            path = path,
+            onDismiss = { deleteTarget = null },
+            onConfirm = { onDeleteCategory(path); deleteTarget = null },
+        )
     }
 }
 
+/** One row of the drawer's folder tree: an optional expand chevron, the name+count, and a "⋮" menu when editable. */
 @Composable
-private fun DrawerRow(label: String, count: Int, selected: Boolean, onClick: () -> Unit) {
+private fun DrawerFolderRow(
+    label: String,
+    count: Int,
+    selected: Boolean,
+    hasChildren: Boolean,
+    expanded: Boolean,
+    indent: Dp = 0.dp,
+    onToggleExpand: () -> Unit,
+    onClick: () -> Unit,
+    onRename: (() -> Unit)?,
+    onDelete: (() -> Unit)?,
+    onAddSubfolder: (() -> Unit)?,
+) {
+    var showMenu by remember { mutableStateOf(false) }
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
             .background(if (selected) Cyan.copy(alpha = 0.18f) else Color.Transparent)
             .clickable(onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 10.dp),
+            .padding(start = 10.dp + indent, end = 2.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (hasChildren) {
+            Text(
+                if (expanded) "▾" else "▸",
+                color = MUTED,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .clickable(onClick = onToggleExpand)
+                    .padding(horizontal = 6.dp, vertical = 2.dp),
+            )
+            Spacer(Modifier.width(4.dp))
+        }
         Text(
             label,
             color = if (selected) Cyan else INK,
@@ -533,8 +643,115 @@ private fun DrawerRow(label: String, count: Int, selected: Boolean, onClick: () 
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
         )
-        Text("$count", color = MUTED, style = MaterialTheme.typography.bodySmall)
+        Text("$count", color = MUTED, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(end = 2.dp))
+        if (onRename != null || onDelete != null) {
+            Box {
+                IconButton(onClick = { showMenu = true }, modifier = Modifier.size(30.dp)) {
+                    Icon(Icons.Filled.MoreVert, contentDescription = "Altre azioni", tint = MUTED, modifier = Modifier.size(18.dp))
+                }
+                DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                    if (onRename != null) {
+                        DropdownMenuItem(text = { Text("Rinomina") }, onClick = { showMenu = false; onRename() })
+                    }
+                    if (onAddSubfolder != null) {
+                        DropdownMenuItem(text = { Text("Aggiungi sottocartella") }, onClick = { showMenu = false; onAddSubfolder() })
+                    }
+                    if (onDelete != null) {
+                        DropdownMenuItem(
+                            text = { Text("Elimina", color = MaterialTheme.colorScheme.error) },
+                            onClick = { showMenu = false; onDelete() },
+                        )
+                    }
+                }
+            }
+        }
     }
+}
+
+/** "+ Nuova cartella" — a free-text field; a "/" in the name creates a subfolder directly, or [parentHint] pre-targets one from the row's own "⋮" menu. */
+@Composable
+private fun NewFolderField(parentHint: String?, onClearParentHint: () -> Unit, onCreate: (String) -> Unit) {
+    var addingManually by remember { mutableStateOf(false) }
+    var name by remember { mutableStateOf("") }
+    val showForm = addingManually || parentHint != null
+    if (showForm) {
+        Column {
+            if (parentHint != null) {
+                Text("In: $parentHint", color = MUTED, fontSize = 12.sp, modifier = Modifier.padding(bottom = 4.dp))
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    placeholder = {
+                        Text(
+                            if (parentHint != null) "Nome sottocartella" else "Nome cartella (usa “/” per una sottocartella)",
+                            color = MUTED,
+                        )
+                    },
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = INK),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Cyan.copy(alpha = 0.7f),
+                        unfocusedBorderColor = MUTED.copy(alpha = 0.4f),
+                        cursorColor = Cyan,
+                        focusedTextColor = INK,
+                        unfocusedTextColor = INK,
+                    ),
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(
+                    onClick = {
+                        val trimmed = name.trim()
+                        if (trimmed.isNotBlank()) {
+                            onCreate(if (parentHint != null) "$parentHint/$trimmed" else trimmed)
+                            name = ""
+                            addingManually = false
+                            onClearParentHint()
+                        }
+                    },
+                    enabled = name.isNotBlank(),
+                ) { Text("Crea", color = Cyan) }
+            }
+        }
+    } else {
+        Text(
+            "+ Nuova cartella",
+            color = Cyan,
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { addingManually = true }
+                .padding(vertical = 10.dp),
+        )
+    }
+}
+
+@Composable
+private fun MemoryFolderRenameDialog(currentName: String, onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
+    var name by remember { mutableStateOf(currentName) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Rinomina cartella") },
+        text = {
+            OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Nome") }, singleLine = true)
+        },
+        confirmButton = {
+            TextButton(onClick = { if (name.isNotBlank()) onConfirm(name.trim()) }, enabled = name.isNotBlank()) { Text("Rinomina") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Annulla") } },
+    )
+}
+
+@Composable
+private fun MemoryFolderDeleteDialog(path: String, onDismiss: () -> Unit, onConfirm: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Eliminare «$path»?") },
+        text = { Text("Le note al suo interno non vengono cancellate: tornano semplicemente senza categoria.") },
+        confirmButton = { TextButton(onClick = onConfirm) { Text("Elimina", color = MaterialTheme.colorScheme.error) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Annulla") } },
+    )
 }
 
 /**
@@ -654,7 +871,7 @@ private fun MemoryNoteEditorScreen(
             .imePadding(),
     ) {
         Column(
-            Modifier.fillMaxSize().padding(horizontal = 20.dp),
+            Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.statusBars).padding(horizontal = 20.dp),
         ) {
             Spacer(Modifier.size(16.dp))
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {

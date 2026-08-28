@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
@@ -34,6 +35,7 @@ import com.simone.jarvismobile.R
 import com.simone.jarvismobile.ui.theme.JarvisThemeId
 import com.simone.jarvismobile.ui.theme.LocalJarvisPalette
 import com.simone.jarvismobile.ui.theme.LocalJarvisThemeId
+import kotlinx.coroutines.launch
 
 /**
  * What the orb is doing. It mirrors the real assistant state — the animation is
@@ -110,6 +112,14 @@ fun JarvisOrb(
     // reads as physical rather than as a colour change.
     val press = remember { Animatable(1f) }
 
+    // A tap shockwave (§ richiesta esplicita dell'utente: "dai un effetto
+    // diverso e migliore se cliccato") — a soft ring that expands from the
+    // centre and fades, drawn behind the artwork in the same Canvas as the
+    // breathing glow. Never ON the image: the artwork already owns concentric
+    // rings of its own (see the doc comment below), so this stays a burst of
+    // light rather than a second ring competing at a different angle.
+    val burst = remember { Animatable(0f) }
+
     Box(
         modifier = modifier
             .size(size)
@@ -130,6 +140,14 @@ fun JarvisOrb(
                 when (i) {
                     is PressInteraction.Press -> {
                         press.animateTo(0.94f, tween(90))
+                        // A fresh shockwave on every tap — restarts from zero
+                        // even if a previous one hasn't finished fading, so
+                        // quick repeated taps each get their own visible ring.
+                        launch {
+                            burst.snapTo(0f)
+                            burst.animateTo(1f, tween(520, easing = FastOutSlowInEasing))
+                            burst.snapTo(0f)
+                        }
                     }
                     else -> {
                         press.animateTo(1.06f, tween(120))
@@ -152,6 +170,14 @@ fun JarvisOrb(
                 ),
                 radius = this.size.minDimension / 2f,
             )
+            if (burst.value > 0f) {
+                val maxRadius = this.size.minDimension / 2f
+                drawCircle(
+                    color = look.accent.copy(alpha = (1f - burst.value) * 0.55f),
+                    radius = maxRadius * (0.35f + 0.65f * burst.value),
+                    style = Stroke(width = 5.dp.toPx()),
+                )
+            }
         }
 
         // --- the artwork itself -------------------------------------------
