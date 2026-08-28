@@ -35,11 +35,13 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.List as ListIcon
 import androidx.compose.material.icons.filled.Memory
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PushPin
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -78,6 +80,7 @@ import com.simone.jarvismobile.core.archive.ListItemStatus
 import com.simone.jarvismobile.core.document.DocumentRecord
 import com.simone.jarvismobile.core.memory.MemoryCategories
 import com.simone.jarvismobile.core.memory.MemoryRecord
+import com.simone.jarvismobile.document.folder
 import com.simone.jarvismobile.ui.theme.LocalJarvisPalette
 import java.time.Instant
 import java.time.LocalDate
@@ -135,6 +138,7 @@ fun ArchiveScreen(
     val listItems by viewModel.listItems.collectAsStateWithLifecycle()
     val query by viewModel.searchQuery.collectAsStateWithLifecycle()
     val folders by viewModel.folders.collectAsStateWithLifecycle()
+    val documentFolders by viewModel.documentFolders.collectAsStateWithLifecycle()
 
     var openFolder by remember { mutableStateOf<ArchiveFolder?>(null) }
     var showAdd by remember { mutableStateOf(false) } // TO_WATCH only — notes get the full-screen editor
@@ -142,6 +146,7 @@ fun ArchiveScreen(
     var showNewShoppingItem by remember { mutableStateOf(false) }
     var openList by remember { mutableStateOf<ArchiveList?>(null) }
     var selectedNoteFolder by remember { mutableStateOf<String?>(null) } // null = "Tutte"
+    var selectedDocFolder by remember { mutableStateOf<String?>(null) } // null = "Tutte"
 
     var showNoteEditor by remember { mutableStateOf(false) }
     var editingNote by remember { mutableStateOf<ArchiveItem?>(null) }
@@ -222,9 +227,14 @@ fun ArchiveScreen(
                 )
                 ArchiveFolder.DOCUMENTS -> DocumentsFolder(
                     documents = documents,
+                    folders = documentFolders,
+                    selectedFolder = selectedDocFolder,
+                    onSelectFolder = { selectedDocFolder = it },
                     onOpen = { doc -> openDocument(context, viewModel, doc) },
                     onShare = { doc -> shareDocument(context, viewModel, doc) },
                     onDelete = { doc -> viewModel.removeDocument(doc) },
+                    onRename = { doc, name -> viewModel.renameDocument(doc, name) },
+                    onMove = { doc, folder -> viewModel.moveDocument(doc, folder) },
                 )
                 ArchiveFolder.NOTES -> NotesTab(
                     notes = notes,
@@ -441,11 +451,20 @@ private fun monthDayLabel(epochMillis: Long): String {
 @Composable
 private fun DocumentsFolder(
     documents: List<DocumentRecord>,
+    folders: List<String>,
+    selectedFolder: String?,
+    onSelectFolder: (String?) -> Unit,
     onOpen: (DocumentRecord) -> Unit,
     onShare: (DocumentRecord) -> Unit,
     onDelete: (DocumentRecord) -> Unit,
+    onRename: (DocumentRecord, String) -> Unit,
+    onMove: (DocumentRecord, String) -> Unit,
 ) {
     var sortByName by remember { mutableStateOf(false) }
+    var menuFor by remember { mutableStateOf<DocumentRecord?>(null) }
+    var renameTarget by remember { mutableStateOf<DocumentRecord?>(null) }
+    var moveTarget by remember { mutableStateOf<DocumentRecord?>(null) }
+
     if (documents.isEmpty()) {
         Text(
             "Ancora vuoto. I file allegati o importati in chat compaiono qui, oppure tocca «+» per importarli dal telefono.",
@@ -455,11 +474,35 @@ private fun DocumentsFolder(
         )
         return
     }
+
+    // Folders here are a tag on the document (§ richiesta esplicita
+    // dell'utente: "creare cartelle... come in un archivio classico"), same
+    // pattern as Appunti's — a folder only "exists" once at least one file
+    // carries it, created on the fly from the move dialog below.
+    val hasUnfiled = documents.any { it.folder().isBlank() }
+    Row(
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(bottom = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        FolderChip("Tutti", selectedFolder == null) { onSelectFolder(null) }
+        if (hasUnfiled) FolderChip("Senza cartella", selectedFolder == ARCHIVE_UNFILED_FOLDER) { onSelectFolder(ARCHIVE_UNFILED_FOLDER) }
+        folders.forEach { f -> FolderChip(f, selectedFolder == f) { onSelectFolder(f) } }
+    }
     Row(Modifier.fillMaxWidth().padding(bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         FolderChip("Data", !sortByName) { sortByName = false }
         FolderChip("Nome", sortByName) { sortByName = true }
     }
-    val sorted = if (sortByName) documents.sortedBy { it.displayName.lowercase() } else documents
+
+    val filtered = when (selectedFolder) {
+        null -> documents
+        ARCHIVE_UNFILED_FOLDER -> documents.filter { it.folder().isBlank() }
+        else -> documents.filter { it.folder() == selectedFolder }
+    }
+    if (filtered.isEmpty()) {
+        Text("Nessun file in questa cartella.", color = Muted, modifier = Modifier.padding(24.dp), style = MaterialTheme.typography.bodyMedium)
+        return
+    }
+    val sorted = if (sortByName) filtered.sortedBy { it.displayName.lowercase() } else filtered
     LazyColumn(contentPadding = PaddingValues(bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         items(sorted, key = { it.id }) { doc ->
             Row(
@@ -476,16 +519,41 @@ private fun DocumentsFolder(
                 Column(Modifier.weight(1f)) {
                     Text(doc.displayName, color = Ink, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
                     val size = if (doc.fileSize > 0) "${doc.fileSize / 1024} KB" else ""
-                    Text(size, color = Muted, fontSize = 11.sp)
+                    val meta = if (doc.folder().isNotBlank()) "$size · ${doc.folder()}" else size
+                    Text(meta, color = Muted, fontSize = 11.sp)
                 }
-                IconButton(onClick = { onShare(doc) }) {
-                    Icon(Icons.Filled.Share, contentDescription = "Condividi", tint = Cyan, modifier = Modifier.size(18.dp))
-                }
-                IconButton(onClick = { onDelete(doc) }) {
-                    Icon(Icons.Filled.Delete, contentDescription = "Elimina", tint = Muted, modifier = Modifier.size(18.dp))
+                Box {
+                    IconButton(onClick = { menuFor = doc }) {
+                        Icon(Icons.Filled.MoreVert, contentDescription = "Altre azioni", tint = Muted, modifier = Modifier.size(20.dp))
+                    }
+                    DropdownMenu(expanded = menuFor?.id == doc.id, onDismissRequest = { menuFor = null }) {
+                        DropdownMenuItem(text = { Text("Apri") }, onClick = { menuFor = null; onOpen(doc) })
+                        DropdownMenuItem(text = { Text("Condividi") }, onClick = { menuFor = null; onShare(doc) })
+                        DropdownMenuItem(text = { Text("Rinomina") }, onClick = { menuFor = null; renameTarget = doc })
+                        DropdownMenuItem(text = { Text("Sposta in cartella") }, onClick = { menuFor = null; moveTarget = doc })
+                        DropdownMenuItem(text = { Text("Elimina", color = MaterialTheme.colorScheme.error) }, onClick = { menuFor = null; onDelete(doc) })
+                    }
                 }
             }
         }
+    }
+
+    renameTarget?.let { doc ->
+        NameDialog(
+            title = "Rinomina",
+            label = "Nome",
+            initial = doc.displayName,
+            onDismiss = { renameTarget = null },
+            onConfirm = { name -> onRename(doc, name) },
+        )
+    }
+    moveTarget?.let { doc ->
+        FolderPickerDialog(
+            folders = folders,
+            current = doc.folder(),
+            onDismiss = { moveTarget = null },
+            onPick = { picked -> onMove(doc, picked); moveTarget = null },
+        )
     }
 }
 
@@ -955,8 +1023,8 @@ private fun AddWatchDialog(onDismiss: () -> Unit, onCreate: (String, String, Str
 }
 
 @Composable
-private fun NameDialog(title: String, label: String, onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
-    var name by remember { mutableStateOf("") }
+private fun NameDialog(title: String, label: String, initial: String = "", onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
+    var name by remember { mutableStateOf(initial) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },

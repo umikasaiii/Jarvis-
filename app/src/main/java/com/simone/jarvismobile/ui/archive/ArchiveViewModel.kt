@@ -17,6 +17,7 @@ import com.simone.jarvismobile.core.document.DocumentRecord
 import com.simone.jarvismobile.core.document.DocumentStatus
 import com.simone.jarvismobile.core.memory.MemoryRecord
 import com.simone.jarvismobile.document.DocumentImportManager
+import com.simone.jarvismobile.document.folder
 import com.simone.jarvismobile.memory.MemoryIndex
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -109,6 +110,21 @@ class ArchiveViewModel @Inject constructor(
     fun removeDocument(record: DocumentRecord) {
         documentManager.remove(record.id)
     }
+
+    /** Renames a document's display label (§ richiesta esplicita: "vorrei poterlo rinominare"). */
+    fun renameDocument(record: DocumentRecord, newName: String) {
+        documentManager.rename(record.id, newName)
+    }
+
+    /** Files a document under [folder] ("" clears it back to the Documenti root). */
+    fun moveDocument(record: DocumentRecord, folder: String) {
+        documentManager.moveToFolder(record.id, folder)
+    }
+
+    /** Every folder a document has been filed under, for the folder chip row — same pattern as [folders] for notes. */
+    val documentFolders: StateFlow<List<String>> = documents
+        .map { docs -> docs.mapNotNull { it.folder().takeIf { f -> f.isNotBlank() } }.distinct().sorted() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val allLists: StateFlow<List<ArchiveList>> = lists.observeLists()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())

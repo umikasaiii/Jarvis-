@@ -135,6 +135,37 @@ class DocumentImportManager @Inject constructor(
     }
 
     /**
+     * Renames [id]'s display label (§ richiesta esplicita dell'utente: "vorrei
+     * poterlo rinominare... quello che si fa in un archivio classico"). The
+     * file on disk and [DocumentRecord.fileName] are untouched — only the
+     * name shown in Archivio changes, same as renaming a file's label rather
+     * than moving it.
+     */
+    fun rename(id: String, displayName: String) {
+        val name = displayName.trim()
+        if (name.isBlank()) return
+        scope.launch {
+            val existing = dao.findById(id)?.toRecord() ?: return@launch
+            persist(existing.copy(displayName = name, modifiedAt = System.currentTimeMillis()))
+        }
+    }
+
+    /**
+     * Files [id] under [folder] (or clears it back to the root with ""), the
+     * same "folder creation/organization" ask as above. Stored as a tag, the
+     * same pattern already used for the AI category ([DOCUMENT_CATEGORY_TAG])
+     * — no schema change, and it round-trips through the existing tags column.
+     */
+    fun moveToFolder(id: String, folder: String) {
+        scope.launch {
+            val existing = dao.findById(id)?.toRecord() ?: return@launch
+            val next = existing.tags.filterNot { it.startsWith(DOCUMENT_FOLDER_TAG) } +
+                listOfNotNull(folder.trim().takeIf { it.isNotBlank() }?.let { "$DOCUMENT_FOLDER_TAG$it" })
+            persist(existing.copy(tags = next, modifiedAt = System.currentTimeMillis()))
+        }
+    }
+
+    /**
      * The app-private on-disk copy of [record] — where [copyToPrivate] wrote
      * it. Used by "Archivio locale" (§ richiesta esplicita dell'utente) to
      * open/share a file outside JARVIS via [androidx.core.content.FileProvider],
@@ -451,3 +482,10 @@ fun DocumentRecord.category(): String =
         ?.removePrefix(DOCUMENT_CATEGORY_TAG)
         ?.takeIf { it.isNotBlank() }
         ?: "Senza categoria"
+
+/** Tag prefix under which a document's user-created Archivio folder is stored. */
+const val DOCUMENT_FOLDER_TAG = "folder:"
+
+/** The user-chosen folder a document is filed under, or "" for the Documenti root. */
+fun DocumentRecord.folder(): String =
+    tags.firstOrNull { it.startsWith(DOCUMENT_FOLDER_TAG) }?.removePrefix(DOCUMENT_FOLDER_TAG) ?: ""
