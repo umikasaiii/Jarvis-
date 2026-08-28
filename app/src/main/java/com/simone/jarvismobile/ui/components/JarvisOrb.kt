@@ -31,6 +31,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.simone.jarvismobile.R
+import com.simone.jarvismobile.ui.theme.JarvisThemeId
+import com.simone.jarvismobile.ui.theme.LocalJarvisThemeId
 
 /**
  * What the orb is doing. It mirrors the real assistant state — the animation is
@@ -78,6 +80,12 @@ fun JarvisOrb(
     size: Dp = 210.dp,
 ) {
     val look = lookFor(state)
+    // Rouge (§ Impostazioni › Temi) swaps in real reference art for the orb
+    // itself instead of tinting the default blue/white one — the original has
+    // a rich white-hot core/blue-rim gradient a flat SrcIn tint would flatten
+    // into a single colour, so Rosso deliberately leaves it untouched; Rouge's
+    // asset is real red-on-black art, no tint needed either way.
+    val orbRes = if (LocalJarvisThemeId.current == JarvisThemeId.ROUGE) R.drawable.rouge_orb else R.drawable.orb
     val transition = rememberInfiniteTransition(label = "orb")
 
     val glow by transition.animateFloat(
@@ -140,7 +148,7 @@ fun JarvisOrb(
 
         // --- the artwork itself -------------------------------------------
         Image(
-            painter = painterResource(R.drawable.orb),
+            painter = painterResource(orbRes),
             contentDescription = null,
             contentScale = ContentScale.Fit,
             modifier = Modifier

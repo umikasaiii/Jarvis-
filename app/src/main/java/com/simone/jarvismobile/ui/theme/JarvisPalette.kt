@@ -10,8 +10,15 @@ import androidx.compose.ui.graphics.Color
  * theme switch never breaks what a colour means, only the brand accent itself.
  */
 enum class JarvisThemeId(val storageId: String, val label: String) {
-    BLU("blu", "Predefinito (Blu)"),
+    /** The original look, unchanged. Storage id kept as "blu" for compatibility
+     *  with whatever a user already had saved before this option existed. */
+    BLU("blu", "Classico"),
+    /** Every HUD surface recoloured to red via [androidx.compose.ui.graphics.ColorFilter.tint]. */
     ROSSO("rosso", "Rosso"),
+    /** Like [ROSSO], but the card frame, orb and dashboard background are real
+     *  art from the user's own reference images instead of a tinted recolour —
+     *  see [com.simone.jarvismobile.ui.components.JarvisCard], [com.simone.jarvismobile.ui.components.JarvisOrb]. */
+    ROUGE("rouge", "Rouge"),
     ;
 
     companion object {
@@ -49,7 +56,10 @@ private val RossoPalette = JarvisPalette(
 
 fun paletteFor(id: JarvisThemeId): JarvisPalette = when (id) {
     JarvisThemeId.BLU -> BluPalette
-    JarvisThemeId.ROSSO -> RossoPalette
+    // Both red themes share the exact same measured accent — it was sampled
+    // from this same reference pack in the first place, so there is no second
+    // colour to invent; only the chrome art differs (see JarvisThemeId.ROUGE).
+    JarvisThemeId.ROSSO, JarvisThemeId.ROUGE -> RossoPalette
 }
 
 /** Bound at the app root ([JarvisTheme]); every HUD-styled screen reads from here. */

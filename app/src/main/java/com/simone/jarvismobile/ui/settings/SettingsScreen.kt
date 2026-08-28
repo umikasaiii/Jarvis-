@@ -175,8 +175,10 @@ fun SettingsScreen(
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Tema grafico", style = MaterialTheme.typography.titleMedium)
                 Text(
-                    "Cambia l'accento HUD di JARVIS — bordi, glow e icone attive. " +
-                        "Tutto il resto (verde/ambra/viola di stato) resta fisso.",
+                    "Classico è l'originale. Rosso ricolora bordi, glow e icone " +
+                        "attive in rosso. Rouge fa lo stesso ma con l'orb, lo " +
+                        "sfondo e le card sostituiti da grafica vera, non solo " +
+                        "ricolorata. Il resto (verde/ambra/viola di stato) resta fisso.",
                     style = MaterialTheme.typography.bodySmall,
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

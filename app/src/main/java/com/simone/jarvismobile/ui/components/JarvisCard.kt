@@ -38,19 +38,22 @@ fun JarvisCard(
 ) {
     // The artwork is a near-monochrome blue glow (hue barely varies; the shape
     // comes from alpha). On the default theme it is left completely untouched —
-    // pixel-identical to before this existed. On another theme (§ Impostazioni ›
-    // Temi) it is recoloured with a straight SrcIn tint: since the source is
-    // already essentially a coloured mask, replacing its hue while keeping its
-    // alpha reproduces the same glow shape in the new accent, no new art needed.
+    // pixel-identical to before this existed. On Rosso it is recoloured with a
+    // straight SrcIn tint: since the source is already essentially a coloured
+    // mask, replacing its hue while keeping its alpha reproduces the same glow
+    // shape in the new accent, no new art needed. Rouge instead swaps in real
+    // reference art the user provided (a genuine panel, not a tinted approximation
+    // of the blue one) — it needs no tint, since it is already red.
     val themeId = LocalJarvisThemeId.current
-    val tint = if (themeId == JarvisThemeId.BLU) null else ColorFilter.tint(LocalJarvisPalette.current.accent)
+    val cardRes = if (themeId == JarvisThemeId.ROUGE) R.drawable.rouge_bg_card else R.drawable.bg_card
+    val tint = if (themeId == JarvisThemeId.ROSSO) ColorFilter.tint(LocalJarvisPalette.current.accent) else null
     Box(modifier) {
         // The frame is the supplied artwork. Its interior is transparent, so no
         // panel sits behind the card — that faint slab was the "sfondo dietro".
         // It is also downscaled to phone size: blitting a 1452px bitmap into a
         // small card is what made the blocks go soft mid-fling.
         Image(
-            painter = painterResource(R.drawable.bg_card),
+            painter = painterResource(cardRes),
             contentDescription = null,
             modifier = Modifier.matchParentSize(),
             contentScale = ContentScale.FillBounds,

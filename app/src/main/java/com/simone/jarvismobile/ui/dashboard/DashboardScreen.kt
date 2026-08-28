@@ -259,10 +259,21 @@ fun DashboardScreen(
     }
 
     val accent = accentFor(state, Cyan)
+    // Rouge (§ Impostazioni › Temi) uses a real reference background instead of
+    // the default blue one — unlike the card frame/HUD edges, this image is
+    // fully opaque, so a flat SrcIn tint (as Rosso applies elsewhere) would
+    // flatten its whole gradient into one solid colour; Rosso therefore leaves
+    // it untouched, and only Rouge — which has real red art for this role —
+    // actually changes it.
+    val dashboardBgRes = if (LocalJarvisThemeId.current == JarvisThemeId.ROUGE) {
+        R.drawable.rouge_bg_dashboard
+    } else {
+        R.drawable.bg_dashboard
+    }
 
     Box(modifier = Modifier.fillMaxSize().background(Color(0xFF02060B))) {
         Image(
-            painter = painterResource(R.drawable.bg_dashboard),
+            painter = painterResource(dashboardBgRes),
             contentDescription = null,
             modifier = Modifier.matchParentSize(),
             contentScale = ContentScale.Crop,
