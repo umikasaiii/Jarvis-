@@ -101,9 +101,12 @@ class ArchiveViewModel @Inject constructor(
      * uses, so an imported file is indexed/searchable the same way, not a
      * second copy mechanism. Never saved to the Obsidian vault by default
      * (matches the chat's plain attachment, not the "save to vault" option).
+     * [folder] files every import straight into that folder — used when the
+     * user is already browsing one, so "+" while inside "Lavoro" lands there
+     * instead of the Documenti root.
      */
-    fun importFromPhone(uris: List<Uri>) {
-        uris.forEach { documentManager.import(it, saveToVault = false) }
+    fun importFromPhone(uris: List<Uri>, folder: String = "") {
+        uris.forEach { documentManager.import(it, saveToVault = false, folder = folder) }
     }
 
     /** Removes an imported file from Archivio entirely (the pipeline record, not just the UI row). */

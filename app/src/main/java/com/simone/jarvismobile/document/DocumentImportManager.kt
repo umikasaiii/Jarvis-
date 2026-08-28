@@ -92,17 +92,22 @@ class DocumentImportManager @Inject constructor(
     /**
      * Starts importing [uri]. [saveToVault] copies the file into the vault and
      * marks it a permanent [DocumentSource.VAULT_IMPORT]; otherwise it is a
-     * conversation-only attachment. Returns immediately — progress shows through
-     * [documents]. When [force] is false and the same bytes are already indexed,
-     * it raises a [duplicate] prompt instead of importing again.
+     * conversation-only attachment. [folder] files the document straight into
+     * an Archivio folder from the very first (draft) record — set once, before
+     * any suspending work, so there is no race against [moveToFolder] trying to
+     * update a row the import job hasn't written yet. Returns the generated id
+     * immediately — progress shows through [documents]. When [force] is false
+     * and the same bytes are already indexed, it raises a [duplicate] prompt
+     * instead of importing again.
      */
-    fun import(uri: Uri, saveToVault: Boolean, force: Boolean = false) {
+    fun import(uri: Uri, saveToVault: Boolean, force: Boolean = false, folder: String = ""): String {
         val id = UUID.randomUUID().toString()
         val job = scope.launch {
-            runImport(id, uri, saveToVault, force)
+            runImport(id, uri, saveToVault, force, folder)
         }
         jobs[id] = job
         job.invokeOnCompletion { jobs.remove(id) }
+        return id
     }
 
     /** Uses the already-indexed copy instead of importing the duplicate again. */
@@ -174,7 +179,7 @@ class DocumentImportManager @Inject constructor(
     fun localFile(record: DocumentRecord): java.io.File =
         java.io.File(java.io.File(context.filesDir, PRIVATE_DIR), record.fileName)
 
-    private suspend fun runImport(id: String, uri: Uri, saveToVault: Boolean, force: Boolean) {
+    private suspend fun runImport(id: String, uri: Uri, saveToVault: Boolean, force: Boolean, folder: String = "") {
         val meta = queryMeta(uri)
         val displayName = meta.first
         val declaredSize = meta.second
@@ -195,6 +200,7 @@ class DocumentImportManager @Inject constructor(
             parserVersion = DocumentTextExtractors.PARSER_VERSION,
             indexVersion = INDEX_VERSION,
             status = DocumentStatus.SELECTED,
+            tags = listOfNotNull(folder.trim().takeIf { it.isNotBlank() }?.let { "$DOCUMENT_FOLDER_TAG$it" }),
             source = if (saveToVault) DocumentSource.VAULT_IMPORT else DocumentSource.CHAT_ATTACHMENT,
         )
         persist(record)

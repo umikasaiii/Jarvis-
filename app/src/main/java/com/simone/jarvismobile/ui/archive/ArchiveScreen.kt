@@ -154,6 +154,7 @@ fun ArchiveScreen(
     var showNoteEditor by remember { mutableStateOf(false) }
     var editingNote by remember { mutableStateOf<ArchiveItem?>(null) }
     var showImportMenu by remember { mutableStateOf(false) }
+    var showNewDocFolder by remember { mutableStateOf(false) }
 
     val notes = items.filter { it.kind == ArchiveKind.NOTE }
     val watch = items.filter { it.kind == ArchiveKind.TO_WATCH }
@@ -162,13 +163,15 @@ fun ArchiveScreen(
     // "Importa dal telefono" (§ richiesta esplicita dell'utente) — the picker's
     // transient read grant is enough, same as the chat's own attach flow:
     // importFromPhone() reads the bytes immediately and copies them to
-    // app-private storage, no persistable permission needed.
+    // app-private storage, no persistable permission needed. Imports while a
+    // folder is the active filter land straight in it (§ "non ho capito...
+    // come creare le cartelle" — the same "+" now also offers "Nuova cartella").
     val documentPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments(),
-    ) { uris -> if (uris.isNotEmpty()) viewModel.importFromPhone(uris) }
+    ) { uris -> if (uris.isNotEmpty()) viewModel.importFromPhone(uris, selectedDocFolder.orEmpty()) }
     val photoPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments(),
-    ) { uris -> if (uris.isNotEmpty()) viewModel.importFromPhone(uris) }
+    ) { uris -> if (uris.isNotEmpty()) viewModel.importFromPhone(uris, selectedDocFolder.orEmpty()) }
 
     // Memoria is edited only in its own screen, so this view's copy can go
     // stale while the user is away — refresh whenever the folder is (re)opened.
@@ -333,18 +336,54 @@ fun ArchiveScreen(
     if (showImportMenu) {
         AlertDialog(
             onDismissRequest = { showImportMenu = false },
-            title = { Text("Importa dal telefono") },
-            text = { Text("Scegli cosa importare in «Documenti». Resta sul dispositivo, come ogni file allegato in chat.") },
-            confirmButton = {
-                TextButton(onClick = { showImportMenu = false; documentPicker.launch(ARCHIVE_DOCUMENT_MIME_TYPES) }) {
-                    Text("File")
+            title = { Text("Documenti") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        "Importa dal telefono, resta sul dispositivo come ogni file allegato in chat" +
+                            (selectedDocFolder?.let { " — in «$it»." } ?: "."),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Muted,
+                        modifier = Modifier.padding(bottom = 8.dp),
+                    )
+                    Text(
+                        "File",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { showImportMenu = false; documentPicker.launch(ARCHIVE_DOCUMENT_MIME_TYPES) }
+                            .padding(vertical = 10.dp),
+                    )
+                    Text(
+                        "Foto",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { showImportMenu = false; photoPicker.launch(arrayOf("image/*")) }
+                            .padding(vertical = 10.dp),
+                    )
+                    // § "non ho capito in documenti come creare le cartelle" — con
+                    // 0 file importati non esisteva alcun modo di crearne una: il
+                    // solo percorso era "sposta in cartella" sul menu di un file
+                    // già presente. Ora "Nuova cartella" è qui, accanto a File/Foto.
+                    Text(
+                        "Nuova cartella",
+                        color = Cyan,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { showImportMenu = false; showNewDocFolder = true }
+                            .padding(vertical = 10.dp),
+                    )
                 }
             },
-            dismissButton = {
-                TextButton(onClick = { showImportMenu = false; photoPicker.launch(arrayOf("image/*")) }) {
-                    Text("Foto")
-                }
-            },
+            confirmButton = { TextButton(onClick = { showImportMenu = false }) { Text("Chiudi") } },
+        )
+    }
+
+    if (showNewDocFolder) {
+        NameDialog(
+            title = "Nuova cartella",
+            label = "Nome (usa “/” per una sottocartella)",
+            onDismiss = { showNewDocFolder = false },
+            onConfirm = { name -> selectedDocFolder = name; showNewDocFolder = false },
         )
     }
 
