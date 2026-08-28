@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -481,7 +482,7 @@ private fun MemoryNoteEditorScreen(
             .imePadding(),
     ) {
         Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
+            Modifier.fillMaxSize().padding(horizontal = 20.dp),
         ) {
             Spacer(Modifier.size(16.dp))
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -528,7 +529,7 @@ private fun MemoryNoteEditorScreen(
             OutlinedTextField(
                 value = field,
                 onValueChange = { field = it },
-                modifier = Modifier.fillMaxWidth().heightIn(min = 260.dp),
+                modifier = Modifier.fillMaxWidth().weight(1f),
                 placeholder = { Text("Scrivi qui…", color = MUTED) },
                 textStyle = MaterialTheme.typography.bodyLarge.copy(color = INK),
                 colors = OutlinedTextFieldDefaults.colors(
@@ -636,15 +637,22 @@ private fun CategorySelector(current: String, enabled: Boolean, onSelect: (Strin
     }
 }
 
+// A tight content padding — the default Button/OutlinedButton padding
+// (24.dp horizontal) left too little room for Italian words like
+// "Temporaneo"/"Permanente" inside a third-width pill, wrapping mid-word
+// (a real layout bug the user flagged from an on-device screenshot).
+private val KindButtonPadding = PaddingValues(horizontal = 4.dp, vertical = 10.dp)
+
 @Composable
 private fun KindSelector(selected: MemoryKind, onSelect: (MemoryKind) -> Unit, includeTemporary: Boolean) {
     val kinds = if (includeTemporary) MemoryKind.entries else listOf(MemoryKind.PERMANENT, MemoryKind.SENSITIVE)
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         kinds.forEach { kind ->
+            val label = @Composable { Text(kind.label(), maxLines = 1, fontSize = 12.sp, softWrap = false) }
             if (kind == selected) {
-                Button(onClick = { onSelect(kind) }, modifier = Modifier.weight(1f)) { Text(kind.label()) }
+                Button(onClick = { onSelect(kind) }, modifier = Modifier.weight(1f), contentPadding = KindButtonPadding) { label() }
             } else {
-                OutlinedButton(onClick = { onSelect(kind) }, modifier = Modifier.weight(1f)) { Text(kind.label()) }
+                OutlinedButton(onClick = { onSelect(kind) }, modifier = Modifier.weight(1f), contentPadding = KindButtonPadding) { label() }
             }
         }
     }
