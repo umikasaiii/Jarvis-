@@ -51,7 +51,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.simone.jarvismobile.R
 import com.simone.jarvismobile.ui.archive.ArchiveScreen
+import com.simone.jarvismobile.ui.components.ThemedIcon
 import com.simone.jarvismobile.ui.commands.CommandsScreen
 import com.simone.jarvismobile.ui.dashboard.DashboardScreen
 import com.simone.jarvismobile.ui.diagnostics.DiagnosticsScreen
@@ -71,12 +73,12 @@ import com.simone.jarvismobile.ui.agenda.AgendaScreen
 import com.simone.jarvismobile.ui.status.SystemStatusScreen
 import com.simone.jarvismobile.ui.theme.LocalJarvisPalette
 
-private enum class Tab(val label: String, val icon: ImageVector) {
+private enum class Tab(val label: String, val icon: ImageVector, val rougeIcon: Int? = null) {
     HOME("Home", Icons.Filled.Home),
     CHAT("Chat", Icons.AutoMirrored.Filled.Chat),
     COMANDI("Comandi", Icons.Filled.Apps),
-    NOTIFICHE("Attività", Icons.Filled.CheckCircle),
-    IMPOSTAZIONI("Impostazioni", Icons.Filled.Settings),
+    NOTIFICHE("Attività", Icons.Filled.CheckCircle, R.drawable.rouge_ic_tasks),
+    IMPOSTAZIONI("Impostazioni", Icons.Filled.Settings, R.drawable.rouge_ic_settings),
 }
 
 private enum class Overlay {
@@ -186,8 +188,14 @@ fun JarvisApp(
                                     }
                                     .padding(vertical = 4.dp),
                             ) {
-                                Icon(
+                                ThemedIcon(
                                     entry.icon,
+                                    // Real Rouge art only for the active tab: it is
+                                    // already fully-coloured and has no muted/grey
+                                    // form the way the plain vector icon does, so
+                                    // showing it while inactive would break the
+                                    // active/inactive contrast the bar relies on.
+                                    rouge = entry.rougeIcon.takeIf { active },
                                     contentDescription = entry.label,
                                     tint = tint,
                                     modifier = Modifier.size(22.dp),

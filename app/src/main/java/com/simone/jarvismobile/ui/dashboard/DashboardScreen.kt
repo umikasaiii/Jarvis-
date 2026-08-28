@@ -113,6 +113,7 @@ import com.simone.jarvismobile.ui.components.HudOverlay
 import com.simone.jarvismobile.ui.components.JarvisCard
 import com.simone.jarvismobile.ui.components.JarvisOrb
 import com.simone.jarvismobile.ui.components.OrbState
+import com.simone.jarvismobile.ui.components.ThemedIcon
 import com.simone.jarvismobile.ui.theme.JarvisThemeId
 import com.simone.jarvismobile.ui.theme.LocalJarvisPalette
 import com.simone.jarvismobile.ui.theme.LocalJarvisThemeId
@@ -383,6 +384,7 @@ fun DashboardScreen(
                     accent = Cyan,
                     onClick = onOpenAgenda,
                     modifier = Modifier.weight(2f),
+                    rougeIcon = R.drawable.rouge_ic_agenda,
                 )
                 StatTile(
                     icon = Icons.Filled.Memory,
@@ -411,6 +413,7 @@ fun DashboardScreen(
                     accent = if (llmGenerating) Amber else Green,
                     onClick = onOpenSystemStatus,
                     modifier = Modifier.weight(1f),
+                    rougeIcon = R.drawable.rouge_ic_system,
                 )
                 StatTile(
                     icon = Icons.Filled.Book,
@@ -421,6 +424,7 @@ fun DashboardScreen(
                     accent = Violet,
                     onClick = onOpenMemory,
                     modifier = Modifier.weight(1f),
+                    rougeIcon = R.drawable.rouge_ic_memory,
                 )
             }
 
@@ -441,6 +445,7 @@ fun DashboardScreen(
                     accent = Amber,
                     onClick = onOpenAutomations,
                     modifier = Modifier.weight(1f),
+                    rougeIcon = R.drawable.rouge_ic_automations,
                 )
             }
 
@@ -476,6 +481,7 @@ fun DashboardScreen(
                     accent = Rose,
                     onClick = { context.startActivity(DrivingModeActivity.intent(context)) },
                     modifier = Modifier.weight(1f),
+                    rougeIcon = R.drawable.rouge_ic_drive,
                 )
             }
 
@@ -499,6 +505,7 @@ fun DashboardScreen(
                     accent = Cyan,
                     onClick = onOpenTranslator,
                     modifier = Modifier.weight(1f),
+                    rougeIcon = R.drawable.rouge_ic_translate,
                 )
             }
 
@@ -516,7 +523,7 @@ fun DashboardScreen(
                     ToggleRow(Icons.Filled.Security, "Sicurezza", "Inserito", on = true)
                 }
                 GlassCard(Modifier.weight(1f)) {
-                    CardHeader(Icons.Filled.Memory, "SISTEMA", reserveEnd = false)
+                    CardHeader(Icons.Filled.Memory, "SISTEMA", reserveEnd = false, rougeIcon = R.drawable.rouge_ic_system)
                     val aiOnline = loadState == LlmLoadState.LOADED
                     SystemRow(
                         Icons.Filled.SmartToy, "AI",
@@ -682,10 +689,11 @@ private fun StatTile(
     accent: Color,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    rougeIcon: Int? = null,
 ) {
     JarvisCard(modifier = modifier.clickable(onClick = onClick), contentPadding = 10.dp) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, null, tint = accent, modifier = Modifier.size(13.dp))
+            ThemedIcon(icon, rougeIcon, tint = accent, modifier = Modifier.size(13.dp))
             Spacer(Modifier.width(4.dp))
             Text(
                 label,
@@ -731,12 +739,12 @@ private fun MiniCard(modifier: Modifier = Modifier, content: @Composable android
 }
 
 @Composable
-private fun CardHeader(icon: ImageVector, title: String, reserveEnd: Boolean = true) {
+private fun CardHeader(icon: ImageVector, title: String, reserveEnd: Boolean = true, rougeIcon: Int? = null) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(end = if (reserveEnd) 30.dp else 0.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, null, tint = Cyan, modifier = Modifier.size(16.dp))
+        ThemedIcon(icon, rougeIcon, tint = Cyan, modifier = Modifier.size(16.dp))
         Spacer(Modifier.width(6.dp))
         Text(
             title,
@@ -799,7 +807,7 @@ private fun AgendaBlock(
     val weekEnd = weekStart.plusDays(6)
 
     GlassCard {
-        CardHeader(Icons.Filled.CalendarMonth, "AGENDA", reserveEnd = false)
+        CardHeader(Icons.Filled.CalendarMonth, "AGENDA", reserveEnd = false, rougeIcon = R.drawable.rouge_ic_agenda)
 
         // Week navigator: ‹  10 – 16 agosto  ›
         Row(
