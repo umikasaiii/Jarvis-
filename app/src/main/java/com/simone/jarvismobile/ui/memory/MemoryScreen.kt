@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
@@ -28,14 +29,13 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -47,6 +47,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -66,6 +67,10 @@ import java.util.Locale
 
 private const val UNCATEGORIZED = "Senza categoria"
 private val MUTED = Color(0xFF7C8B95)
+private val INK = Color(0xFFE3EFF5)
+// The brand accent (§ Impostazioni › Temi) — same convention as Agenda/Archivio.
+private val Cyan: Color
+    @Composable get() = LocalJarvisPalette.current.accent
 
 /**
  * Memoria, laid out like a phone notes app: a title, colour-tagged note tiles in
@@ -93,18 +98,16 @@ fun MemoryScreen(
         ActivityResultContracts.OpenDocumentTree(),
     ) { uri -> uri?.let(viewModel::onVaultPicked) }
 
-    Scaffold(
-        floatingActionButton = {
-            FloatingActionButton(onClick = { showAdd = true }) {
-                Text("+", style = MaterialTheme.typography.headlineMedium)
-            }
-        },
-    ) { inner ->
+    val accent = Cyan
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Brush.verticalGradient(listOf(Color(0xFF050C16), Color(0xFF081420), Color(0xFF03080E)))),
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(inner)
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
@@ -116,7 +119,7 @@ fun MemoryScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text("Memoria", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                    Text("Memoria", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = accent)
                     Text(
                         "${records.size} ricordi · tutto sul dispositivo",
                         style = MaterialTheme.typography.bodySmall,
@@ -124,28 +127,38 @@ fun MemoryScreen(
                     )
                 }
                 IconButton(onClick = { showOptions = true }) {
-                    Icon(Icons.Filled.MoreVert, contentDescription = "Altre opzioni")
+                    Icon(Icons.Filled.MoreVert, contentDescription = "Altre opzioni", tint = INK)
                 }
             }
 
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
-                placeholder = { Text("Cerca nei ricordi…") },
-                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                placeholder = { Text("Cerca nei ricordi…", color = MUTED) },
+                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = MUTED) },
                 trailingIcon = {
                     if (query.isNotEmpty()) {
                         IconButton(onClick = { query = "" }) {
-                            Icon(Icons.Filled.Close, contentDescription = "Cancella ricerca")
+                            Icon(Icons.Filled.Close, contentDescription = "Cancella ricerca", tint = MUTED)
                         }
                     }
                 },
                 singleLine = true,
                 shape = RoundedCornerShape(16.dp),
+                textStyle = MaterialTheme.typography.bodyMedium.copy(color = INK),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = accent.copy(alpha = 0.7f),
+                    unfocusedBorderColor = MUTED.copy(alpha = 0.4f),
+                    focusedContainerColor = Color(0x330A1826),
+                    unfocusedContainerColor = Color(0x330A1826),
+                    cursorColor = accent,
+                    focusedTextColor = INK,
+                    unfocusedTextColor = INK,
+                ),
                 modifier = Modifier.fillMaxWidth(),
             )
 
-            message?.let { Text(it, color = LocalJarvisPalette.current.accent, fontWeight = FontWeight.Medium) }
+            message?.let { Text(it, color = accent, fontWeight = FontWeight.Medium) }
             status.lastError?.let { Text("Errore: $it", color = MaterialTheme.colorScheme.error) }
 
             if (records.any { it.category.isBlank() }) {
@@ -196,8 +209,20 @@ fun MemoryScreen(
                 style = MaterialTheme.typography.bodySmall,
                 color = MUTED,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().padding(bottom = 88.dp), // clears the floating "+" below
             )
+        }
+
+        IconButton(
+            onClick = { showAdd = true },
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(20.dp)
+                .size(58.dp)
+                .clip(CircleShape)
+                .background(accent),
+        ) {
+            Icon(Icons.Filled.Add, contentDescription = "Nuovo ricordo", tint = Color(0xFF04121A))
         }
     }
 
@@ -352,7 +377,7 @@ private fun CategoryHeader(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Box(Modifier.size(10.dp).clip(CircleShape).background(accent))
-        Text(name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Text(name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = INK)
         if (count > 0) Text("$count", style = MaterialTheme.typography.labelMedium, color = MUTED)
         Spacer(Modifier.weight(1f))
         Text(if (expanded) "▾" else "▸", style = MaterialTheme.typography.titleMedium, color = MUTED)
@@ -395,6 +420,7 @@ private fun NoteTile(record: MemoryRecord, enabled: Boolean, onOpen: (MemoryReco
             Text(
                 record.text.trim() + if (record.kind == MemoryKind.SENSITIVE) "  🔒" else "",
                 style = MaterialTheme.typography.bodyMedium,
+                color = INK,
                 fontWeight = FontWeight.Medium,
                 maxLines = 6,
                 overflow = TextOverflow.Ellipsis,

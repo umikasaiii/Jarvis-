@@ -1,12 +1,14 @@
 package com.simone.jarvismobile.ui.archive
 
+import android.content.ActivityNotFoundException
+import android.content.Context
+import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -25,9 +27,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.EditNote
+import androidx.compose.material.icons.filled.List as ListIcon
+import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
@@ -39,6 +47,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,8 +57,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -61,6 +73,9 @@ import com.simone.jarvismobile.core.archive.ArchiveList
 import com.simone.jarvismobile.core.archive.ArchiveListItem
 import com.simone.jarvismobile.core.archive.ArchiveStatus
 import com.simone.jarvismobile.core.archive.ListItemStatus
+import com.simone.jarvismobile.core.document.DocumentRecord
+import com.simone.jarvismobile.core.memory.MemoryCategories
+import com.simone.jarvismobile.core.memory.MemoryRecord
 import com.simone.jarvismobile.ui.theme.LocalJarvisPalette
 import java.time.Instant
 import java.time.LocalDate
@@ -78,23 +93,30 @@ private val Muted = Color(0xFF7C8B95)
 private val Gold = Color(0xFFF3C34C)
 private val CardBg = Color(0x660A1826)
 
-private enum class ArchiveTab(val label: String) {
-    ALL("Tutto"), NOTES("Appunti"), LISTS("Liste"), TODO("TODO"), WATCH("Da vedere"), DOCUMENTS("Documenti"),
+/**
+ * The root "folders" Archivio browses — a real file-manager shape (§ richiesta
+ * esplicita dell'utente, riferimento screenshot dell'app "File" del telefono),
+ * not a tab bar. Each is a thin view over a store that already exists
+ * elsewhere in the app; none of them is a second copy of that data.
+ */
+private enum class ArchiveFolder(val label: String, val icon: ImageVector) {
+    DOCUMENTS("Documenti", Icons.Filled.Description),
+    NOTES("Note", Icons.Filled.EditNote),
+    LISTS("Liste", Icons.Filled.ListIcon),
+    WATCH("Da vedere", Icons.Filled.Visibility),
+    MEMORY("Memoria", Icons.Filled.Memory),
+    TODO("TODO", Icons.Filled.CheckCircle),
 }
 
 /**
- * "Archivio" (spec §2): the Personal Archive's own home screen — Appunti,
- * Liste (spesa + personalizzate), TODO, Da vedere, Documenti/Foto, and a
- * merged "Tutto" view. TODO and Documenti/Foto are deliberately quick-links
- * into the existing, already-complete Attività ([com.simone.jarvismobile.ui.agenda.AgendaScreen])
- * and Archivio documenti ([com.simone.jarvismobile.ui.documents.DocumentArchiveScreen])
- * screens rather than a second implementation of either — see docs/PERSONAL_ARCHIVE.md.
- *
- * Appunti (§ richiesta esplicita dell'utente, riferimento l'app Note del
- * telefono) works like a real notes app now: a folder chip row, an "In primo
- * piano" section for pinned notes, chronological month grouping below, and a
- * full-screen editor instead of a small dialog — all in JARVIS's own visual
- * language, not a copy of the reference app's branding.
+ * "Archivio" (spec §2/§4): a file-manager-shaped browser over everything
+ * JARVIS already stores — imported files/photos ([DocumentRecord], including
+ * ones attached straight from the chat), personal notes/lists/da-vedere
+ * ([ArchiveItem]), and Memoria's records ([MemoryRecord], read-only here —
+ * editing one still only happens in the Memoria screen). Root shows folders;
+ * tapping one drills in with a breadcrumb back to root, mirroring the
+ * reference file-manager app rather than a tab bar. TODO stays a pure
+ * redirect into the already-complete Attività screen — no second task list.
  */
 @Composable
 fun ArchiveScreen(
@@ -104,26 +126,33 @@ fun ArchiveScreen(
     viewModel: ArchiveViewModel = hiltViewModel(),
 ) {
     val items by viewModel.items.collectAsStateWithLifecycle()
-    val allRows by viewModel.allRows.collectAsStateWithLifecycle()
+    val documents by viewModel.filteredDocuments.collectAsStateWithLifecycle()
+    val memoryRecords by viewModel.filteredMemory.collectAsStateWithLifecycle()
     val customLists by viewModel.customLists.collectAsStateWithLifecycle()
     val shoppingItems by viewModel.shoppingItems.collectAsStateWithLifecycle()
     val listItems by viewModel.listItems.collectAsStateWithLifecycle()
     val query by viewModel.searchQuery.collectAsStateWithLifecycle()
     val folders by viewModel.folders.collectAsStateWithLifecycle()
 
-    var tab by remember { mutableStateOf(ArchiveTab.ALL) }
-    var showAdd by remember { mutableStateOf(false) } // TO_WATCH only now — notes get the full-screen editor
+    var openFolder by remember { mutableStateOf<ArchiveFolder?>(null) }
+    var showAdd by remember { mutableStateOf(false) } // TO_WATCH only — notes get the full-screen editor
     var showNewList by remember { mutableStateOf(false) }
     var showNewShoppingItem by remember { mutableStateOf(false) }
     var openList by remember { mutableStateOf<ArchiveList?>(null) }
-    var selectedFolder by remember { mutableStateOf<String?>(null) } // null = "Tutte"
+    var selectedNoteFolder by remember { mutableStateOf<String?>(null) } // null = "Tutte"
 
-    // Note editor: null+false = closed, null+true = new note, non-null = editing it.
     var showNoteEditor by remember { mutableStateOf(false) }
     var editingNote by remember { mutableStateOf<ArchiveItem?>(null) }
 
     val notes = items.filter { it.kind == ArchiveKind.NOTE }
     val watch = items.filter { it.kind == ArchiveKind.TO_WATCH }
+    val context = LocalContext.current
+
+    // Memoria is edited only in its own screen, so this view's copy can go
+    // stale while the user is away — refresh whenever the folder is (re)opened.
+    LaunchedEffect(openFolder) {
+        if (openFolder == ArchiveFolder.MEMORY) viewModel.refreshMemory()
+    }
 
     Box(
         Modifier
@@ -133,63 +162,72 @@ fun ArchiveScreen(
         Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
             Spacer(Modifier.size(16.dp))
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBack) {
+                IconButton(onClick = {
+                    if (openFolder == null) onBack() else { openFolder = null; viewModel.setQuery("") }
+                }) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Indietro", tint = Ink)
                 }
-                Text("Archivio", style = MaterialTheme.typography.headlineSmall, color = Cyan)
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 10.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                ArchiveTab.entries.forEach { entry ->
-                    val active = tab == entry
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = entry.label,
-                        color = if (active) Color(0xFF04121A) else Ink,
-                        fontSize = 13.sp,
-                        fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(if (active) Cyan else Color(0x330A1826))
-                            .clickable { tab = entry }
-                            .padding(horizontal = 14.dp, vertical = 7.dp),
+                        "Archivio",
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = if (openFolder == null) Cyan else Muted,
+                        modifier = if (openFolder != null) Modifier.clickable { openFolder = null; viewModel.setQuery("") } else Modifier,
                     )
+                    openFolder?.let {
+                        Text(" ›  ", color = Muted, style = MaterialTheme.typography.headlineSmall)
+                        Text(it.label, color = Cyan, style = MaterialTheme.typography.headlineSmall)
+                    }
                 }
             }
 
-            if (tab == ArchiveTab.ALL || tab == ArchiveTab.NOTES || tab == ArchiveTab.WATCH) {
+            if (openFolder != null) {
                 OutlinedTextField(
                     value = query,
                     onValueChange = viewModel::setQuery,
-                    placeholder = { Text("Cerca", color = Muted) },
+                    placeholder = { Text("Cerca in «${openFolder!!.label}»", color = Muted) },
                     singleLine = true,
                     textStyle = MaterialTheme.typography.bodyMedium.copy(color = Ink),
                     colors = jarvisFieldColors(),
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 8.dp),
                 )
             }
 
-            when (tab) {
-                ArchiveTab.ALL -> AllTab(allRows)
-                ArchiveTab.NOTES -> NotesTab(
+            when (openFolder) {
+                null -> FolderRoot(
+                    documentsCount = documents.size,
+                    documentsUpdated = documents.maxOfOrNull { it.importedAt },
+                    notesCount = notes.size,
+                    notesUpdated = notes.maxOfOrNull { it.updatedAt },
+                    listsCount = customLists.size,
+                    watchCount = watch.size,
+                    watchUpdated = watch.maxOfOrNull { it.updatedAt },
+                    memoryCount = memoryRecords.size,
+                    memoryUpdated = memoryRecords.maxOfOrNull { it.updatedAt },
+                    onOpen = { openFolder = it },
+                )
+                ArchiveFolder.DOCUMENTS -> DocumentsFolder(
+                    documents = documents,
+                    onOpen = { doc -> openDocument(context, viewModel, doc) },
+                    onShare = { doc -> shareDocument(context, viewModel, doc) },
+                )
+                ArchiveFolder.NOTES -> NotesTab(
                     notes = notes,
                     folders = folders,
-                    selectedFolder = selectedFolder,
-                    onSelectFolder = { selectedFolder = it },
+                    selectedFolder = selectedNoteFolder,
+                    onSelectFolder = { selectedNoteFolder = it },
                     onOpen = { editingNote = it; showNoteEditor = true },
                     onTogglePin = viewModel::togglePinned,
                     onDelete = viewModel::delete,
                 )
-                ArchiveTab.WATCH -> ItemsTab(
+                ArchiveFolder.WATCH -> ItemsTab(
                     items = watch,
                     emptyText = "Nessun elemento nella lista da vedere.",
                     onClick = {},
                     onToggle = { viewModel.toggleWatched(it) },
                     onDelete = { viewModel.delete(it) },
                 )
-                ArchiveTab.LISTS -> ListsTab(
+                ArchiveFolder.LISTS -> ListsTab(
                     shoppingItems = shoppingItems,
                     customLists = customLists,
                     onAddShoppingItem = { showNewShoppingItem = true },
@@ -197,26 +235,21 @@ fun ArchiveScreen(
                     onDeleteShoppingItem = { viewModel.deleteListItem("spesa", it) },
                     onOpenList = { openList = it },
                 )
-                ArchiveTab.TODO -> RedirectTab(
+                ArchiveFolder.MEMORY -> MemoryFolder(records = memoryRecords)
+                ArchiveFolder.TODO -> RedirectTab(
                     icon = Icons.Filled.CheckCircle,
                     text = "Le attività (TODO) vivono nella schermata Attività, con liste, priorità e sotto-attività.",
                     buttonLabel = "Apri Attività",
                     onClick = onOpenTasks,
                 )
-                ArchiveTab.DOCUMENTS -> RedirectTab(
-                    icon = Icons.Filled.Description,
-                    text = "Documenti e foto personali (PDF, immagini con OCR) vivono nell'Archivio documenti.",
-                    buttonLabel = "Apri Documenti",
-                    onClick = onOpenDocuments,
-                )
             }
         }
 
-        // Floating "+", same shape/placement as Attività's — only where "add" means one obvious thing.
-        val fabAction: (() -> Unit)? = when (tab) {
-            ArchiveTab.NOTES -> { { editingNote = null; showNoteEditor = true } }
-            ArchiveTab.WATCH -> { { showAdd = true } }
-            ArchiveTab.LISTS -> { { showNewList = true } }
+        // Floating "+", only where "add" means one obvious thing.
+        val fabAction: (() -> Unit)? = when (openFolder) {
+            ArchiveFolder.NOTES -> { { editingNote = null; showNoteEditor = true } }
+            ArchiveFolder.WATCH -> { { showAdd = true } }
+            ArchiveFolder.LISTS -> { { showNewList = true } }
             else -> null
         }
         if (fabAction != null) {
@@ -300,35 +333,187 @@ private fun jarvisFieldColors() = OutlinedTextFieldDefaults.colors(
     unfocusedTextColor = Ink,
 )
 
+// --- root folder list --------------------------------------------------
+
 @Composable
-private fun AllTab(rows: List<ArchiveAllRow>) {
-    if (rows.isEmpty()) {
-        Text("L'archivio è vuoto.", color = Muted, modifier = Modifier.padding(24.dp), style = MaterialTheme.typography.bodyMedium)
+private fun FolderRoot(
+    documentsCount: Int,
+    documentsUpdated: Long?,
+    notesCount: Int,
+    notesUpdated: Long?,
+    listsCount: Int,
+    watchCount: Int,
+    watchUpdated: Long?,
+    memoryCount: Int,
+    memoryUpdated: Long?,
+    onOpen: (ArchiveFolder) -> Unit,
+) {
+    LazyColumn(contentPadding = PaddingValues(top = 4.dp, bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        item {
+            FolderRow(ArchiveFolder.DOCUMENTS, folderMeta(documentsUpdated, documentsCount, "file"), onOpen)
+        }
+        item {
+            FolderRow(ArchiveFolder.NOTES, folderMeta(notesUpdated, notesCount, "note"), onOpen)
+        }
+        item {
+            FolderRow(ArchiveFolder.LISTS, "$listsCount liste personalizzate", onOpen)
+        }
+        item {
+            FolderRow(ArchiveFolder.WATCH, folderMeta(watchUpdated, watchCount, "elementi"), onOpen)
+        }
+        item {
+            FolderRow(ArchiveFolder.MEMORY, folderMeta(memoryUpdated, memoryCount, "ricordi"), onOpen)
+        }
+        item {
+            FolderRow(ArchiveFolder.TODO, "Apri Attività", onOpen)
+        }
+    }
+}
+
+@Composable
+private fun FolderRow(folder: ArchiveFolder, meta: String, onOpen: (ArchiveFolder) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(CardBg)
+            .clickable { onOpen(folder) }
+            .padding(horizontal = 14.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(folder.icon, contentDescription = null, tint = Cyan, modifier = Modifier.size(26.dp))
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(folder.label, color = Ink, style = MaterialTheme.typography.titleMedium)
+            Text(meta, color = Muted, fontSize = 12.sp)
+        }
+        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = Muted)
+    }
+}
+
+private fun folderMeta(lastUpdatedMs: Long?, count: Int, noun: String): String {
+    val date = lastUpdatedMs?.takeIf { it > 0 }?.let { monthDayLabel(it) }
+    return if (date != null) "aggiornato $date · $count $noun" else "$count $noun"
+}
+
+private fun monthDayLabel(epochMillis: Long): String {
+    val d = Instant.ofEpochMilli(epochMillis).atZone(ZoneId.systemDefault()).toLocalDate()
+    val month = d.month.getDisplayName(TextStyle.SHORT, Locale.ITALIAN)
+    return "${d.dayOfMonth} $month"
+}
+
+// --- Documenti folder --------------------------------------------------
+
+@Composable
+private fun DocumentsFolder(documents: List<DocumentRecord>, onOpen: (DocumentRecord) -> Unit, onShare: (DocumentRecord) -> Unit) {
+    if (documents.isEmpty()) {
+        Text(
+            "Ancora vuoto. I file allegati o importati in chat compaiono qui.",
+            color = Muted,
+            modifier = Modifier.padding(24.dp),
+            style = MaterialTheme.typography.bodyMedium,
+        )
         return
     }
-    LazyColumn(contentPadding = PaddingValues(bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        items(rows, key = { row -> when (row) { is ArchiveAllRow.Note -> "n:" + row.item.id; is ArchiveAllRow.ListEntry -> "l:" + row.item.id } }) { row ->
-            when (row) {
-                is ArchiveAllRow.Note -> DarkRow {
-                    Text(row.item.title, style = MaterialTheme.typography.titleMedium, color = Ink)
-                    val subtitle = if (row.item.kind == ArchiveKind.NOTE) row.item.content else "Da vedere · ${row.item.watchType}"
-                    if (subtitle.isNotBlank()) Text(subtitle, style = MaterialTheme.typography.bodySmall, color = Muted, maxLines = 2)
+    LazyColumn(contentPadding = PaddingValues(bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        items(documents, key = { it.id }) { doc ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(CardBg)
+                    .clickable { onOpen(doc) }
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(glyph(doc), fontSize = 20.sp)
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(doc.displayName, color = Ink, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
+                    val size = if (doc.fileSize > 0) "${doc.fileSize / 1024} KB" else ""
+                    Text(size, color = Muted, fontSize = 11.sp)
                 }
-                is ArchiveAllRow.ListEntry -> DarkRow {
-                    Text(row.item.title, style = MaterialTheme.typography.titleMedium, color = Ink)
-                    Text("Lista: ${row.listName}", style = MaterialTheme.typography.bodySmall, color = Muted)
+                IconButton(onClick = { onShare(doc) }) {
+                    Icon(Icons.Filled.Share, contentDescription = "Condividi", tint = Cyan, modifier = Modifier.size(18.dp))
                 }
             }
         }
     }
 }
 
+private fun glyph(doc: DocumentRecord): String =
+    when (doc.fileName.substringAfterLast('.', "").lowercase()) {
+        "pdf" -> "📕"
+        "doc", "docx" -> "📘"
+        "csv", "tsv", "xlsx" -> "📊"
+        "json" -> "🗂️"
+        "md", "markdown" -> "📝"
+        "epub" -> "📚"
+        "png", "jpg", "jpeg", "webp" -> "🖼️"
+        else -> "📄"
+    }
+
+/** Opens the file in whatever app the device offers for its type — a viewer, a photo app, etc. */
+private fun openDocument(context: Context, viewModel: ArchiveViewModel, doc: DocumentRecord) {
+    val uri = viewModel.shareUri(doc) ?: return
+    val intent = Intent(Intent.ACTION_VIEW).apply {
+        setDataAndType(uri, doc.mimeType)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    runCatching { context.startActivity(intent) }
+        .onFailure { if (it is ActivityNotFoundException) shareDocument(context, viewModel, doc) }
+}
+
+/** "Condividi" — the standard Android share sheet, which also covers "save a copy" via Files/Drive-style targets. */
+private fun shareDocument(context: Context, viewModel: ArchiveViewModel, doc: DocumentRecord) {
+    val uri = viewModel.shareUri(doc) ?: return
+    val intent = Intent(Intent.ACTION_SEND).apply {
+        type = doc.mimeType
+        putExtra(Intent.EXTRA_STREAM, uri)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    runCatching { context.startActivity(Intent.createChooser(intent, "Condividi ${doc.displayName}")) }
+}
+
+// --- Memoria folder (read-only) -----------------------------------------
+
+/**
+ * Memoria's records grouped by category, read-only — editing stays in the
+ * Memoria screen itself (no third editor for the same store). Reuses
+ * [MemoryCategories] so the grouping matches exactly what Memoria itself
+ * shows, never a second classification scheme.
+ */
 @Composable
-private fun DarkRow(content: @Composable ColumnScope.() -> Unit) {
-    Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(CardBg).padding(12.dp),
-        content = content,
-    )
+private fun MemoryFolder(records: List<MemoryRecord>) {
+    if (records.isEmpty()) {
+        Text(
+            "Ancora vuoto. I ricordi salvati in Memoria compaiono qui, divisi per categoria.",
+            color = Muted,
+            modifier = Modifier.padding(24.dp),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        return
+    }
+    val byCategory = records.groupBy { it.category.ifBlank { "Senza categoria" } }
+    val ordered = MemoryCategories.CANONICAL.filter { byCategory.containsKey(it) } +
+        (byCategory.keys - MemoryCategories.CANONICAL.toSet())
+    LazyColumn(contentPadding = PaddingValues(bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        ordered.forEach { category ->
+            val list = byCategory[category].orEmpty()
+            item(key = "h:$category") { SectionHeader("$category (${list.size})") }
+            items(list, key = { it.id }) { record ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(CardBg)
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                ) {
+                    Text(record.text, color = Ink, maxLines = 3, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        }
+    }
 }
 
 // --- Appunti: folders, pinned, chronological grouping ----------------------
@@ -433,11 +618,9 @@ private fun NoteCard(note: ArchiveItem, onClick: () -> Unit, onTogglePin: () -> 
             Icon(
                 Icons.Filled.PushPin,
                 contentDescription = if (note.pinned) "Togli dai preferiti" else "Metti in primo piano",
-                // One glyph, tint-switched — same idiom already used for the
-                // star toggle in AgendaScreen (Icons.Filled.Star/StarBorder is
-                // the exception because those have distinct icon names; PushPin's
-                // filled/outlined variants share one name across two packages,
-                // which Kotlin can't import unaliased in the same file).
+                // One glyph, tint-switched — PushPin's filled/outlined variants
+                // share one name across two Compose packages, which Kotlin
+                // cannot import unaliased in the same file.
                 tint = if (note.pinned) Gold else Muted,
                 modifier = Modifier.size(20.dp),
             )
@@ -449,11 +632,10 @@ private fun NoteCard(note: ArchiveItem, onClick: () -> Unit, onTogglePin: () -> 
 }
 
 /**
- * The full-screen note editor that replaced the small edit dialog (§ richiesta
- * esplicita dell'utente, riferimento l'app Note del telefono): a big borderless
- * "Titolo" like [com.simone.jarvismobile.ui.agenda.AddTaskScreen]'s, a folder
- * chip that opens [FolderPickerDialog], and a content field that fills the rest
- * of the screen instead of a cramped multi-line box in a dialog.
+ * The full-screen note editor: a big borderless "Titolo" like
+ * [com.simone.jarvismobile.ui.agenda.AddTaskScreen]'s, a folder chip that
+ * opens [FolderPickerDialog], and a content field that fills the rest of the
+ * screen instead of a cramped multi-line box in a dialog.
  */
 @Composable
 private fun NoteEditorScreen(
@@ -586,7 +768,7 @@ private fun FolderPickerDialog(folders: List<String>, current: String, onDismiss
     )
 }
 
-// --- other tabs, unchanged logic, JARVIS-restyled ---------------------------
+// --- other folders, unchanged logic, JARVIS-restyled ------------------------
 
 @Composable
 private fun ItemsTab(
@@ -633,7 +815,11 @@ private fun ListsTab(
             item { Text("Nessuna lista personalizzata. Tocca + per crearne una.", style = MaterialTheme.typography.bodySmall, color = Muted) }
         } else {
             items(customLists, key = { it.id }) { list ->
-                DarkRow(content = { Text(list.name, style = MaterialTheme.typography.titleMedium, color = Ink) })
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(CardBg).clickable { onOpenList(list) }.padding(12.dp),
+                ) {
+                    Text(list.name, style = MaterialTheme.typography.titleMedium, color = Ink)
+                }
             }
         }
     }
@@ -655,7 +841,7 @@ private fun ListItemRow(item: ArchiveListItem, onToggle: () -> Unit, onDelete: (
 }
 
 @Composable
-private fun RedirectTab(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String, buttonLabel: String, onClick: () -> Unit) {
+private fun RedirectTab(icon: ImageVector, text: String, buttonLabel: String, onClick: () -> Unit) {
     Column(Modifier.fillMaxSize().padding(top = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Icon(icon, contentDescription = null, tint = Muted)
         Text(text, style = MaterialTheme.typography.bodyMedium, color = Ink)

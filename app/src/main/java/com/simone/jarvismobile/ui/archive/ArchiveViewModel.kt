@@ -1,5 +1,8 @@
 package com.simone.jarvismobile.ui.archive
 
+import android.content.Context
+import android.net.Uri
+import androidx.core.content.FileProvider
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.simone.jarvismobile.archive.ArchiveListRepository
@@ -10,7 +13,13 @@ import com.simone.jarvismobile.core.archive.ArchiveList
 import com.simone.jarvismobile.core.archive.ArchiveListItem
 import com.simone.jarvismobile.core.archive.ArchiveStatus
 import com.simone.jarvismobile.core.archive.ListItemStatus
+import com.simone.jarvismobile.core.document.DocumentRecord
+import com.simone.jarvismobile.core.document.DocumentStatus
+import com.simone.jarvismobile.core.memory.MemoryRecord
+import com.simone.jarvismobile.document.DocumentImportManager
+import com.simone.jarvismobile.memory.MemoryIndex
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -19,17 +28,6 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
-
-/** One row of the "Tutto" tab: a note, a to-watch item, or a list item, tagged with its own kind. */
-sealed interface ArchiveAllRow {
-    val updatedAt: Long
-    data class Note(val item: ArchiveItem) : ArchiveAllRow {
-        override val updatedAt get() = item.updatedAt
-    }
-    data class ListEntry(val listName: String, val item: ArchiveListItem) : ArchiveAllRow {
-        override val updatedAt get() = item.updatedAt
-    }
-}
 
 /**
  * Backs the "Archivio" screen (spec §2/§4): create/read/update/delete NOTE and
@@ -41,12 +39,58 @@ sealed interface ArchiveAllRow {
  */
 @HiltViewModel
 class ArchiveViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val repository: ArchiveRepository,
     private val lists: ArchiveListRepository,
+    private val documentManager: DocumentImportManager,
+    private val memoryIndex: MemoryIndex,
 ) : ViewModel() {
 
     private val allItems: StateFlow<List<ArchiveItem>> = repository.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /**
+     * Ready files/photos imported anywhere — the chat's "+", the old
+     * Documenti tab, all of it — for the "Documenti" folder (§ richiesta
+     * esplicita dell'utente: "se carico in chat file o foto... posso
+     * trovarli anche in archivio"). Same [DocumentImportManager.documents]
+     * the chat cards and Archivio documenti already read, not a copy.
+     */
+    val documents: StateFlow<List<DocumentRecord>> = documentManager.documents
+        .map { docs -> docs.filter { it.status == DocumentStatus.READY }.sortedByDescending { it.importedAt } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /**
+     * Memoria's records, read-only here (§ "una cartella dedicata con le
+     * note presenti nella sezione memoria divise per categorie") — editing
+     * one still only happens in the Memoria screen itself, so this stays a
+     * one-shot load rather than a second live store to keep in sync.
+     * [refreshMemory] re-reads it, called when the Memoria folder is opened.
+     */
+    private val _memoryRecords = MutableStateFlow<List<MemoryRecord>>(emptyList())
+    val memoryRecords: StateFlow<List<MemoryRecord>> = _memoryRecords
+
+    init {
+        refreshMemory()
+    }
+
+    fun refreshMemory() {
+        viewModelScope.launch {
+            _memoryRecords.value = runCatching { memoryIndex.listRecords() }.getOrDefault(emptyList())
+                .sortedByDescending { it.updatedAt }
+        }
+    }
+
+    /**
+     * A `content://` URI for [record]'s app-private file, safe to hand to
+     * another app (viewer, share sheet) — never a raw `file://` path, which
+     * Android refuses to expose outside the app.
+     */
+    fun shareUri(record: DocumentRecord): Uri? = runCatching {
+        val file = documentManager.localFile(record)
+        if (!file.exists()) return null
+        FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+    }.getOrNull()
 
     private val allLists: StateFlow<List<ArchiveList>> = lists.observeLists()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -90,17 +134,20 @@ class ArchiveViewModel @Inject constructor(
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    /** Notes + to-watch + every list item, merged and filtered by [query] — the "Tutto" tab. */
-    val allRows: StateFlow<List<ArchiveAllRow>> = combine(allItems, allLists, allListItems, query) { notes, ls, its, q ->
-        val nameFor = ls.associateBy { it.id }
-        val noteRows = notes
-            .filter { q.isBlank() || it.title.contains(q, ignoreCase = true) || it.content.contains(q, ignoreCase = true) }
-            .map { ArchiveAllRow.Note(it) }
-        val listRows = its
-            .filter { q.isBlank() || it.title.contains(q, ignoreCase = true) || it.description.contains(q, ignoreCase = true) }
-            .map { ArchiveAllRow.ListEntry(nameFor[it.listId]?.name ?: "", it) }
-        (noteRows + listRows).sortedByDescending { it.updatedAt }
+    /** [documents] narrowed to [query] — the "Documenti" folder's own search. */
+    val filteredDocuments: StateFlow<List<DocumentRecord>> = combine(documents, query) { docs, q ->
+        docs.filter { q.isBlank() || it.displayName.contains(q, ignoreCase = true) }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** [memoryRecords] narrowed to [query] — the "Memoria" folder's own search. */
+    val filteredMemory: StateFlow<List<MemoryRecord>> = combine(memoryRecords, query) { recs, q ->
+        recs.filter { q.isBlank() || it.text.contains(q, ignoreCase = true) }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Ready files + notes, for the Home dashboard tile's count. */
+    val itemCount: StateFlow<Int> = combine(documents, allItems) { docs, its ->
+        docs.size + its.count { it.kind == ArchiveKind.NOTE }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
     fun setQuery(value: String) {
         query.value = value

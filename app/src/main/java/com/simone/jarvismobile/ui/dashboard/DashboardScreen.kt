@@ -210,7 +210,7 @@ fun DashboardScreen(
     onOpenModels: () -> Unit = {},
     onOpenTranslator: () -> Unit = {},
     onOpenSystemStatus: () -> Unit = {},
-    onOpenLocalArchive: () -> Unit = {},
+    onOpenArchive: () -> Unit = {},
     viewModel: DashboardViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -436,8 +436,8 @@ fun DashboardScreen(
             // row of its own.
             val automationsVm: AutomationsViewModel = hiltViewModel()
             val rules by automationsVm.automations.collectAsStateWithLifecycle()
-            val localArchiveVm: com.simone.jarvismobile.ui.localarchive.LocalArchiveViewModel = hiltViewModel()
-            val localArchiveCount by localArchiveVm.itemCount.collectAsStateWithLifecycle()
+            val archiveVm: com.simone.jarvismobile.ui.archive.ArchiveViewModel = hiltViewModel()
+            val localArchiveCount by archiveVm.itemCount.collectAsStateWithLifecycle()
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 StatTile(
                     icon = Icons.Filled.Bolt,
@@ -459,7 +459,7 @@ fun DashboardScreen(
                     unit = "file e note",
                     footer = "Apri",
                     accent = Cyan,
-                    onClick = onOpenLocalArchive,
+                    onClick = onOpenArchive,
                     modifier = Modifier.weight(1f),
                 )
             }
