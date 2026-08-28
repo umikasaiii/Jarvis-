@@ -33,14 +33,18 @@ private val BluPalette = JarvisPalette(
     accentBright = Color(0xFF12D9FF),
 )
 
-// Placeholder values: the user is sending reference images for the red theme in
-// a follow-up message, at which point these get refined to match them exactly.
-// Reuses "Rose", the one red already in the app's own palette (JARVIS Drive's
-// signature accent), so it is at least consistent with something that already
-// exists rather than invented from nothing.
+// Measured, not eyeballed: sampled directly from the 32 reference PNGs the user
+// sent (Pillow, pixel-by-pixel over every asset) rather than reusing a value
+// that was already in the app. Two passes — the glow line itself (excluding
+// both the near-white specular "hot core" bloom and the darker background
+// texture) averaged to #DF241C across ~225k sampled pixels; the most saturated,
+// brightest pure-red pixels (R>225, G/B<90) averaged to #F52A1C across ~139k.
+// accent below is that line colour nudged slightly brighter for legibility as
+// small text/icons against the app's near-black background (the source art sits
+// on mid-dark panels, not near-black); accentBright is the vivid sample as-is.
 private val RossoPalette = JarvisPalette(
-    accent = Color(0xFFFF5E5E),
-    accentBright = Color(0xFFFF3B30),
+    accent = Color(0xFFE8362B),
+    accentBright = Color(0xFFF52A1C),
 )
 
 fun paletteFor(id: JarvisThemeId): JarvisPalette = when (id) {
