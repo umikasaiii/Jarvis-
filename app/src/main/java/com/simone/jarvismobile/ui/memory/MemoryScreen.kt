@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -19,6 +20,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
@@ -49,10 +51,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.simone.jarvismobile.core.memory.MemoryCategories
@@ -97,6 +103,48 @@ fun MemoryScreen(
     val pickVault = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocumentTree(),
     ) { uri -> uri?.let(viewModel::onVaultPicked) }
+
+    // Full-screen editor, like a phone notes app rather than a cramped dialog
+    // (§ richiesta esplicita dell'utente, riferimento Note del telefono) — an
+    // early return keeps it out of the main list's Box entirely instead of
+    // stacking it as an overlay.
+    if (showAdd) {
+        MemoryNoteEditorScreen(
+            title = "Nuovo ricordo",
+            initialText = "",
+            initialKind = MemoryKind.PERMANENT,
+            initialCategory = "",
+            allowTemporary = true,
+            showDelete = false,
+            enabled = !busy,
+            onDismiss = { showAdd = false },
+            onSave = { text, kind, category -> viewModel.add(text, kind, category); showAdd = false },
+            onDelete = {},
+        )
+        return
+    }
+    editing?.let { rec ->
+        MemoryNoteEditorScreen(
+            title = "Ricordo",
+            initialText = rec.text,
+            initialKind = rec.kind,
+            initialCategory = rec.category,
+            allowTemporary = false,
+            showDelete = true,
+            enabled = !busy,
+            topics = rec.topics,
+            people = rec.people,
+            dates = rec.dates,
+            onDismiss = { editing = null },
+            onSave = { text, kind, category ->
+                viewModel.update(rec.id, text, kind)
+                if (category != rec.category) viewModel.setCategory(rec.id, category)
+                editing = null
+            },
+            onDelete = { viewModel.delete(rec.id); editing = null },
+        )
+        return
+    }
 
     val accent = Cyan
     Box(
@@ -240,44 +288,6 @@ fun MemoryScreen(
         )
     }
 
-    if (showAdd) {
-        NoteDialog(
-            title = "Nuovo ricordo",
-            initialText = "",
-            initialKind = MemoryKind.PERMANENT,
-            initialCategory = "",
-            allowTemporary = true,
-            showCategory = true,
-            showDelete = false,
-            enabled = !busy,
-            onDismiss = { showAdd = false },
-            onSave = { text, kind, category -> viewModel.add(text, kind, category); showAdd = false },
-            onDelete = {},
-        )
-    }
-
-    editing?.let { rec ->
-        NoteDialog(
-            title = "Ricordo",
-            initialText = rec.text,
-            initialKind = rec.kind,
-            initialCategory = rec.category,
-            allowTemporary = false,
-            showCategory = true,
-            showDelete = true,
-            enabled = !busy,
-            topics = rec.topics,
-            people = rec.people,
-            dates = rec.dates,
-            onDismiss = { editing = null },
-            onSave = { text, kind, category ->
-                viewModel.update(rec.id, text, kind)
-                if (category != rec.category) viewModel.setCategory(rec.id, category)
-                editing = null
-            },
-            onDelete = { viewModel.delete(rec.id); editing = null },
-        )
-    }
 }
 
 /**
@@ -432,15 +442,23 @@ private fun NoteTile(record: MemoryRecord, enabled: Boolean, onOpen: (MemoryReco
     }
 }
 
-/** The add/edit editor, shown as a dialog rather than a big inline form. */
+/**
+ * The add/edit editor, full-screen like a phone notes app instead of a small
+ * dialog (§ richiesta esplicita dell'utente: "identica anche nel funzionamento
+ * ... a note in foto") — a big title-less canvas plus a formatting toolbar
+ * that inserts Markdown at the cursor/selection (bold/italic/bullet/numbered).
+ * Markdown, not opaque rich-text spans, because [MemoryRecord.text] is plain
+ * text and the Obsidian vault (`JARVIS/Memoria.md`) is the human-readable
+ * source of truth (see CLAUDE.md) — the same syntax round-trips there exactly
+ * as typed, instead of a second, app-only formatting format nothing else reads.
+ */
 @Composable
-private fun NoteDialog(
+private fun MemoryNoteEditorScreen(
     title: String,
     initialText: String,
     initialKind: MemoryKind,
     initialCategory: String,
     allowTemporary: Boolean,
-    showCategory: Boolean,
     showDelete: Boolean,
     enabled: Boolean,
     topics: List<String> = emptyList(),
@@ -450,45 +468,33 @@ private fun NoteDialog(
     onSave: (String, MemoryKind, String) -> Unit,
     onDelete: () -> Unit,
 ) {
-    var text by remember { mutableStateOf(initialText) }
+    var field by remember { mutableStateOf(TextFieldValue(initialText)) }
     var kind by remember { mutableStateOf(initialKind) }
     var category by remember { mutableStateOf(initialCategory) }
     var confirmDelete by remember { mutableStateOf(false) }
+    val accent = Cyan
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(title) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = { text = it },
-                    label = { Text("Testo del ricordo") },
-                    minLines = 3,
-                    modifier = Modifier.fillMaxWidth(),
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Brush.verticalGradient(listOf(Color(0xFF050C16), Color(0xFF081420), Color(0xFF03080E))))
+            .imePadding(),
+    ) {
+        Column(
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
+        ) {
+            Spacer(Modifier.size(16.dp))
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onDismiss) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Annulla", tint = INK)
+                }
+                Text(
+                    title,
+                    color = INK,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f),
                 )
-                KindSelector(kind, onSelect = { kind = it }, includeTemporary = allowTemporary)
-                if (kind == MemoryKind.SENSITIVE) {
-                    Text(
-                        "Marcato come sensibile. Password, PIN, OTP e token non vengono salvati.",
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-                if (showCategory) {
-                    CategorySelector(category, enabled) { category = it }
-                }
-                StructuredFields(topics, people, dates)
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { if (text.isNotBlank()) onSave(text, kind, category) },
-                enabled = enabled && text.isNotBlank(),
-            ) { Text("Salva") }
-        },
-        dismissButton = {
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 if (showDelete) {
                     TextButton(
                         onClick = { if (confirmDelete) onDelete() else confirmDelete = true },
@@ -500,10 +506,102 @@ private fun NoteDialog(
                         )
                     }
                 }
-                TextButton(onClick = onDismiss) { Text("Annulla") }
+                TextButton(
+                    onClick = { if (field.text.isNotBlank()) onSave(field.text, kind, category) },
+                    enabled = enabled && field.text.isNotBlank(),
+                ) { Text("Salva", color = if (field.text.isNotBlank()) accent else MUTED) }
             }
-        },
-    )
+            Spacer(Modifier.size(12.dp))
+            KindSelector(kind, onSelect = { kind = it }, includeTemporary = allowTemporary)
+            if (kind == MemoryKind.SENSITIVE) {
+                Text(
+                    "Marcato come sensibile. Password, PIN, OTP e token non vengono salvati.",
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+            }
+            Spacer(Modifier.size(8.dp))
+            CategorySelector(category, enabled) { category = it }
+            StructuredFields(topics, people, dates)
+            Spacer(Modifier.size(12.dp))
+            OutlinedTextField(
+                value = field,
+                onValueChange = { field = it },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 260.dp),
+                placeholder = { Text("Scrivi qui…", color = MUTED) },
+                textStyle = MaterialTheme.typography.bodyLarge.copy(color = INK),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Color.Transparent,
+                    unfocusedBorderColor = Color.Transparent,
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent,
+                    cursorColor = accent,
+                    focusedTextColor = INK,
+                    unfocusedTextColor = INK,
+                ),
+            )
+            FormattingToolbar(
+                onBold = { field = wrapSelection(field, "**") },
+                onItalic = { field = wrapSelection(field, "*") },
+                onBullet = { field = prefixLine(field, "- ") },
+                onNumbered = { field = prefixLine(field, "1. ") },
+            )
+            Spacer(Modifier.size(24.dp))
+        }
+    }
+}
+
+/**
+ * Bold/italic/bullet/numbered — plain text glyphs rather than Material's
+ * "extended" icon set (FormatBold/FormatItalic/…), which lives in a separate
+ * artifact this project doesn't otherwise depend on and couldn't be verified
+ * against a compiler in this environment; text glyphs match the project's
+ * existing convention (the "▾"/"▸" chevrons above, emoji document glyphs in
+ * Archivio) and carry zero dependency risk.
+ */
+@Composable
+private fun FormattingToolbar(onBold: () -> Unit, onItalic: () -> Unit, onBullet: () -> Unit, onNumbered: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        GlyphButton(onClick = onBold) { Text("B", color = INK, fontWeight = FontWeight.Bold, fontSize = 16.sp) }
+        GlyphButton(onClick = onItalic) { Text("I", color = INK, fontStyle = FontStyle.Italic, fontSize = 16.sp) }
+        GlyphButton(onClick = onBullet) { Text("•", color = INK, fontWeight = FontWeight.Bold, fontSize = 18.sp) }
+        GlyphButton(onClick = onNumbered) { Text("1.", color = INK, fontWeight = FontWeight.Bold, fontSize = 14.sp) }
+    }
+}
+
+@Composable
+private fun GlyphButton(onClick: () -> Unit, content: @Composable () -> Unit) {
+    Box(
+        Modifier
+            .size(40.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(Color(0x330A1826))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) { content() }
+}
+
+/** Wraps the selection (or inserts an empty pair at the cursor) in [marker], e.g. "**bold**". */
+private fun wrapSelection(value: TextFieldValue, marker: String): TextFieldValue {
+    val text = value.text
+    val start = value.selection.min
+    val end = value.selection.max
+    val newText = text.substring(0, start) + marker + text.substring(start, end) + marker + text.substring(end)
+    val newCursor = if (start == end) start + marker.length else end + marker.length * 2
+    return value.copy(text = newText, selection = TextRange(newCursor))
+}
+
+/** Inserts [prefix] at the start of the line the cursor is on, e.g. "- " or "1. ". */
+private fun prefixLine(value: TextFieldValue, prefix: String): TextFieldValue {
+    val text = value.text
+    val cursor = value.selection.min
+    val lineStart = if (cursor == 0) 0 else text.lastIndexOf('\n', cursor - 1) + 1
+    val newText = text.substring(0, lineStart) + prefix + text.substring(lineStart)
+    return value.copy(text = newText, selection = TextRange(cursor + prefix.length))
 }
 
 private fun formatNoteDate(ms: Long): String =

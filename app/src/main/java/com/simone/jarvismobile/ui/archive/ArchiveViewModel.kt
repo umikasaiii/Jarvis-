@@ -92,6 +92,24 @@ class ArchiveViewModel @Inject constructor(
         FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
     }.getOrNull()
 
+    /**
+     * Imports files/photos picked from the phone's own system picker into the
+     * "Documenti" folder (§ richiesta esplicita dell'utente: "archivio deve
+     * avere impostazione per importare dal telefono dei file o foto") — the
+     * exact same [DocumentImportManager.import] pipeline the chat's "+" already
+     * uses, so an imported file is indexed/searchable the same way, not a
+     * second copy mechanism. Never saved to the Obsidian vault by default
+     * (matches the chat's plain attachment, not the "save to vault" option).
+     */
+    fun importFromPhone(uris: List<Uri>) {
+        uris.forEach { documentManager.import(it, saveToVault = false) }
+    }
+
+    /** Removes an imported file from Archivio entirely (the pipeline record, not just the UI row). */
+    fun removeDocument(record: DocumentRecord) {
+        documentManager.remove(record.id)
+    }
+
     private val allLists: StateFlow<List<ArchiveList>> = lists.observeLists()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 

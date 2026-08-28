@@ -3,6 +3,8 @@ package com.simone.jarvismobile.ui.archive
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -143,10 +145,22 @@ fun ArchiveScreen(
 
     var showNoteEditor by remember { mutableStateOf(false) }
     var editingNote by remember { mutableStateOf<ArchiveItem?>(null) }
+    var showImportMenu by remember { mutableStateOf(false) }
 
     val notes = items.filter { it.kind == ArchiveKind.NOTE }
     val watch = items.filter { it.kind == ArchiveKind.TO_WATCH }
     val context = LocalContext.current
+
+    // "Importa dal telefono" (§ richiesta esplicita dell'utente) — the picker's
+    // transient read grant is enough, same as the chat's own attach flow:
+    // importFromPhone() reads the bytes immediately and copies them to
+    // app-private storage, no persistable permission needed.
+    val documentPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments(),
+    ) { uris -> if (uris.isNotEmpty()) viewModel.importFromPhone(uris) }
+    val photoPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments(),
+    ) { uris -> if (uris.isNotEmpty()) viewModel.importFromPhone(uris) }
 
     // Memoria is edited only in its own screen, so this view's copy can go
     // stale while the user is away — refresh whenever the folder is (re)opened.
@@ -210,6 +224,7 @@ fun ArchiveScreen(
                     documents = documents,
                     onOpen = { doc -> openDocument(context, viewModel, doc) },
                     onShare = { doc -> shareDocument(context, viewModel, doc) },
+                    onDelete = { doc -> viewModel.removeDocument(doc) },
                 )
                 ArchiveFolder.NOTES -> NotesTab(
                     notes = notes,
@@ -247,6 +262,7 @@ fun ArchiveScreen(
 
         // Floating "+", only where "add" means one obvious thing.
         val fabAction: (() -> Unit)? = when (openFolder) {
+            ArchiveFolder.DOCUMENTS -> { { showImportMenu = true } }
             ArchiveFolder.NOTES -> { { editingNote = null; showNoteEditor = true } }
             ArchiveFolder.WATCH -> { { showAdd = true } }
             ArchiveFolder.LISTS -> { { showNewList = true } }
@@ -283,6 +299,24 @@ fun ArchiveScreen(
                 onDelete = editingNote?.let { note -> { viewModel.delete(note); showNoteEditor = false } },
             )
         }
+    }
+
+    if (showImportMenu) {
+        AlertDialog(
+            onDismissRequest = { showImportMenu = false },
+            title = { Text("Importa dal telefono") },
+            text = { Text("Scegli cosa importare in «Documenti». Resta sul dispositivo, come ogni file allegato in chat.") },
+            confirmButton = {
+                TextButton(onClick = { showImportMenu = false; documentPicker.launch(ARCHIVE_DOCUMENT_MIME_TYPES) }) {
+                    Text("File")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showImportMenu = false; photoPicker.launch(arrayOf("image/*")) }) {
+                    Text("Foto")
+                }
+            },
+        )
     }
 
     if (showAdd) {
@@ -405,18 +439,29 @@ private fun monthDayLabel(epochMillis: Long): String {
 // --- Documenti folder --------------------------------------------------
 
 @Composable
-private fun DocumentsFolder(documents: List<DocumentRecord>, onOpen: (DocumentRecord) -> Unit, onShare: (DocumentRecord) -> Unit) {
+private fun DocumentsFolder(
+    documents: List<DocumentRecord>,
+    onOpen: (DocumentRecord) -> Unit,
+    onShare: (DocumentRecord) -> Unit,
+    onDelete: (DocumentRecord) -> Unit,
+) {
+    var sortByName by remember { mutableStateOf(false) }
     if (documents.isEmpty()) {
         Text(
-            "Ancora vuoto. I file allegati o importati in chat compaiono qui.",
+            "Ancora vuoto. I file allegati o importati in chat compaiono qui, oppure tocca «+» per importarli dal telefono.",
             color = Muted,
             modifier = Modifier.padding(24.dp),
             style = MaterialTheme.typography.bodyMedium,
         )
         return
     }
+    Row(Modifier.fillMaxWidth().padding(bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FolderChip("Data", !sortByName) { sortByName = false }
+        FolderChip("Nome", sortByName) { sortByName = true }
+    }
+    val sorted = if (sortByName) documents.sortedBy { it.displayName.lowercase() } else documents
     LazyColumn(contentPadding = PaddingValues(bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        items(documents, key = { it.id }) { doc ->
+        items(sorted, key = { it.id }) { doc ->
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -436,10 +481,24 @@ private fun DocumentsFolder(documents: List<DocumentRecord>, onOpen: (DocumentRe
                 IconButton(onClick = { onShare(doc) }) {
                     Icon(Icons.Filled.Share, contentDescription = "Condividi", tint = Cyan, modifier = Modifier.size(18.dp))
                 }
+                IconButton(onClick = { onDelete(doc) }) {
+                    Icon(Icons.Filled.Delete, contentDescription = "Elimina", tint = Muted, modifier = Modifier.size(18.dp))
+                }
             }
         }
     }
 }
+
+/** Same allowlist the chat's own "+" already offers for documents (§ import parity). */
+private val ARCHIVE_DOCUMENT_MIME_TYPES = arrayOf(
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "text/plain",
+    "text/markdown",
+    "application/json",
+    "text/csv",
+    "text/*",
+)
 
 private fun glyph(doc: DocumentRecord): String =
     when (doc.fileName.substringAfterLast('.', "").lowercase()) {
