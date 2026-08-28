@@ -130,9 +130,8 @@ private val Muted = Color(0xFF7C8B95)
  */
 // An enum entry's constructor arguments run at class-init, outside any
 // @Composable context, so PRONTO/ASCOLTO cannot read the composable-getter
-// Cyan/CyanBright here (unlike every other reference in this file, which is
-// inside a @Composable function body). They keep the fixed default hue as a
-// known, minor gap: the chat status pill does not follow the theme.
+// Cyan/CyanBright directly here. [themedAccent] below substitutes the live
+// theme value at render time instead, wherever .accent would otherwise be read.
 private enum class ChatStatus(val label: String, val accent: Color) {
     PRONTO("Pronto", Color(0xFF3FD8F0)),
     ASCOLTO("Ascolto", Color(0xFF12D9FF)),
@@ -140,6 +139,20 @@ private enum class ChatStatus(val label: String, val accent: Color) {
     CONFERMA("Conferma", Amber),
     PARLO("Parlo", Aqua),
     OFFLINE("Offline", Coral),
+}
+
+/**
+ * [ChatStatus.accent], theme-aware. PRONTO/ASCOLTO originally equalled
+ * Cyan/CyanBright exactly — before theming existed they simply *were* the
+ * brand accent — so this keeps that relationship live instead of frozen at
+ * whatever hue was in the enum when it was declared. Every other status keeps
+ * its own fixed, non-brand colour (thinking/confirm/speaking/offline).
+ */
+@Composable
+private fun themedAccent(status: ChatStatus): Color = when (status) {
+    ChatStatus.PRONTO -> Cyan
+    ChatStatus.ASCOLTO -> CyanBright
+    else -> status.accent
 }
 
 private fun statusFor(state: ConversationState): ChatStatus = when (state) {
@@ -666,15 +679,15 @@ private fun StatusPill(status: ChatStatus) {
         modifier = Modifier
             .clip(CircleShape)
             .background(Color(0xB3040C14))
-            .border(1.dp, status.accent.copy(alpha = 0.55f), CircleShape)
+            .border(1.dp, themedAccent(status).copy(alpha = 0.55f), CircleShape)
             .padding(horizontal = 10.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.size(7.dp).clip(CircleShape).background(status.accent))
+        Box(Modifier.size(7.dp).clip(CircleShape).background(themedAccent(status)))
         Spacer(Modifier.width(6.dp))
         Text(
             status.label.uppercase(),
-            color = status.accent,
+            color = themedAccent(status),
             fontSize = 10.sp,
             fontWeight = FontWeight.Medium,
             letterSpacing = 1.1.sp,
@@ -901,7 +914,7 @@ private fun MicrophoneButton(
         enabled = enabled,
         pressedScale = 0.94f,
         glow = if (listening) pulse else 0.22f,
-        glowColor = status.accent,
+        glowColor = themedAccent(status),
         onClick = onClick,
     )
 }

@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.simone.jarvismobile.R
 import com.simone.jarvismobile.ui.theme.JarvisThemeId
+import com.simone.jarvismobile.ui.theme.LocalJarvisPalette
 import com.simone.jarvismobile.ui.theme.LocalJarvisThemeId
 
 /**
@@ -49,9 +50,15 @@ private data class OrbLook(
     val breathMs: Int,
 )
 
-private fun lookFor(state: OrbState): OrbLook = when (state) {
-    OrbState.IDLE -> OrbLook(Color(0xFF8FE9FF), 0.22f, 0.48f, 3000)
-    OrbState.LISTENING -> OrbLook(Color(0xFF12D9FF), 0.35f, 1.00f, 780)
+/**
+ * IDLE/LISTENING were always meant to track the brand accent (LISTENING's
+ * original fixed value was exactly the old accentBright) — [accent]/
+ * [accentBright] are the live theme colours, read once in the caller's
+ * composable scope since this function itself is not @Composable.
+ */
+private fun lookFor(state: OrbState, accent: Color, accentBright: Color): OrbLook = when (state) {
+    OrbState.IDLE -> OrbLook(accent, 0.22f, 0.48f, 3000)
+    OrbState.LISTENING -> OrbLook(accentBright, 0.35f, 1.00f, 780)
     OrbState.THINKING -> OrbLook(Color(0xFF9B7BFF), 0.40f, 0.90f, 1100)
     OrbState.SPEAKING -> OrbLook(Color(0xFF4FE3C1), 0.45f, 0.92f, 1000)
     OrbState.ERROR -> OrbLook(Color(0xFFFF6B5B), 0.20f, 0.60f, 2200)
@@ -79,7 +86,8 @@ fun JarvisOrb(
     modifier: Modifier = Modifier,
     size: Dp = 210.dp,
 ) {
-    val look = lookFor(state)
+    val palette = LocalJarvisPalette.current
+    val look = lookFor(state, palette.accent, palette.accentBright)
     // Rouge (§ Impostazioni › Temi) swaps in real reference art for the orb
     // itself instead of tinting the default blue/white one — the original has
     // a rich white-hot core/blue-rim gradient a flat SrcIn tint would flatten

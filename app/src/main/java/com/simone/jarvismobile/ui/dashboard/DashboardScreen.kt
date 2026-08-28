@@ -322,7 +322,7 @@ fun DashboardScreen(
             // footer of the Sistema tile below, so the reading is not lost with
             // the block; the weather was a DEMO placeholder and is simply out.
             // The hero is now the orb and what JARVIS is doing, nothing else.
-            val status = statusFor(state, lastError != null)
+            val status = statusFor(state, lastError != null, Cyan)
             Row(
                 modifier = Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 18.dp),
                 horizontalArrangement = Arrangement.Center,
@@ -1364,11 +1364,17 @@ private fun ListenOrb(
 /** What the status line under the wordmark says, and in which colour. */
 private data class HeroStatus(val label: String, val color: Color)
 
-/** Sky blue at rest, violet while thinking, aqua green while answering. */
-private fun statusFor(state: ConversationState, hasError: Boolean): HeroStatus = when {
+/**
+ * Brand accent at rest and while listening (both were always meant to track
+ * it — see [accentFor]'s equivalent "else -> cyan" branch), violet while
+ * thinking, aqua while answering. [accent] is the live theme accent, read
+ * once in the caller's composable scope since this function itself is not
+ * @Composable.
+ */
+private fun statusFor(state: ConversationState, hasError: Boolean, accent: Color): HeroStatus = when {
     hasError -> HeroStatus("ERRORE", Color(0xFFFF6B5B))
     state == ConversationState.Listening || state == ConversationState.FollowUpWindow ->
-        HeroStatus("ASCOLTO", Color(0xFF8FE9FF))
+        HeroStatus("ASCOLTO", accent)
     state == ConversationState.Speaking -> HeroStatus("RISPOSTA", Color(0xFF4FE3C1))
     state in setOf(
         ConversationState.PreparingAudio, ConversationState.FinalizingSpeech,
@@ -1376,7 +1382,7 @@ private fun statusFor(state: ConversationState, hasError: Boolean): HeroStatus =
         ConversationState.Routing, ConversationState.ThinkingLocal,
         ConversationState.ThinkingRemote, ConversationState.ExecutingTool,
     ) -> HeroStatus("PENSANDO", Color(0xFF9B7BFF))
-    else -> HeroStatus("PRONTO", Color(0xFF8FE9FF))
+    else -> HeroStatus("PRONTO", accent)
 }
 
 /** Which animation the orb should play. */
