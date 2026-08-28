@@ -4,12 +4,14 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -24,14 +26,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -99,7 +100,17 @@ fun MemoryScreen(
     var showAdd by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<MemoryRecord?>(null) }
     var showOptions by remember { mutableStateOf(false) }
+    var showDrawer by remember { mutableStateOf(false) }
+    var selectedCategory by remember { mutableStateOf<String?>(null) } // null = "Tutte le note"
     var query by remember { mutableStateOf("") }
+
+    // Every folder Memoria knows about — the fixed macro-categories plus any
+    // free-form one a record already carries — so the drawer/editor picker
+    // (§ richiesta esplicita dell'utente: "menu laterale vero e proprio", non
+    // solo le categorie AI fisse) always offers exactly what's really in use.
+    val allCategories = remember(records) {
+        (MemoryCategories.CANONICAL + records.mapNotNull { it.category.takeIf(String::isNotBlank) }).distinct()
+    }
 
     val pickVault = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocumentTree(),
@@ -114,10 +125,11 @@ fun MemoryScreen(
             title = "Nuovo ricordo",
             initialText = "",
             initialKind = MemoryKind.PERMANENT,
-            initialCategory = "",
+            initialCategory = selectedCategory.orEmpty(), // a note started from inside a drawer folder lands there
             allowTemporary = true,
             showDelete = false,
             enabled = !busy,
+            allCategories = allCategories,
             onDismiss = { showAdd = false },
             onSave = { text, kind, category -> viewModel.add(text, kind, category); showAdd = false },
             onDelete = {},
@@ -133,6 +145,7 @@ fun MemoryScreen(
             allowTemporary = false,
             showDelete = true,
             enabled = !busy,
+            allCategories = allCategories,
             topics = rec.topics,
             people = rec.people,
             dates = rec.dates,
@@ -167,8 +180,16 @@ fun MemoryScreen(
                 Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                IconButton(onClick = { showDrawer = true }) {
+                    Icon(Icons.Filled.Menu, contentDescription = "Cartelle", tint = INK)
+                }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text("Memoria", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = accent)
+                    Text(
+                        selectedCategory ?: "Memoria",
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = accent,
+                    )
                     Text(
                         "${records.size} ricordi · tutto sul dispositivo",
                         style = MaterialTheme.typography.bodySmall,
@@ -216,38 +237,54 @@ fun MemoryScreen(
                 }
             }
 
-            // Notes grouped by category. The four running lists are always shown,
-            // then the AI categories alphabetical, then the not-yet-sorted bucket.
-            // Each section is collapsible — its open/closed state is kept per name.
             val filtered = if (query.isBlank()) {
                 records
             } else {
                 records.filter { it.text.contains(query, ignoreCase = true) }
             }
-            val collapsed = remember { mutableStateMapOf<String, Boolean>() }
-            val byCategory = filtered.groupBy { it.category.ifBlank { UNCATEGORIZED } }
-            val listCats = MemoryCategories.LISTS
-            val otherCats = (byCategory.keys - listCats.toSet() - UNCATEGORIZED).sorted()
-            val ordered = listCats + otherCats +
-                listOfNotNull(UNCATEGORIZED.takeIf(byCategory::containsKey))
             if (query.isNotBlank() && filtered.isEmpty()) {
                 Text("Nessun ricordo trovato per «$query».", style = MaterialTheme.typography.bodySmall, color = MUTED)
             }
-            ordered.forEach { category ->
-                val list = byCategory[category].orEmpty().sortedByDescending { it.updatedAt }
-                val open = collapsed[category] != true
-                CategoryHeader(
-                    name = category,
-                    accent = accentForCategory(category),
-                    count = list.size,
-                    expanded = open,
-                    onToggle = { collapsed[category] = open },
-                )
-                if (open) {
-                    if (list.isEmpty()) {
-                        Text("Ancora niente qui.", style = MaterialTheme.typography.bodySmall, color = MUTED)
-                    } else {
-                        NoteGrid(list, enabled = !busy, onOpen = { editing = it })
+            val currentFolder = selectedCategory
+            if (currentFolder != null) {
+                // Inside one folder from the drawer: a flat list, no repeated
+                // section header (the screen title above already names it).
+                val inFolder = filtered.filter { it.category.ifBlank { UNCATEGORIZED } == currentFolder }
+                TextButton(onClick = { selectedCategory = null }, modifier = Modifier.padding(bottom = 4.dp)) {
+                    Text("‹ Tutte le note", color = accent)
+                }
+                if (inFolder.isEmpty()) {
+                    Text("Ancora niente qui.", style = MaterialTheme.typography.bodySmall, color = MUTED)
+                } else {
+                    NoteGrid(inFolder, enabled = !busy, onOpen = { editing = it })
+                }
+            } else {
+                // Notes grouped by category. The four running lists are always
+                // shown, then the AI categories alphabetical, then the
+                // not-yet-sorted bucket. Each section is collapsible — its
+                // open/closed state is kept per name.
+                val collapsed = remember { mutableStateMapOf<String, Boolean>() }
+                val byCategory = filtered.groupBy { it.category.ifBlank { UNCATEGORIZED } }
+                val listCats = MemoryCategories.LISTS
+                val otherCats = (byCategory.keys - listCats.toSet() - UNCATEGORIZED).sorted()
+                val ordered = listCats + otherCats +
+                    listOfNotNull(UNCATEGORIZED.takeIf(byCategory::containsKey))
+                ordered.forEach { category ->
+                    val list = byCategory[category].orEmpty().sortedByDescending { it.updatedAt }
+                    val open = collapsed[category] != true
+                    CategoryHeader(
+                        name = category,
+                        accent = accentForCategory(category),
+                        count = list.size,
+                        expanded = open,
+                        onToggle = { collapsed[category] = open },
+                    )
+                    if (open) {
+                        if (list.isEmpty()) {
+                            Text("Ancora niente qui.", style = MaterialTheme.typography.bodySmall, color = MUTED)
+                        } else {
+                            NoteGrid(list, enabled = !busy, onOpen = { editing = it })
+                        }
                     }
                 }
             }
@@ -272,6 +309,17 @@ fun MemoryScreen(
                 .background(accent),
         ) {
             Icon(Icons.Filled.Add, contentDescription = "Nuovo ricordo", tint = Color(0xFF04121A))
+        }
+
+        if (showDrawer) {
+            MemoryDrawer(
+                records = records,
+                categories = allCategories,
+                selected = selectedCategory,
+                onSelectAll = { selectedCategory = null; showDrawer = false },
+                onSelectCategory = { selectedCategory = it; showDrawer = false },
+                onDismiss = { showDrawer = false },
+            )
         }
     }
 
@@ -364,6 +412,129 @@ private fun MemorySettingsDialog(
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Chiudi") } },
     )
+}
+
+/**
+ * The folders side-drawer (§ richiesta esplicita dell'utente: "menu laterale
+ * vero e proprio... come nelle foto delle Note del telefono") — "Tutte le
+ * note" with the total count, every known folder with its own count, and a
+ * "+ Nuova cartella" entry at the bottom. A folder here is just [MemoryRecord.category]
+ * — the same field the AI classifier already writes — so a hand-typed name is
+ * a real, first-class category, not a second, app-only grouping concept.
+ * Creating one selects it as the current filter (0 notes yet); the next "+"
+ * note defaults into it, exactly the "make a folder, then fill it" flow a
+ * phone Notes app offers, without a separate "known empty folders" store.
+ */
+@Composable
+private fun MemoryDrawer(
+    records: List<MemoryRecord>,
+    categories: List<String>,
+    selected: String?,
+    onSelectAll: () -> Unit,
+    onSelectCategory: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Box(Modifier.fillMaxSize()) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(Color(0x99000000))
+                .clickable(onClick = onDismiss),
+        )
+        Column(
+            Modifier
+                .fillMaxHeight()
+                .fillMaxWidth(0.82f)
+                .align(Alignment.CenterStart)
+                .background(Color(0xFF0A121C))
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 28.dp),
+        ) {
+            Text("Memoria", color = Cyan, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.size(18.dp))
+            DrawerRow("Tutte le note", records.size, selected == null, onSelectAll)
+            Spacer(Modifier.size(14.dp))
+            Text(
+                "CARTELLE",
+                color = MUTED,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(bottom = 4.dp),
+            )
+            categories.forEach { c ->
+                val count = records.count { it.category.ifBlank { UNCATEGORIZED } == c }
+                DrawerRow(c, count, selected == c) { onSelectCategory(c) }
+            }
+            val uncategorizedCount = records.count { it.category.isBlank() }
+            if (uncategorizedCount > 0) {
+                DrawerRow(UNCATEGORIZED, uncategorizedCount, selected == UNCATEGORIZED) { onSelectCategory(UNCATEGORIZED) }
+            }
+            Spacer(Modifier.size(18.dp))
+            HorizontalDivider(color = MUTED.copy(alpha = 0.2f))
+            Spacer(Modifier.size(10.dp))
+            var addingFolder by remember { mutableStateOf(false) }
+            var newFolderName by remember { mutableStateOf("") }
+            if (addingFolder) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = newFolderName,
+                        onValueChange = { newFolderName = it },
+                        placeholder = { Text("Nome cartella", color = MUTED) },
+                        singleLine = true,
+                        textStyle = MaterialTheme.typography.bodyMedium.copy(color = INK),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Cyan.copy(alpha = 0.7f),
+                            unfocusedBorderColor = MUTED.copy(alpha = 0.4f),
+                            cursorColor = Cyan,
+                            focusedTextColor = INK,
+                            unfocusedTextColor = INK,
+                        ),
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(
+                        onClick = {
+                            val name = newFolderName.trim()
+                            if (name.isNotBlank()) onSelectCategory(name)
+                        },
+                        enabled = newFolderName.isNotBlank(),
+                    ) { Text("Crea", color = Cyan) }
+                }
+            } else {
+                Text(
+                    "+ Nuova cartella",
+                    color = Cyan,
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { addingFolder = true }
+                        .padding(vertical = 10.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DrawerRow(label: String, count: Int, selected: Boolean, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (selected) Cyan.copy(alpha = 0.18f) else Color.Transparent)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            label,
+            color = if (selected) Cyan else INK,
+            style = MaterialTheme.typography.bodyLarge,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        Text("$count", color = MUTED, style = MaterialTheme.typography.bodySmall)
+    }
 }
 
 /**
@@ -462,6 +633,7 @@ private fun MemoryNoteEditorScreen(
     allowTemporary: Boolean,
     showDelete: Boolean,
     enabled: Boolean,
+    allCategories: List<String>,
     topics: List<String> = emptyList(),
     people: List<String> = emptyList(),
     dates: List<String> = emptyList(),
@@ -523,7 +695,7 @@ private fun MemoryNoteEditorScreen(
                 )
             }
             Spacer(Modifier.size(8.dp))
-            CategorySelector(category, enabled) { category = it }
+            CategorySelector(category, allCategories, enabled) { category = it }
             StructuredFields(topics, people, dates)
             Spacer(Modifier.size(12.dp))
             OutlinedTextField(
@@ -543,10 +715,14 @@ private fun MemoryNoteEditorScreen(
                 ),
             )
             FormattingToolbar(
+                onTitle = { field = prefixLine(field, "# ") },
+                onSubtitle = { field = prefixLine(field, "## ") },
                 onBold = { field = wrapSelection(field, "**") },
                 onItalic = { field = wrapSelection(field, "*") },
+                onHighlight = { field = wrapSelection(field, "==") },
                 onBullet = { field = prefixLine(field, "- ") },
                 onNumbered = { field = prefixLine(field, "1. ") },
+                onChecklist = { field = prefixLine(field, "- [ ] ") },
             )
             Spacer(Modifier.size(24.dp))
         }
@@ -554,23 +730,43 @@ private fun MemoryNoteEditorScreen(
 }
 
 /**
- * Bold/italic/bullet/numbered — plain text glyphs rather than Material's
- * "extended" icon set (FormatBold/FormatItalic/…), which lives in a separate
- * artifact this project doesn't otherwise depend on and couldn't be verified
- * against a compiler in this environment; text glyphs match the project's
- * existing convention (the "▾"/"▸" chevrons above, emoji document glyphs in
- * Archivio) and carry zero dependency risk.
+ * Titolo/Sottotitolo/grassetto/corsivo/evidenzia/elenchi/checklist — plain
+ * text glyphs rather than Material's "extended" icon set (FormatBold/…),
+ * which lives in a separate artifact this project doesn't otherwise depend on
+ * and couldn't be verified against a compiler in this environment; glyphs
+ * match the project's existing convention (the "▾"/"▸" chevrons above, emoji
+ * document glyphs in Archivio) and carry zero dependency risk. Titolo/
+ * Sottotitolo insert Markdown headers (`#`/`##`) rather than actually
+ * resizing the text as you type — [OutlinedTextField] renders one uniform
+ * style, so real WYSIWYG resizing would need a from-scratch rich-text editor;
+ * the heading still renders correctly once synced to the Obsidian vault.
+ * "Evidenzia" uses `==testo==`, Obsidian's own native highlight syntax — the
+ * one formatting mark here that both means something in plain Markdown *and*
+ * is genuinely honoured (visually highlighted) by the vault app itself.
  */
 @Composable
-private fun FormattingToolbar(onBold: () -> Unit, onItalic: () -> Unit, onBullet: () -> Unit, onNumbered: () -> Unit) {
+private fun FormattingToolbar(
+    onTitle: () -> Unit,
+    onSubtitle: () -> Unit,
+    onBold: () -> Unit,
+    onItalic: () -> Unit,
+    onHighlight: () -> Unit,
+    onBullet: () -> Unit,
+    onNumbered: () -> Unit,
+    onChecklist: () -> Unit,
+) {
     Row(
-        Modifier.fillMaxWidth().padding(vertical = 8.dp),
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        GlyphButton(onClick = onTitle) { Text("T1", color = INK, fontWeight = FontWeight.Bold, fontSize = 14.sp) }
+        GlyphButton(onClick = onSubtitle) { Text("T2", color = INK, fontWeight = FontWeight.Bold, fontSize = 13.sp) }
         GlyphButton(onClick = onBold) { Text("B", color = INK, fontWeight = FontWeight.Bold, fontSize = 16.sp) }
         GlyphButton(onClick = onItalic) { Text("I", color = INK, fontStyle = FontStyle.Italic, fontSize = 16.sp) }
+        GlyphButton(onClick = onHighlight) { Text("H", color = Color(0xFFF3C34C), fontWeight = FontWeight.Bold, fontSize = 15.sp) }
         GlyphButton(onClick = onBullet) { Text("•", color = INK, fontWeight = FontWeight.Bold, fontSize = 18.sp) }
         GlyphButton(onClick = onNumbered) { Text("1.", color = INK, fontWeight = FontWeight.Bold, fontSize = 14.sp) }
+        GlyphButton(onClick = onChecklist) { Text("☑", color = INK, fontSize = 16.sp) }
     }
 }
 
@@ -618,23 +814,67 @@ private fun accentForCategory(category: String): Color {
     return palette[(key.hashCode() and 0x7fffffff) % palette.size]
 }
 
-/** A tap-to-change category chip, over the canonical list. */
+/**
+ * A tap-to-change category chip. Opens [MemoryFolderPickerDialog] instead of
+ * a dropdown limited to [MemoryCategories.CANONICAL] — the user can type a
+ * brand-new folder name here too (§ richiesta esplicita dell'utente: "non
+ * solo le categorie AI fisse attuali").
+ */
 @Composable
-private fun CategorySelector(current: String, enabled: Boolean, onSelect: (String) -> Unit) {
+private fun CategorySelector(current: String, categories: List<String>, enabled: Boolean, onSelect: (String) -> Unit) {
     var open by remember { mutableStateOf(false) }
-    Box {
-        OutlinedButton(onClick = { open = true }, enabled = enabled) {
-            Text("Categoria: " + current.ifBlank { "Senza categoria" })
-        }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            MemoryCategories.CANONICAL.forEach { category ->
-                DropdownMenuItem(
-                    text = { Text(category) },
-                    onClick = { open = false; onSelect(category) },
-                )
-            }
-        }
+    OutlinedButton(onClick = { open = true }, enabled = enabled) {
+        Text("Categoria: " + current.ifBlank { "Senza categoria" })
     }
+    if (open) {
+        MemoryFolderPickerDialog(
+            categories = categories,
+            current = current,
+            onDismiss = { open = false },
+            onPick = { open = false; onSelect(it) },
+        )
+    }
+}
+
+/** Pick an existing category or type a brand-new one — same shape as Archivio's FolderPickerDialog. */
+@Composable
+private fun MemoryFolderPickerDialog(categories: List<String>, current: String, onDismiss: () -> Unit, onPick: (String) -> Unit) {
+    var newName by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Cartella") },
+        text = {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    "Senza categoria",
+                    modifier = Modifier.fillMaxWidth().clickable { onPick("") }.padding(vertical = 8.dp),
+                    fontWeight = if (current.isBlank()) FontWeight.Bold else FontWeight.Normal,
+                )
+                categories.forEach { c ->
+                    Text(
+                        c,
+                        modifier = Modifier.fillMaxWidth().clickable { onPick(c) }.padding(vertical = 8.dp),
+                        fontWeight = if (current == c) FontWeight.Bold else FontWeight.Normal,
+                    )
+                }
+                Spacer(Modifier.size(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = newName,
+                        onValueChange = { newName = it },
+                        label = { Text("Nuova cartella") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = { onPick(newName.trim()) }, enabled = newName.isNotBlank()) { Text("+") }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Chiudi") } },
+    )
 }
 
 // A tight content padding — the default Button/OutlinedButton padding
