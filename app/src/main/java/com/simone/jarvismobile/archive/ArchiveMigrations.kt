@@ -100,5 +100,20 @@ object ArchiveMigrations {
         }
     }
 
-    val ALL = arrayOf(MIGRATION_4_5, MIGRATION_5_6)
+    /**
+     * Adds `folder`/`pinned` to `archive_items` (§ note-app-style Archivio: a
+     * folder sidebar and an "In primo piano" pinned section instead of one
+     * flat list). Same non-destructive rule as the migrations above — an
+     * existing note keeps its content, it just starts out unfiled/unpinned
+     * (`folder=''`, `pinned=0`), same as if the user had never organised it.
+     */
+    val MIGRATION_7_8 = object : Migration(7, 8) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `archive_items` ADD COLUMN `folder` TEXT NOT NULL DEFAULT ''")
+            db.execSQL("ALTER TABLE `archive_items` ADD COLUMN `pinned` INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_archive_items_folder` ON `archive_items` (`folder`)")
+        }
+    }
+
+    val ALL = arrayOf(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_7_8)
 }

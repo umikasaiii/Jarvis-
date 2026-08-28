@@ -262,10 +262,25 @@ class BackupRepository @Inject constructor(
                 out += Src("vault/${note.path}", EntryKind.FILE, bytes = note.content.toByteArray())
             }
         }
-        // Heavy, re-downloadable directories → manifest-only (never copied).
-        for (heavy in listOf("navigation", "documents", "models", "knowledge")) {
+        // Heavy, re-downloadable directories → manifest-only (never copied): AI
+        // models, offline map/knowledge tiles the user fetched from elsewhere
+        // and can fetch again. `documents` used to be lumped in here too, but
+        // it holds the user's own imported files and photos ("Archivio
+        // locale", § richiesta esplicita dell'utente) — those are NOT
+        // re-downloadable, so it is real content below instead.
+        for (heavy in listOf("navigation", "models", "knowledge")) {
             val d = File(context.filesDir, heavy)
             if (d.exists()) out += Src(heavy, EntryKind.MANIFEST_ONLY, sourceRef = d.absolutePath, size = dirSize(d))
+        }
+        // The user's own imported files/photos — real content, same as the
+        // vault notes above, restored by writeTarget's generic branch (it
+        // writes any relPath straight back under filesDir, which is exactly
+        // where DocumentImportManager.PRIVATE_DIR already expects them).
+        val documentsDir = File(context.filesDir, "documents")
+        if (documentsDir.exists()) {
+            documentsDir.walkTopDown().filter { it.isFile }.forEach { f ->
+                out += Src("documents/${f.name}", EntryKind.FILE, bytes = f.readBytes())
+            }
         }
         return out
     }

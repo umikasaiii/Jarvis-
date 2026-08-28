@@ -63,6 +63,7 @@ import com.simone.jarvismobile.ui.backup.BackupScreen
 import com.simone.jarvismobile.ui.home.JarvisChatWindow
 import com.simone.jarvismobile.ui.livetranslate.LiveTranslatorScreen
 import com.simone.jarvismobile.ui.documents.DocumentArchiveScreen
+import com.simone.jarvismobile.ui.localarchive.LocalArchiveScreen
 import com.simone.jarvismobile.ui.memory.MemoryScreen
 import com.simone.jarvismobile.ui.navigation.FavoritesScreen
 import com.simone.jarvismobile.ui.navigation.MapsScreen
@@ -83,7 +84,7 @@ private enum class Tab(val label: String, val icon: ImageVector, val rougeIcon: 
 
 private enum class Overlay {
     CHAT, MODELS, MEMORY, DIAGNOSTICS, AUTOMATIONS, RULES, TRANSLATOR, DOCUMENTS,
-    NAVIGATION, MAPS, FAVORITES, BACKUP, ARCHIVE, SYSTEM_STATUS,
+    NAVIGATION, MAPS, FAVORITES, BACKUP, ARCHIVE, SYSTEM_STATUS, LOCAL_ARCHIVE,
 }
 
 /**
@@ -242,6 +243,7 @@ fun JarvisApp(
                         onOpenModels = { overlay = Overlay.MODELS },
                         onOpenTranslator = { overlay = Overlay.TRANSLATOR },
                         onOpenSystemStatus = { overlay = Overlay.SYSTEM_STATUS },
+                        onOpenLocalArchive = { overlay = Overlay.LOCAL_ARCHIVE },
                     )
                     Tab.CHAT -> Unit
                     Tab.COMANDI -> CommandsScreen()
@@ -315,7 +317,8 @@ fun JarvisApp(
             overlay == Overlay.TRANSLATOR || overlay == Overlay.DOCUMENTS ||
             overlay == Overlay.NAVIGATION || overlay == Overlay.MAPS ||
             overlay == Overlay.FAVORITES || overlay == Overlay.BACKUP ||
-            overlay == Overlay.ARCHIVE || overlay == Overlay.SYSTEM_STATUS
+            overlay == Overlay.ARCHIVE || overlay == Overlay.SYSTEM_STATUS ||
+            overlay == Overlay.LOCAL_ARCHIVE
         ) {
             BackHandler { overlay = null }
             Box(Modifier.fillMaxSize().background(Color(0xFF071119))) {
@@ -343,6 +346,10 @@ fun JarvisApp(
                         onOpenDocuments = { overlay = Overlay.DOCUMENTS },
                     )
                     Overlay.SYSTEM_STATUS -> SystemStatusScreen(onBack = { overlay = null })
+                    Overlay.LOCAL_ARCHIVE -> LocalArchiveScreen(
+                        onBack = { overlay = null },
+                        onOpenArchiveNotes = { overlay = Overlay.ARCHIVE },
+                    )
                     else -> Unit
                 }
             }

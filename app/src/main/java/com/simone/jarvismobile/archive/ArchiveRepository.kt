@@ -50,6 +50,8 @@ class ArchiveRepository @Inject constructor(
         tags: List<String> = emptyList(),
         watchType: String = "",
         link: String = "",
+        folder: String = "",
+        pinned: Boolean = false,
     ): ArchiveItem? {
         if (title.isBlank()) return null
         val now = System.currentTimeMillis()
@@ -62,6 +64,8 @@ class ArchiveRepository @Inject constructor(
             watchType = watchType.trim(),
             status = ArchiveStatus.OPEN,
             link = link.trim(),
+            folder = folder.trim(),
+            pinned = pinned,
             createdAt = now,
             updatedAt = now,
         )
@@ -81,6 +85,8 @@ class ArchiveRepository @Inject constructor(
         watchType: String? = null,
         status: ArchiveStatus? = null,
         link: String? = null,
+        folder: String? = null,
+        pinned: Boolean? = null,
     ): ArchiveItem? {
         val existing = get(id) ?: return null
         val updated = existing.copy(
@@ -90,6 +96,8 @@ class ArchiveRepository @Inject constructor(
             watchType = watchType ?: existing.watchType,
             status = status ?: existing.status,
             link = link ?: existing.link,
+            folder = folder?.trim() ?: existing.folder,
+            pinned = pinned ?: existing.pinned,
             updatedAt = System.currentTimeMillis(),
         )
         runCatching { dao.upsert(updated.toEntity()) }.onFailure {

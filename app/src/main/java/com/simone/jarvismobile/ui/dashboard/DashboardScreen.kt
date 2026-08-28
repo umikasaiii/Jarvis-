@@ -210,6 +210,7 @@ fun DashboardScreen(
     onOpenModels: () -> Unit = {},
     onOpenTranslator: () -> Unit = {},
     onOpenSystemStatus: () -> Unit = {},
+    onOpenLocalArchive: () -> Unit = {},
     viewModel: DashboardViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -428,12 +429,16 @@ fun DashboardScreen(
                 )
             }
 
-            // Automations get their own full-width tile rather than a fifth
-            // column: four labels already crowd a 360dp screen, and this one is
-            // a section entry point, not a metric to compare against the others.
+            // Automations keep most of the row (a section entry point, not a
+            // metric to compare against the others), narrowed by about a
+            // quarter to make room for "Archivio locale" alongside it (§
+            // richiesta esplicita dell'utente) instead of a fifth full-width
+            // row of its own.
             val automationsVm: AutomationsViewModel = hiltViewModel()
             val rules by automationsVm.automations.collectAsStateWithLifecycle()
-            Row(Modifier.fillMaxWidth()) {
+            val localArchiveVm: com.simone.jarvismobile.ui.localarchive.LocalArchiveViewModel = hiltViewModel()
+            val localArchiveCount by localArchiveVm.itemCount.collectAsStateWithLifecycle()
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 StatTile(
                     icon = Icons.Filled.Bolt,
                     label = "Automazioni",
@@ -444,8 +449,18 @@ fun DashboardScreen(
                         ?: "Nessuna regola",
                     accent = Amber,
                     onClick = onOpenAutomations,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(3f),
                     rougeIcon = R.drawable.rouge_ic_automations,
+                )
+                StatTile(
+                    icon = Icons.Filled.FolderOpen,
+                    label = "Archivio",
+                    value = localArchiveCount.toString(),
+                    unit = "file e note",
+                    footer = "Apri",
+                    accent = Cyan,
+                    onClick = onOpenLocalArchive,
+                    modifier = Modifier.weight(1f),
                 )
             }
 

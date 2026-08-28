@@ -16,11 +16,20 @@ enum class ArchiveKind { NOTE, TO_WATCH }
 /** OPEN for an unfinished to-watch item or an ordinary note; DONE once watched/read/checked off. */
 enum class ArchiveStatus { OPEN, DONE }
 
+/** A note with no [ArchiveItem.folder] set falls into this bucket, same label the reference notes apps use. */
+const val ARCHIVE_UNFILED_FOLDER = ""
+
 /**
  * One archive row. [watchType] and [status] are only meaningful for
  * [ArchiveKind.TO_WATCH] (a film/series/book/article and whether it's been
  * consumed yet); a [ArchiveKind.NOTE] leaves them at their defaults. [link] is
  * the "eventuale link/file/note" the spec asks TO_WATCH items to carry.
+ *
+ * [folder] and [pinned] are user-organisation, deliberately separate from
+ * [tags] (which feeds [toMemoryChunk]'s AI retrieval scoring, a different
+ * concern): a note's single folder for browsing, and whether it sits in the
+ * "In primo piano" section at the top of the list. Empty [folder]
+ * ([ARCHIVE_UNFILED_FOLDER]) is "Senza categoria".
  */
 data class ArchiveItem(
     val id: String,
@@ -31,6 +40,8 @@ data class ArchiveItem(
     val watchType: String = "",
     val status: ArchiveStatus = ArchiveStatus.OPEN,
     val link: String = "",
+    val folder: String = ARCHIVE_UNFILED_FOLDER,
+    val pinned: Boolean = false,
     val createdAt: Long,
     val updatedAt: Long,
 ) {

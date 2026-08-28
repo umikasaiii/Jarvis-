@@ -206,6 +206,21 @@
                 android:value="Osserva gli eventi del telefono per le automazioni scelte dall'utente" />
         </service>
 
+        <!-- Archivio locale (§ richiesta esplicita dell'utente: consultare,
+             scaricare o condividere fuori da JARVIS i propri file importati).
+             Exposes only files/documents/ (see file_paths.xml) as content://
+             URIs — the standard, sandboxed way to hand an app-private file to
+             another app's share sheet without a broad storage permission. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
         <receiver
             android:name=".background.CancelTaskReceiver"
             android:exported="false" />

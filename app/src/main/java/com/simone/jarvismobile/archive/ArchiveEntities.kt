@@ -17,7 +17,7 @@ import kotlinx.coroutines.flow.Flow
  * [ArchiveItem]'s own doc comment for why TODO and MEMORY are not here too).
  * Enums as plain strings, same convention as [com.simone.jarvismobile.document.DocumentEntity].
  */
-@Entity(tableName = "archive_items", indices = [Index("kind")])
+@Entity(tableName = "archive_items", indices = [Index("kind"), Index("folder")])
 data class ArchiveItemEntity(
     @PrimaryKey val id: String,
     val kind: String,
@@ -27,6 +27,8 @@ data class ArchiveItemEntity(
     val watchType: String,
     val status: String,
     val link: String,
+    val folder: String,
+    val pinned: Boolean,
     val createdAt: Long,
     val updatedAt: Long,
 )
@@ -63,6 +65,8 @@ fun ArchiveItemEntity.toModel(): ArchiveItem = ArchiveItem(
     watchType = watchType,
     status = runCatching { ArchiveStatus.valueOf(status) }.getOrDefault(ArchiveStatus.OPEN),
     link = link,
+    folder = folder,
+    pinned = pinned,
     createdAt = createdAt,
     updatedAt = updatedAt,
 )
@@ -76,6 +80,8 @@ fun ArchiveItem.toEntity(): ArchiveItemEntity = ArchiveItemEntity(
     watchType = watchType,
     status = status.name,
     link = link,
+    folder = folder,
+    pinned = pinned,
     createdAt = createdAt,
     updatedAt = updatedAt,
 )

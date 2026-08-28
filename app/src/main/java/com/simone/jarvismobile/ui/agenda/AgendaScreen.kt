@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Subject
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarMonth
@@ -123,6 +124,10 @@ fun AgendaScreen(viewModel: AgendaViewModel = hiltViewModel()) {
     var newTaskStarred by remember { mutableStateOf(false) }
     var newTaskDatePicker by remember { mutableStateOf(false) }
     var newTaskTimePicker by remember { mutableStateOf(false) }
+    // The bottom composer (always-visible field + toolbar) was replaced by a
+    // floating "+" and a dedicated full-screen add flow (§ richiesta esplicita
+    // dell'utente, riferimento screenshot) — this flag drives that overlay.
+    var showAddTask by remember { mutableStateOf(false) }
     fun resetNewTask() {
         newTask = ""; newTaskDate = null; newTaskTime = null; newTaskStarred = false
     }
@@ -131,14 +136,13 @@ fun AgendaScreen(viewModel: AgendaViewModel = hiltViewModel()) {
     // isn't in the derived list; show it anyway so the tab stays visible.
     val tabs = if (selected in lists) lists else lists + selected
 
+    Box(Modifier.fillMaxSize()) {
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(
                 Brush.verticalGradient(listOf(Color(0xFF050C16), Color(0xFF081420), Color(0xFF03080E))),
             )
-            // Lift the whole screen above the keyboard so the bottom add-field
-            // (and what you type in it) stays visible while the IME is open.
             .imePadding()
             .padding(horizontal = 16.dp),
     ) {
@@ -273,73 +277,49 @@ fun AgendaScreen(viewModel: AgendaViewModel = hiltViewModel()) {
                 }
             }
 
-            item("tail") { Spacer(Modifier.size(24.dp)) }
+            item("tail") { Spacer(Modifier.size(88.dp)) } // clears the floating "+" below
         }
         }
+    }
 
-        // --- Quick add at the BOTTOM (Google-Tasks style) -------------------
-        if (selected != viewModel.starredTab) {
-            Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
-                // Toolbar: set date, set time, star — mirrors Google Tasks.
-                Row(
-                    Modifier.fillMaxWidth().padding(bottom = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    IconButton(onClick = { newTaskDatePicker = true }) {
-                        Icon(
-                            Icons.Filled.CalendarMonth,
-                            contentDescription = "Data",
-                            tint = if (newTaskDate != null) Cyan else Muted,
-                            modifier = Modifier.size(20.dp),
-                        )
-                    }
-                    IconButton(onClick = { newTaskTimePicker = true }) {
-                        Icon(
-                            Icons.Filled.Schedule,
-                            contentDescription = "Ora",
-                            tint = if (newTaskTime != null) Cyan else Muted,
-                            modifier = Modifier.size(20.dp),
-                        )
-                    }
-                    IconButton(onClick = { newTaskStarred = !newTaskStarred }) {
-                        Icon(
-                            if (newTaskStarred) Icons.Filled.Star else Icons.Filled.StarBorder,
-                            contentDescription = "Speciale",
-                            tint = if (newTaskStarred) Gold else Muted,
-                            modifier = Modifier.size(20.dp),
-                        )
-                    }
-                    val label = buildString {
-                        newTaskDate?.let { append(Agenda.fullDate(it, today)) }
-                        newTaskTime?.let {
-                            if (isNotEmpty()) append(" · ")
-                            append(Agenda.humanTime(it))
-                        }
-                    }
-                    if (label.isNotBlank()) Text(label, color = Cyan, fontSize = 12.sp)
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedTextField(
-                        value = newTask,
-                        onValueChange = { newTask = it; viewModel.clearMessage() },
-                        modifier = Modifier.weight(1f),
-                        placeholder = { Text("Nuova attività in “$selected”") },
-                        singleLine = true,
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    IconButton(
-                        onClick = {
-                            viewModel.addTask(newTask, newTaskDate, newTaskTime, newTaskStarred)
-                            resetNewTask()
-                        },
-                        enabled = newTask.isNotBlank(),
-                    ) {
-                        Icon(Icons.Filled.Add, contentDescription = "Aggiungi", tint = Cyan)
-                    }
-                }
-            }
+    // Floating "+" (§ replaces the old always-visible bottom composer): a
+    // round, accent-filled button in the corner, opening the full-screen add
+    // flow below instead of an inline field that ate space on every list.
+    if (selected != viewModel.starredTab) {
+        IconButton(
+            onClick = { showAddTask = true },
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(20.dp)
+                .size(58.dp)
+                .clip(CircleShape)
+                .background(Cyan),
+        ) {
+            Icon(Icons.Filled.Add, contentDescription = "Nuova attività", tint = Color(0xFF04121A))
         }
+    }
+
+    if (showAddTask) {
+        AddTaskScreen(
+            listName = selected,
+            title = newTask,
+            onTitleChange = { newTask = it; viewModel.clearMessage() },
+            date = newTaskDate,
+            time = newTaskTime,
+            starred = newTaskStarred,
+            today = today,
+            onPickDate = { newTaskDatePicker = true },
+            onPickTime = { newTaskTimePicker = true },
+            onClearDate = { newTaskDate = null; newTaskTime = null },
+            onToggleStar = { newTaskStarred = !newTaskStarred },
+            onDismiss = { showAddTask = false; resetNewTask() },
+            onSave = {
+                viewModel.addTask(newTask, newTaskDate, newTaskTime, newTaskStarred)
+                resetNewTask()
+                showAddTask = false
+            },
+        )
+    }
     }
 
     editing?.let { entry ->
@@ -390,6 +370,109 @@ fun AgendaScreen(viewModel: AgendaViewModel = hiltViewModel()) {
             onDismiss = { newTaskTimePicker = false },
             onPick = { time -> newTaskTime = time; newTaskTimePicker = false },
         )
+    }
+}
+
+/**
+ * The full-screen "add reminder" flow that replaced the always-visible bottom
+ * field: a big borderless "Titolo" like a real note app, the same date/time/
+ * star toolbar the old inline composer had, and a save check in the header —
+ * opened from the floating "+" instead of eating a row on every list.
+ */
+@Composable
+private fun AddTaskScreen(
+    listName: String,
+    title: String,
+    onTitleChange: (String) -> Unit,
+    date: LocalDate?,
+    time: java.time.LocalTime?,
+    starred: Boolean,
+    today: LocalDate,
+    onPickDate: () -> Unit,
+    onPickTime: () -> Unit,
+    onClearDate: () -> Unit,
+    onToggleStar: () -> Unit,
+    onDismiss: () -> Unit,
+    onSave: () -> Unit,
+) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(
+                Brush.verticalGradient(listOf(Color(0xFF050C16), Color(0xFF081420), Color(0xFF03080E))),
+            )
+            .imePadding(),
+    ) {
+        Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
+            Spacer(Modifier.size(16.dp))
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onDismiss) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Annulla", tint = Ink)
+                }
+                Column(Modifier.weight(1f)) {
+                    Text("Nuova attività", color = Ink, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                    Text("in “$listName”", color = Muted, fontSize = 12.sp)
+                }
+                IconButton(onClick = onToggleStar) {
+                    Icon(
+                        if (starred) Icons.Filled.Star else Icons.Filled.StarBorder,
+                        contentDescription = "Speciale",
+                        tint = if (starred) Gold else Muted,
+                    )
+                }
+                IconButton(onClick = onSave, enabled = title.isNotBlank()) {
+                    Icon(
+                        Icons.Filled.Check,
+                        contentDescription = "Salva",
+                        tint = if (title.isNotBlank()) Cyan else Muted,
+                    )
+                }
+            }
+            Spacer(Modifier.size(20.dp))
+            OutlinedTextField(
+                value = title,
+                onValueChange = onTitleChange,
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("Titolo", color = Muted, fontSize = 24.sp) },
+                textStyle = MaterialTheme.typography.headlineSmall.copy(color = Ink),
+                colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Color.Transparent,
+                    unfocusedBorderColor = Color.Transparent,
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent,
+                    cursorColor = Cyan,
+                ),
+                singleLine = true,
+            )
+            Spacer(Modifier.size(8.dp))
+
+            // Date / time / star, same toolbar the old inline composer had.
+            Row(
+                Modifier.fillMaxWidth().clickable(onClick = onPickDate).padding(vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Filled.CalendarMonth, contentDescription = null, tint = if (date != null) Cyan else Muted)
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    date?.let { Agenda.fullDate(it, today) } ?: "Aggiungi data",
+                    color = if (date != null) Ink else Muted,
+                )
+                if (date != null) {
+                    Spacer(Modifier.weight(1f))
+                    IconButton(onClick = onClearDate) {
+                        Icon(Icons.Filled.Delete, contentDescription = "Rimuovi data", tint = Muted, modifier = Modifier.size(18.dp))
+                    }
+                }
+            }
+            Row(
+                Modifier.fillMaxWidth().clickable(onClick = onPickTime).padding(vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Filled.Schedule, contentDescription = null, tint = if (time != null) Cyan else Muted)
+                Spacer(Modifier.width(12.dp))
+                Text(time?.let { Agenda.humanTime(it) } ?: "Aggiungi ora", color = if (time != null) Ink else Muted)
+            }
+        }
     }
 }
 

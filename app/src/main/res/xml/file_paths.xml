@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Exposes only the imported-documents directory (app-private
+  files/documents/, § DocumentImportManager.PRIVATE_DIR) through a
+  content:// URI for sharing/opening outside JARVIS — nothing else in
+  internal storage is reachable through this provider.
+-->
+<paths>
+    <files-path name="documents" path="documents/" />
+</paths>

@@ -134,6 +134,15 @@ class DocumentImportManager @Inject constructor(
         }
     }
 
+    /**
+     * The app-private on-disk copy of [record] — where [copyToPrivate] wrote
+     * it. Used by "Archivio locale" (§ richiesta esplicita dell'utente) to
+     * open/share a file outside JARVIS via [androidx.core.content.FileProvider],
+     * the only reader of this beyond the import pipeline itself.
+     */
+    fun localFile(record: DocumentRecord): java.io.File =
+        java.io.File(java.io.File(context.filesDir, PRIVATE_DIR), record.fileName)
+
     private suspend fun runImport(id: String, uri: Uri, saveToVault: Boolean, force: Boolean) {
         val meta = queryMeta(uri)
         val displayName = meta.first

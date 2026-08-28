@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -79,6 +80,16 @@ class ArchiveViewModel @Inject constructor(
         filtered.sortedByDescending { it.updatedAt }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /** Every folder name a NOTE currently uses, for the folder chip row — sorted, no duplicates, no blanks. */
+    val folders: StateFlow<List<String>> = allItems
+        .map { items ->
+            items.filter { it.kind == ArchiveKind.NOTE }
+                .mapNotNull { it.folder.takeIf { f -> f.isNotBlank() } }
+                .distinct()
+                .sorted()
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     /** Notes + to-watch + every list item, merged and filtered by [query] — the "Tutto" tab. */
     val allRows: StateFlow<List<ArchiveAllRow>> = combine(allItems, allLists, allListItems, query) { notes, ls, its, q ->
         val nameFor = ls.associateBy { it.id }
@@ -95,9 +106,9 @@ class ArchiveViewModel @Inject constructor(
         query.value = value
     }
 
-    fun createNote(title: String, content: String) {
+    fun createNote(title: String, content: String, folder: String = "", pinned: Boolean = false) {
         if (title.isBlank()) return
-        viewModelScope.launch { repository.create(ArchiveKind.NOTE, title, content) }
+        viewModelScope.launch { repository.create(ArchiveKind.NOTE, title, content, folder = folder, pinned = pinned) }
     }
 
     fun createWatchItem(title: String, watchType: String, link: String) {
@@ -105,8 +116,14 @@ class ArchiveViewModel @Inject constructor(
         viewModelScope.launch { repository.create(ArchiveKind.TO_WATCH, title, watchType = watchType, link = link) }
     }
 
-    fun update(item: ArchiveItem, title: String, content: String) {
-        viewModelScope.launch { repository.update(item.id, title = title, content = content) }
+    fun updateNote(item: ArchiveItem, title: String, content: String, folder: String, pinned: Boolean) {
+        viewModelScope.launch {
+            repository.update(item.id, title = title, content = content, folder = folder, pinned = pinned)
+        }
+    }
+
+    fun togglePinned(item: ArchiveItem) {
+        viewModelScope.launch { repository.update(item.id, pinned = !item.pinned) }
     }
 
     fun toggleWatched(item: ArchiveItem) {
