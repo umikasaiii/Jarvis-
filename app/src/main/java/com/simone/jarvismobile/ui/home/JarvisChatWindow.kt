@@ -73,6 +73,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
@@ -97,7 +98,9 @@ import com.simone.jarvismobile.core.document.DocumentRecord
 import com.simone.jarvismobile.core.document.DocumentStatus
 import com.simone.jarvismobile.core.state.ConversationState
 import com.simone.jarvismobile.document.DocumentImportManager
+import com.simone.jarvismobile.ui.theme.JarvisThemeId
 import com.simone.jarvismobile.ui.theme.LocalJarvisPalette
+import com.simone.jarvismobile.ui.theme.LocalJarvisThemeId
 import kotlin.math.roundToInt
 
 private const val MAX_VISIBLE_MESSAGES = 40
@@ -542,11 +545,23 @@ private fun DuplicateDialog(
 /**
  * The chat backdrop. It is a sibling of the scrolling list, not a decoration
  * inside it, so it stays put while messages move.
+ *
+ * The source art is opaque (alpha=255 throughout, a real photographic-style
+ * texture), so a flat [ColorFilter.tint] would flatten the whole circuit
+ * pattern into one solid rectangle instead of recolouring it — the same
+ * problem `bg_dashboard` had for Rosso. `chat_background_red.webp` is a
+ * pre-generated hue rotation of the same asset (source hue ~207° → target
+ * ~3.5°, matching RossoPalette.accent, via a Pillow HSV shift) instead of a
+ * hand-picked replacement: it preserves every dot/line/glow at its original
+ * brightness, just recoloured, and needs no dedicated Rouge variant since
+ * Rouge shares Rosso's exact palette.
  */
 @Composable
 private fun FixedBackground() {
+    val themeId = LocalJarvisThemeId.current
+    val res = if (themeId == JarvisThemeId.BLU) R.drawable.chat_background else R.drawable.chat_background_red
     Image(
-        painter = painterResource(R.drawable.chat_background),
+        painter = painterResource(res),
         contentDescription = null,
         contentScale = ContentScale.Crop,
         modifier = Modifier.fillMaxSize(),
@@ -578,6 +593,11 @@ private const val FRAME_ALPHA = 0.8f
 @Composable
 private fun FixedHudFrame(modifier: Modifier = Modifier) {
     val frame = ImageBitmap.imageResource(R.drawable.chat_hud_frame)
+    // Same conditional recolour as HudOverlay/JarvisCard's frame: this is a
+    // real-alpha, near-monochrome line texture (corners/rails, no baked
+    // background), so a flat tint recolours it cleanly without flattening detail.
+    val themeId = LocalJarvisThemeId.current
+    val tint = if (themeId == JarvisThemeId.BLU) null else ColorFilter.tint(LocalJarvisPalette.current.accent)
     Canvas(modifier) {
         val sw = frame.width
         val sh = frame.height
@@ -607,6 +627,7 @@ private fun FixedHudFrame(modifier: Modifier = Modifier) {
             dstOffset = IntOffset.Zero,
             dstSize = IntSize(w, topH.roundToInt()),
             alpha = FRAME_ALPHA,
+            colorFilter = tint,
         )
         if (midH > 0f) {
             drawImage(
@@ -616,6 +637,7 @@ private fun FixedHudFrame(modifier: Modifier = Modifier) {
                 dstOffset = IntOffset(0, topH.roundToInt()),
                 dstSize = IntSize(w, midH.roundToInt()),
                 alpha = FRAME_ALPHA,
+                colorFilter = tint,
             )
         }
         drawImage(
@@ -625,6 +647,7 @@ private fun FixedHudFrame(modifier: Modifier = Modifier) {
             dstOffset = IntOffset(0, (size.height - bottomH).roundToInt()),
             dstSize = IntSize(w, bottomH.roundToInt()),
             alpha = FRAME_ALPHA,
+            colorFilter = tint,
         )
     }
 }
@@ -777,10 +800,16 @@ private fun MessageBubble(message: ChatMessage, assistantName: String, maxWidth:
                     translationY = (1f - appear.value) * 8.dp.toPx()
                 }
                 .clip(shape)
-                .background(if (isUser) Color(0xCC12354F) else Color(0xE60A1420))
+                .background(Color(0xE60A1420))
+                // The user bubble additionally carries a faint accent wash over
+                // the same dark base — previously a fixed navy fill, now tinted
+                // to the theme so a red/Rouge theme doesn't leave one lone blue
+                // panel behind. Two stacked backgrounds instead of one literal
+                // colour so the wash composites over dark, not over transparent.
+                .then(if (isUser) Modifier.background(Cyan.copy(alpha = 0.22f)) else Modifier)
                 .border(
                     width = 1.2.dp,
-                    color = if (isUser) Cyan.copy(alpha = 0.6f) else Color(0xFF4FA8E8).copy(alpha = 0.38f),
+                    color = if (isUser) Cyan.copy(alpha = 0.6f) else Cyan.copy(alpha = 0.32f),
                     shape = shape,
                 )
                 .padding(horizontal = 18.dp, vertical = 14.dp),
@@ -886,7 +915,11 @@ private fun ChatComposer(
     }
 }
 
-/** Asset 3. The halo carries the state; the artwork itself is never recoloured. */
+/**
+ * Asset 3. The halo carries the state; the artwork's own rim/icon glow is a
+ * near-monochrome cyan-on-black render (same family as `bg_card`/`hud_*`), so
+ * on Rosso/Rouge it is tinted the same way instead of staying fixed cyan.
+ */
 @Composable
 private fun MicrophoneButton(
     status: ChatStatus,
@@ -976,6 +1009,12 @@ private fun AssetButton(
         }
     }
 
+    // The disc/rim artwork is a near-monochrome cyan-on-black render (same
+    // family as `bg_card`/`hud_*`), so it is tinted like them on Rosso/Rouge
+    // instead of staying fixed cyan regardless of the selected theme.
+    val themeId = LocalJarvisThemeId.current
+    val artTint = if (themeId == JarvisThemeId.BLU) null else ColorFilter.tint(LocalJarvisPalette.current.accent)
+
     // The touch target is the whole box, not the artwork inside it. It used to
     // sit on the 54dp image, so the lit ring around the disc — which reads as
     // part of the button — did nothing, and stopping a running reply meant
@@ -1011,6 +1050,7 @@ private fun AssetButton(
             contentDescription = contentDescription,
             contentScale = ContentScale.Fit,
             alpha = if (enabled) artworkAlpha else artworkAlpha * 0.45f,
+            colorFilter = artTint,
             modifier = Modifier
                 .size(54.dp)
                 .aspectRatio(1f)
@@ -1033,9 +1073,9 @@ private fun RowScope.MessageInput(value: String, onValueChange: (String) -> Unit
         shape = shape,
         textStyle = MaterialTheme.typography.bodyLarge.copy(color = Ink, fontSize = 16.sp),
         colors = OutlinedTextFieldDefaults.colors(
-            focusedBorderColor = Color(0xFF4FA8E8).copy(alpha = 0.8f),
-            unfocusedBorderColor = Color(0xFF3A7FB0).copy(alpha = 0.45f),
-            disabledBorderColor = Color(0xFF3A7FB0).copy(alpha = 0.25f),
+            focusedBorderColor = CyanBright.copy(alpha = 0.8f),
+            unfocusedBorderColor = Cyan.copy(alpha = 0.45f),
+            disabledBorderColor = Cyan.copy(alpha = 0.25f),
             focusedContainerColor = Color(0xCC03080F),
             unfocusedContainerColor = Color(0xB3020610),
             disabledContainerColor = Color(0xB3020610),

@@ -1,5 +1,6 @@
 package com.simone.jarvismobile.core.proactive
 
+import com.simone.jarvismobile.core.weather.WeatherCategory
 import java.time.LocalDate
 import java.time.LocalTime
 
@@ -79,6 +80,13 @@ data class ProactiveSnapshot(
      * guessing (§ conditions three-valued rule applies here too).
      */
     val rainToday: Boolean? = null,
+    /**
+     * Today's weather category, when known — drives the emoji on "Buongiorno"
+     * (§ ProactiveComposer.morningDigest). Independent of [rainToday]: that
+     * stays a plain boolean for the sentence clause and for whoever reads this
+     * snapshot without caring about the category breakdown.
+     */
+    val todayWeather: WeatherCategory? = null,
 )
 
 /** The governor's verdict: deliver exactly one suggestion, or stay silent with a reason. */

@@ -1,5 +1,6 @@
 package com.simone.jarvismobile.core.proactive
 
+import com.simone.jarvismobile.core.weather.WeatherCategory
 import java.time.LocalDate
 
 /**
@@ -19,15 +20,19 @@ object ProactiveComposer {
 
     /**
      * "Buongiorno" plus what the day actually holds — birthdays, appointments,
-     * tasks, a rain warning if one is known — and nothing else. An empty day says
-     * so in one line rather than staying silent or padding it out: the point of an
-     * *adaptive* briefing is that a clear day is exactly as short as it sounds.
-     * Meant to be offered at the first morning unlock.
+     * tasks, a rain/storm warning if one is known — and nothing else. An empty
+     * day says so in one line rather than staying silent or padding it out: the
+     * point of an *adaptive* briefing is that a clear day is exactly as short
+     * as it sounds. Meant to be offered at the first morning unlock.
      */
     fun morningDigest(snapshot: ProactiveSnapshot, today: LocalDate): ProactiveSuggestion {
         val items = snapshot.todayAppointments + snapshot.todayTasks
         val message = buildString {
-            append("Buongiorno.")
+            append("Buongiorno")
+            // Only when the category is actually known — an unknown forecast
+            // says nothing rather than defaulting to a guessed icon.
+            snapshot.todayWeather?.let { append(" ${it.greetingEmoji()}") }
+            append(".")
             if (snapshot.birthdaysToday.isNotEmpty()) {
                 append(" Oggi è il compleanno di ")
                 append(snapshot.birthdaysToday.joinToString(" e "))
@@ -40,8 +45,14 @@ object ProactiveComposer {
             } else if (snapshot.birthdaysToday.isEmpty()) {
                 append(" Nessun impegno importante oggi.")
             }
-            // Only ever said when it is actually forecast — unknown/no rain stays silent.
-            if (snapshot.rainToday == true) append(" Oggi è prevista pioggia.")
+            // Thunderstorm gets its own, more specific wording — distinct from
+            // plain rain since it is the more hazardous of the two and the user
+            // explicitly asked to be told which kind is coming. Only ever said
+            // when actually forecast; unknown/no rain stays silent either way.
+            when {
+                snapshot.todayWeather == WeatherCategory.THUNDERSTORM -> append(" Oggi sono previsti temporali.")
+                snapshot.rainToday == true -> append(" Oggi è prevista pioggia.")
+            }
         }
         return ProactiveSuggestion(
             kind = ProactiveKind.MORNING_DIGEST,
@@ -49,6 +60,15 @@ object ProactiveComposer {
             priority = 50,
             dedupKey = "${ProactiveKind.MORNING_DIGEST}:$today",
         )
+    }
+
+    /** ☀️ clear, ⛅ partly cloudy, ☁️ cloudy, 🌧️ rain, ⛈️ thunderstorm — one per [WeatherCategory]. */
+    private fun WeatherCategory.greetingEmoji(): String = when (this) {
+        WeatherCategory.CLEAR -> "☀️"
+        WeatherCategory.PARTLY_CLOUDY -> "⛅"
+        WeatherCategory.CLOUDY -> "☁️"
+        WeatherCategory.RAIN -> "🌧️"
+        WeatherCategory.THUNDERSTORM -> "⛈️"
     }
 
     /**

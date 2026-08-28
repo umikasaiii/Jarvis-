@@ -36,7 +36,17 @@ class ProactiveScheduler @Inject constructor(
             workManager.cancelUniqueWork(WORK_NAME)
             return
         }
-        val request = PeriodicWorkRequestBuilder<ProactiveWorker>(3, TimeUnit.HOURS)
+        // 1h, not 3h: this is the coarse fallback for whoever hasn't enabled
+        // "Automazioni in background" (§ AutomationEventService) — without that
+        // opt-in service there is no real unlock event to react to, so this
+        // periodic tick is the only thing that can ever deliver the morning
+        // digest. At 3h a real first unlock at, say, 06:05 could sit undelivered
+        // until this run finally lands, up to just under 3 hours later — a real
+        // bug the user hit ("il briefing mi è arrivato un'ora dopo lo sblocco").
+        // Paired with the widened window in [ProactiveManager.candidatesFor]
+        // (no longer confined to a 6-10 slice), this caps the worst case at ~1h
+        // instead of ~3h55m.
+        val request = PeriodicWorkRequestBuilder<ProactiveWorker>(1, TimeUnit.HOURS)
             .addTag(TAG)
             .build()
         workManager.enqueueUniquePeriodicWork(WORK_NAME, ExistingPeriodicWorkPolicy.KEEP, request)

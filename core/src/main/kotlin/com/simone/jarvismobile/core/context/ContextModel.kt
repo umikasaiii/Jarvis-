@@ -1,5 +1,6 @@
 package com.simone.jarvismobile.core.context
 
+import com.simone.jarvismobile.core.weather.WeatherCategory
 import java.time.LocalDateTime
 
 /**
@@ -35,6 +36,8 @@ data class ContextState(
      */
     val rainToday: Boolean? = null,
     val rainTomorrow: Boolean? = null,
+    /** Today's dominant weather category — drives the morning greeting emoji. */
+    val todayWeather: WeatherCategory? = null,
     val weatherUpdatedAt: LocalDateTime? = null,
     val updatedAt: LocalDateTime? = null,
 ) {

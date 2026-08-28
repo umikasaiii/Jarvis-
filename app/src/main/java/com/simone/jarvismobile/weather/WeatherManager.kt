@@ -46,11 +46,9 @@ class WeatherManager @Inject constructor(
         }
         val forecast = source.fetchRain(point.first, point.second)
         contextEngine.onWeather(
-            rainToday = RainDecision.fromForecast(forecast?.todayMeanProbabilityPercent, forecast?.todayMillimeters),
-            rainTomorrow = RainDecision.fromForecast(
-                forecast?.tomorrowMeanProbabilityPercent,
-                forecast?.tomorrowMillimeters,
-            ),
+            rainToday = RainDecision.isRainDay(forecast?.todayCategory, forecast?.todayMillimeters),
+            rainTomorrow = RainDecision.isRainDay(forecast?.tomorrowCategory, forecast?.tomorrowMillimeters),
+            todayWeather = forecast?.todayCategory,
         )
         Log.i(TAG, "weather_refreshed ok=${forecast != null}")
     }

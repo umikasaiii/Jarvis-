@@ -1,5 +1,6 @@
 package com.simone.jarvismobile.core.proactive
 
+import com.simone.jarvismobile.core.weather.WeatherCategory
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
@@ -123,6 +124,42 @@ class ProactiveTest {
         assertTrue("pioggia" !in ProactiveComposer.morningDigest(ProactiveSnapshot(rainToday = null), today).message)
         assertTrue("pioggia" !in ProactiveComposer.morningDigest(ProactiveSnapshot(rainToday = false), today).message)
         assertTrue("pioggia" in ProactiveComposer.morningDigest(ProactiveSnapshot(rainToday = true), today).message)
+    }
+
+    @Test fun morningDigestAddsTheWeatherEmojiWhenKnown() {
+        assertEquals(
+            "Buongiorno ☀️. Nessun impegno importante oggi.",
+            ProactiveComposer.morningDigest(ProactiveSnapshot(todayWeather = WeatherCategory.CLEAR), today).message,
+        )
+        assertEquals(
+            "Buongiorno ⛅. Nessun impegno importante oggi.",
+            ProactiveComposer.morningDigest(ProactiveSnapshot(todayWeather = WeatherCategory.PARTLY_CLOUDY), today).message,
+        )
+        assertEquals(
+            "Buongiorno ☁️. Nessun impegno importante oggi.",
+            ProactiveComposer.morningDigest(ProactiveSnapshot(todayWeather = WeatherCategory.CLOUDY), today).message,
+        )
+    }
+
+    @Test fun morningDigestSkipsTheEmojiWhenTheForecastIsUnknown() {
+        assertEquals(
+            "Buongiorno. Nessun impegno importante oggi.",
+            ProactiveComposer.morningDigest(ProactiveSnapshot(todayWeather = null), today).message,
+        )
+    }
+
+    @Test fun morningDigestNamesThunderstormsSeparatelyFromPlainRain() {
+        val storm = ProactiveComposer.morningDigest(
+            ProactiveSnapshot(todayWeather = WeatherCategory.THUNDERSTORM, rainToday = true),
+            today,
+        ).message
+        assertEquals("Buongiorno ⛈️. Nessun impegno importante oggi. Oggi sono previsti temporali.", storm)
+
+        val rain = ProactiveComposer.morningDigest(
+            ProactiveSnapshot(todayWeather = WeatherCategory.RAIN, rainToday = true),
+            today,
+        ).message
+        assertEquals("Buongiorno 🌧️. Nessun impegno importante oggi. Oggi è prevista pioggia.", rain)
     }
 
     @Test fun batteryBeforeAlarmOnlyWhenItHelps() {

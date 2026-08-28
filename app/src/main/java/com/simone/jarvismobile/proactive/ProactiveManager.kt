@@ -43,31 +43,29 @@ class ProactiveManager @Inject constructor(
     private val coordinator: SessionCoordinator,
     private val contextEngine: ContextEngine,
 ) {
-    /** Called periodically by the worker as a coarse fallback (see [evaluateOnUnlock]). */
-    suspend fun evaluate(now: LocalDateTime = LocalDateTime.now()) =
-        run(now, forceMorning = false)
+    /**
+     * Called periodically by the worker as a coarse fallback (see
+     * [evaluateOnUnlock]) — the only path that can ever deliver anything for
+     * whoever hasn't enabled "Automazioni in background", since there is then
+     * no real unlock event to react to.
+     */
+    suspend fun evaluate(now: LocalDateTime = LocalDateTime.now()) = run(now)
 
     /**
      * Called at the real first-unlock-of-the-day event (§ "primo sblocco utile
-     * della giornata"). The morning digest is offered outside the coarse 6-10
-     * window used by [evaluate] — someone unlocking at 05:40 still gets their
-     * one "Buongiorno" — but never before [MORNING_EARLIEST_HOUR] (see
-     * [candidatesFor]): `ACTION_USER_PRESENT` fires on *every* unlock, so
-     * without a floor, checking the phone at 00:05 — still awake, not yet
-     * asleep — would consume the calendar day's one "Buongiorno" right then,
-     * and the real wake-up hours later would find it already delivered
-     * (`MORNING_DIGEST:<date>` in [ProactiveState] dedups per calendar date,
-     * not per sleep cycle). The governor's per-day dedup still does the rest:
-     * once past the floor, this stays exactly the "once a day" digest.
+     * della giornata"). Distinct from [evaluate] only in *when* it runs — both
+     * go through the same [candidatesFor]/[MORNING_EARLIEST_HOUR] floor and the
+     * same governor per-day dedup, so calling this promptly at the real unlock
+     * (rather than waiting for the next coarse tick) is what makes the morning
+     * digest feel immediate instead of arriving up to an hour late.
      */
-    suspend fun evaluateOnUnlock(now: LocalDateTime = LocalDateTime.now()) =
-        run(now, forceMorning = true)
+    suspend fun evaluateOnUnlock(now: LocalDateTime = LocalDateTime.now()) = run(now)
 
-    private suspend fun run(now: LocalDateTime, forceMorning: Boolean) {
+    private suspend fun run(now: LocalDateTime) {
         val config = readSettings()
         if (!config.enabled) return
         val today = now.toLocalDate()
-        val candidates = candidatesFor(now, snapshot(today, now), today, forceMorning)
+        val candidates = candidatesFor(now, snapshot(today, now), today)
         if (candidates.isEmpty()) return
         val state = store.load().rolledTo(today)
         when (val decision = ProactiveGovernor.decide(candidates, config, state, now)) {
@@ -84,22 +82,28 @@ class ProactiveManager @Inject constructor(
     }
 
     /**
-     * Digests in their natural window, so a midday periodic run stays quiet — but
-     * [forceMorning] (the real unlock event) offers the morning digest outside
-     * the [MORNING_FROM]-[MORNING_TO] window too, down to [MORNING_EARLIEST_HOUR]
-     * — never earlier, so a late-night unlock right after midnight is not
-     * mistaken for waking up.
+     * The evening digest stays in its natural window, so a midday periodic run
+     * stays quiet about it. The morning digest is different: it is offered any
+     * time at or after [MORNING_EARLIEST_HOUR], on both the real unlock event
+     * and the coarse periodic fallback alike — never earlier, so a late-night
+     * unlock right after midnight is not mistaken for waking up. Confining the
+     * coarse path to a narrow morning slice (the previous MORNING_FROM-
+     * MORNING_TO window this used to also require) meant that for anyone
+     * without "Automazioni in background" enabled — no real unlock event to
+     * react to, only this periodic tick — a digest could sit undelivered for
+     * hours if the tick landed outside that slice, then arrive late once it
+     * finally did. The governor's own per-day dedup (`MORNING_DIGEST:<date>`)
+     * is what actually keeps this to once a day, so there is no need for a
+     * second, narrower gate here on top of it.
      */
     private fun candidatesFor(
         now: LocalDateTime,
         snap: ProactiveSnapshot,
         today: LocalDate,
-        forceMorning: Boolean,
     ): List<ProactiveSuggestion> {
         val out = ArrayList<ProactiveSuggestion>()
         val hour = now.hour
-        val isMorningUnlock = forceMorning && hour >= MORNING_EARLIEST_HOUR
-        if (isMorningUnlock || hour in MORNING_FROM..MORNING_TO) out += ProactiveComposer.morningDigest(snap, today)
+        if (hour >= MORNING_EARLIEST_HOUR) out += ProactiveComposer.morningDigest(snap, today)
         if (hour in EVENING_FROM..EVENING_TO) {
             ProactiveComposer.batteryBeforeAlarm(snap, today)?.let { out += it }
             ProactiveComposer.eveningDigest(snap, today)?.let { out += it }
@@ -147,6 +151,7 @@ class ProactiveManager @Inject constructor(
         // Reuses ContextEngine's own staleness cutoff, so a refresher that has
         // stopped working reads as "unknown" here too, not as a frozen forecast.
         val rain = runCatching { contextEngine.evaluationContext(now = now) }.getOrNull()
+        val weather = runCatching { contextEngine.todayWeather(now = now) }.getOrNull()
 
         return ProactiveSnapshot(
             batteryPercent = percent,
@@ -156,6 +161,7 @@ class ProactiveManager @Inject constructor(
             todayTasks = tasks,
             birthdaysToday = birthdays,
             rainToday = rain?.rainToday,
+            todayWeather = weather,
         )
     }
 
@@ -181,8 +187,6 @@ class ProactiveManager @Inject constructor(
         // Real unlocks between midnight and this hour never count as "waking up"
         // (§ evaluateOnUnlock) — that is still the previous night, not morning.
         const val MORNING_EARLIEST_HOUR = 5
-        const val MORNING_FROM = 6
-        const val MORNING_TO = 10
         const val EVENING_FROM = 19
         const val EVENING_TO = 21
     }

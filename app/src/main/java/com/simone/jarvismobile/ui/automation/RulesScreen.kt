@@ -547,6 +547,7 @@ private fun RuleBuilderCard(
                             mode = mode,
                             days = days,
                             onlyCharging = onlyCharging,
+                            onlyIfRainTomorrow = onlyIfRainTomorrow,
                             timeFrom = timeFrom,
                             timeTo = timeTo,
                         ),

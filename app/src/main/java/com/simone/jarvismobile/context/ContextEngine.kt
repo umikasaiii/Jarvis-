@@ -14,6 +14,7 @@ import com.simone.jarvismobile.core.context.ContextState
 import com.simone.jarvismobile.core.context.ContextTransition
 import com.simone.jarvismobile.core.context.PlaceFusion
 import com.simone.jarvismobile.core.context.PlaceSignal
+import com.simone.jarvismobile.core.weather.WeatherCategory
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -127,13 +128,24 @@ class ContextEngine @Inject constructor(
     }
 
     /**
-     * Records the latest weather refresh (§ opt-in, phase "meteo"). Both values
+     * Records the latest weather refresh (§ opt-in, phase "meteo"). All values
      * are null when the fetch itself failed or returned nothing usable — the
      * refresher's job is to say what it actually knows, never to guess.
      */
-    fun onWeather(rainToday: Boolean?, rainTomorrow: Boolean?, now: LocalDateTime = LocalDateTime.now()) {
+    fun onWeather(
+        rainToday: Boolean?,
+        rainTomorrow: Boolean?,
+        todayWeather: WeatherCategory? = null,
+        now: LocalDateTime = LocalDateTime.now(),
+    ) {
         _state.update {
-            it.copy(rainToday = rainToday, rainTomorrow = rainTomorrow, weatherUpdatedAt = now, updatedAt = now)
+            it.copy(
+                rainToday = rainToday,
+                rainTomorrow = rainTomorrow,
+                todayWeather = todayWeather,
+                weatherUpdatedAt = now,
+                updatedAt = now,
+            )
         }
     }
 
@@ -191,6 +203,22 @@ class ContextEngine @Inject constructor(
             rainToday = if (weatherFresh) s.rainToday else null,
             rainTomorrow = if (weatherFresh) s.rainTomorrow else null,
         )
+    }
+
+    /**
+     * Today's dominant weather category, for the morning-greeting emoji — kept
+     * separate from [evaluationContext] since the rule/condition engine never
+     * needs the category, only the plain rain booleans already in
+     * [EvaluationContext]. Same staleness gate as the rest of the weather
+     * facts: a forecast older than the refresh window reads as unknown here
+     * too, rather than a frozen icon.
+     */
+    fun todayWeather(now: LocalDateTime = LocalDateTime.now()): WeatherCategory? {
+        val s = _state.value
+        val weatherFresh = s.weatherUpdatedAt?.let {
+            java.time.Duration.between(it, now).toHours() < WEATHER_STALE_HOURS
+        } == true
+        return if (weatherFresh) s.todayWeather else null
     }
 
     /** Privacy-safe line for the diagnostics screen. */
