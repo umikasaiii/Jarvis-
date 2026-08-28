@@ -64,6 +64,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -937,10 +938,12 @@ private fun MemoryNoteEditorScreen(
                 onSubtitle = { field = prefixLine(field, "## ") },
                 onBold = { field = wrapSelection(field, "**") },
                 onItalic = { field = wrapSelection(field, "*") },
+                onUnderline = { field = wrapSelectionWith(field, "<u>", "</u>") },
                 onHighlight = { field = wrapSelection(field, "==") },
                 onBullet = { field = prefixLine(field, "- ") },
                 onNumbered = { field = prefixLine(field, "1. ") },
                 onChecklist = { field = prefixLine(field, "- [ ] ") },
+                onDivider = { field = insertDivider(field) },
             )
             Spacer(Modifier.size(24.dp))
         }
@@ -948,19 +951,22 @@ private fun MemoryNoteEditorScreen(
 }
 
 /**
- * Titolo/Sottotitolo/grassetto/corsivo/evidenzia/elenchi/checklist — plain
- * text glyphs rather than Material's "extended" icon set (FormatBold/…),
- * which lives in a separate artifact this project doesn't otherwise depend on
- * and couldn't be verified against a compiler in this environment; glyphs
- * match the project's existing convention (the "▾"/"▸" chevrons above, emoji
- * document glyphs in Archivio) and carry zero dependency risk. Titolo/
- * Sottotitolo insert Markdown headers (`#`/`##`) rather than actually
- * resizing the text as you type — [OutlinedTextField] renders one uniform
- * style, so real WYSIWYG resizing would need a from-scratch rich-text editor;
- * the heading still renders correctly once synced to the Obsidian vault.
- * "Evidenzia" uses `==testo==`, Obsidian's own native highlight syntax — the
- * one formatting mark here that both means something in plain Markdown *and*
- * is genuinely honoured (visually highlighted) by the vault app itself.
+ * Titolo/Sottotitolo/grassetto/corsivo/sottolineato/evidenzia/elenchi/
+ * checklist/divisore — plain text glyphs rather than Material's "extended"
+ * icon set (FormatBold/…), which lives in a separate artifact this project
+ * doesn't otherwise depend on and couldn't be verified against a compiler in
+ * this environment; glyphs match the project's existing convention (the
+ * "▾"/"▸" chevrons above, emoji document glyphs in Archivio) and carry zero
+ * dependency risk. Titolo/Sottotitolo insert Markdown headers (`#`/`##`)
+ * rather than actually resizing the text as you type — [OutlinedTextField]
+ * renders one uniform style, so real WYSIWYG resizing would need a
+ * from-scratch rich-text editor; the heading still renders correctly once
+ * synced to the Obsidian vault. "Evidenzia" uses `==testo==`, Obsidian's own
+ * native highlight syntax; "Sottolineato" uses raw `<u>…</u>` — inline HTML
+ * inside Markdown, which both CommonMark and Obsidian pass through and
+ * render — same reasoning as the highlight: real Markdown, genuinely honoured
+ * by the vault app, not an app-only marker. "Divisore" inserts a `---`
+ * thematic break on its own paragraph.
  */
 @Composable
 private fun FormattingToolbar(
@@ -968,10 +974,12 @@ private fun FormattingToolbar(
     onSubtitle: () -> Unit,
     onBold: () -> Unit,
     onItalic: () -> Unit,
+    onUnderline: () -> Unit,
     onHighlight: () -> Unit,
     onBullet: () -> Unit,
     onNumbered: () -> Unit,
     onChecklist: () -> Unit,
+    onDivider: () -> Unit,
 ) {
     Row(
         Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 8.dp),
@@ -981,10 +989,12 @@ private fun FormattingToolbar(
         GlyphButton(onClick = onSubtitle) { Text("T2", color = INK, fontWeight = FontWeight.Bold, fontSize = 13.sp) }
         GlyphButton(onClick = onBold) { Text("B", color = INK, fontWeight = FontWeight.Bold, fontSize = 16.sp) }
         GlyphButton(onClick = onItalic) { Text("I", color = INK, fontStyle = FontStyle.Italic, fontSize = 16.sp) }
+        GlyphButton(onClick = onUnderline) { Text("U", color = INK, textDecoration = TextDecoration.Underline, fontSize = 16.sp) }
         GlyphButton(onClick = onHighlight) { Text("H", color = Color(0xFFF3C34C), fontWeight = FontWeight.Bold, fontSize = 15.sp) }
         GlyphButton(onClick = onBullet) { Text("•", color = INK, fontWeight = FontWeight.Bold, fontSize = 18.sp) }
         GlyphButton(onClick = onNumbered) { Text("1.", color = INK, fontWeight = FontWeight.Bold, fontSize = 14.sp) }
         GlyphButton(onClick = onChecklist) { Text("☑", color = INK, fontSize = 16.sp) }
+        GlyphButton(onClick = onDivider) { Text("―", color = INK, fontWeight = FontWeight.Bold, fontSize = 16.sp) }
     }
 }
 
@@ -1017,6 +1027,25 @@ private fun prefixLine(value: TextFieldValue, prefix: String): TextFieldValue {
     val lineStart = if (cursor == 0) 0 else text.lastIndexOf('\n', cursor - 1) + 1
     val newText = text.substring(0, lineStart) + prefix + text.substring(lineStart)
     return value.copy(text = newText, selection = TextRange(cursor + prefix.length))
+}
+
+/** Like [wrapSelection] but with a different opening/closing mark, e.g. "<u>"/"</u>". */
+private fun wrapSelectionWith(value: TextFieldValue, prefix: String, suffix: String): TextFieldValue {
+    val text = value.text
+    val start = value.selection.min
+    val end = value.selection.max
+    val newText = text.substring(0, start) + prefix + text.substring(start, end) + suffix + text.substring(end)
+    val newCursor = if (start == end) start + prefix.length else end + prefix.length + suffix.length
+    return value.copy(text = newText, selection = TextRange(newCursor))
+}
+
+/** Inserts a Markdown thematic break ("---") as its own paragraph at the cursor. */
+private fun insertDivider(value: TextFieldValue): TextFieldValue {
+    val text = value.text
+    val cursor = value.selection.min
+    val insert = "\n\n---\n\n"
+    val newText = text.substring(0, cursor) + insert + text.substring(cursor)
+    return value.copy(text = newText, selection = TextRange(cursor + insert.length))
 }
 
 private fun formatNoteDate(ms: Long): String =
