@@ -25,9 +25,12 @@ import javax.inject.Singleton
  * (docs/PRIVACY.md, docs/SECURITY.md): the user grants a folder with the system
  * picker, we take a persistable read/write grant, and only read `.md` files plus
  * write the dedicated `JARVIS/` Markdown files. No `MANAGE_EXTERNAL_STORAGE`,
- * no access outside that tree, and nothing leaves the device. The
- * vault stays the human-readable source of truth; the in-memory index is a
- * rebuildable cache ([MemoryIndex]).
+ * no access outside that tree, and nothing leaves the device.
+ *
+ * Memoria itself no longer uses the vault (§ richiesta esplicita dell'utente,
+ * see [localMemoryFile]) — it is local-archive-only. The vault remains the
+ * transport for Documents' "save to vault" copies and for the vault-wide
+ * search [MemoryIndex] does over the user's own Obsidian notes.
  */
 @Singleton
 class VaultRepository @Inject constructor(
@@ -37,10 +40,12 @@ class VaultRepository @Inject constructor(
     private val memoryMutex = Mutex()
 
     /**
-     * A reliable app-private copy of the memory records. The Obsidian vault can
-     * refuse writes (a read-only SAF grant, a provider that drops bytes), which
-     * used to make "ricorda …" silently fail; this local file always works, and
-     * the vault is kept as a best-effort mirror folded back in on every read.
+     * The sole store for memory records (§ richiesta esplicita dell'utente:
+     * "Togli sincronizzazione con obsidian e rimaniamo solo su archivio
+     * locale"). Memoria no longer mirrors to or merges from the Obsidian
+     * vault — it is a purely local, app-private archive. The vault (when the
+     * user still links one) continues to serve unrelated features: Documents'
+     * "save to vault" copy and the vault-wide RAG retrieval in [MemoryIndex].
      */
     private val localMemoryFile: File get() = File(context.filesDir, LOCAL_MEMORY_FILE)
 
@@ -132,9 +137,10 @@ class VaultRepository @Inject constructor(
         text: String,
         requestedKind: MemoryKind? = null,
         category: String = "",
+        theme: String = "",
     ): MemoryRecord? =
         memoryMutex.withLock {
-            val body = text.replace(Regex("""\s+"""), " ").trim()
+            val body = text.trim()
             if (body.isBlank() || MemoryStructure.containsCredential(body)) return@withLock null
             // No vault required: the local store always accepts the write, and the
             // vault is mirrored when present. So "ricorda …" works offline too.
@@ -150,6 +156,7 @@ class VaultRepository @Inject constructor(
                 people = fields.people,
                 dates = fields.dates,
                 category = category,
+                theme = theme,
             )
             val records = readMemoryRecordsUnlocked()
             if (!writeMemory(records + record)) return@withLock null
@@ -157,9 +164,9 @@ class VaultRepository @Inject constructor(
             if (readMemoryRecordsUnlocked().any { it.id == record.id }) record else null
         }
 
-    suspend fun updateMemory(id: String, text: String, kind: MemoryKind): MemoryRecord? =
+    suspend fun updateMemory(id: String, text: String, kind: MemoryKind, theme: String? = null): MemoryRecord? =
         memoryMutex.withLock {
-            val body = text.replace(Regex("""\s+"""), " ").trim()
+            val body = text.trim()
             if (body.isBlank() || MemoryStructure.containsCredential(body)) return@withLock null
             val records = readMemoryRecordsUnlocked()
             val current = records.firstOrNull { it.id == id } ?: return@withLock null
@@ -171,6 +178,7 @@ class VaultRepository @Inject constructor(
                 topics = fields.topics,
                 people = fields.people,
                 dates = fields.dates,
+                theme = theme ?: current.theme,
             )
             val next = records.map { if (it.id == id) updated else it }
             if (writeMemory(next)) updated else null
@@ -196,23 +204,13 @@ class VaultRepository @Inject constructor(
         readMemoryRecordsUnlocked()
     }
 
-    private suspend fun readMemoryRecordsUnlocked(): List<MemoryRecord> {
-        val local = MemoryRecordCodec.parse(readLocalMemory())
-        val fromVault = MemoryRecordCodec.parse(readJarvisFile(MEMORY_FILE).orEmpty())
-        // Merge so neither side loses a record: the vault wins for ids in both (an
-        // Obsidian edit sticks), local-only records survive a vault that can't write.
-        val byId = LinkedHashMap<String, MemoryRecord>()
-        local.forEach { byId[it.id] = it }
-        fromVault.forEach { byId[it.id] = it }
-        return byId.values.toList()
-    }
+    private suspend fun readMemoryRecordsUnlocked(): List<MemoryRecord> =
+        MemoryRecordCodec.parse(readLocalMemory())
 
-    /** Writes the whole record set to the reliable local file, mirroring to vault. */
+    /** Writes the whole record set to the local archive only — no vault mirror. */
     private suspend fun writeMemory(records: List<MemoryRecord>): Boolean {
         val rendered = MemoryRecordCodec.render(records)
-        val localOk = writeLocalMemory(rendered)
-        if (isConfigured()) writeJarvisFile(MEMORY_FILE, rendered) // best-effort mirror
-        return localOk
+        return writeLocalMemory(rendered)
     }
 
     private suspend fun readLocalMemory(): String = withContext(Dispatchers.IO) {

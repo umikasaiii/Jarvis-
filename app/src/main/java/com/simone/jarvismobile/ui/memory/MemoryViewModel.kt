@@ -1,10 +1,8 @@
 package com.simone.jarvismobile.ui.memory
 
-import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.simone.jarvismobile.memory.MemoryIndex
-import com.simone.jarvismobile.memory.VaultRepository
 import com.simone.jarvismobile.memory.ConversationMemoryStore
 import com.simone.jarvismobile.core.memory.MemoryKind
 import com.simone.jarvismobile.core.memory.MemoryRecord
@@ -17,15 +15,11 @@ import javax.inject.Inject
 
 @HiltViewModel
 class MemoryViewModel @Inject constructor(
-    private val vault: VaultRepository,
     private val memory: MemoryIndex,
     private val conversationMemory: ConversationMemoryStore,
 ) : ViewModel() {
 
     val status: StateFlow<MemoryIndex.Status> = memory.status
-
-    private val _vaultName = MutableStateFlow<String?>(null)
-    val vaultName: StateFlow<String?> = _vaultName.asStateFlow()
 
     val shortTerm = conversationMemory.snapshot
 
@@ -42,42 +36,13 @@ class MemoryViewModel @Inject constructor(
         refreshAll()
     }
 
-    fun onVaultPicked(uri: Uri) {
-        viewModelScope.launch {
-            vault.setVault(uri)
-            refreshName()
-            memory.rebuild()
-            refreshRecords()
-        }
-    }
-
-    fun reindex() {
-        viewModelScope.launch {
-            _busy.value = true
-            memory.rebuild()
-            conversationMemory.ensureLoaded()
-            refreshRecords()
-            _message.value = "Sincronizzazione completata."
-            _busy.value = false
-        }
-    }
-
-    fun disconnect() {
-        viewModelScope.launch {
-            vault.clearVault()
-            memory.clear()
-            _records.value = emptyList()
-            _vaultName.value = null
-        }
-    }
-
-    fun add(text: String, kind: MemoryKind, category: String = "") {
+    fun add(text: String, kind: MemoryKind, category: String = "", theme: String = "") {
         viewModelScope.launch {
             _busy.value = true
             // Manual add: honour the picked category exactly; if none, leave it
             // uncategorised (no AI) so the "Classifica con l'AI" button stays the
             // explicit way to sort it.
-            val saved = memory.remember(text, kind, category, autoCategorize = false)
+            val saved = memory.remember(text, kind, category, autoCategorize = false, theme = theme)
             _message.value = when {
                 saved != null && kind == MemoryKind.TEMPORARY -> "Aggiunto alla memoria breve."
                 saved != null -> "Ricordo salvato in memoria."
@@ -88,10 +53,10 @@ class MemoryViewModel @Inject constructor(
         }
     }
 
-    fun update(id: String, text: String, kind: MemoryKind) {
+    fun update(id: String, text: String, kind: MemoryKind, theme: String? = null) {
         viewModelScope.launch {
             _busy.value = true
-            _message.value = if (memory.update(id, text, kind) != null) {
+            _message.value = if (memory.update(id, text, kind, theme) != null) {
                 "Ricordo aggiornato."
             } else {
                 "Aggiornamento non riuscito."
@@ -183,16 +148,11 @@ class MemoryViewModel @Inject constructor(
         }
     }
 
-    private fun refreshName() {
-        viewModelScope.launch { _vaultName.value = vault.vaultName() }
-    }
-
     private fun refreshAll() {
         viewModelScope.launch {
             _busy.value = true
             conversationMemory.ensureLoaded()
-            _vaultName.value = vault.vaultName()
-            if (vault.isConfigured()) memory.rebuild()
+            memory.rebuild()
             refreshRecords()
             _busy.value = false
         }

@@ -1,8 +1,7 @@
 package com.simone.jarvismobile.ui.memory
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -59,7 +58,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
@@ -71,10 +72,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.simone.jarvismobile.core.memory.InlineStyle
+import com.simone.jarvismobile.core.memory.MarkupAlign
 import com.simone.jarvismobile.core.memory.MemoryCategories
 import com.simone.jarvismobile.core.memory.MemoryKind
+import com.simone.jarvismobile.core.memory.MemoryMarkup
+import com.simone.jarvismobile.core.memory.MemoryNoteThemes
 import com.simone.jarvismobile.core.memory.MemoryRecord
 import com.simone.jarvismobile.core.memory.ShortTermMemorySnapshot
+import com.simone.jarvismobile.core.memory.SizeStep
 import com.simone.jarvismobile.memory.MemoryIndex
 import com.simone.jarvismobile.ui.theme.LocalJarvisPalette
 import java.text.SimpleDateFormat
@@ -99,7 +105,6 @@ fun MemoryScreen(
     viewModel: MemoryViewModel = hiltViewModel(),
 ) {
     val status by viewModel.status.collectAsStateWithLifecycle()
-    val vaultName by viewModel.vaultName.collectAsStateWithLifecycle()
     val shortTerm by viewModel.shortTerm.collectAsStateWithLifecycle()
     val records by viewModel.records.collectAsStateWithLifecycle()
     val busy by viewModel.busy.collectAsStateWithLifecycle()
@@ -120,10 +125,6 @@ fun MemoryScreen(
         (MemoryCategories.CANONICAL + records.mapNotNull { it.category.takeIf(String::isNotBlank) }).distinct()
     }
 
-    val pickVault = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocumentTree(),
-    ) { uri -> uri?.let(viewModel::onVaultPicked) }
-
     // Full-screen editor, like a phone notes app rather than a cramped dialog
     // (§ richiesta esplicita dell'utente, riferimento Note del telefono) — an
     // early return keeps it out of the main list's Box entirely instead of
@@ -134,12 +135,13 @@ fun MemoryScreen(
             initialText = "",
             initialKind = MemoryKind.PERMANENT,
             initialCategory = selectedCategory.orEmpty(), // a note started from inside a drawer folder lands there
+            initialTheme = "",
             allowTemporary = true,
             showDelete = false,
             enabled = !busy,
             allCategories = allCategories,
             onDismiss = { showAdd = false },
-            onSave = { text, kind, category -> viewModel.add(text, kind, category); showAdd = false },
+            onSave = { text, kind, category, theme -> viewModel.add(text, kind, category, theme); showAdd = false },
             onDelete = {},
         )
         return
@@ -150,6 +152,7 @@ fun MemoryScreen(
             initialText = rec.text,
             initialKind = rec.kind,
             initialCategory = rec.category,
+            initialTheme = rec.theme,
             allowTemporary = false,
             showDelete = true,
             enabled = !busy,
@@ -158,8 +161,8 @@ fun MemoryScreen(
             people = rec.people,
             dates = rec.dates,
             onDismiss = { editing = null },
-            onSave = { text, kind, category ->
-                viewModel.update(rec.id, text, kind)
+            onSave = { text, kind, category, theme ->
+                viewModel.update(rec.id, text, kind, theme)
                 if (category != rec.category) viewModel.setCategory(rec.id, category)
                 editing = null
             },
@@ -342,87 +345,50 @@ fun MemoryScreen(
 
     if (showOptions) {
         MemorySettingsDialog(
-            status = status,
-            vaultName = vaultName,
             shortTerm = shortTerm,
             busy = busy,
             onDismiss = { showOptions = false },
-            onPickVault = { pickVault.launch(null) },
-            onReindex = viewModel::reindex,
-            onDisconnect = viewModel::disconnect,
             onClearTemporary = viewModel::clearTemporary,
         )
     }
-
 }
 
 /**
- * "⋮" on the main screen: the short-term recap and the optional Obsidian mirror
- * — settings-shaped things, not notes — used to sit inline at the bottom of the
- * notes feed. A classic phone Notes app keeps its screen to just notes and tucks
- * everything else away; this dialog is that tuck-away, with the exact same
- * content and callbacks as before, nothing removed.
+ * "⋮" on the main screen: the short-term recap — a settings-shaped thing, not a
+ * note — used to sit inline at the bottom of the notes feed. A classic phone
+ * Notes app keeps its screen to just notes and tucks everything else away; this
+ * dialog is that tuck-away. The Obsidian vault section that used to live here
+ * was removed (§ richiesta esplicita dell'utente: "Togli sincronizzazione con
+ * obsidian e rimaniamo solo su archivio locale") — Memoria no longer touches
+ * any vault; the vault connection Documenti/Agenda/Automazioni still optionally
+ * use moved to Impostazioni › Memoria & Conoscenza › Documenti.
  */
 @Composable
 private fun MemorySettingsDialog(
-    status: MemoryIndex.Status,
-    vaultName: String?,
     shortTerm: ShortTermMemorySnapshot,
     busy: Boolean,
     onDismiss: () -> Unit,
-    onPickVault: () -> Unit,
-    onReindex: () -> Unit,
-    onDisconnect: () -> Unit,
     onClearTemporary: () -> Unit,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Altre opzioni") },
         text = {
-            Column(
-                Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                // Short-term recap.
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Memoria breve", style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        "Privata e temporanea: riassume conversazioni lunghe. " +
-                            "Si cancella con “Nuova conversazione”.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MUTED,
-                    )
-                    if (shortTerm.isEmpty) {
-                        Text("Nessun riepilogo temporaneo.", style = MaterialTheme.typography.bodySmall)
-                    } else {
-                        shortTerm.facts.forEach { Text("• $it") }
-                        StructuredFields(shortTerm.topics, shortTerm.people, shortTerm.dates)
-                        OutlinedButton(onClick = onClearTemporary, enabled = !busy) {
-                            Text("Cancella memoria breve")
-                        }
-                    }
-                }
-
-                HorizontalDivider()
-
-                // Optional Obsidian mirror — the memory works fully without it.
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Vault Obsidian (facoltativo)", style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        if (status.configured) "Collegato: ${vaultName ?: "—"}" else "Nessun vault collegato",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MUTED,
-                    )
-                    Button(onClick = onPickVault, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
-                        Text(if (status.configured) "Cambia cartella vault" else "Collega un vault")
-                    }
-                    if (status.configured) {
-                        OutlinedButton(onClick = onReindex, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
-                            Text(if (busy) "Sincronizzazione…" else "Sincronizza da Obsidian")
-                        }
-                        OutlinedButton(onClick = onDisconnect, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
-                            Text("Disconnetti vault")
-                        }
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Memoria breve", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Privata e temporanea: riassume conversazioni lunghe. " +
+                        "Si cancella con “Nuova conversazione”.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MUTED,
+                )
+                if (shortTerm.isEmpty) {
+                    Text("Nessun riepilogo temporaneo.", style = MaterialTheme.typography.bodySmall)
+                } else {
+                    shortTerm.facts.forEach { Text("• $it") }
+                    StructuredFields(shortTerm.topics, shortTerm.people, shortTerm.dates)
+                    OutlinedButton(onClick = onClearTemporary, enabled = !busy) {
+                        Text("Cancella memoria breve")
                     }
                 }
             }
@@ -800,7 +766,7 @@ private fun NoteGrid(records: List<MemoryRecord>, enabled: Boolean, onOpen: (Mem
     }
 }
 
-/** A colour-tinted note tile showing the note text and its date; tap to edit. */
+/** A colour-tinted note tile showing a plain preview (markup stripped) and its date; tap to edit. */
 @Composable
 private fun NoteTile(record: MemoryRecord, enabled: Boolean, onOpen: (MemoryRecord) -> Unit) {
     val accent = if (record.kind == MemoryKind.SENSITIVE) {
@@ -819,7 +785,9 @@ private fun NoteTile(record: MemoryRecord, enabled: Boolean, onOpen: (MemoryReco
     ) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(
-                record.text.trim() + if (record.kind == MemoryKind.SENSITIVE) "  🔒" else "",
+                // Markup-stripped so a tile never shows raw "**"/"[color=…]" —
+                // the same rich text now written by the editor's toolbar.
+                MemoryMarkup.plainText(record.text) + if (record.kind == MemoryKind.SENSITIVE) "  🔒" else "",
                 style = MaterialTheme.typography.bodyMedium,
                 color = INK,
                 fontWeight = FontWeight.Medium,
@@ -836,12 +804,17 @@ private fun NoteTile(record: MemoryRecord, enabled: Boolean, onOpen: (MemoryReco
 /**
  * The add/edit editor, full-screen like a phone notes app instead of a small
  * dialog (§ richiesta esplicita dell'utente: "identica anche nel funzionamento
- * ... a note in foto") — a big title-less canvas plus a formatting toolbar
- * that inserts Markdown at the cursor/selection (bold/italic/bullet/numbered).
- * Markdown, not opaque rich-text spans, because [MemoryRecord.text] is plain
- * text and the Obsidian vault (`JARVIS/Memoria.md`) is the human-readable
- * source of truth (see CLAUDE.md) — the same syntax round-trips there exactly
- * as typed, instead of a second, app-only formatting format nothing else reads.
+ * ... a note in foto"). A big title-less canvas plus a formatting toolbar that
+ * inserts markup at the cursor/selection — not a live WYSIWYG editor, same
+ * "insert at cursor" pattern already established for bold/italic/bullet — with
+ * an "Anteprima" toggle that renders the real styled result via [MemoryMarkup]
+ * (colour, highlight colour, font size, alignment, checkable checklist).
+ *
+ * [MemoryRecord.text] stores this rich markup as plain text (§ richiesta
+ * esplicita dell'utente: "Togli sincronizzazione con obsidian e rimaniamo solo
+ * su archivio locale" — the syntax is app-only now that Memoria no longer
+ * mirrors to Obsidian, so it is free to include tags `==`/`**` alone couldn't
+ * express, e.g. `[color=#RRGGBB]…[/color]`).
  */
 @Composable
 private fun MemoryNoteEditorScreen(
@@ -849,6 +822,7 @@ private fun MemoryNoteEditorScreen(
     initialText: String,
     initialKind: MemoryKind,
     initialCategory: String,
+    initialTheme: String,
     allowTemporary: Boolean,
     showDelete: Boolean,
     enabled: Boolean,
@@ -857,19 +831,21 @@ private fun MemoryNoteEditorScreen(
     people: List<String> = emptyList(),
     dates: List<String> = emptyList(),
     onDismiss: () -> Unit,
-    onSave: (String, MemoryKind, String) -> Unit,
+    onSave: (String, MemoryKind, String, String) -> Unit,
     onDelete: () -> Unit,
 ) {
     var field by remember { mutableStateOf(TextFieldValue(initialText)) }
     var kind by remember { mutableStateOf(initialKind) }
     var category by remember { mutableStateOf(initialCategory) }
+    var theme by remember { mutableStateOf(MemoryNoteThemes.sanitize(initialTheme)) }
     var confirmDelete by remember { mutableStateOf(false) }
+    var showPreview by remember { mutableStateOf(false) }
     val accent = Cyan
 
     Box(
         Modifier
             .fillMaxSize()
-            .background(Brush.verticalGradient(listOf(Color(0xFF050C16), Color(0xFF081420), Color(0xFF03080E))))
+            .background(themeBackgroundBrush(theme))
             .imePadding(),
     ) {
         Column(
@@ -899,7 +875,7 @@ private fun MemoryNoteEditorScreen(
                     }
                 }
                 TextButton(
-                    onClick = { if (field.text.isNotBlank()) onSave(field.text, kind, category) },
+                    onClick = { if (field.text.isNotBlank()) onSave(field.text, kind, category, theme) },
                     enabled = enabled && field.text.isNotBlank(),
                 ) { Text("Salva", color = if (field.text.isNotBlank()) accent else MUTED) }
             }
@@ -914,59 +890,76 @@ private fun MemoryNoteEditorScreen(
                 )
             }
             Spacer(Modifier.size(8.dp))
-            CategorySelector(category, allCategories, enabled) { category = it }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                CategorySelector(category, allCategories, enabled) { category = it }
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = { showPreview = !showPreview }) {
+                    Text(if (showPreview) "Modifica" else "Anteprima", color = accent)
+                }
+            }
+            ThemeSelector(current = theme, onSelect = { theme = it })
             StructuredFields(topics, people, dates)
             Spacer(Modifier.size(12.dp))
-            OutlinedTextField(
-                value = field,
-                onValueChange = { field = it },
-                modifier = Modifier.fillMaxWidth().weight(1f),
-                placeholder = { Text("Scrivi qui…", color = MUTED) },
-                textStyle = MaterialTheme.typography.bodyLarge.copy(color = INK),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Color.Transparent,
-                    unfocusedBorderColor = Color.Transparent,
-                    focusedContainerColor = Color.Transparent,
-                    unfocusedContainerColor = Color.Transparent,
-                    cursorColor = accent,
-                    focusedTextColor = INK,
-                    unfocusedTextColor = INK,
-                ),
-            )
-            FormattingToolbar(
-                onTitle = { field = prefixLine(field, "# ") },
-                onSubtitle = { field = prefixLine(field, "## ") },
-                onBold = { field = wrapSelection(field, "**") },
-                onItalic = { field = wrapSelection(field, "*") },
-                onUnderline = { field = wrapSelectionWith(field, "<u>", "</u>") },
-                onHighlight = { field = wrapSelection(field, "==") },
-                onBullet = { field = prefixLine(field, "- ") },
-                onNumbered = { field = prefixLine(field, "1. ") },
-                onChecklist = { field = prefixLine(field, "- [ ] ") },
-                onDivider = { field = insertDivider(field) },
-            )
+            if (showPreview) {
+                MarkupPreview(
+                    raw = field.text,
+                    accent = accent,
+                    onToggleLine = { index -> field = field.copy(text = toggleChecklistLine(field.text, index)) },
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                )
+            } else {
+                OutlinedTextField(
+                    value = field,
+                    onValueChange = { field = it },
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                    placeholder = { Text("Scrivi qui…", color = MUTED) },
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = INK),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color.Transparent,
+                        unfocusedBorderColor = Color.Transparent,
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent,
+                        cursorColor = accent,
+                        focusedTextColor = INK,
+                        unfocusedTextColor = INK,
+                    ),
+                )
+                FormattingToolbar(
+                    onTitle = { field = prefixLine(field, "# ") },
+                    onSubtitle = { field = prefixLine(field, "## ") },
+                    onBold = { field = wrapSelection(field, "**") },
+                    onItalic = { field = wrapSelection(field, "*") },
+                    onUnderline = { field = wrapSelectionWith(field, "<u>", "</u>") },
+                    onHighlight = { field = wrapSelection(field, "==") },
+                    onTextColor = { hex -> field = wrapSelectionWith(field, "[color=$hex]", "[/color]") },
+                    onHighlightColor = { hex -> field = wrapSelectionWith(field, "[hl=$hex]", "[/hl]") },
+                    onFontSize = { tag -> field = wrapSelectionWith(field, "[size=$tag]", "[/size]") },
+                    onBullet = { field = prefixLine(field, "- ") },
+                    onNumbered = { field = prefixLine(field, "1. ") },
+                    onChecklist = { field = prefixLine(field, "- [ ] ") },
+                    onDivider = { field = insertDivider(field) },
+                    onAlignStart = { field = setLineAlign(field, "") },
+                    onAlignCenter = { field = setLineAlign(field, "[center]") },
+                    onAlignEnd = { field = setLineAlign(field, "[right]") },
+                )
+            }
             Spacer(Modifier.size(24.dp))
         }
     }
 }
 
 /**
- * Titolo/Sottotitolo/grassetto/corsivo/sottolineato/evidenzia/elenchi/
- * checklist/divisore — plain text glyphs rather than Material's "extended"
- * icon set (FormatBold/…), which lives in a separate artifact this project
- * doesn't otherwise depend on and couldn't be verified against a compiler in
- * this environment; glyphs match the project's existing convention (the
- * "▾"/"▸" chevrons above, emoji document glyphs in Archivio) and carry zero
- * dependency risk. Titolo/Sottotitolo insert Markdown headers (`#`/`##`)
- * rather than actually resizing the text as you type — [OutlinedTextField]
- * renders one uniform style, so real WYSIWYG resizing would need a
- * from-scratch rich-text editor; the heading still renders correctly once
- * synced to the Obsidian vault. "Evidenzia" uses `==testo==`, Obsidian's own
- * native highlight syntax; "Sottolineato" uses raw `<u>…</u>` — inline HTML
- * inside Markdown, which both CommonMark and Obsidian pass through and
- * render — same reasoning as the highlight: real Markdown, genuinely honoured
- * by the vault app, not an app-only marker. "Divisore" inserts a `---`
- * thematic break on its own paragraph.
+ * Titolo/Sottotitolo/grassetto/corsivo/sottolineato/evidenzia/colore testo/
+ * colore evidenziatore/dimensione/elenchi/checklist/divisore/allineamento —
+ * plain text glyphs rather than Material's "extended" icon set (FormatBold/…),
+ * which lives in a separate artifact this project doesn't otherwise depend on
+ * and couldn't be verified against a compiler in this environment; glyphs
+ * match the project's existing convention (the "▾"/"▸" chevrons elsewhere,
+ * emoji document glyphs in Archivio) and carry zero dependency risk.
+ * Titolo/Sottotitolo/colore/dimensione insert markup rather than actually
+ * restyling the text as you type — [OutlinedTextField] renders one uniform
+ * style, so live WYSIWYG would need a from-scratch rich-text editor; "Anteprima"
+ * is where the real styled result is shown, via [MemoryMarkup].
  */
 @Composable
 private fun FormattingToolbar(
@@ -976,10 +969,16 @@ private fun FormattingToolbar(
     onItalic: () -> Unit,
     onUnderline: () -> Unit,
     onHighlight: () -> Unit,
+    onTextColor: (String) -> Unit,
+    onHighlightColor: (String) -> Unit,
+    onFontSize: (String) -> Unit,
     onBullet: () -> Unit,
     onNumbered: () -> Unit,
     onChecklist: () -> Unit,
     onDivider: () -> Unit,
+    onAlignStart: () -> Unit,
+    onAlignCenter: () -> Unit,
+    onAlignEnd: () -> Unit,
 ) {
     Row(
         Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 8.dp),
@@ -991,10 +990,16 @@ private fun FormattingToolbar(
         GlyphButton(onClick = onItalic) { Text("I", color = INK, fontStyle = FontStyle.Italic, fontSize = 16.sp) }
         GlyphButton(onClick = onUnderline) { Text("U", color = INK, textDecoration = TextDecoration.Underline, fontSize = 16.sp) }
         GlyphButton(onClick = onHighlight) { Text("H", color = Color(0xFFF3C34C), fontWeight = FontWeight.Bold, fontSize = 15.sp) }
+        SwatchPickerButton(glyph = "A", swatches = SWATCHES, onPick = onTextColor)
+        SwatchPickerButton(glyph = "▧", swatches = SWATCHES, onPick = onHighlightColor)
+        SizePickerButton(onPick = onFontSize)
         GlyphButton(onClick = onBullet) { Text("•", color = INK, fontWeight = FontWeight.Bold, fontSize = 18.sp) }
         GlyphButton(onClick = onNumbered) { Text("1.", color = INK, fontWeight = FontWeight.Bold, fontSize = 14.sp) }
         GlyphButton(onClick = onChecklist) { Text("☑", color = INK, fontSize = 16.sp) }
         GlyphButton(onClick = onDivider) { Text("―", color = INK, fontWeight = FontWeight.Bold, fontSize = 16.sp) }
+        GlyphButton(onClick = onAlignStart) { Text("Sx", color = INK, fontSize = 12.sp) }
+        GlyphButton(onClick = onAlignCenter) { Text("Cn", color = INK, fontSize = 12.sp) }
+        GlyphButton(onClick = onAlignEnd) { Text("Dx", color = INK, fontSize = 12.sp) }
     }
 }
 
@@ -1008,6 +1013,54 @@ private fun GlyphButton(onClick: () -> Unit, content: @Composable () -> Unit) {
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) { content() }
+}
+
+/** Generic swatches for text colour / highlight colour — not brand-specific, just useful choices. */
+private val SWATCHES: List<Pair<String, String>> = listOf(
+    "#FF5C5C" to "Rosso", "#FFA352" to "Arancio", "#FFE156" to "Giallo", "#6BE585" to "Verde",
+    "#5CD6E8" to "Ciano", "#5C9CFF" to "Blu", "#C57CFF" to "Viola", "#F2F2F2" to "Bianco",
+)
+
+/** A toolbar button that opens a dropdown of colour swatches. */
+@Composable
+private fun SwatchPickerButton(glyph: String, swatches: List<Pair<String, String>>, onPick: (String) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        GlyphButton(onClick = { open = true }) { Text(glyph, color = INK, fontWeight = FontWeight.Bold, fontSize = 15.sp) }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            swatches.forEach { (hex, name) ->
+                DropdownMenuItem(
+                    text = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.size(16.dp).clip(CircleShape).background(parseHex(hex)))
+                            Spacer(Modifier.width(8.dp))
+                            Text(name)
+                        }
+                    },
+                    onClick = { open = false; onPick(hex) },
+                )
+            }
+        }
+    }
+}
+
+/** A toolbar button that opens a dropdown of the four font-size steps. */
+@Composable
+private fun SizePickerButton(onPick: (String) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        GlyphButton(onClick = { open = true }) { Text("Aa", color = INK, fontWeight = FontWeight.Bold, fontSize = 13.sp) }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            listOf(
+                SizeStep.SMALL to "Piccolo",
+                SizeStep.MEDIUM to "Medio",
+                SizeStep.LARGE to "Grande",
+                SizeStep.EXTRA_LARGE to "Molto grande",
+            ).forEach { (step, label) ->
+                DropdownMenuItem(text = { Text(label) }, onClick = { open = false; onPick(step.tag) })
+            }
+        }
+    }
 }
 
 /** Wraps the selection (or inserts an empty pair at the cursor) in [marker], e.g. "**bold**". */
@@ -1046,6 +1099,170 @@ private fun insertDivider(value: TextFieldValue): TextFieldValue {
     val insert = "\n\n---\n\n"
     val newText = text.substring(0, cursor) + insert + text.substring(cursor)
     return value.copy(text = newText, selection = TextRange(cursor + insert.length))
+}
+
+/** Sets (or clears) the current line's alignment marker — "", "[center]" or "[right]". */
+private fun setLineAlign(value: TextFieldValue, tag: String): TextFieldValue {
+    val text = value.text
+    val cursor = value.selection.min
+    val lineStart = if (cursor == 0) 0 else text.lastIndexOf('\n', cursor - 1) + 1
+    val rest = text.substring(lineStart)
+    val stripped = when {
+        rest.startsWith("[center]") -> rest.removePrefix("[center]")
+        rest.startsWith("[right]") -> rest.removePrefix("[right]")
+        else -> rest
+    }
+    val removedLength = rest.length - stripped.length
+    val newText = text.substring(0, lineStart) + tag + stripped
+    val delta = tag.length - removedLength
+    return value.copy(text = newText, selection = TextRange((cursor + delta).coerceIn(lineStart, newText.length)))
+}
+
+/** Toggles a `- [ ] `/`- [x] ` checklist marker on one physical line, by index — used by the tappable checkbox in preview. */
+private fun toggleChecklistLine(raw: String, lineIndex: Int): String {
+    val lines = raw.split("\n").toMutableList()
+    if (lineIndex !in lines.indices) return raw
+    val line = lines[lineIndex]
+    val trimmedStart = line.trimStart()
+    val indent = line.substring(0, line.length - trimmedStart.length)
+    lines[lineIndex] = when {
+        trimmedStart.startsWith("- [ ] ") -> indent + "- [x] " + trimmedStart.drop(6)
+        trimmedStart.startsWith("- [x] ") || trimmedStart.startsWith("- [X] ") -> indent + "- [ ] " + trimmedStart.drop(6)
+        else -> line
+    }
+    return lines.joinToString("\n")
+}
+
+/** Renders [raw] via [MemoryMarkup] — the real styled result, not the raw markup syntax. */
+@Composable
+private fun MarkupPreview(raw: String, accent: Color, onToggleLine: (Int) -> Unit, modifier: Modifier = Modifier) {
+    val lines = remember(raw) { MemoryMarkup.parse(raw) }
+    Column(modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        lines.forEachIndexed { index, line ->
+            if (line.isDivider) {
+                HorizontalDivider(color = MUTED.copy(alpha = 0.3f), modifier = Modifier.padding(vertical = 8.dp))
+                return@forEachIndexed
+            }
+            val fontSize = if (line.isHeading1) 22.sp else if (line.isHeading2) 18.sp else 16.sp
+            val weight = if (line.isHeading1 || line.isHeading2) FontWeight.Bold else FontWeight.Normal
+            val checked = line.isChecklistChecked
+            val prefix = when {
+                checked != null -> null
+                line.isBullet -> "•  "
+                line.isNumbered -> "${index + 1}.  "
+                else -> null
+            }
+            val annotated = remember(line) {
+                buildAnnotatedString {
+                    append(line.text)
+                    line.runs.forEach { addStyle(it.style.toSpanStyle(), it.start, it.end) }
+                }
+            }
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = when (line.align) {
+                    MarkupAlign.CENTER -> Arrangement.Center
+                    MarkupAlign.END -> Arrangement.End
+                    MarkupAlign.START -> Arrangement.Start
+                },
+            ) {
+                if (checked != null) {
+                    Text(
+                        if (checked) "☑" else "☐",
+                        color = if (checked) accent else INK,
+                        fontSize = fontSize,
+                        modifier = Modifier.clickable { onToggleLine(index) }.padding(end = 8.dp),
+                    )
+                } else if (prefix != null) {
+                    Text(prefix, color = INK, fontSize = fontSize)
+                }
+                Text(
+                    annotated,
+                    color = INK,
+                    fontSize = fontSize,
+                    fontWeight = weight,
+                    textDecoration = if (checked == true) TextDecoration.LineThrough else null,
+                )
+            }
+        }
+        if (lines.all { it.text.isBlank() && !it.isDivider }) {
+            Text("Anteprima vuota.", color = MUTED, style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+private fun InlineStyle.toSpanStyle(): SpanStyle = when (this) {
+    InlineStyle.Bold -> SpanStyle(fontWeight = FontWeight.Bold)
+    InlineStyle.Italic -> SpanStyle(fontStyle = FontStyle.Italic)
+    InlineStyle.Underline -> SpanStyle(textDecoration = TextDecoration.Underline)
+    is InlineStyle.Highlight -> SpanStyle(background = parseHex(colorHex))
+    is InlineStyle.TextColor -> SpanStyle(color = parseHex(colorHex))
+    is InlineStyle.FontSize -> SpanStyle(
+        fontSize = when (step) {
+            SizeStep.SMALL -> 12.sp
+            SizeStep.MEDIUM -> 16.sp
+            SizeStep.LARGE -> 20.sp
+            SizeStep.EXTRA_LARGE -> 26.sp
+        },
+    )
+}
+
+private fun parseHex(hex: String): Color = runCatching {
+    val rgb = hex.removePrefix("#").toLong(16)
+    Color((0xFF000000L or rgb).toInt())
+}.getOrDefault(Color.White)
+
+/**
+ * A row of tappable colour swatches for the note's background theme (§
+ * richiesta esplicita dell'utente: "cambiare il tema dello sfondo della nota
+ * con molti temi anche molto ispirati ad anime"; risposta alla domanda di
+ * chiarimento: "Temi generici, nessun riferimento specifico" — quindi
+ * gradienti generici scelti per nome/atmosfera, non arte con licenza).
+ */
+@Composable
+private fun ThemeSelector(current: String, onSelect: (String) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        MemoryNoteThemes.ALL.forEach { id ->
+            val selected = current == id
+            Box(
+                Modifier
+                    .size(26.dp)
+                    .clip(CircleShape)
+                    .background(themeSwatchColor(id))
+                    .then(if (selected) Modifier.border(2.dp, Cyan, CircleShape) else Modifier)
+                    .clickable { onSelect(id) },
+            )
+        }
+    }
+}
+
+private fun themeSwatchColor(id: String): Color = when (id) {
+    "sunset" -> Color(0xFF8B2E4A)
+    "ocean" -> Color(0xFF0E5C73)
+    "forest" -> Color(0xFF1F5C33)
+    "lavanda" -> Color(0xFF5A4A99)
+    "rosa" -> Color(0xFF9A3D6B)
+    "notte" -> Color(0xFF141A33)
+    "menta" -> Color(0xFF1E8F73)
+    "pesca" -> Color(0xFF9A6A2E)
+    "ardesia" -> Color(0xFF4A5568)
+    else -> Color(0xFF3FD8F0)
+}
+
+private fun themeBackgroundBrush(id: String): Brush = when (id) {
+    "sunset" -> Brush.verticalGradient(listOf(Color(0xFF2E0B18), Color(0xFF4A1729), Color(0xFF1C0710)))
+    "ocean" -> Brush.verticalGradient(listOf(Color(0xFF031A22), Color(0xFF0A3644), Color(0xFF021016)))
+    "forest" -> Brush.verticalGradient(listOf(Color(0xFF091D12), Color(0xFF12331D), Color(0xFF05120A)))
+    "lavanda" -> Brush.verticalGradient(listOf(Color(0xFF1B1530), Color(0xFF2A2049), Color(0xFF110D22)))
+    "rosa" -> Brush.verticalGradient(listOf(Color(0xFF2E0F1E), Color(0xFF461B32), Color(0xFF1A0813)))
+    "notte" -> Brush.verticalGradient(listOf(Color(0xFF04050C), Color(0xFF090C1A), Color(0xFF020207)))
+    "menta" -> Brush.verticalGradient(listOf(Color(0xFF07211B), Color(0xFF0E3A30), Color(0xFF041410)))
+    "pesca" -> Brush.verticalGradient(listOf(Color(0xFF2E1D0E), Color(0xFF473018), Color(0xFF190F07)))
+    "ardesia" -> Brush.verticalGradient(listOf(Color(0xFF161A20), Color(0xFF232A33), Color(0xFF0C0F13)))
+    else -> Brush.verticalGradient(listOf(Color(0xFF050C16), Color(0xFF081420), Color(0xFF03080E)))
 }
 
 private fun formatNoteDate(ms: Long): String =

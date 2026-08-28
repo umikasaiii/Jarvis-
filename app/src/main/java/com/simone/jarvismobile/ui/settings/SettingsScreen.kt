@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -286,7 +287,7 @@ fun SettingsScreen(
                         "«sono allergico a…»), JARVIS ti propone di salvarlo nella memoria. " +
                         "Chiede sempre conferma prima di scrivere; non salva mai password o " +
                         "codici, e i dati di salute restano marcati come sensibili 🔒. " +
-                        "Serve un vault Obsidian collegato.",
+                        "Tutto resta sul dispositivo, nessun vault richiesto.",
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
@@ -778,7 +779,7 @@ fun SettingsScreen(
             Text("Modelli (AI locale)")
         }
         OutlinedButton(onClick = onOpenMemory, modifier = Modifier.fillMaxWidth()) {
-            Text("Memoria (appunti Obsidian)")
+            Text("Memoria")
         }
         OutlinedButton(onClick = onOpenArchive, modifier = Modifier.fillMaxWidth()) {
             Text("Archivio (note e da vedere)")
@@ -1044,7 +1045,7 @@ private fun EngineSettingsSection(
                 Text("Gestisci memoria conversazionale", style = MaterialTheme.typography.titleSmall)
                 Text(
                     "Cancella solo la memoria episodica del motore conversazionale (operazioni in " +
-                        "corso, richiami recenti). I ricordi permanenti nel vault non sono toccati.",
+                        "corso, richiami recenti). I ricordi permanenti in Memoria non sono toccati.",
                     style = MaterialTheme.typography.bodySmall,
                 )
                 OutlinedButton(
@@ -1195,6 +1196,11 @@ private fun DocumentSettingsSection(
     val autoIndex by viewModel.docAutoIndex.collectAsStateWithLifecycle()
     val dedup by viewModel.docDedup.collectAsStateWithLifecycle()
     val ocr by viewModel.docOcrImages.collectAsStateWithLifecycle()
+    val vaultConfigured by viewModel.vaultConfigured.collectAsStateWithLifecycle()
+    val vaultName by viewModel.vaultName.collectAsStateWithLifecycle()
+    val pickVault = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree(),
+    ) { uri -> uri?.let(viewModel::pickVault) }
 
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1211,6 +1217,26 @@ private fun DocumentSettingsSection(
             SwitchRow("OCR immagini (più lento, opzionale)", ocr, viewModel::setDocOcrImages)
             OutlinedButton(onClick = onOpenArchive, modifier = Modifier.fillMaxWidth()) {
                 Text("Archivio documenti")
+            }
+            HorizontalDivider()
+            Text("Vault Obsidian (facoltativo)", style = MaterialTheme.typography.titleMedium)
+            Text(
+                if (vaultConfigured) "Collegato: ${vaultName ?: "—"}" else "Nessun vault collegato",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Text(
+                "Usato solo da Documenti (copia opzionale) e da Agenda/Automazioni (mirror " +
+                    "facoltativo, non richiesto). Memoria non lo usa più: è un archivio " +
+                    "interamente locale.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Button(onClick = { pickVault.launch(null) }, modifier = Modifier.fillMaxWidth()) {
+                Text(if (vaultConfigured) "Cambia cartella vault" else "Collega un vault")
+            }
+            if (vaultConfigured) {
+                OutlinedButton(onClick = viewModel::disconnectVault, modifier = Modifier.fillMaxWidth()) {
+                    Text("Disconnetti vault")
+                }
             }
         }
     }

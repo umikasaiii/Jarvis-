@@ -80,22 +80,48 @@ class MemoryRecordTest {
     }
 
     @Test
-    fun `direct Obsidian edits keep id and refresh searchable fields`() {
+    fun `old paired format still parses, the echoed bullet is discarded not trusted`() {
+        // Pre-existing files (saved before Obsidian sync was removed) pair a
+        // JSON comment with a human-readable "- text" echo. The JSON is now
+        // the sole source of truth, so hand-editing that echo line must have
+        // no effect — it is simply consumed and dropped, never merged in.
         val original = MemoryRecord(
             id = "stable-id",
             text = "Preferisco il tè",
             kind = MemoryKind.SENSITIVE,
             createdAt = 10,
         )
-        val editedMarkdown = MemoryRecordCodec.render(listOf(original))
-            .replace("🔒 Preferisco il tè", "🔒 Venerdì incontro con Giulia")
+        val legacyPaired = "<!-- jarvis-memory-v2:" +
+            kotlinx.serialization.json.Json.encodeToString(MemoryRecord.serializer(), original) +
+            " -->\n- 🔒 Venerdì incontro con Giulia\n\n"
 
-        val edited = MemoryRecordCodec.parse(editedMarkdown).single()
-        assertEquals("stable-id", edited.id)
-        assertEquals(MemoryKind.SENSITIVE, edited.kind)
-        assertEquals("Venerdì incontro con Giulia", edited.text)
-        assertTrue(edited.people.contains("Giulia"))
-        assertTrue(edited.dates.contains("venerdì"))
+        val parsed = MemoryRecordCodec.parse(legacyPaired).single()
+        assertEquals("stable-id", parsed.id)
+        assertEquals(MemoryKind.SENSITIVE, parsed.kind)
+        assertEquals("Preferisco il tè", parsed.text)
+    }
+
+    @Test
+    fun `multi-line text survives the round trip, no longer collapsed to one line`() {
+        val records = listOf(
+            MemoryRecord(
+                id = "multi-line",
+                text = "Riga uno\n\nRiga due con **grassetto**\n- punto a\n- punto b",
+                createdAt = 50,
+            ),
+        )
+        assertEquals(records, MemoryRecordCodec.parse(MemoryRecordCodec.render(records)))
+    }
+
+    @Test
+    fun `theme survives the round trip and an unknown theme sanitizes to default`() {
+        val records = listOf(
+            MemoryRecord(id = "themed", text = "Nota a tema", createdAt = 60, theme = "ocean"),
+        )
+        assertEquals(records, MemoryRecordCodec.parse(MemoryRecordCodec.render(records)))
+
+        val unknownThemeSaved = MemoryRecordCodec.render(records).replace("\"ocean\"", "\"tema-futuro\"")
+        assertEquals("", MemoryRecordCodec.parse(unknownThemeSaved).single().theme)
     }
 
     @Test

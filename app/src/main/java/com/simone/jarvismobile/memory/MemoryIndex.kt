@@ -73,27 +73,46 @@ class MemoryIndex @Inject constructor(
         if (lastBuiltAt == 0L || System.currentTimeMillis() - lastBuiltAt >= STALE_AFTER_MS) rebuild()
     }
 
-    /** (Re)reads the whole vault and rebuilds the index. */
+    /**
+     * (Re)reads the whole vault (when one is configured) and the local memory
+     * archive, and rebuilds the retrieval index over both.
+     *
+     * Memoria no longer writes into the vault (§ richiesta esplicita
+     * dell'utente: "Togli sincronizzazione con obsidian e rimaniamo solo su
+     * archivio locale") — [VaultRepository.readMemoryRecords] is the local,
+     * always-available store now. Folding those records into [chunks] here
+     * (instead of relying on [chunkNote] finding a `Memoria.md` inside the
+     * vault, which no longer exists) is what keeps conversational recall
+     * ("cosa ricordi di me?") working for every user, vault or not.
+     */
     suspend fun rebuild() = withContext(Dispatchers.Default) {
         buildMutex.withLock {
-            _status.value = _status.value.copy(configured = true, building = true, lastError = null)
+            _status.value = _status.value.copy(building = true, lastError = null)
             try {
                 val notes = vault.readAllNotes()
-                val built = notes.flatMap { note ->
+                val vaultChunks = notes.flatMap { note ->
                     chunkNote(MarkdownParser.parse(note.path, note.content))
                 }
-                chunks = built
+                val memoryRecords = vault.readMemoryRecords()
+                val memoryChunks = memoryRecords.map { record ->
+                    MemoryChunk(
+                        notePath = "local://memoria/${record.id}",
+                        title = "Memoria",
+                        text = record.text,
+                        tags = record.topics,
+                        folder = "memoria",
+                    )
+                }
+                chunks = vaultChunks + memoryChunks
                 lastBuiltAt = System.currentTimeMillis()
                 _status.value = Status(
-                    configured = true,
+                    configured = vault.isConfigured(),
                     building = false,
                     noteCount = notes.size,
-                    chunkCount = built.size,
-                    memoryCount = notes.firstOrNull {
-                        isExplicitMemory(it.path)
-                    }?.let { MemoryRecordCodec.parse(it.content).size } ?: 0,
+                    chunkCount = chunks.size,
+                    memoryCount = memoryRecords.size,
                 )
-                Log.i(TAG, "memory_indexed notes=${notes.size} chunks=${built.size}")
+                Log.i(TAG, "memory_indexed notes=${notes.size} chunks=${chunks.size}")
             } catch (t: Throwable) {
                 Log.w(TAG, "memory_index_failed ${t.javaClass.simpleName}")
                 _status.value = _status.value.copy(building = false, lastError = t.javaClass.simpleName)
@@ -118,6 +137,7 @@ class MemoryIndex @Inject constructor(
         kind: MemoryKind? = null,
         category: String = "",
         autoCategorize: Boolean = true,
+        theme: String = "",
     ): MemoryRecord? {
         val resolved = kind ?: com.simone.jarvismobile.core.memory.MemoryStructure.classify(text)
         if (resolved == MemoryKind.TEMPORARY) {
@@ -135,7 +155,7 @@ class MemoryIndex @Inject constructor(
         // loading model just leaves it uncategorised. Manual "+" adds pass
         // autoCategorize=false so an unselected category means exactly "Senza
         // categoria", ready for the AI button.
-        val saved = vault.addMemory(text, resolved, category) ?: return null
+        val saved = vault.addMemory(text, resolved, category, theme) ?: return null
         rebuild()
         if (category.isBlank() && autoCategorize) {
             bgScope.launch {
@@ -170,14 +190,14 @@ class MemoryIndex @Inject constructor(
         return changed
     }
 
-    suspend fun update(recordId: String, text: String, kind: MemoryKind): MemoryRecord? {
+    suspend fun update(recordId: String, text: String, kind: MemoryKind, theme: String? = null): MemoryRecord? {
         if (kind == MemoryKind.TEMPORARY) {
             if (!conversationMemory.addTemporary(text)) return null
             val removed = vault.deleteMemory(recordId) ?: return null
             rebuild()
             return removed.copy(text = text.trim(), kind = MemoryKind.TEMPORARY)
         }
-        val updated = vault.updateMemory(recordId, text, kind)
+        val updated = vault.updateMemory(recordId, text, kind, theme)
         if (updated != null) rebuild()
         return updated
     }
@@ -302,7 +322,8 @@ class MemoryIndex @Inject constructor(
     }
 
     private fun isExplicitMemory(notePath: String): Boolean =
-        notePath.substringAfterLast('/').equals("Memoria.md", ignoreCase = true)
+        notePath.startsWith("local://memoria/") ||
+            notePath.substringAfterLast('/').equals("Memoria.md", ignoreCase = true)
 
     /**
      * Splits a note into chunks by top-level headings so retrieval can surface the

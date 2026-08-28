@@ -32,7 +32,28 @@ data class MemoryRecord(
     val dates: List<String> = emptyList(),
     /** AI-assigned macro-category (one of [MemoryCategories.CANONICAL]) or "". */
     val category: String = "",
+    /** Background theme id for the note editor (one of [MemoryNoteThemes.ALL]) or "" for the default. */
+    val theme: String = "",
 )
+
+/**
+ * Generic, non-referential background themes for the note editor (§ richiesta
+ * esplicita dell'utente: "Temi generici, nessun riferimento specifico" — no
+ * anime/brand reference art, just named colour pairs the app renders as a
+ * gradient). Pure and stable so a saved [MemoryRecord.theme] never becomes
+ * unrenderable after this list changes shape.
+ */
+object MemoryNoteThemes {
+    const val DEFAULT = ""
+    val ALL: List<String> = listOf(
+        DEFAULT, "sunset", "ocean", "forest", "lavanda", "rosa", "notte", "menta", "pesca", "ardesia",
+    )
+
+    fun isValid(id: String): Boolean = id in ALL
+
+    /** Falls back to [DEFAULT] for an id from a future/edited version of this list. */
+    fun sanitize(id: String): String = if (isValid(id)) id else DEFAULT
+}
 
 /**
  * The fixed set of macro-categories the on-device model sorts memories into, so
@@ -100,12 +121,24 @@ object MemoryCategories {
 }
 
 /**
- * Human-readable Markdown codec for permanent memories.
+ * Codec for the local memory archive (`app-private memoria.md`, no longer
+ * mirrored to Obsidian — § richiesta esplicita dell'utente: "Togli
+ * sincronizzazione con obsidian e rimaniamo solo su archivio locale").
  *
- * Obsidian displays the bullet itself. Stable IDs and structured fields live in
- * an adjacent HTML comment, so editing the file remains pleasant and the cache
- * can be rebuilt without a private database. Old `- [timestamp] fact` lines are
- * imported with deterministic legacy IDs.
+ * Each record is one self-contained JSON line inside an HTML comment; the
+ * JSON is the sole source of truth, including [MemoryRecord.text] with real
+ * embedded newlines (kotlinx.serialization escapes them as `\n` inside the
+ * JSON string, so the physical file still has one comment per physical
+ * line). This is what makes multi-line/rich-text notes possible: the old
+ * format additionally echoed a human-readable `- text` bullet for Obsidian,
+ * which requires collapsing to one line — a real bullet cannot contain a raw
+ * newline without breaking the list. That echo is no longer written.
+ *
+ * Parsing still understands the old paired format (JSON comment immediately
+ * followed by an echoed `- text` bullet) so memories saved before this
+ * change keep loading — the bullet is simply discarded as redundant, since
+ * the JSON already carries the authoritative text. Bare `- [timestamp] fact`
+ * lines from the pre-JSON era still import with deterministic legacy ids.
  */
 object MemoryRecordCodec {
     private const val HEADER = "# Memoria di JARVIS"
@@ -118,10 +151,7 @@ object MemoryRecordCodec {
         records.sortedWith(compareBy<MemoryRecord> { it.createdAt }.thenBy { it.id }).forEach { record ->
             append(PREFIX)
             append(json.encodeToString(MemoryRecord.serializer(), record.normalized()))
-            append(SUFFIX).append('\n')
-            append("- ")
-            if (record.kind == MemoryKind.SENSITIVE) append("🔒 ")
-            append(oneLine(record.text)).append("\n\n")
+            append(SUFFIX).append("\n\n")
         }
     }
 
@@ -133,52 +163,38 @@ object MemoryRecordCodec {
         for (line in lines) {
             val trimmed = line.trim()
             if (trimmed.startsWith(PREFIX) && trimmed.endsWith(SUFFIX)) {
+                // A JSON record can be immediately followed by another JSON
+                // record with no bullet in between (the new, bullet-less
+                // format) — flush whatever was pending first.
+                pending?.let { out += it }
                 val payload = trimmed.removePrefix(PREFIX).removeSuffix(SUFFIX)
                 pending = runCatching {
                     json.decodeFromString(MemoryRecord.serializer(), payload)
-                }.getOrNull()
+                }.getOrNull()?.normalized()
                 continue
             }
             if (!trimmed.startsWith("- ")) continue
             val text = trimmed.removePrefix("- ").trim()
-            if (text.isBlank()) {
-                pending = null
-                continue
-            }
             val structured = pending
             if (structured != null) {
-                val visibleText = if (structured.kind == MemoryKind.SENSITIVE) {
-                    text.removePrefix("🔒 ").trim()
-                } else {
-                    text
-                }
-                val next = if (oneLine(structured.text) == oneLine(visibleText)) {
-                    structured.copy(text = visibleText)
-                } else {
-                    // The bullet was edited directly in Obsidian. Preserve the
-                    // stable ID/type/timestamps, but rebuild searchable fields.
-                    val fields = MemoryStructure.extract(visibleText)
-                    structured.copy(
-                        text = visibleText,
-                        topics = fields.topics,
-                        people = fields.people,
-                        dates = fields.dates,
-                    )
-                }
-                out += next.normalized()
+                // Old paired format: the JSON is authoritative, the echoed
+                // bullet is redundant now — consume and discard it.
+                if (text.isNotBlank()) out += structured
                 pending = null
-            } else {
+            } else if (text.isNotBlank()) {
                 out += legacy(text)
             }
         }
+        pending?.let { out += it }
         return out.distinctBy { it.id }
     }
 
     private fun MemoryRecord.normalized(): MemoryRecord = copy(
-        text = oneLine(text),
+        text = text.trim(),
         topics = topics.map(String::trim).filter(String::isNotEmpty).distinct().take(12),
         people = people.map(String::trim).filter(String::isNotEmpty).distinct().take(12),
         dates = dates.map(String::trim).filter(String::isNotEmpty).distinct().take(12),
+        theme = MemoryNoteThemes.sanitize(theme),
     )
 
     private fun legacy(line: String): MemoryRecord {
@@ -204,8 +220,6 @@ object MemoryRecordCodec {
             dates = fields.dates,
         )
     }
-
-    private fun oneLine(value: String): String = value.replace(Regex("""\s+"""), " ").trim()
 
     /** Dependency-free FNV-1a so legacy IDs remain stable across processes/JVMs. */
     private fun stableId(value: String): String {
