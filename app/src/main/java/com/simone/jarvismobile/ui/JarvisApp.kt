@@ -218,25 +218,26 @@ fun JarvisApp(
                             ) {
                                 ThemedIcon(
                                     entry.icon,
-                                    // Real Rouge art only for the active tab: it is
-                                    // already fully-coloured and has no muted/grey
-                                    // form the way the plain vector icon does, so
-                                    // showing it while inactive would break the
-                                    // active/inactive contrast the bar relies on.
-                                    // Chat is the one exception — it opens an overlay
-                                    // rather than becoming the selected tab, so
-                                    // `active` is always false for it by design; its
-                                    // Rouge icon would otherwise never appear even
-                                    // though the user explicitly asked for it here.
-                                    rouge = entry.rougeIcon.takeIf { active || entry == Tab.CHAT },
+                                    // Rouge art on EVERY tab now, not only the
+                                    // active one (§ richiesta esplicita
+                                    // dell'utente: "icone sotto sulla barra
+                                    // non si vedono cambiate" — con l'arte
+                                    // limitata al solo tab attivo, 3 icone su
+                                    // 5 restavano quasi sempre sul vettoriale
+                                    // Material invariato). Contrasto
+                                    // attivo/inattivo ora affidato all'alpha
+                                    // sotto, non più alla presenza/assenza
+                                    // dell'arte stessa.
+                                    rouge = entry.rougeIcon,
                                     contentDescription = entry.label,
                                     tint = tint,
-                                    // 26dp non 22dp (§ "barra e icone si
+                                    alpha = if (active || entry == Tab.CHAT) 1f else 0.55f,
+                                    // 30dp non 22dp (§ "barra e icone si
                                     // vedono male") — le icone Rouge sono arte
                                     // reale a colore pieno, non un vettoriale
-                                    // sottile: a 22dp risultavano minute contro
-                                    // la nuova cornice più decorata.
-                                    modifier = Modifier.size(26.dp),
+                                    // sottile: a 22-26dp risultavano minute
+                                    // contro la nuova cornice più decorata.
+                                    modifier = Modifier.size(30.dp),
                                 )
                                 Spacer(Modifier.height(3.dp))
                                 Text(

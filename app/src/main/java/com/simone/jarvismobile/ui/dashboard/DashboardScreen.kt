@@ -611,7 +611,9 @@ private fun ChatFab(unread: Int, onClick: () -> Unit, modifier: Modifier = Modif
     val cyan = Cyan
     val themeId = LocalJarvisThemeId.current
     val rouge = themeId == JarvisThemeId.ROUGE
-    Box(modifier.size(if (rouge) 92.dp else 78.dp), contentAlignment = Alignment.Center) {
+    // 112dp non 92dp (§ "icona della chat leggermente più grande" — il primo
+    // aumento non è bastato, richiesto ancora più grande).
+    Box(modifier.size(if (rouge) 112.dp else 78.dp), contentAlignment = Alignment.Center) {
         // A light HUD ring, drawn for the default/Rosso look only — Rouge's
         // artwork already has its own rings and glow baked in (§ richiesta
         // esplicita dell'utente: "togli il cerchio intorno a icona del
@@ -645,7 +647,7 @@ private fun ChatFab(unread: Int, onClick: () -> Unit, modifier: Modifier = Modif
         Image(
             painter = painterResource(if (rouge) R.drawable.rouge_chat_fab else R.drawable.chat_fab),
             contentDescription = "Chat",
-            modifier = Modifier.size(if (rouge) 86.dp else 66.dp).clickable(onClick = onClick),
+            modifier = Modifier.size(if (rouge) 104.dp else 66.dp).clickable(onClick = onClick),
             contentScale = ContentScale.Fit,
             colorFilter = when (themeId) {
                 JarvisThemeId.BLU, JarvisThemeId.ROUGE -> null
