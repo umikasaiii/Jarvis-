@@ -1,6 +1,7 @@
 package com.simone.jarvismobile.ui
 
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -91,6 +92,9 @@ private enum class Overlay {
     NAVIGATION, MAPS, FAVORITES, BACKUP, ARCHIVE, SYSTEM_STATUS,
 }
 
+/** rouge_navbar_bg.png's real pixel dimensions (1600x585) — kept the source of truth so the on-screen bar always shows the full artwork, never cropped. */
+private const val NAVBAR_BG_ASPECT_RATIO = 1600f / 585f
+
 /**
  * Top-level navigation. The dashboard shell is always present; the written chat
  * opens as a bottom sheet over the dimmed dashboard (so the background still
@@ -171,22 +175,24 @@ fun JarvisApp(
                     // the flat translucent wash — same "real dedicated art on
                     // Rouge" pattern as JarvisOrb/JarvisCard/ChatFab.
                     if (themeId == JarvisThemeId.ROUGE) {
-                        // FillWidth, not Crop (§ richiesta esplicita
-                        // dell'utente: "mancano i lati, mettila intera") —
-                        // Crop preservava le proporzioni ma, quando il
-                        // rapporto larghezza/altezza reale della barra è più
-                        // "alto" di quello sorgente, ritaglia dai lati per
-                        // riempire l'altezza: proprio le corna decorative
-                        // agli estremi sparivano. FillWidth garantisce che
-                        // la larghezza combaci sempre per intero (mai un
-                        // taglio laterale); un'eventuale eccedenza in
-                        // altezza viene centrata e ritagliata sopra/sotto
-                        // invece che ai lati.
+                        // aspectRatio, not matchParentSize+FillWidth (§
+                        // richiesta esplicita dell'utente: "si vede tutta
+                        // l'immagine", ripetuta — FillWidth dentro un box di
+                        // altezza fissa (quella dell'icona/etichetta) copriva
+                        // sì tutta la larghezza, ma l'immagine risultante era
+                        // più "alta" del box: l'eccedenza veniva comunque
+                        // ritagliata sopra/sotto, tagliando parte delle
+                        // corna). Qui l'immagine detta essa stessa l'altezza
+                        // del box (mai ritagliata, mai distorta) e la Row
+                        // sotto si centra al suo interno invece di definirne
+                        // l'altezza.
                         Image(
                             painter = painterResource(R.drawable.rouge_navbar_bg),
                             contentDescription = null,
-                            contentScale = ContentScale.FillWidth,
-                            modifier = Modifier.matchParentSize(),
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .aspectRatio(NAVBAR_BG_ASPECT_RATIO),
                         )
                     }
                     // Custom bar rather than Material's NavigationBar: the
@@ -200,6 +206,11 @@ fun JarvisApp(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            // Il box ora è alto quanto l'immagine intera
+                            // (corna comprese), non più quanto la sola Row —
+                            // .align(Center) la centra al suo interno invece
+                            // di lasciare che ne definisca l'altezza.
+                            .align(Alignment.Center)
                             .then(if (themeId == JarvisThemeId.ROUGE) Modifier else Modifier.background(Color(0x99040C14)))
                             .navigationBarsPadding()
                             .padding(vertical = 8.dp),
