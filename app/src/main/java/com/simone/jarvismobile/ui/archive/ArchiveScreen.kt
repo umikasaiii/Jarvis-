@@ -3,6 +3,7 @@ package com.simone.jarvismobile.ui.archive
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -47,6 +49,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -81,6 +84,7 @@ import com.simone.jarvismobile.core.archive.ArchiveListItem
 import com.simone.jarvismobile.core.archive.ArchiveStatus
 import com.simone.jarvismobile.core.archive.ListItemStatus
 import com.simone.jarvismobile.core.document.DocumentRecord
+import com.simone.jarvismobile.core.document.DocumentStatus
 import com.simone.jarvismobile.core.memory.MemoryCategories
 import com.simone.jarvismobile.core.memory.MemoryRecord
 import com.simone.jarvismobile.document.folder
@@ -135,6 +139,8 @@ fun ArchiveScreen(
 ) {
     val items by viewModel.items.collectAsStateWithLifecycle()
     val documents by viewModel.filteredDocuments.collectAsStateWithLifecycle()
+    val importingDocuments by viewModel.importingDocuments.collectAsStateWithLifecycle()
+    val storageUsage by viewModel.storageUsage.collectAsStateWithLifecycle()
     val memoryRecords by viewModel.filteredMemory.collectAsStateWithLifecycle()
     val customLists by viewModel.customLists.collectAsStateWithLifecycle()
     val shoppingItems by viewModel.shoppingItems.collectAsStateWithLifecycle()
@@ -177,6 +183,17 @@ fun ArchiveScreen(
     // stale while the user is away — refresh whenever the folder is (re)opened.
     LaunchedEffect(openFolder) {
         if (openFolder == ArchiveFolder.MEMORY) viewModel.refreshMemory()
+    }
+
+    // System back (hardware button or an edge gesture, e.g. Honor's swipe from
+    // the side) used to skip the on-screen arrow's logic entirely and fall
+    // through to closing Archivio straight to Home — a real bug the user hit
+    // (§ richiesta esplicita: "faccio per andare indietro... torna nella home
+    // invece che nella cartella precedente"). Disabled at the root so a second
+    // back there still closes Archivio normally.
+    BackHandler(enabled = openFolder != null) {
+        openFolder = null
+        viewModel.setQuery("")
     }
 
     Box(
@@ -229,10 +246,12 @@ fun ArchiveScreen(
                     watchUpdated = watch.maxOfOrNull { it.updatedAt },
                     memoryCount = memoryRecords.size,
                     memoryUpdated = memoryRecords.maxOfOrNull { it.updatedAt },
+                    storageUsage = storageUsage,
                     onOpen = { openFolder = it },
                 )
                 ArchiveFolder.DOCUMENTS -> DocumentsFolder(
                     documents = documents,
+                    importing = importingDocuments,
                     folders = documentFolders,
                     selectedFolder = selectedDocFolder,
                     onSelectFolder = { selectedDocFolder = it },
@@ -448,9 +467,11 @@ private fun FolderRoot(
     watchUpdated: Long?,
     memoryCount: Int,
     memoryUpdated: Long?,
+    storageUsage: ArchiveViewModel.StorageUsage,
     onOpen: (ArchiveFolder) -> Unit,
 ) {
-    LazyColumn(contentPadding = PaddingValues(top = 4.dp, bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    LazyColumn(contentPadding = PaddingValues(top = 4.dp, bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        item { StorageUsageCard(storageUsage) }
         item {
             FolderRow(ArchiveFolder.DOCUMENTS, folderMeta(documentsUpdated, documentsCount, "file"), onOpen)
         }
@@ -472,18 +493,79 @@ private fun FolderRoot(
     }
 }
 
+/**
+ * How much of the device's storage JARVIS's local archive is using (§
+ * richiesta esplicita dell'utente: "se l'archivio locale di jarvis ha un
+ * limite di memoria inserisci barra che indica quanto spazio è usato, e
+ * scritto anche la qtà in MB o GB"). Honest about there being no JARVIS quota
+ * — the fill is "used by JARVIS" against "used + still free on the device",
+ * the real practical ceiling, not an invented one.
+ */
 @Composable
-private fun FolderRow(folder: ArchiveFolder, meta: String, onOpen: (ArchiveFolder) -> Unit) {
-    Row(
+private fun StorageUsageCard(usage: ArchiveViewModel.StorageUsage) {
+    val total = usage.usedBytes + usage.freeBytes
+    val fraction = if (total > 0) (usage.usedBytes.toFloat() / total.toFloat()).coerceIn(0f, 1f) else 0f
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
             .background(CardBg)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+    ) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("Spazio usato", color = Ink, style = MaterialTheme.typography.labelLarge)
+            Text(
+                "${formatBytes(usage.usedBytes)} · ${formatBytes(usage.freeBytes)} liberi",
+                color = Muted,
+                fontSize = 11.sp,
+            )
+        }
+        Spacer(Modifier.size(8.dp))
+        LinearProgressIndicator(
+            progress = { fraction },
+            color = Cyan,
+            trackColor = Muted.copy(alpha = 0.25f),
+            modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
+        )
+    }
+}
+
+/** Abbreviated MB/GB, matching how the user asked for it ("scritte Mb e GB"). */
+private fun formatBytes(bytes: Long): String {
+    val mb = bytes / (1024.0 * 1024.0)
+    return if (mb >= 1024.0) "%.1f GB".format(mb / 1024.0) else "%.0f MB".format(mb)
+}
+
+// A distinct accent per folder so the root reads like a set of coloured
+// destinations rather than one flat grey list (§ richiesta esplicita
+// dell'utente: "la home archivio strutturala in modo più carino").
+private fun ArchiveFolder.accent(): Color = when (this) {
+    ArchiveFolder.DOCUMENTS -> Color(0xFF3FD8F0)
+    ArchiveFolder.NOTES -> Color(0xFFF1C40F)
+    ArchiveFolder.LISTS -> Color(0xFF2ECC71)
+    ArchiveFolder.WATCH -> Color(0xFFEB5AA6)
+    ArchiveFolder.MEMORY -> Color(0xFF7C5CFF)
+    ArchiveFolder.TODO -> Color(0xFFE67E22)
+}
+
+@Composable
+private fun FolderRow(folder: ArchiveFolder, meta: String, onOpen: (ArchiveFolder) -> Unit) {
+    val accent = folder.accent()
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(CardBg)
             .clickable { onOpen(folder) }
-            .padding(horizontal = 14.dp, vertical = 14.dp),
+            .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(folder.icon, contentDescription = null, tint = Cyan, modifier = Modifier.size(26.dp))
+        Box(
+            modifier = Modifier.size(42.dp).clip(RoundedCornerShape(12.dp)).background(accent.copy(alpha = 0.18f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(folder.icon, contentDescription = null, tint = accent, modifier = Modifier.size(22.dp))
+        }
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Text(folder.label, color = Ink, style = MaterialTheme.typography.titleMedium)
@@ -509,6 +591,7 @@ private fun monthDayLabel(epochMillis: Long): String {
 @Composable
 private fun DocumentsFolder(
     documents: List<DocumentRecord>,
+    importing: List<DocumentRecord>,
     folders: List<String>,
     selectedFolder: String?,
     onSelectFolder: (String?) -> Unit,
@@ -526,7 +609,7 @@ private fun DocumentsFolder(
     var moveTarget by remember { mutableStateOf<DocumentRecord?>(null) }
     var showFolderManager by remember { mutableStateOf(false) }
 
-    if (documents.isEmpty()) {
+    if (documents.isEmpty() && importing.isEmpty()) {
         Text(
             "Ancora vuoto. I file allegati o importati in chat compaiono qui, oppure tocca «+» per importarli dal telefono.",
             color = Muted,
@@ -567,17 +650,25 @@ private fun DocumentsFolder(
         FolderChip("Nome", sortByName) { sortByName = true }
     }
 
+    val filteredImporting = when (selectedFolder) {
+        null -> importing
+        ARCHIVE_UNFILED_FOLDER -> importing.filter { it.folder().isBlank() }
+        else -> importing.filter { it.folder() == selectedFolder }
+    }
     val filtered = when (selectedFolder) {
         null -> documents
         ARCHIVE_UNFILED_FOLDER -> documents.filter { it.folder().isBlank() }
         else -> documents.filter { it.folder() == selectedFolder }
     }
-    if (filtered.isEmpty()) {
+    if (filtered.isEmpty() && filteredImporting.isEmpty()) {
         Text("Nessun file in questa cartella.", color = Muted, modifier = Modifier.padding(24.dp), style = MaterialTheme.typography.bodyMedium)
         return
     }
     val sorted = if (sortByName) filtered.sortedBy { it.displayName.lowercase() } else filtered
     LazyColumn(contentPadding = PaddingValues(bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (filteredImporting.isNotEmpty()) {
+            items(filteredImporting, key = { "importing-${it.id}" }) { doc -> ImportingRow(doc) }
+        }
         items(sorted, key = { it.id }) { doc ->
             Row(
                 modifier = Modifier
@@ -661,6 +752,58 @@ private fun glyph(doc: DocumentRecord): String =
         "png", "jpg", "jpeg", "webp" -> "🖼️"
         else -> "📄"
     }
+
+/**
+ * One row for a document still importing (§ richiesta esplicita dell'utente:
+ * "quando carica fai vedere barra di avanzamento"). No separate progress
+ * plumbing needed — [DocumentImportManager] already ticks
+ * [DocumentRecord.status] through the real pipeline stages, so the bar is
+ * just that status mapped to a fraction.
+ */
+@Composable
+private fun ImportingRow(doc: DocumentRecord) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(CardBg)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(glyph(doc), fontSize = 20.sp)
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text(doc.displayName, color = Ink, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
+            Spacer(Modifier.size(4.dp))
+            LinearProgressIndicator(
+                progress = { doc.status.importProgress() },
+                color = Cyan,
+                trackColor = Muted.copy(alpha = 0.25f),
+                modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
+            )
+            Spacer(Modifier.size(4.dp))
+            Text(doc.status.importLabel(), color = Muted, fontSize = 11.sp)
+        }
+    }
+}
+
+private fun DocumentStatus.importProgress(): Float = when (this) {
+    DocumentStatus.SELECTED -> 0.08f
+    DocumentStatus.COPYING -> 0.32f
+    DocumentStatus.PARSING -> 0.58f
+    DocumentStatus.INDEXING -> 0.85f
+    DocumentStatus.READY -> 1f
+    DocumentStatus.FAILED -> 0f
+}
+
+private fun DocumentStatus.importLabel(): String = when (this) {
+    DocumentStatus.SELECTED -> "In coda…"
+    DocumentStatus.COPYING -> "Copia in corso…"
+    DocumentStatus.PARSING -> "Estrazione testo…"
+    DocumentStatus.INDEXING -> "Indicizzazione…"
+    DocumentStatus.READY -> "Pronto"
+    DocumentStatus.FAILED -> "Non riuscito"
+}
 
 /** Opens the file in whatever app the device offers for its type — a viewer, a photo app, etc. */
 private fun openDocument(context: Context, viewModel: ArchiveViewModel, doc: DocumentRecord) {

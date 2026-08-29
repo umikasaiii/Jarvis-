@@ -45,11 +45,24 @@ data class MemoryRecord(
  */
 object MemoryNoteThemes {
     const val DEFAULT = ""
-    val ALL: List<String> = listOf(
+    val GRADIENTS: List<String> = listOf(
         DEFAULT, "sunset", "ocean", "forest", "lavanda", "rosa", "notte", "menta", "pesca", "ardesia",
     )
 
+    /** Custom image backgrounds (§ richiesta esplicita dell'utente, immagini fornite), prefixed
+     * so they share the same [MemoryRecord.theme] field without a second one. */
+    private const val IMAGE_PREFIX = "img:"
+    private val IMAGE_KEYS: List<String> = listOf(
+        "sakura_torii", "coast_bridge", "sunset_bamboo", "night_city",
+        "cat_leaves", "clouds_hat", "red_clouds", "wave_blue", "wisteria_katana",
+    )
+    val IMAGES: List<String> = IMAGE_KEYS.map { IMAGE_PREFIX + it }
+
+    val ALL: List<String> = GRADIENTS + IMAGES
+
     fun isValid(id: String): Boolean = id in ALL
+    fun isImage(id: String): Boolean = id.startsWith(IMAGE_PREFIX)
+    fun imageKey(id: String): String = id.removePrefix(IMAGE_PREFIX)
 
     /** Falls back to [DEFAULT] for an id from a future/edited version of this list. */
     fun sanitize(id: String): String = if (isValid(id)) id else DEFAULT

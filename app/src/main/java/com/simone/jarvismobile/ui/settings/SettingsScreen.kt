@@ -143,7 +143,7 @@ fun SettingsScreen(
     ) {
         Text("Impostazioni", style = MaterialTheme.typography.headlineSmall)
 
-        CollapsibleSection("Modalità Pro", initiallyExpanded = true) {
+        CollapsibleSection("Modalità Pro") {
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(
@@ -171,7 +171,7 @@ fun SettingsScreen(
         }
         }
 
-        CollapsibleSection("Temi", initiallyExpanded = true) {
+        CollapsibleSection("Temi") {
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Tema grafico", style = MaterialTheme.typography.titleMedium)
@@ -195,7 +195,7 @@ fun SettingsScreen(
         }
         }
 
-        CollapsibleSection("Assistente e personalità", initiallyExpanded = true) {
+        CollapsibleSection("Assistente e personalità") {
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Assistente", style = MaterialTheme.typography.titleMedium)

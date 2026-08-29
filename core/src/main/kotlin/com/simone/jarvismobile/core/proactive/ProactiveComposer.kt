@@ -30,9 +30,12 @@ object ProactiveComposer {
         val message = buildString {
             append("Buongiorno")
             // Only when the category is actually known — an unknown forecast
-            // says nothing rather than defaulting to a guessed icon.
-            snapshot.todayWeather?.let { append(" ${it.greetingEmoji()}") }
-            append(".")
+            // says nothing rather than defaulting to a guessed icon. When it IS
+            // known, no "." between the emoji and what follows (§ richiesta
+            // esplicita dell'utente) — the period only closes "Buongiorno" as
+            // its own sentence when there is no emoji after it.
+            val weatherEmoji = snapshot.todayWeather?.greetingEmoji()
+            if (weatherEmoji != null) append(" $weatherEmoji") else append(".")
             if (snapshot.birthdaysToday.isNotEmpty()) {
                 append(" Oggi è il compleanno di ")
                 append(snapshot.birthdaysToday.joinToString(" e "))

@@ -308,27 +308,12 @@ class DocumentImportManager @Inject constructor(
                 language = parsed.metadata.language,
             )
 
-            // Sort the document into the same AI macro-categories as memory, from
-            // its title + a sample of the (possibly OCR'd) text, so the archive
-            // groups files, photos and documents like notes. Stored as a "cat:" tag
-            // — no schema change — and best-effort (empty when no model is loaded).
-            val category = runCatching {
-                val sample = listOfNotNull(parsed.metadata.title, parsed.text.take(600))
-                    .joinToString(". ")
-                categoryClassifier.classify(sample)
-            }.getOrDefault("")
-            if (category.isNotBlank()) {
-                record = record.copy(
-                    tags = (record.tags.filterNot { it.startsWith(DOCUMENT_CATEGORY_TAG) } + "$DOCUMENT_CATEGORY_TAG$category")
-                        .distinct(),
-                )
-            }
-
             // Auto-index unless the user turned it off: then it stays a ready
             // attachment (kept and citable by name, but not searched).
             if (!settings.docAutoIndex.first()) {
                 record = record.copy(status = DocumentStatus.READY, modifiedAt = System.currentTimeMillis())
                 persist(record)
+                classifyInBackground(id, parsed)
                 return
             }
 
@@ -339,10 +324,16 @@ class DocumentImportManager @Inject constructor(
             dao.deleteChunks(id)
             dao.upsertChunks(chunks.map { it.toEntity() })
 
-            // READY
+            // READY — the document is searchable now; the AI macro-category
+            // (§ same classifier as Memoria's) is sorted in the background
+            // instead of blocking here, same reasoning as MemoryIndex.remember():
+            // an on-device model classification can take several seconds, and
+            // making every import wait for it was a real, avoidable slowdown
+            // (§ richiesta esplicita dell'utente: "migliora drasticamente velocità").
             record = record.copy(status = DocumentStatus.READY, modifiedAt = System.currentTimeMillis())
             persist(record)
             rebuildRetriever()
+            classifyInBackground(id, parsed)
             Log.i(TAG, "document_ready id=$id chunks=${chunks.size} vault=${vaultPath != null}")
         } catch (t: Throwable) {
             if (t is CancellationException) {
@@ -418,14 +409,52 @@ class DocumentImportManager @Inject constructor(
         return (byMetadata + byOcr).distinctBy { it.id }.take(limit)
     }
 
+    /**
+     * Sorts the document into the same AI macro-categories as memory, from its
+     * title + a sample of the (possibly OCR'd) text, so the archive groups
+     * files/photos/documents like notes. Stored as a "cat:" tag — no schema
+     * change — and best-effort (empty when no model is loaded). Runs after the
+     * document is already READY rather than blocking the import on an LLM
+     * classification call.
+     */
+    private fun classifyInBackground(id: String, parsed: ParsedDocument) {
+        scope.launch {
+            val category = runCatching {
+                val sample = listOfNotNull(parsed.metadata.title, parsed.text.take(600)).joinToString(". ")
+                categoryClassifier.classify(sample)
+            }.getOrDefault("")
+            if (category.isBlank()) return@launch
+            val existing = dao.findById(id)?.toRecord() ?: return@launch
+            persist(
+                existing.copy(
+                    tags = (existing.tags.filterNot { it.startsWith(DOCUMENT_CATEGORY_TAG) } + "$DOCUMENT_CATEGORY_TAG$category")
+                        .distinct(),
+                ),
+            )
+        }
+    }
+
     private suspend fun rebuildRetriever(): Unit = withContext(Dispatchers.Default) {
         val chunks = runCatching { dao.readyChunks().map { it.toChunk() } }.getOrDefault(emptyList())
         retriever = if (chunks.isEmpty()) null else HybridDocumentRetriever(chunks)
     }
 
+    /**
+     * Writes [record] to Room and patches it into [_documents] directly,
+     * instead of re-reading + re-mapping the whole table (what [refresh] does)
+     * on every single status transition. An import ticks through 5-7 statuses
+     * (SELECTED → COPYING → PARSING → INDEXING → READY); with the old
+     * behaviour, importing one file into an archive of N documents cost
+     * O(N) DB reads that many times over — the real reason imports got
+     * noticeably slower as the archive grew (§ richiesta esplicita
+     * dell'utente: "è un po' lento, migliora drasticamente velocità").
+     */
     private suspend fun persist(record: DocumentRecord) {
         runCatching { dao.upsertDocument(record.toEntity()) }
-        refresh()
+        _documents.value = _documents.value.toMutableList().apply {
+            val idx = indexOfFirst { it.id == record.id }
+            if (idx >= 0) this[idx] = record else add(0, record)
+        }.sortedByDescending { it.importedAt } // same order as the DAO's "ORDER BY importedAt DESC"
     }
 
     private suspend fun fail(record: DocumentRecord, reason: String) {

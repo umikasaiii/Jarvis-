@@ -114,6 +114,20 @@ class MemoryRecordTest {
     }
 
     @Test
+    fun `image theme ids are valid, distinct from gradients, and round trip`() {
+        assertTrue(MemoryNoteThemes.IMAGES.isNotEmpty())
+        MemoryNoteThemes.IMAGES.forEach { id ->
+            assertTrue(MemoryNoteThemes.isValid(id))
+            assertTrue(MemoryNoteThemes.isImage(id))
+            assertTrue(MemoryNoteThemes.imageKey(id).isNotBlank())
+        }
+        assertFalse(MemoryNoteThemes.isImage("ocean"))
+        assertTrue(MemoryNoteThemes.isValid("ocean"))
+        val records = listOf(MemoryRecord(id = "img-themed", text = "Nota", createdAt = 70, theme = MemoryNoteThemes.IMAGES.first()))
+        assertEquals(records, MemoryRecordCodec.parse(MemoryRecordCodec.render(records)))
+    }
+
+    @Test
     fun `theme survives the round trip and an unknown theme sanitizes to default`() {
         val records = listOf(
             MemoryRecord(id = "themed", text = "Nota a tema", createdAt = 60, theme = "ocean"),

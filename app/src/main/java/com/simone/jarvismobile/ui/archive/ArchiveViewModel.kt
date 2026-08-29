@@ -62,6 +62,22 @@ class ArchiveViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /**
+     * Imports still in flight (§ richiesta esplicita dell'utente: "quando
+     * carica fai vedere barra di avanzamento") — [DocumentImportManager]
+     * already ticks [DocumentRecord.status] through the real pipeline stages,
+     * so this needs no separate progress plumbing: the screen maps status
+     * straight to a fraction. FAILED is excluded too — that gets its own row
+     * via [documentManager.documents] filtered on the failed status if the UI
+     * wants it, not a progress bar.
+     */
+    val importingDocuments: StateFlow<List<DocumentRecord>> = documentManager.documents
+        .map { docs ->
+            docs.filter { it.status != DocumentStatus.READY && it.status != DocumentStatus.FAILED }
+                .sortedByDescending { it.importedAt }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /**
      * Memoria's records, read-only here (§ "una cartella dedicata con le
      * note presenti nella sezione memoria divise per categorie") — editing
      * one still only happens in the Memoria screen itself, so this stays a
@@ -123,6 +139,25 @@ class ArchiveViewModel @Inject constructor(
     fun moveDocument(record: DocumentRecord, folder: String) {
         documentManager.moveToFolder(record.id, folder)
     }
+
+    /**
+     * How much of the device's storage JARVIS's local archive is using (§
+     * richiesta esplicita dell'utente: "se l'archivio locale di jarvis ha un
+     * limite di memoria inserisci barra"). There is no JARVIS-specific quota
+     * — Android does not give an app a fixed allowance — so this is honest
+     * about what it shows: bytes JARVIS itself has written (imported
+     * documents/photos plus the local Memoria file) against the device's own
+     * remaining free space, the real practical ceiling.
+     */
+    data class StorageUsage(val usedBytes: Long, val freeBytes: Long)
+
+    val storageUsage: StateFlow<StorageUsage> = documents.map { docs ->
+        val usedDocs = docs.sumOf { it.fileSize }
+        val notesFile = java.io.File(context.filesDir, "memoria.md")
+        val usedNotes = runCatching { if (notesFile.exists()) notesFile.length() else 0L }.getOrDefault(0L)
+        val free = runCatching { android.os.StatFs(context.filesDir.path).availableBytes }.getOrDefault(0L)
+        StorageUsage(usedDocs + usedNotes, free)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), StorageUsage(0L, 0L))
 
     /** Every folder a document has been filed under, for the folder chip row — same pattern as [folders] for notes. */
     val documentFolders: StateFlow<List<String>> = documents

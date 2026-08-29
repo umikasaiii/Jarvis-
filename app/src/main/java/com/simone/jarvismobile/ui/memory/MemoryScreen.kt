@@ -1,5 +1,7 @@
 package com.simone.jarvismobile.ui.memory
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -7,7 +9,6 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -33,7 +34,6 @@ import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -52,12 +52,15 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.buildAnnotatedString
@@ -72,6 +75,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.simone.jarvismobile.R
 import com.simone.jarvismobile.core.memory.InlineStyle
 import com.simone.jarvismobile.core.memory.MarkupAlign
 import com.simone.jarvismobile.core.memory.MemoryCategories
@@ -842,19 +846,49 @@ private fun MemoryNoteEditorScreen(
     var showPreview by remember { mutableStateOf(false) }
     val accent = Cyan
 
-    Box(
-        Modifier
-            .fillMaxSize()
-            .background(themeBackgroundBrush(theme))
-            .imePadding(),
-    ) {
+    // Exiting must never lose what was typed — on purpose (back arrow) or by
+    // accident (system back button/gesture, e.g. Honor's edge swipe: § richiesta
+    // esplicita dell'utente, "sia volontariamente che per errore"). Both paths
+    // now save first (skipping only a genuinely blank note, same rule as the
+    // "Salva" button) instead of discarding silently.
+    val exitSaving: () -> Unit = {
+        if (field.text.isNotBlank()) onSave(field.text, kind, category, theme)
+        onDismiss()
+    }
+    BackHandler(onBack = exitSaving)
+
+    Box(Modifier.fillMaxSize().imePadding()) {
+        val backgroundRes = customBackgroundRes(theme)
+        if (backgroundRes != null) {
+            Image(
+                painter = painterResource(backgroundRes),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+            // A dark scrim over the artwork: the app's text colour (INK) is a
+            // light tone made for a dark background, and these images are
+            // mostly light "paper" — without it the text would be nearly
+            // unreadable. The artwork stays recognisable, just dimmed.
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color(0xCC050C16), Color(0xB3081420), Color(0xCC03080E)),
+                        ),
+                    ),
+            )
+        } else {
+            Box(Modifier.fillMaxSize().background(themeBackgroundBrush(theme)))
+        }
         Column(
             Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.statusBars).padding(horizontal = 20.dp),
         ) {
             Spacer(Modifier.size(16.dp))
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onDismiss) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Annulla", tint = INK)
+                IconButton(onClick = exitSaving) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Salva ed esci", tint = INK)
                 }
                 Text(
                     title,
@@ -1063,15 +1097,19 @@ private fun SizePickerButton(onPick: (String) -> Unit) {
     }
 }
 
-/** Wraps the selection (or inserts an empty pair at the cursor) in [marker], e.g. "**bold**". */
-private fun wrapSelection(value: TextFieldValue, marker: String): TextFieldValue {
-    val text = value.text
-    val start = value.selection.min
-    val end = value.selection.max
-    val newText = text.substring(0, start) + marker + text.substring(start, end) + marker + text.substring(end)
-    val newCursor = if (start == end) start + marker.length else end + marker.length * 2
-    return value.copy(text = newText, selection = TextRange(newCursor))
-}
+/**
+ * Placeholder text used when a toolbar button is tapped with nothing selected.
+ * Earlier, an empty selection just inserted an unpaired-looking marker pair
+ * with the cursor parked invisibly between them — tapping a second button
+ * before typing anything produced garbled, mismatched markup (a real bug the
+ * user hit and reported from a screenshot). Now the placeholder is inserted
+ * pre-selected, so it reads clearly and typing immediately replaces it.
+ */
+private const val MARKUP_PLACEHOLDER = "testo"
+
+/** Wraps the selection — or a selected placeholder at the cursor — in [marker], e.g. "**bold**". */
+private fun wrapSelection(value: TextFieldValue, marker: String): TextFieldValue =
+    wrapSelectionWith(value, marker, marker)
 
 /** Inserts [prefix] at the start of the line the cursor is on, e.g. "- " or "1. ". */
 private fun prefixLine(value: TextFieldValue, prefix: String): TextFieldValue {
@@ -1087,9 +1125,13 @@ private fun wrapSelectionWith(value: TextFieldValue, prefix: String, suffix: Str
     val text = value.text
     val start = value.selection.min
     val end = value.selection.max
+    if (start == end) {
+        val newText = text.substring(0, start) + prefix + MARKUP_PLACEHOLDER + suffix + text.substring(end)
+        val selStart = start + prefix.length
+        return value.copy(text = newText, selection = TextRange(selStart, selStart + MARKUP_PLACEHOLDER.length))
+    }
     val newText = text.substring(0, start) + prefix + text.substring(start, end) + suffix + text.substring(end)
-    val newCursor = if (start == end) start + prefix.length else end + prefix.length + suffix.length
-    return value.copy(text = newText, selection = TextRange(newCursor))
+    return value.copy(text = newText, selection = TextRange(end + prefix.length + suffix.length))
 }
 
 /** Inserts a Markdown thematic break ("---") as its own paragraph at the cursor. */
@@ -1213,28 +1255,65 @@ private fun parseHex(hex: String): Color = runCatching {
 }.getOrDefault(Color.White)
 
 /**
- * A row of tappable colour swatches for the note's background theme (§
+ * The note's background theme: a labelled row of solid-colour swatches (§
  * richiesta esplicita dell'utente: "cambiare il tema dello sfondo della nota
  * con molti temi anche molto ispirati ad anime"; risposta alla domanda di
- * chiarimento: "Temi generici, nessun riferimento specifico" — quindi
- * gradienti generici scelti per nome/atmosfera, non arte con licenza).
+ * chiarimento: "Temi generici, nessun riferimento specifico" — gradienti
+ * generici scelti per nome/atmosfera, non arte con licenza), plus a
+ * collapsible section of custom image backgrounds the user provided (§
+ * richiesta esplicita, "aggiungi queste immagini come sfondi personalizzati,
+ * però facendolo selezionare in una sezione apribile"). Labelled explicitly
+ * "Sfondo nota" — a plain row of colour dots otherwise reads exactly like a
+ * text-colour picker, which is a different control entirely (in the
+ * toolbar), and that ambiguity is a real point of confusion the user hit.
  */
 @Composable
 private fun ThemeSelector(current: String, onSelect: (String) -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        MemoryNoteThemes.ALL.forEach { id ->
-            val selected = current == id
-            Box(
-                Modifier
-                    .size(26.dp)
-                    .clip(CircleShape)
-                    .background(themeSwatchColor(id))
-                    .then(if (selected) Modifier.border(2.dp, Cyan, CircleShape) else Modifier)
-                    .clickable { onSelect(id) },
-            )
+    var showImages by remember { mutableStateOf(false) }
+    Column(Modifier.padding(vertical = 4.dp)) {
+        Text("Sfondo nota", color = MUTED, fontSize = 12.sp, modifier = Modifier.padding(bottom = 4.dp))
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            MemoryNoteThemes.GRADIENTS.forEach { id ->
+                val selected = current == id
+                Box(
+                    Modifier
+                        .size(26.dp)
+                        .clip(CircleShape)
+                        .background(themeSwatchColor(id))
+                        .then(if (selected) Modifier.border(2.dp, Cyan, CircleShape) else Modifier)
+                        .clickable { onSelect(id) },
+                )
+            }
+        }
+        Text(
+            if (showImages) "▾ Sfondi personalizzati" else "▸ Sfondi personalizzati",
+            color = Cyan,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.clickable { showImages = !showImages }.padding(top = 8.dp, bottom = 4.dp),
+        )
+        if (showImages) {
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                MemoryNoteThemes.IMAGES.forEach { id ->
+                    val res = customBackgroundRes(id) ?: return@forEach
+                    val selected = current == id
+                    Image(
+                        painter = painterResource(res),
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .size(width = 52.dp, height = 78.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .then(if (selected) Modifier.border(2.dp, Cyan, RoundedCornerShape(8.dp)) else Modifier)
+                            .clickable { onSelect(id) },
+                    )
+                }
+            }
         }
     }
 }
@@ -1263,6 +1342,26 @@ private fun themeBackgroundBrush(id: String): Brush = when (id) {
     "pesca" -> Brush.verticalGradient(listOf(Color(0xFF2E1D0E), Color(0xFF473018), Color(0xFF190F07)))
     "ardesia" -> Brush.verticalGradient(listOf(Color(0xFF161A20), Color(0xFF232A33), Color(0xFF0C0F13)))
     else -> Brush.verticalGradient(listOf(Color(0xFF050C16), Color(0xFF081420), Color(0xFF03080E)))
+}
+
+/**
+ * Drawable for a custom image background, or null when [id] isn't one (a
+ * gradient id, or a not-yet-recognised value). The nine images the user
+ * supplied — generic Japanese/anime-aesthetic paper-note frames, no
+ * identifiable copyrighted characters or franchise logos — cropped from
+ * their reference grid (`docs/design` was not the source; see CLAUDE.md).
+ */
+private fun customBackgroundRes(id: String): Int? = when (MemoryNoteThemes.imageKey(id)) {
+    "sakura_torii" -> R.drawable.memnote_bg_sakura_torii
+    "coast_bridge" -> R.drawable.memnote_bg_coast_bridge
+    "sunset_bamboo" -> R.drawable.memnote_bg_sunset_bamboo
+    "night_city" -> R.drawable.memnote_bg_night_city
+    "cat_leaves" -> R.drawable.memnote_bg_cat_leaves
+    "clouds_hat" -> R.drawable.memnote_bg_clouds_hat
+    "red_clouds" -> R.drawable.memnote_bg_red_clouds
+    "wave_blue" -> R.drawable.memnote_bg_wave_blue
+    "wisteria_katana" -> R.drawable.memnote_bg_wisteria_katana
+    else -> null
 }
 
 private fun formatNoteDate(ms: Long): String =
@@ -1341,25 +1440,60 @@ private fun MemoryFolderPickerDialog(categories: List<String>, current: String, 
     )
 }
 
-// A tight content padding — the default Button/OutlinedButton padding
-// (24.dp horizontal) left too little room for Italian words like
-// "Temporaneo"/"Permanente" inside a third-width pill, wrapping mid-word
-// (a real layout bug the user flagged from an on-device screenshot).
-private val KindButtonPadding = PaddingValues(horizontal = 4.dp, vertical = 10.dp)
-
+/**
+ * Redesigned (§ richiesta esplicita dell'utente: "Migliora anche design dei
+ * tasti categoria permanente e sensibile") as tappable pills with a semantic
+ * colour and glyph each — Sensibile is always red regardless of the active
+ * app theme (a real signal, not a brand colour), so it reads distinctly from
+ * Permanente/Temporaneo even when they'd otherwise share the theme accent.
+ * A plain Row (not Button/OutlinedButton) with explicit padding, same fix as
+ * before for the Italian-word-wrap bug — Material's default button padding
+ * is too wide for a third-width pill.
+ */
 @Composable
 private fun KindSelector(selected: MemoryKind, onSelect: (MemoryKind) -> Unit, includeTemporary: Boolean) {
     val kinds = if (includeTemporary) MemoryKind.entries else listOf(MemoryKind.PERMANENT, MemoryKind.SENSITIVE)
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    val accent = Cyan
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         kinds.forEach { kind ->
-            val label = @Composable { Text(kind.label(), maxLines = 1, fontSize = 12.sp, softWrap = false) }
-            if (kind == selected) {
-                Button(onClick = { onSelect(kind) }, modifier = Modifier.weight(1f), contentPadding = KindButtonPadding) { label() }
-            } else {
-                OutlinedButton(onClick = { onSelect(kind) }, modifier = Modifier.weight(1f), contentPadding = KindButtonPadding) { label() }
+            val kindColor = when (kind) {
+                MemoryKind.TEMPORARY -> MUTED
+                MemoryKind.PERMANENT -> accent
+                MemoryKind.SENSITIVE -> SensitiveRed
+            }
+            val isSelected = kind == selected
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(if (isSelected) kindColor.copy(alpha = 0.20f) else Color.Transparent)
+                    .border(1.dp, kindColor.copy(alpha = if (isSelected) 0.9f else 0.35f), RoundedCornerShape(14.dp))
+                    .clickable { onSelect(kind) }
+                    .padding(horizontal = 4.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(kind.glyph(), fontSize = 13.sp)
+                Spacer(Modifier.width(5.dp))
+                Text(
+                    kind.label(),
+                    maxLines = 1,
+                    fontSize = 12.sp,
+                    softWrap = false,
+                    color = if (isSelected) kindColor else INK,
+                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                )
             }
         }
     }
+}
+
+private val SensitiveRed = Color(0xFFE05B4C)
+
+private fun MemoryKind.glyph(): String = when (this) {
+    MemoryKind.TEMPORARY -> "⏱"
+    MemoryKind.PERMANENT -> "📌"
+    MemoryKind.SENSITIVE -> "🔒"
 }
 
 @Composable

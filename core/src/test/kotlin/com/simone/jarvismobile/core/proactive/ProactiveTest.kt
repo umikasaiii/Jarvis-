@@ -127,16 +127,18 @@ class ProactiveTest {
     }
 
     @Test fun morningDigestAddsTheWeatherEmojiWhenKnown() {
+        // No "." between the emoji and what follows (§ richiesta esplicita
+        // dell'utente) — only the no-weather case still closes with one.
         assertEquals(
-            "Buongiorno ☀️. Nessun impegno importante oggi.",
+            "Buongiorno ☀️ Nessun impegno importante oggi.",
             ProactiveComposer.morningDigest(ProactiveSnapshot(todayWeather = WeatherCategory.CLEAR), today).message,
         )
         assertEquals(
-            "Buongiorno ⛅. Nessun impegno importante oggi.",
+            "Buongiorno ⛅ Nessun impegno importante oggi.",
             ProactiveComposer.morningDigest(ProactiveSnapshot(todayWeather = WeatherCategory.PARTLY_CLOUDY), today).message,
         )
         assertEquals(
-            "Buongiorno ☁️. Nessun impegno importante oggi.",
+            "Buongiorno ☁️ Nessun impegno importante oggi.",
             ProactiveComposer.morningDigest(ProactiveSnapshot(todayWeather = WeatherCategory.CLOUDY), today).message,
         )
     }
@@ -153,13 +155,13 @@ class ProactiveTest {
             ProactiveSnapshot(todayWeather = WeatherCategory.THUNDERSTORM, rainToday = true),
             today,
         ).message
-        assertEquals("Buongiorno ⛈️. Nessun impegno importante oggi. Oggi sono previsti temporali.", storm)
+        assertEquals("Buongiorno ⛈️ Nessun impegno importante oggi. Oggi sono previsti temporali.", storm)
 
         val rain = ProactiveComposer.morningDigest(
             ProactiveSnapshot(todayWeather = WeatherCategory.RAIN, rainToday = true),
             today,
         ).message
-        assertEquals("Buongiorno 🌧️. Nessun impegno importante oggi. Oggi è prevista pioggia.", rain)
+        assertEquals("Buongiorno 🌧️ Nessun impegno importante oggi. Oggi è prevista pioggia.", rain)
     }
 
     @Test fun batteryBeforeAlarmOnlyWhenItHelps() {
