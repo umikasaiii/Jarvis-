@@ -138,6 +138,7 @@ class VaultRepository @Inject constructor(
         requestedKind: MemoryKind? = null,
         category: String = "",
         theme: String = "",
+        spacing: String = "",
     ): MemoryRecord? =
         memoryMutex.withLock {
             val body = text.trim()
@@ -157,6 +158,7 @@ class VaultRepository @Inject constructor(
                 dates = fields.dates,
                 category = category,
                 theme = theme,
+                spacing = spacing,
             )
             val records = readMemoryRecordsUnlocked()
             if (!writeMemory(records + record)) return@withLock null
@@ -164,7 +166,13 @@ class VaultRepository @Inject constructor(
             if (readMemoryRecordsUnlocked().any { it.id == record.id }) record else null
         }
 
-    suspend fun updateMemory(id: String, text: String, kind: MemoryKind, theme: String? = null): MemoryRecord? =
+    suspend fun updateMemory(
+        id: String,
+        text: String,
+        kind: MemoryKind,
+        theme: String? = null,
+        spacing: String? = null,
+    ): MemoryRecord? =
         memoryMutex.withLock {
             val body = text.trim()
             if (body.isBlank() || MemoryStructure.containsCredential(body)) return@withLock null
@@ -179,6 +187,7 @@ class VaultRepository @Inject constructor(
                 people = fields.people,
                 dates = fields.dates,
                 theme = theme ?: current.theme,
+                spacing = spacing ?: current.spacing,
             )
             val next = records.map { if (it.id == id) updated else it }
             if (writeMemory(next)) updated else null

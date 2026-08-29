@@ -34,7 +34,27 @@ data class MemoryRecord(
     val category: String = "",
     /** Background theme id for the note editor (one of [MemoryNoteThemes.ALL]) or "" for the default. */
     val theme: String = "",
+    /** Line spacing for the note editor (one of [MemoryLineSpacing.ALL]) or "" for the default. */
+    val spacing: String = "",
 )
+
+/**
+ * The "spaziatura del testo" the user explicitly asked for alongside colour/
+ * size/alignment — a per-note line-height, since Markdown/[MemoryMarkup] has
+ * no concept of letter-spacing and this app's editor is plain-text (no
+ * per-character kerning control). Pure and stable, same pattern as
+ * [MemoryNoteThemes] so a saved [MemoryRecord.spacing] never becomes
+ * unrenderable after this list changes shape.
+ */
+object MemoryLineSpacing {
+    const val DEFAULT = ""
+    const val COMPACT = "compact"
+    const val WIDE = "wide"
+    val ALL: List<String> = listOf(DEFAULT, COMPACT, WIDE)
+
+    fun isValid(id: String): Boolean = id in ALL
+    fun sanitize(id: String): String = if (isValid(id)) id else DEFAULT
+}
 
 /**
  * Generic, non-referential background themes for the note editor (§ richiesta
@@ -208,6 +228,7 @@ object MemoryRecordCodec {
         people = people.map(String::trim).filter(String::isNotEmpty).distinct().take(12),
         dates = dates.map(String::trim).filter(String::isNotEmpty).distinct().take(12),
         theme = MemoryNoteThemes.sanitize(theme),
+        spacing = MemoryLineSpacing.sanitize(spacing),
     )
 
     private fun legacy(line: String): MemoryRecord {

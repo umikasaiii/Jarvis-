@@ -631,14 +631,20 @@ private fun ChatFab(unread: Int, onClick: () -> Unit, modifier: Modifier = Modif
             }
         }
         val themeId = LocalJarvisThemeId.current
+        // Rouge gets real dedicated art (§ richiesta esplicita dell'utente,
+        // nuova immagine fornita) instead of a tinted recolour, same pattern
+        // already established for JarvisOrb/JarvisCard on this theme — a rich,
+        // non-monochrome image would flatten badly under a flat SrcIn tint.
+        // Rosso keeps the original shared asset, tinted, as before.
         Image(
-            painter = painterResource(R.drawable.chat_fab),
+            painter = painterResource(if (themeId == JarvisThemeId.ROUGE) R.drawable.rouge_chat_fab else R.drawable.chat_fab),
             contentDescription = "Chat",
             modifier = Modifier.size(66.dp).clickable(onClick = onClick),
             contentScale = ContentScale.Fit,
-            // Same conditional SrcIn recolour as the shared HUD chrome (see
-            // JarvisCard/HudOverlay) — untouched on the default theme.
-            colorFilter = if (themeId == JarvisThemeId.BLU) null else ColorFilter.tint(Cyan),
+            colorFilter = when (themeId) {
+                JarvisThemeId.BLU, JarvisThemeId.ROUGE -> null
+                else -> ColorFilter.tint(Cyan)
+            },
         )
         if (unread > 0) {
             // A glass ring with a neon numeral, not a red dot: red is an alarm

@@ -138,6 +138,7 @@ class MemoryIndex @Inject constructor(
         category: String = "",
         autoCategorize: Boolean = true,
         theme: String = "",
+        spacing: String = "",
     ): MemoryRecord? {
         val resolved = kind ?: com.simone.jarvismobile.core.memory.MemoryStructure.classify(text)
         if (resolved == MemoryKind.TEMPORARY) {
@@ -155,7 +156,7 @@ class MemoryIndex @Inject constructor(
         // loading model just leaves it uncategorised. Manual "+" adds pass
         // autoCategorize=false so an unselected category means exactly "Senza
         // categoria", ready for the AI button.
-        val saved = vault.addMemory(text, resolved, category, theme) ?: return null
+        val saved = vault.addMemory(text, resolved, category, theme, spacing) ?: return null
         rebuild()
         if (category.isBlank() && autoCategorize) {
             bgScope.launch {
@@ -190,14 +191,20 @@ class MemoryIndex @Inject constructor(
         return changed
     }
 
-    suspend fun update(recordId: String, text: String, kind: MemoryKind, theme: String? = null): MemoryRecord? {
+    suspend fun update(
+        recordId: String,
+        text: String,
+        kind: MemoryKind,
+        theme: String? = null,
+        spacing: String? = null,
+    ): MemoryRecord? {
         if (kind == MemoryKind.TEMPORARY) {
             if (!conversationMemory.addTemporary(text)) return null
             val removed = vault.deleteMemory(recordId) ?: return null
             rebuild()
             return removed.copy(text = text.trim(), kind = MemoryKind.TEMPORARY)
         }
-        val updated = vault.updateMemory(recordId, text, kind, theme)
+        val updated = vault.updateMemory(recordId, text, kind, theme, spacing)
         if (updated != null) rebuild()
         return updated
     }

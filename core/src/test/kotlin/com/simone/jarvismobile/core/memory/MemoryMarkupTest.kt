@@ -103,4 +103,55 @@ class MemoryMarkupTest {
         assertEquals("Solo testo semplice, niente markup.", line.text)
         assertTrue(line.runs.isEmpty())
     }
+
+    // --- transform() / MarkupTransform (live WYSIWYG editor support) ------
+
+    @Test
+    fun `transform strips inline markers and keeps a correct offset map`() {
+        val t = MemoryMarkup.transform("Ciao **mondo**")
+        assertEquals("Ciao mondo", t.displayText)
+        assertEquals(listOf(StyledRun(5, 10, InlineStyle.Bold)), t.runs)
+
+        // "Ciao " (0-4) is untouched; display 'm' (offset 5) sits right after
+        // the raw "**" at offset 7, so typing there inserts inside the bold run.
+        assertEquals(0, t.rawOffset(0))
+        assertEquals(4, t.rawOffset(4))
+        assertEquals(7, t.rawOffset(5))
+        assertEquals(14, t.rawOffset(10)) // end of field -> end of raw text
+
+        assertEquals(0, t.displayOffset(0))
+        assertEquals(5, t.displayOffset(7)) // raw cursor right before 'm'
+        // A raw cursor stranded inside the stripped "**" snaps forward to the
+        // nearest real boundary instead of landing on stale coordinates.
+        assertEquals(5, t.displayOffset(6))
+        assertEquals(10, t.displayOffset(14))
+    }
+
+    @Test
+    fun `transform leaves newlines and block markers untouched, only strips inline ones`() {
+        val t = MemoryMarkup.transform("**A**\nB")
+        assertEquals("A\nB", t.displayText)
+        assertEquals(listOf(StyledRun(0, 1, InlineStyle.Bold)), t.runs)
+
+        val heading = MemoryMarkup.transform("# **Titolo**")
+        // Block markers (here "# ") are a documented, deliberate scope
+        // boundary of transform() — only inline markers are stripped/mapped.
+        assertEquals("# Titolo", heading.displayText)
+        assertEquals(listOf(StyledRun(2, 8, InlineStyle.Bold)), heading.runs)
+    }
+
+    @Test
+    fun `transform agrees with parse's inline stripping when there are no block markers`() {
+        val raw = "**uno** e *due* con ==tre==\naltra riga con [color=#00FF00]colore[/color]"
+        val fromParse = MemoryMarkup.parse(raw).joinToString("\n") { it.text }
+        assertEquals(fromParse, MemoryMarkup.transform(raw).displayText)
+    }
+
+    @Test
+    fun `transform of plain text with no markup is the identity mapping`() {
+        val t = MemoryMarkup.transform("solo testo")
+        assertEquals("solo testo", t.displayText)
+        assertTrue(t.runs.isEmpty())
+        for (i in 0..t.displayText.length) assertEquals(i, t.rawOffset(i))
+    }
 }

@@ -61,17 +61,22 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.input.TransformedText
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -80,6 +85,7 @@ import com.simone.jarvismobile.core.memory.InlineStyle
 import com.simone.jarvismobile.core.memory.MarkupAlign
 import com.simone.jarvismobile.core.memory.MemoryCategories
 import com.simone.jarvismobile.core.memory.MemoryKind
+import com.simone.jarvismobile.core.memory.MemoryLineSpacing
 import com.simone.jarvismobile.core.memory.MemoryMarkup
 import com.simone.jarvismobile.core.memory.MemoryNoteThemes
 import com.simone.jarvismobile.core.memory.MemoryRecord
@@ -140,12 +146,16 @@ fun MemoryScreen(
             initialKind = MemoryKind.PERMANENT,
             initialCategory = selectedCategory.orEmpty(), // a note started from inside a drawer folder lands there
             initialTheme = "",
+            initialSpacing = "",
             allowTemporary = true,
             showDelete = false,
             enabled = !busy,
             allCategories = allCategories,
             onDismiss = { showAdd = false },
-            onSave = { text, kind, category, theme -> viewModel.add(text, kind, category, theme); showAdd = false },
+            onSave = { text, kind, category, theme, spacing ->
+                viewModel.add(text, kind, category, theme, spacing)
+                showAdd = false
+            },
             onDelete = {},
         )
         return
@@ -157,6 +167,7 @@ fun MemoryScreen(
             initialKind = rec.kind,
             initialCategory = rec.category,
             initialTheme = rec.theme,
+            initialSpacing = rec.spacing,
             allowTemporary = false,
             showDelete = true,
             enabled = !busy,
@@ -165,8 +176,8 @@ fun MemoryScreen(
             people = rec.people,
             dates = rec.dates,
             onDismiss = { editing = null },
-            onSave = { text, kind, category, theme ->
-                viewModel.update(rec.id, text, kind, theme)
+            onSave = { text, kind, category, theme, spacing ->
+                viewModel.update(rec.id, text, kind, theme, spacing)
                 if (category != rec.category) viewModel.setCategory(rec.id, category)
                 editing = null
             },
@@ -827,6 +838,7 @@ private fun MemoryNoteEditorScreen(
     initialKind: MemoryKind,
     initialCategory: String,
     initialTheme: String,
+    initialSpacing: String,
     allowTemporary: Boolean,
     showDelete: Boolean,
     enabled: Boolean,
@@ -835,13 +847,14 @@ private fun MemoryNoteEditorScreen(
     people: List<String> = emptyList(),
     dates: List<String> = emptyList(),
     onDismiss: () -> Unit,
-    onSave: (String, MemoryKind, String, String) -> Unit,
+    onSave: (String, MemoryKind, String, String, String) -> Unit,
     onDelete: () -> Unit,
 ) {
     var field by remember { mutableStateOf(TextFieldValue(initialText)) }
     var kind by remember { mutableStateOf(initialKind) }
     var category by remember { mutableStateOf(initialCategory) }
     var theme by remember { mutableStateOf(MemoryNoteThemes.sanitize(initialTheme)) }
+    var spacing by remember { mutableStateOf(MemoryLineSpacing.sanitize(initialSpacing)) }
     var confirmDelete by remember { mutableStateOf(false) }
     var showPreview by remember { mutableStateOf(false) }
     val accent = Cyan
@@ -852,7 +865,7 @@ private fun MemoryNoteEditorScreen(
     // now save first (skipping only a genuinely blank note, same rule as the
     // "Salva" button) instead of discarding silently.
     val exitSaving: () -> Unit = {
-        if (field.text.isNotBlank()) onSave(field.text, kind, category, theme)
+        if (field.text.isNotBlank()) onSave(field.text, kind, category, theme, spacing)
         onDismiss()
     }
     BackHandler(onBack = exitSaving)
@@ -909,7 +922,7 @@ private fun MemoryNoteEditorScreen(
                     }
                 }
                 TextButton(
-                    onClick = { if (field.text.isNotBlank()) onSave(field.text, kind, category, theme) },
+                    onClick = { if (field.text.isNotBlank()) onSave(field.text, kind, category, theme, spacing) },
                     enabled = enabled && field.text.isNotBlank(),
                 ) { Text("Salva", color = if (field.text.isNotBlank()) accent else MUTED) }
             }
@@ -938,6 +951,7 @@ private fun MemoryNoteEditorScreen(
                 MarkupPreview(
                     raw = field.text,
                     accent = accent,
+                    spacing = spacing,
                     onToggleLine = { index -> field = field.copy(text = toggleChecklistLine(field.text, index)) },
                     modifier = Modifier.fillMaxWidth().weight(1f),
                 )
@@ -947,7 +961,8 @@ private fun MemoryNoteEditorScreen(
                     onValueChange = { field = it },
                     modifier = Modifier.fillMaxWidth().weight(1f),
                     placeholder = { Text("Scrivi qui…", color = MUTED) },
-                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = INK),
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = INK, lineHeight = spacingLineHeight(spacing)),
+                    visualTransformation = MarkupVisualTransformation,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = Color.Transparent,
                         unfocusedBorderColor = Color.Transparent,
@@ -975,6 +990,8 @@ private fun MemoryNoteEditorScreen(
                     onAlignStart = { field = setLineAlign(field, "") },
                     onAlignCenter = { field = setLineAlign(field, "[center]") },
                     onAlignEnd = { field = setLineAlign(field, "[right]") },
+                    spacing = spacing,
+                    onSpacing = { spacing = it },
                 )
             }
             Spacer(Modifier.size(24.dp))
@@ -1013,6 +1030,8 @@ private fun FormattingToolbar(
     onAlignStart: () -> Unit,
     onAlignCenter: () -> Unit,
     onAlignEnd: () -> Unit,
+    spacing: String,
+    onSpacing: (String) -> Unit,
 ) {
     Row(
         Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 8.dp),
@@ -1027,6 +1046,7 @@ private fun FormattingToolbar(
         SwatchPickerButton(glyph = "A", swatches = SWATCHES, onPick = onTextColor)
         SwatchPickerButton(glyph = "▧", swatches = SWATCHES, onPick = onHighlightColor)
         SizePickerButton(onPick = onFontSize)
+        SpacingPickerButton(current = spacing, onPick = onSpacing)
         GlyphButton(onClick = onBullet) { Text("•", color = INK, fontWeight = FontWeight.Bold, fontSize = 18.sp) }
         GlyphButton(onClick = onNumbered) { Text("1.", color = INK, fontWeight = FontWeight.Bold, fontSize = 14.sp) }
         GlyphButton(onClick = onChecklist) { Text("☑", color = INK, fontSize = 16.sp) }
@@ -1095,6 +1115,39 @@ private fun SizePickerButton(onPick: (String) -> Unit) {
             }
         }
     }
+}
+
+/**
+ * "Spaziatura" (§ richiesta esplicita dell'utente, l'ultima voce mancante
+ * dell'elenco originale: "centratura e spaziatura del testo") — un'altezza
+ * di riga per nota, non un concetto per-carattere: né Markdown né
+ * l'editor a testo semplice hanno una nozione di letter-spacing, quindi
+ * questa è l'interpretazione onesta e realizzabile della richiesta.
+ */
+@Composable
+private fun SpacingPickerButton(current: String, onPick: (String) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        GlyphButton(onClick = { open = true }) { Text("≡", color = INK, fontWeight = FontWeight.Bold, fontSize = 16.sp) }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            listOf(
+                MemoryLineSpacing.COMPACT to "Compatta",
+                MemoryLineSpacing.DEFAULT to "Normale",
+                MemoryLineSpacing.WIDE to "Ampia",
+            ).forEach { (value, label) ->
+                DropdownMenuItem(
+                    text = { Text(if (value == current) "✓ $label" else label) },
+                    onClick = { open = false; onPick(value) },
+                )
+            }
+        }
+    }
+}
+
+private fun spacingLineHeight(spacing: String): androidx.compose.ui.unit.TextUnit = when (spacing) {
+    MemoryLineSpacing.COMPACT -> 1.1.em
+    MemoryLineSpacing.WIDE -> 1.9.em
+    else -> 1.4.em
 }
 
 /**
@@ -1177,9 +1230,23 @@ private fun toggleChecklistLine(raw: String, lineIndex: Int): String {
 
 /** Renders [raw] via [MemoryMarkup] — the real styled result, not the raw markup syntax. */
 @Composable
-private fun MarkupPreview(raw: String, accent: Color, onToggleLine: (Int) -> Unit, modifier: Modifier = Modifier) {
+private fun MarkupPreview(
+    raw: String,
+    accent: Color,
+    spacing: String,
+    onToggleLine: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val lines = remember(raw) { MemoryMarkup.parse(raw) }
-    Column(modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    // "Spaziatura" (§ richiesta esplicita dell'utente) — in a line-per-Row
+    // layout like this, the natural equivalent of line spacing is the gap
+    // between rows, not a per-character property nothing here has.
+    val gap = when (spacing) {
+        MemoryLineSpacing.COMPACT -> 2.dp
+        MemoryLineSpacing.WIDE -> 14.dp
+        else -> 6.dp
+    }
+    Column(modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(gap)) {
         lines.forEachIndexed { index, line ->
             if (line.isDivider) {
                 HorizontalDivider(color = MUTED.copy(alpha = 0.3f), modifier = Modifier.padding(vertical = 8.dp))
@@ -1255,46 +1322,88 @@ private fun parseHex(hex: String): Color = runCatching {
 }.getOrDefault(Color.White)
 
 /**
- * The note's background theme: a labelled row of solid-colour swatches (§
- * richiesta esplicita dell'utente: "cambiare il tema dello sfondo della nota
- * con molti temi anche molto ispirati ad anime"; risposta alla domanda di
- * chiarimento: "Temi generici, nessun riferimento specifico" — gradienti
- * generici scelti per nome/atmosfera, non arte con licenza), plus a
- * collapsible section of custom image backgrounds the user provided (§
- * richiesta esplicita, "aggiungi queste immagini come sfondi personalizzati,
- * però facendolo selezionare in una sezione apribile"). Labelled explicitly
- * "Sfondo nota" — a plain row of colour dots otherwise reads exactly like a
- * text-colour picker, which is a different control entirely (in the
- * toolbar), and that ambiguity is a real point of confusion the user hit.
+ * Live "no visible markup characters" formatting in the edit field itself
+ * (§ richiesta esplicita dell'utente: "quando seleziono per esempio in
+ * grassetto mi fa asterischi, non li voglio, voglio che mi dia esattamente
+ * l'effetto richiesto"). A [VisualTransformation] is exactly Compose's tool
+ * for this: the underlying [TextFieldValue] the toolbar/`onSave` operate on
+ * still holds the raw markup text unchanged (so storage, the toolbar's
+ * insert-at-cursor helpers, and "Anteprima" all keep working exactly as
+ * before) — only what's DRAWN on screen, and where the cursor/selection
+ * visually land, go through [MemoryMarkup.transform]. Block markers
+ * (headings/bullets/checklist/divider/alignment) are a deliberate, documented
+ * scope boundary of [MemoryMarkup.transform] and stay visible as typed —
+ * "Anteprima" is still where those render fully.
+ */
+private object MarkupVisualTransformation : VisualTransformation {
+    override fun filter(text: AnnotatedString): TransformedText {
+        val result = MemoryMarkup.transform(text.text)
+        val annotated = buildAnnotatedString {
+            append(result.displayText)
+            result.runs.forEach { addStyle(it.style.toSpanStyle(), it.start, it.end) }
+        }
+        val offsetMapping = object : OffsetMapping {
+            override fun originalToTransformed(offset: Int): Int = result.displayOffset(offset)
+            override fun transformedToOriginal(offset: Int): Int = result.rawOffset(offset)
+        }
+        return TransformedText(annotated, offsetMapping)
+    }
+}
+
+/**
+ * The note's background theme — solid-colour swatches (§ richiesta esplicita
+ * dell'utente: "cambiare il tema dello sfondo della nota con molti temi
+ * anche molto ispirati ad anime"; risposta alla domanda di chiarimento:
+ * "Temi generici, nessun riferimento specifico" — gradienti generici scelti
+ * per nome/atmosfera, non arte con licenza) plus custom image backgrounds
+ * the user provided. Both rows now live behind ONE collapsed-by-default
+ * toggle (§ richiesta esplicita, giro successivo: "gli sfondi sia per
+ * colori che con immagini prendono troppo spazio, li volevo con sezione
+ * apribile" — in precedenza solo le immagini erano dietro un toggle, i
+ * colori restavano sempre visibili). Collapsed, it shows just a small
+ * preview of the current choice, so the note content stays the dominant
+ * thing on screen instead of being crowded out.
  */
 @Composable
 private fun ThemeSelector(current: String, onSelect: (String) -> Unit) {
-    var showImages by remember { mutableStateOf(false) }
+    var expanded by remember { mutableStateOf(false) }
     Column(Modifier.padding(vertical = 4.dp)) {
-        Text("Sfondo nota", color = MUTED, fontSize = 12.sp, modifier = Modifier.padding(bottom = 4.dp))
         Row(
-            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(8.dp))
+                .clickable { expanded = !expanded }
+                .padding(vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            MemoryNoteThemes.GRADIENTS.forEach { id ->
-                val selected = current == id
-                Box(
-                    Modifier
-                        .size(26.dp)
-                        .clip(CircleShape)
-                        .background(themeSwatchColor(id))
-                        .then(if (selected) Modifier.border(2.dp, Cyan, CircleShape) else Modifier)
-                        .clickable { onSelect(id) },
-                )
-            }
+            Text(if (expanded) "▾" else "▸", color = Cyan, fontSize = 12.sp)
+            Spacer(Modifier.width(6.dp))
+            Text("Sfondo nota", color = MUTED, fontSize = 12.sp, modifier = Modifier.weight(1f))
+            ThemePreviewSwatch(current)
         }
-        Text(
-            if (showImages) "▾ Sfondi personalizzati" else "▸ Sfondi personalizzati",
-            color = Cyan,
-            style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.clickable { showImages = !showImages }.padding(top = 8.dp, bottom = 4.dp),
-        )
-        if (showImages) {
+        if (expanded) {
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                MemoryNoteThemes.GRADIENTS.forEach { id ->
+                    val selected = current == id
+                    Box(
+                        Modifier
+                            .size(26.dp)
+                            .clip(CircleShape)
+                            .background(themeSwatchColor(id))
+                            .then(if (selected) Modifier.border(2.dp, Cyan, CircleShape) else Modifier)
+                            .clickable { onSelect(id) },
+                    )
+                }
+            }
+            Text(
+                "Sfondi personalizzati",
+                color = MUTED,
+                fontSize = 11.sp,
+                modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
+            )
             Row(
                 Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1315,6 +1424,22 @@ private fun ThemeSelector(current: String, onSelect: (String) -> Unit) {
                 }
             }
         }
+    }
+}
+
+/** A small always-visible preview of the currently selected background, shown next to the collapsed toggle. */
+@Composable
+private fun ThemePreviewSwatch(current: String) {
+    val imageRes = customBackgroundRes(current)
+    if (imageRes != null) {
+        Image(
+            painter = painterResource(imageRes),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.size(20.dp).clip(CircleShape),
+        )
+    } else {
+        Box(Modifier.size(20.dp).clip(CircleShape).background(themeSwatchColor(current)))
     }
 }
 

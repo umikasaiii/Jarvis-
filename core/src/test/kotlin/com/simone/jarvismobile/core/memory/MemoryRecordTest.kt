@@ -139,6 +139,18 @@ class MemoryRecordTest {
     }
 
     @Test
+    fun `line spacing survives the round trip and an unknown value sanitizes to default`() {
+        assertEquals(listOf("", "compact", "wide"), MemoryLineSpacing.ALL)
+        val records = listOf(
+            MemoryRecord(id = "spaced", text = "Nota", createdAt = 80, spacing = MemoryLineSpacing.WIDE),
+        )
+        assertEquals(records, MemoryRecordCodec.parse(MemoryRecordCodec.render(records)))
+
+        val unknownSpacingSaved = MemoryRecordCodec.render(records).replace("\"wide\"", "\"huge\"")
+        assertEquals("", MemoryRecordCodec.parse(unknownSpacingSaved).single().spacing)
+    }
+
+    @Test
     fun `classifier marks sensitive data and rejects credentials`() {
         assertEquals(MemoryKind.SENSITIVE, MemoryStructure.classify("La mia terapia medica è cambiata"))
         assertEquals(MemoryKind.TEMPORARY, MemoryStructure.classify("Tienilo solo per questa conversazione"))

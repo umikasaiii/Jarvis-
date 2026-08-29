@@ -16,6 +16,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -23,8 +24,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.matchParentSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.Apps
@@ -71,12 +75,14 @@ import com.simone.jarvismobile.ui.models.ModelsScreen
 import com.simone.jarvismobile.ui.settings.SettingsScreen
 import com.simone.jarvismobile.ui.agenda.AgendaScreen
 import com.simone.jarvismobile.ui.status.SystemStatusScreen
+import com.simone.jarvismobile.ui.theme.JarvisThemeId
 import com.simone.jarvismobile.ui.theme.LocalJarvisPalette
+import com.simone.jarvismobile.ui.theme.LocalJarvisThemeId
 
 private enum class Tab(val label: String, val icon: ImageVector, val rougeIcon: Int? = null) {
-    HOME("Home", Icons.Filled.Home),
-    CHAT("Chat", Icons.AutoMirrored.Filled.Chat),
-    COMANDI("Comandi", Icons.Filled.Apps),
+    HOME("Home", Icons.Filled.Home, R.drawable.rouge_ic_home),
+    CHAT("Chat", Icons.AutoMirrored.Filled.Chat, R.drawable.rouge_ic_chat),
+    COMANDI("Comandi", Icons.Filled.Apps, R.drawable.rouge_ic_commands),
     NOTIFICHE("Attività", Icons.Filled.CheckCircle, R.drawable.rouge_ic_tasks),
     IMPOSTAZIONI("Impostazioni", Icons.Filled.Settings, R.drawable.rouge_ic_settings),
 }
@@ -144,6 +150,7 @@ fun JarvisApp(
     // The one HUD accent used directly in this file (bottom nav wash + active
     // tab tint), following the theme the same way the dashboard's Cyan does.
     val palette = LocalJarvisPalette.current
+    val themeId = LocalJarvisThemeId.current
 
     Box(Modifier.fillMaxSize()) {
         // Base: the tab shell with the bottom navigation.
@@ -159,15 +166,31 @@ fun JarvisApp(
                             ),
                         ),
                 ) {
+                    // Rouge gets the user's own reference art as the bar frame
+                    // itself (§ richiesta esplicita: "cambia anche barra dello
+                    // stato sotto con questa, e le relative icone") instead of
+                    // the flat translucent wash — same "real dedicated art on
+                    // Rouge" pattern as JarvisOrb/JarvisCard/ChatFab.
+                    if (themeId == JarvisThemeId.ROUGE) {
+                        Image(
+                            painter = painterResource(R.drawable.rouge_navbar_bg),
+                            contentDescription = null,
+                            contentScale = ContentScale.FillBounds,
+                            modifier = Modifier.matchParentSize(),
+                        )
+                    }
                     // Custom bar rather than Material's NavigationBar: the
                     // stock one paints an opaque surface and a pill-shaped
                     // indicator behind the active item, both of which fight a
                     // translucent HUD. Here the bar is glass and the active
-                    // entry is marked by the icon itself lighting up.
+                    // entry is marked by the icon itself lighting up. On Rouge
+                    // the frame image above already supplies the dark pill
+                    // background, so the flat fill here is skipped there —
+                    // layering it on top would dim the artwork underneath.
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(Color(0x99040C14))
+                            .then(if (themeId == JarvisThemeId.ROUGE) Modifier else Modifier.background(Color(0x99040C14)))
                             .navigationBarsPadding()
                             .padding(vertical = 8.dp),
                         horizontalArrangement = Arrangement.SpaceEvenly,
@@ -195,7 +218,12 @@ fun JarvisApp(
                                     // form the way the plain vector icon does, so
                                     // showing it while inactive would break the
                                     // active/inactive contrast the bar relies on.
-                                    rouge = entry.rougeIcon.takeIf { active },
+                                    // Chat is the one exception — it opens an overlay
+                                    // rather than becoming the selected tab, so
+                                    // `active` is always false for it by design; its
+                                    // Rouge icon would otherwise never appear even
+                                    // though the user explicitly asked for it here.
+                                    rouge = entry.rougeIcon.takeIf { active || entry == Tab.CHAT },
                                     contentDescription = entry.label,
                                     tint = tint,
                                     modifier = Modifier.size(22.dp),
