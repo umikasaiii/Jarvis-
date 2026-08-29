@@ -55,6 +55,7 @@ fun DiagnosticsScreen(
     val sttStatus by viewModel.sttStatus.collectAsStateWithLifecycle()
     val sttPartial by viewModel.sttPartial.collectAsStateWithLifecycle()
     val drivingNavigationMode by viewModel.drivingNavigationMode.collectAsStateWithLifecycle()
+    val weatherStatus by viewModel.weatherStatus.collectAsStateWithLifecycle()
     val perms = viewModel.permissions()
     val context = LocalContext.current
 
@@ -276,6 +277,24 @@ fun DiagnosticsScreen(
                     if (gpxStatus.isNotEmpty()) {
                         Text(gpxStatus, style = MaterialTheme.typography.bodySmall)
                     }
+                }
+            }
+        }
+
+        // § segnalazioni ripetute dell'utente di avvisi pioggia sbagliati —
+        // dopo tre giri di fix "alla cieca" (fetch/decisione/refresh/staleness)
+        // senza un modo per verificarli davvero, questo mostra esattamente
+        // cosa sa JARVIS in questo momento, invece di dover indovinare di
+        // nuovo se il prossimo avviso sbagliato è un bug o una regola senza
+        // condizione collegata.
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Meteo", style = MaterialTheme.typography.titleMedium)
+                Button(onClick = viewModel::refreshWeatherDiagnostics, modifier = Modifier.fillMaxWidth()) {
+                    Text("Controlla adesso")
+                }
+                if (weatherStatus.isNotEmpty()) {
+                    Text(weatherStatus, style = MaterialTheme.typography.bodySmall)
                 }
             }
         }

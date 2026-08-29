@@ -12,6 +12,7 @@ import com.simone.jarvismobile.audio.SessionCoordinator
 import com.simone.jarvismobile.audio.SttResult
 import com.simone.jarvismobile.audio.TtsState
 import com.simone.jarvismobile.BuildConfig
+import com.simone.jarvismobile.context.ContextEngine
 import com.simone.jarvismobile.core.driving.DrivingNavigationMode
 import com.simone.jarvismobile.core.engine.EngineTurnDiagnostics
 import com.simone.jarvismobile.core.navigation.GpxParser
@@ -24,11 +25,13 @@ import com.simone.jarvismobile.tts.AudioFocusGate
 import com.simone.jarvismobile.tts.PcmPlayer
 import com.simone.jarvismobile.tts.SupertonicTtsEngine
 import com.simone.jarvismobile.tts.TtsLoadResult
+import com.simone.jarvismobile.weather.WeatherManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -49,7 +52,37 @@ class DiagnosticsViewModel @Inject constructor(
     private val pcmPlayer: PcmPlayer,
     private val audioFocus: AudioFocusGate,
     private val conversationalEngine: ConversationalJarvisEngine,
+    private val weather: WeatherManager,
+    private val contextEngine: ContextEngine,
 ) : AndroidViewModel(application) {
+
+    /**
+     * A verifiable read of what JARVIS actually believes about the weather
+     * right now (§ segnalazioni ripetute dell'utente di falsi avvisi
+     * pioggia: "domani c'è il sole e per l'ennesima volta risulta pioggia")
+     * — after three rounds of blind fixes to the fetch/decision pipeline
+     * with no visible way to confirm them, this closes the loop: forces a
+     * real refresh and shows the exact `rainToday`/`rainTomorrow`/weather
+     * category/staleness [ContextEngine] is holding, via its existing
+     * (previously unused anywhere) `describe()`. Settle "is this a code bug
+     * or a rule with no condition attached" from actual state instead of
+     * guessing again.
+     */
+    private val _weatherStatus = MutableStateFlow("")
+    val weatherStatus: StateFlow<String> = _weatherStatus.asStateFlow()
+
+    fun refreshWeatherDiagnostics() {
+        viewModelScope.launch {
+            val enabled = settings.weatherEnabled.first()
+            val placeId = settings.weatherPlaceId.first()
+            weather.refresh()
+            _weatherStatus.value = buildString {
+                append("meteo=").append(if (enabled) "attivo" else "SPENTO")
+                append(" luogo=").append(placeId.ifBlank { "posizione GPS" })
+                append("\n").append(contextEngine.describe())
+            }
+        }
+    }
 
     /**
      * Developer-only selector between the shipped Google-Maps overlay and the

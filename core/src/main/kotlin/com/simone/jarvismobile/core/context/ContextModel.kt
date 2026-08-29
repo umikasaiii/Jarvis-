@@ -49,6 +49,8 @@ data class ContextState(
         append(" driving=").append(driving)
         append(" bt=").append(if (bluetoothKnown) connectedBluetooth.size.toString() else "?")
         append(" rain=").append(rainToday?.toString() ?: "?").append("/").append(rainTomorrow?.toString() ?: "?")
+        append(" cat=").append(todayWeather?.name ?: "?")
+        append(" weatherAt=").append(weatherUpdatedAt?.toString() ?: "mai")
     }
 }
 
