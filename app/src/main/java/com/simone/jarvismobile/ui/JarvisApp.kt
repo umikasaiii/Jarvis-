@@ -171,16 +171,21 @@ fun JarvisApp(
                     // the flat translucent wash — same "real dedicated art on
                     // Rouge" pattern as JarvisOrb/JarvisCard/ChatFab.
                     if (themeId == JarvisThemeId.ROUGE) {
-                        // Crop, not FillBounds (§ richiesta esplicita
-                        // dell'utente: "barra e icone si vedono male") — lo
-                        // stretch a riempimento distorceva la cornice quando
-                        // la larghezza reale dello schermo non coincide col
-                        // rapporto d'aspetto sorgente dell'immagine; Crop
-                        // preserva le proporzioni e ritaglia l'eccesso.
+                        // FillWidth, not Crop (§ richiesta esplicita
+                        // dell'utente: "mancano i lati, mettila intera") —
+                        // Crop preservava le proporzioni ma, quando il
+                        // rapporto larghezza/altezza reale della barra è più
+                        // "alto" di quello sorgente, ritaglia dai lati per
+                        // riempire l'altezza: proprio le corna decorative
+                        // agli estremi sparivano. FillWidth garantisce che
+                        // la larghezza combaci sempre per intero (mai un
+                        // taglio laterale); un'eventuale eccedenza in
+                        // altezza viene centrata e ritagliata sopra/sotto
+                        // invece che ai lati.
                         Image(
                             painter = painterResource(R.drawable.rouge_navbar_bg),
                             contentDescription = null,
-                            contentScale = ContentScale.Crop,
+                            contentScale = ContentScale.FillWidth,
                             modifier = Modifier.matchParentSize(),
                         )
                     }
