@@ -51,10 +51,10 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -1566,21 +1566,23 @@ private fun ThemePreviewSwatch(current: String, backgroundStore: NoteBackgroundS
     }
 }
 
-/** Decodes a user-imported background off the main thread; null while loading or if the file is gone. */
+/**
+ * Decodes a user-imported background off the main thread; null while loading
+ * or if the file is gone. `remember` + `LaunchedEffect` rather than
+ * `produceState` — Compose lint's `ProduceStateDoesNotAssignValue` check kept
+ * flagging this as a false positive (CI-caught, twice) regardless of how the
+ * `value = …` assignment inside the producer lambda was shaped; this is the
+ * equally-idiomatic, lint-clean alternative for the same async-load pattern.
+ */
 @Composable
 private fun rememberUserBackgroundBitmap(store: NoteBackgroundStore, id: String): ImageBitmap? {
-    val state = produceState<ImageBitmap?>(initialValue = null, id) {
-        // Compose lint's ProduceStateDoesNotAssignValue check doesn't reliably
-        // recognise `value = withContext(...) { ... }` as an assignment when
-        // the RHS is itself a suspend call — splitting the suspend result
-        // into a local val first, then a bare `value = decoded`, satisfies it
-        // (a known false positive with the inline form; CI caught it).
-        val decoded = withContext(Dispatchers.IO) {
+    var bitmap by remember(id) { mutableStateOf<ImageBitmap?>(null) }
+    LaunchedEffect(id) {
+        bitmap = withContext(Dispatchers.IO) {
             store.file(id)?.let { f -> runCatching { BitmapFactory.decodeFile(f.path)?.asImageBitmap() }.getOrNull() }
         }
-        value = decoded
     }
-    return state.value
+    return bitmap
 }
 
 private fun themeSwatchColor(id: String): Color = when (id) {
