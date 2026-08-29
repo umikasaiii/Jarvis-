@@ -583,7 +583,9 @@ fun DashboardScreen(
         // Floating, collapsible written-chat button (bottom-right).
         ChatFab(
             unread = unread,
-            modifier = Modifier.align(Alignment.BottomEnd).padding(end = 18.dp, bottom = 18.dp),
+            // bottom 18dp -> 10dp (§ richiesta esplicita: "mettila
+            // leggermente più in basso ma di poco").
+            modifier = Modifier.align(Alignment.BottomEnd).padding(end = 18.dp, bottom = 10.dp),
             onClick = { viewModel.markChatSeen(); onOpenChat() },
         )
     }
@@ -647,7 +649,15 @@ private fun ChatFab(unread: Int, onClick: () -> Unit, modifier: Modifier = Modif
         Image(
             painter = painterResource(if (rouge) R.drawable.rouge_chat_fab else R.drawable.chat_fab),
             contentDescription = "Chat",
-            modifier = Modifier.size(if (rouge) 104.dp else 66.dp).clickable(onClick = onClick),
+            // Clipped to a circle before the ripple is attached (§ richiesta
+            // esplicita dell'utente: "non mettere effetto quadrato che esce
+            // fuori quando clicco icona per la chat") — without this, the
+            // ripple fills the Image's square layout box, visibly spilling
+            // past the round artwork into its transparent corners.
+            modifier = Modifier
+                .size(if (rouge) 104.dp else 66.dp)
+                .clip(androidx.compose.foundation.shape.CircleShape)
+                .clickable(onClick = onClick),
             contentScale = ContentScale.Fit,
             colorFilter = when (themeId) {
                 JarvisThemeId.BLU, JarvisThemeId.ROUGE -> null
