@@ -609,37 +609,43 @@ private fun ChatFab(unread: Int, onClick: () -> Unit, modifier: Modifier = Modif
     // DrawScope block, not @Composable, so it cannot read Cyan (a composable
     // getter) directly; it closes over this already-resolved value instead.
     val cyan = Cyan
-    Box(modifier.size(78.dp), contentAlignment = Alignment.Center) {
-        // A light HUD ring. The previous one was thick and full-circle, and its
-        // top-right arc ran straight through the unread badge; this is thin,
-        // dimmer, and leaves that quadrant clear so the number stays readable.
-        Canvas(Modifier.size(70.dp)) {
-            val r = size.minDimension / 2f - 1.dp.toPx()
-            val c = center
-            drawCircle(cyan.copy(alpha = 0.18f), radius = r, center = c, style = Stroke(0.8.dp.toPx()))
-            // Arcs on the left and bottom only; the badge owns the top-right.
-            listOf(110f, 175f, 245f).forEach { start ->
-                drawArc(
-                    color = cyan.copy(alpha = 0.5f),
-                    startAngle = start,
-                    sweepAngle = 38f,
-                    useCenter = false,
-                    topLeft = Offset(c.x - r, c.y - r),
-                    size = Size(r * 2, r * 2),
-                    style = Stroke(width = 1.2.dp.toPx(), cap = StrokeCap.Round),
-                )
+    val themeId = LocalJarvisThemeId.current
+    val rouge = themeId == JarvisThemeId.ROUGE
+    Box(modifier.size(if (rouge) 92.dp else 78.dp), contentAlignment = Alignment.Center) {
+        // A light HUD ring, drawn for the default/Rosso look only — Rouge's
+        // artwork already has its own rings and glow baked in (§ richiesta
+        // esplicita dell'utente: "togli il cerchio intorno a icona del
+        // messaggio... e rendila più grande"), same reasoning already
+        // documented for JarvisOrb: a second ring on top of the art's own
+        // reads as a mismatched circle rather than a HUD accent.
+        if (!rouge) {
+            Canvas(Modifier.size(70.dp)) {
+                val r = size.minDimension / 2f - 1.dp.toPx()
+                val c = center
+                drawCircle(cyan.copy(alpha = 0.18f), radius = r, center = c, style = Stroke(0.8.dp.toPx()))
+                // Arcs on the left and bottom only; the badge owns the top-right.
+                listOf(110f, 175f, 245f).forEach { start ->
+                    drawArc(
+                        color = cyan.copy(alpha = 0.5f),
+                        startAngle = start,
+                        sweepAngle = 38f,
+                        useCenter = false,
+                        topLeft = Offset(c.x - r, c.y - r),
+                        size = Size(r * 2, r * 2),
+                        style = Stroke(width = 1.2.dp.toPx(), cap = StrokeCap.Round),
+                    )
+                }
             }
         }
-        val themeId = LocalJarvisThemeId.current
         // Rouge gets real dedicated art (§ richiesta esplicita dell'utente,
         // nuova immagine fornita) instead of a tinted recolour, same pattern
         // already established for JarvisOrb/JarvisCard on this theme — a rich,
         // non-monochrome image would flatten badly under a flat SrcIn tint.
         // Rosso keeps the original shared asset, tinted, as before.
         Image(
-            painter = painterResource(if (themeId == JarvisThemeId.ROUGE) R.drawable.rouge_chat_fab else R.drawable.chat_fab),
+            painter = painterResource(if (rouge) R.drawable.rouge_chat_fab else R.drawable.chat_fab),
             contentDescription = "Chat",
-            modifier = Modifier.size(66.dp).clickable(onClick = onClick),
+            modifier = Modifier.size(if (rouge) 86.dp else 66.dp).clickable(onClick = onClick),
             contentScale = ContentScale.Fit,
             colorFilter = when (themeId) {
                 JarvisThemeId.BLU, JarvisThemeId.ROUGE -> null

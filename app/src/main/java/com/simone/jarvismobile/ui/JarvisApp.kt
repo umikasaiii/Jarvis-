@@ -171,10 +171,16 @@ fun JarvisApp(
                     // the flat translucent wash — same "real dedicated art on
                     // Rouge" pattern as JarvisOrb/JarvisCard/ChatFab.
                     if (themeId == JarvisThemeId.ROUGE) {
+                        // Crop, not FillBounds (§ richiesta esplicita
+                        // dell'utente: "barra e icone si vedono male") — lo
+                        // stretch a riempimento distorceva la cornice quando
+                        // la larghezza reale dello schermo non coincide col
+                        // rapporto d'aspetto sorgente dell'immagine; Crop
+                        // preserva le proporzioni e ritaglia l'eccesso.
                         Image(
                             painter = painterResource(R.drawable.rouge_navbar_bg),
                             contentDescription = null,
-                            contentScale = ContentScale.FillBounds,
+                            contentScale = ContentScale.Crop,
                             modifier = Modifier.matchParentSize(),
                         )
                     }
@@ -225,7 +231,12 @@ fun JarvisApp(
                                     rouge = entry.rougeIcon.takeIf { active || entry == Tab.CHAT },
                                     contentDescription = entry.label,
                                     tint = tint,
-                                    modifier = Modifier.size(22.dp),
+                                    // 26dp non 22dp (§ "barra e icone si
+                                    // vedono male") — le icone Rouge sono arte
+                                    // reale a colore pieno, non un vettoriale
+                                    // sottile: a 22dp risultavano minute contro
+                                    // la nuova cornice più decorata.
+                                    modifier = Modifier.size(26.dp),
                                 )
                                 Spacer(Modifier.height(3.dp))
                                 Text(
