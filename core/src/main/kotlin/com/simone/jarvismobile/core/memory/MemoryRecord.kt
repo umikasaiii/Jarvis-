@@ -78,9 +78,25 @@ object MemoryNoteThemes {
     )
     val IMAGES: List<String> = IMAGE_KEYS.map { IMAGE_PREFIX + it }
 
+    /**
+     * User-imported backgrounds (§ richiesta esplicita dell'utente: immagini
+     * con personaggi/loghi di franchise con licenza, che questo progetto non
+     * ridistribuisce pubblicamente — vedi [IMAGE_KEYS] sopra e la scelta
+     * "temi generici" — ma che l'utente può comunque usare per sé importandole
+     * dalla propria galleria, mai committate nel repository). An open-ended
+     * set — unlike [GRADIENTS]/[IMAGES] there is no fixed list here, so
+     * [isValid] recognises the *shape* of the id (the prefix) rather than
+     * membership; whether the backing file still exists on disk is an app-layer
+     * concern this pure module has no way to check.
+     */
+    private const val USER_PREFIX = "user:"
+    fun isUserImage(id: String): Boolean = id.startsWith(USER_PREFIX)
+    fun userImageFile(id: String): String = id.removePrefix(USER_PREFIX)
+    fun userImageId(fileName: String): String = USER_PREFIX + fileName
+
     val ALL: List<String> = GRADIENTS + IMAGES
 
-    fun isValid(id: String): Boolean = id in ALL
+    fun isValid(id: String): Boolean = id in ALL || isUserImage(id)
     fun isImage(id: String): Boolean = id.startsWith(IMAGE_PREFIX)
     fun imageKey(id: String): String = id.removePrefix(IMAGE_PREFIX)
 

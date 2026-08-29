@@ -1,9 +1,11 @@
 package com.simone.jarvismobile.ui.memory
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.simone.jarvismobile.memory.MemoryIndex
 import com.simone.jarvismobile.memory.ConversationMemoryStore
+import com.simone.jarvismobile.memory.NoteBackgroundStore
 import com.simone.jarvismobile.core.memory.MemoryKind
 import com.simone.jarvismobile.core.memory.MemoryRecord
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -17,6 +19,7 @@ import javax.inject.Inject
 class MemoryViewModel @Inject constructor(
     private val memory: MemoryIndex,
     private val conversationMemory: ConversationMemoryStore,
+    val backgroundStore: NoteBackgroundStore,
 ) : ViewModel() {
 
     val status: StateFlow<MemoryIndex.Status> = memory.status
@@ -26,6 +29,31 @@ class MemoryViewModel @Inject constructor(
     private val _records = MutableStateFlow<List<MemoryRecord>>(emptyList())
     val records: StateFlow<List<MemoryRecord>> = _records.asStateFlow()
 
+    // User-imported backgrounds (§ richiesta esplicita dell'utente) — refreshed
+    // eagerly at init and after every import/delete, not observed as a Flow:
+    // this is plain filesystem state, not something another process changes
+    // underneath the app.
+    private val _customBackgrounds = MutableStateFlow<List<String>>(emptyList())
+    val customBackgrounds: StateFlow<List<String>> = _customBackgrounds.asStateFlow()
+
+    fun importBackground(uri: Uri) {
+        viewModelScope.launch {
+            val id = backgroundStore.import(uri)
+            _message.value = if (id != null) "Sfondo importato." else "Importazione non riuscita: scegli un'immagine valida."
+            refreshBackgrounds()
+        }
+    }
+
+    /** Deletes an imported background file. Notes that used it simply fall back to their plain colour at render time (§ no dangling reference). */
+    fun deleteBackground(id: String) {
+        backgroundStore.delete(id)
+        refreshBackgrounds()
+    }
+
+    private fun refreshBackgrounds() {
+        _customBackgrounds.value = backgroundStore.list()
+    }
+
     private val _busy = MutableStateFlow(false)
     val busy: StateFlow<Boolean> = _busy.asStateFlow()
 
@@ -34,6 +62,7 @@ class MemoryViewModel @Inject constructor(
 
     init {
         refreshAll()
+        refreshBackgrounds()
     }
 
     fun add(text: String, kind: MemoryKind, category: String = "", theme: String = "", spacing: String = "") {

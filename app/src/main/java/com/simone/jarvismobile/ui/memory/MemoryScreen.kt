@@ -1,6 +1,9 @@
 package com.simone.jarvismobile.ui.memory
 
+import android.graphics.BitmapFactory
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -51,6 +54,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -59,6 +63,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
@@ -92,7 +98,10 @@ import com.simone.jarvismobile.core.memory.MemoryRecord
 import com.simone.jarvismobile.core.memory.ShortTermMemorySnapshot
 import com.simone.jarvismobile.core.memory.SizeStep
 import com.simone.jarvismobile.memory.MemoryIndex
+import com.simone.jarvismobile.memory.NoteBackgroundStore
 import com.simone.jarvismobile.ui.theme.LocalJarvisPalette
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -127,6 +136,16 @@ fun MemoryScreen(
     var selectedCategory by remember { mutableStateOf<String?>(null) } // null = "Tutte le note"
     var query by remember { mutableStateOf("") }
 
+    // Sfondi personalizzati importati dall'utente (§ richiesta esplicita
+    // dell'utente, dopo il chiarimento su perché immagini con licenza non
+    // possono essere bundlate nell'app: "Perfetto, mi piace" sull'importarle
+    // dalla propria galleria invece) — vivono solo in storage app-privato,
+    // mai in questo repository.
+    val customBackgrounds by viewModel.customBackgrounds.collectAsStateWithLifecycle()
+    val backgroundPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri -> uri?.let { viewModel.importBackground(it) } }
+
     // Every folder Memoria knows about — the fixed macro-categories plus any
     // free-form one a record already carries — so the drawer/editor picker
     // (§ richiesta esplicita dell'utente: "menu laterale vero e proprio", non
@@ -151,6 +170,10 @@ fun MemoryScreen(
             showDelete = false,
             enabled = !busy,
             allCategories = allCategories,
+            customBackgrounds = customBackgrounds,
+            backgroundStore = viewModel.backgroundStore,
+            onImportBackground = { backgroundPicker.launch(arrayOf("image/*")) },
+            onDeleteBackground = viewModel::deleteBackground,
             onDismiss = { showAdd = false },
             onSave = { text, kind, category, theme, spacing ->
                 viewModel.add(text, kind, category, theme, spacing)
@@ -175,6 +198,10 @@ fun MemoryScreen(
             topics = rec.topics,
             people = rec.people,
             dates = rec.dates,
+            customBackgrounds = customBackgrounds,
+            backgroundStore = viewModel.backgroundStore,
+            onImportBackground = { backgroundPicker.launch(arrayOf("image/*")) },
+            onDeleteBackground = viewModel::deleteBackground,
             onDismiss = { editing = null },
             onSave = { text, kind, category, theme, spacing ->
                 viewModel.update(rec.id, text, kind, theme, spacing)
@@ -846,6 +873,10 @@ private fun MemoryNoteEditorScreen(
     topics: List<String> = emptyList(),
     people: List<String> = emptyList(),
     dates: List<String> = emptyList(),
+    customBackgrounds: List<String>,
+    backgroundStore: NoteBackgroundStore,
+    onImportBackground: () -> Unit,
+    onDeleteBackground: (String) -> Unit,
     onDismiss: () -> Unit,
     onSave: (String, MemoryKind, String, String, String) -> Unit,
     onDelete: () -> Unit,
@@ -872,13 +903,27 @@ private fun MemoryNoteEditorScreen(
 
     Box(Modifier.fillMaxSize().imePadding()) {
         val backgroundRes = customBackgroundRes(theme)
-        if (backgroundRes != null) {
-            Image(
-                painter = painterResource(backgroundRes),
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
-            )
+        // "user:" ids resolve to a file in app-private storage, never a
+        // bundled drawable — null while decoding or if the file was since
+        // deleted, in which case this simply falls through to the plain
+        // colour background below (§ NoteBackgroundStore: no dangling ref).
+        val userBitmap = if (MemoryNoteThemes.isUserImage(theme)) rememberUserBackgroundBitmap(backgroundStore, theme) else null
+        if (backgroundRes != null || userBitmap != null) {
+            if (backgroundRes != null) {
+                Image(
+                    painter = painterResource(backgroundRes),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                Image(
+                    bitmap = userBitmap!!,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
             // A dark scrim over the artwork: the app's text colour (INK) is a
             // light tone made for a dark background, and these images are
             // mostly light "paper" — without it the text would be nearly
@@ -944,7 +989,14 @@ private fun MemoryNoteEditorScreen(
                     Text(if (showPreview) "Modifica" else "Anteprima", color = accent)
                 }
             }
-            ThemeSelector(current = theme, onSelect = { theme = it })
+            ThemeSelector(
+                current = theme,
+                onSelect = { theme = it },
+                customUserBackgrounds = customBackgrounds,
+                backgroundStore = backgroundStore,
+                onImport = onImportBackground,
+                onDelete = { id -> onDeleteBackground(id); if (theme == id) theme = MemoryNoteThemes.DEFAULT },
+            )
             StructuredFields(topics, people, dates)
             Spacer(Modifier.size(12.dp))
             if (showPreview) {
@@ -1365,7 +1417,14 @@ private object MarkupVisualTransformation : VisualTransformation {
  * thing on screen instead of being crowded out.
  */
 @Composable
-private fun ThemeSelector(current: String, onSelect: (String) -> Unit) {
+private fun ThemeSelector(
+    current: String,
+    onSelect: (String) -> Unit,
+    customUserBackgrounds: List<String>,
+    backgroundStore: NoteBackgroundStore,
+    onImport: () -> Unit,
+    onDelete: (String) -> Unit,
+) {
     var expanded by remember { mutableStateOf(false) }
     Column(Modifier.padding(vertical = 4.dp)) {
         Row(
@@ -1379,7 +1438,7 @@ private fun ThemeSelector(current: String, onSelect: (String) -> Unit) {
             Text(if (expanded) "▾" else "▸", color = Cyan, fontSize = 12.sp)
             Spacer(Modifier.width(6.dp))
             Text("Sfondo nota", color = MUTED, fontSize = 12.sp, modifier = Modifier.weight(1f))
-            ThemePreviewSwatch(current)
+            ThemePreviewSwatch(current, backgroundStore)
         }
         if (expanded) {
             Row(
@@ -1423,24 +1482,99 @@ private fun ThemeSelector(current: String, onSelect: (String) -> Unit) {
                     )
                 }
             }
+            // Sfondi importati dalla galleria (§ richiesta esplicita
+            // dell'utente) — mai bundlati nell'app, solo storage app-privato.
+            // Il "+" è sempre il primo elemento così resta raggiungibile
+            // anche con zero sfondi già importati.
+            Text(
+                "I tuoi sfondi",
+                color = MUTED,
+                fontSize = 11.sp,
+                modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
+            )
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Box(
+                    Modifier
+                        .size(width = 52.dp, height = 78.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .border(1.dp, MUTED.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                        .clickable(onClick = onImport),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text("+", color = Cyan, fontSize = 20.sp)
+                }
+                customUserBackgrounds.forEach { id ->
+                    val bitmap = rememberUserBackgroundBitmap(backgroundStore, id) ?: return@forEach
+                    val selected = current == id
+                    Box(
+                        Modifier.size(width = 52.dp, height = 78.dp),
+                        contentAlignment = Alignment.TopEnd,
+                    ) {
+                        Image(
+                            bitmap = bitmap,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clip(RoundedCornerShape(8.dp))
+                                .then(if (selected) Modifier.border(2.dp, Cyan, RoundedCornerShape(8.dp)) else Modifier)
+                                .clickable { onSelect(id) },
+                        )
+                        // Elimina l'immagine importata — una nota che la usava
+                        // torna semplicemente allo sfondo colore di default
+                        // (nessun riferimento pendente, gestito da onDelete).
+                        Box(
+                            Modifier
+                                .padding(3.dp)
+                                .size(16.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xCC03080E))
+                                .clickable { onDelete(id) },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text("✕", color = Color.White, fontSize = 9.sp)
+                        }
+                    }
+                }
+            }
         }
     }
 }
 
 /** A small always-visible preview of the currently selected background, shown next to the collapsed toggle. */
 @Composable
-private fun ThemePreviewSwatch(current: String) {
+private fun ThemePreviewSwatch(current: String, backgroundStore: NoteBackgroundStore) {
     val imageRes = customBackgroundRes(current)
-    if (imageRes != null) {
-        Image(
+    val userBitmap = if (imageRes == null && MemoryNoteThemes.isUserImage(current)) rememberUserBackgroundBitmap(backgroundStore, current) else null
+    when {
+        imageRes != null -> Image(
             painter = painterResource(imageRes),
             contentDescription = null,
             contentScale = ContentScale.Crop,
             modifier = Modifier.size(20.dp).clip(CircleShape),
         )
-    } else {
-        Box(Modifier.size(20.dp).clip(CircleShape).background(themeSwatchColor(current)))
+        userBitmap != null -> Image(
+            bitmap = userBitmap,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.size(20.dp).clip(CircleShape),
+        )
+        else -> Box(Modifier.size(20.dp).clip(CircleShape).background(themeSwatchColor(current)))
     }
+}
+
+/** Decodes a user-imported background off the main thread; null while loading or if the file is gone. */
+@Composable
+private fun rememberUserBackgroundBitmap(store: NoteBackgroundStore, id: String): ImageBitmap? {
+    val state = produceState<ImageBitmap?>(initialValue = null, id) {
+        value = withContext(Dispatchers.IO) {
+            store.file(id)?.let { f -> runCatching { BitmapFactory.decodeFile(f.path)?.asImageBitmap() }.getOrNull() }
+        }
+    }
+    return state.value
 }
 
 private fun themeSwatchColor(id: String): Color = when (id) {

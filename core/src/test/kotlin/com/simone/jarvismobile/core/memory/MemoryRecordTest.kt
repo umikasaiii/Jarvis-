@@ -128,6 +128,20 @@ class MemoryRecordTest {
     }
 
     @Test
+    fun `user-imported background ids are valid by shape and round trip`() {
+        val id = MemoryNoteThemes.userImageId("a1b2c3.jpg")
+        assertEquals("user:a1b2c3.jpg", id)
+        assertTrue(MemoryNoteThemes.isUserImage(id))
+        assertTrue(MemoryNoteThemes.isValid(id))
+        assertFalse(MemoryNoteThemes.isImage(id))
+        assertEquals("a1b2c3.jpg", MemoryNoteThemes.userImageFile(id))
+        assertFalse(MemoryNoteThemes.isUserImage("ocean"))
+        assertFalse(MemoryNoteThemes.isUserImage(MemoryNoteThemes.IMAGES.first()))
+        val records = listOf(MemoryRecord(id = "user-bg", text = "Nota", createdAt = 71, theme = id))
+        assertEquals(records, MemoryRecordCodec.parse(MemoryRecordCodec.render(records)))
+    }
+
+    @Test
     fun `theme survives the round trip and an unknown theme sanitizes to default`() {
         val records = listOf(
             MemoryRecord(id = "themed", text = "Nota a tema", createdAt = 60, theme = "ocean"),
