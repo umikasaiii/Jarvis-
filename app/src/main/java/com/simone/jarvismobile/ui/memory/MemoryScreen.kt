@@ -1570,9 +1570,15 @@ private fun ThemePreviewSwatch(current: String, backgroundStore: NoteBackgroundS
 @Composable
 private fun rememberUserBackgroundBitmap(store: NoteBackgroundStore, id: String): ImageBitmap? {
     val state = produceState<ImageBitmap?>(initialValue = null, id) {
-        value = withContext(Dispatchers.IO) {
+        // Compose lint's ProduceStateDoesNotAssignValue check doesn't reliably
+        // recognise `value = withContext(...) { ... }` as an assignment when
+        // the RHS is itself a suspend call — splitting the suspend result
+        // into a local val first, then a bare `value = decoded`, satisfies it
+        // (a known false positive with the inline form; CI caught it).
+        val decoded = withContext(Dispatchers.IO) {
             store.file(id)?.let { f -> runCatching { BitmapFactory.decodeFile(f.path)?.asImageBitmap() }.getOrNull() }
         }
+        value = decoded
     }
     return state.value
 }
