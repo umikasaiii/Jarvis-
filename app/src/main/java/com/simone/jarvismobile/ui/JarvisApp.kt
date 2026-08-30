@@ -1,7 +1,6 @@
 package com.simone.jarvismobile.ui
 
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -22,9 +21,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.layout.ContentScale
@@ -96,6 +97,15 @@ private enum class Overlay {
 private const val NAVBAR_BG_ASPECT_RATIO = 1600f / 585f
 
 /**
+ * Where the artwork's own dark panel (the part icons must sit inside, as
+ * opposed to the horns/tail decoration around it) starts, as a fraction of
+ * the image's total height — measured by pixel analysis of the source art
+ * (the panel's opaque band begins at y=281 of the 701px-tall cropped image),
+ * not eyeballed (§ richiesta esplicita dell'utente: "le icone escono fuori").
+ */
+private const val NAVBAR_PANEL_TOP_FRACTION = 281f / 701f
+
+/**
  * Top-level navigation. The dashboard shell is always present; the written chat
  * opens as a bottom sheet over the dimmed dashboard (so the background still
  * shows through), while Models/Memory/Diagnostics open full-screen.
@@ -155,133 +165,167 @@ fun JarvisApp(
     val palette = LocalJarvisPalette.current
     val themeId = LocalJarvisThemeId.current
 
+    // Factored out so both the Rouge branch (a taller, artwork-driven box)
+    // and the default branch (a compact, content-driven box) below can share
+    // the exact same tab row instead of duplicating ~60 lines of icon/label
+    // rendering between them.
+    @Composable
+    fun NavRow(modifier: Modifier) {
+        Row(
+            modifier = modifier,
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Tab.entries.forEach { entry ->
+                val active = tab == entry && entry != Tab.CHAT
+                val tint = if (active) palette.accentBright else Color(0xFF6B7C87)
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) {
+                            if (entry == Tab.CHAT) overlay = Overlay.CHAT else tab = entry
+                        }
+                        .padding(vertical = 4.dp),
+                ) {
+                    ThemedIcon(
+                        entry.icon,
+                        // Rouge art on EVERY tab now, not only the
+                        // active one (§ richiesta esplicita
+                        // dell'utente: "icone sotto sulla barra
+                        // non si vedono cambiate" — con l'arte
+                        // limitata al solo tab attivo, 3 icone su
+                        // 5 restavano quasi sempre sul vettoriale
+                        // Material invariato). Contrasto
+                        // attivo/inattivo ora affidato all'alpha
+                        // sotto, non più alla presenza/assenza
+                        // dell'arte stessa.
+                        rouge = entry.rougeIcon,
+                        contentDescription = entry.label,
+                        tint = tint,
+                        alpha = if (active || entry == Tab.CHAT) 1f else 0.55f,
+                        // 30dp non 22dp (§ "barra e icone si
+                        // vedono male") — le icone Rouge sono arte
+                        // reale a colore pieno, non un vettoriale
+                        // sottile: a 22-26dp risultavano minute
+                        // contro la nuova cornice più decorata.
+                        modifier = Modifier.size(30.dp),
+                    )
+                    Spacer(Modifier.height(3.dp))
+                    Text(
+                        entry.label,
+                        fontSize = 9.sp,
+                        color = tint,
+                        maxLines = 1,
+                        style = if (active) {
+                            androidx.compose.ui.text.TextStyle(
+                                shadow = androidx.compose.ui.graphics.Shadow(
+                                    color = palette.accentBright,
+                                    blurRadius = 16f,
+                                ),
+                            )
+                        } else {
+                            androidx.compose.ui.text.TextStyle.Default
+                        },
+                    )
+                    // A short lit underline under the open section.
+                    Spacer(Modifier.height(3.dp))
+                    Box(
+                        Modifier
+                            .width(if (active) 18.dp else 0.dp)
+                            .height(2.dp)
+                            .background(palette.accentBright),
+                    )
+                }
+            }
+        }
+    }
+
     Box(Modifier.fillMaxSize()) {
         // Base: the tab shell with the bottom navigation.
         Scaffold(
             containerColor = Color(0xFF05101A),
             bottomBar = {
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .background(
-                            androidx.compose.ui.graphics.Brush.verticalGradient(
-                                listOf(Color.Transparent, palette.accent.copy(alpha = 0x22 / 255f)),
+                // Rouge gets the user's own reference art as the bar frame
+                // itself (§ richiesta esplicita: "cambia anche barra dello
+                // stato sotto con questa, e le relative icone") instead of
+                // the flat translucent wash — same "real dedicated art on
+                // Rouge" pattern as JarvisOrb/JarvisCard/ChatFab. Split into
+                // its own branch (rather than one Box both themes share)
+                // because it needs a real measured height the default
+                // branch never did.
+                if (themeId == JarvisThemeId.ROUGE) {
+                    // BoxWithConstraints, not aspectRatio()+matchParentSize+
+                    // FillWidth (§ richiesta esplicita dell'utente, ripetuta
+                    // due volte: "si vede tutta l'immagine" / "le icone
+                    // escono fuori... c'è ancora lo sfondo dietro nero") —
+                    // aspectRatio da solo faceva sì che l'immagine dettasse
+                    // l'altezza del box, ma la Row restava centrata a
+                    // occhio (bias 0.5) invece che sul pannello vero
+                    // dell'artwork, che occupa solo la fascia centrale
+                    // (corna sopra, coda sotto) — le icone finivano fuori
+                    // dal pannello. Qui l'altezza reale del box si misura
+                    // esplicitamente (maxWidth / rapporto) e la Row viene
+                    // ancorata all'inizio del pannello vero, misurato per
+                    // pixel sull'immagine sorgente, non centrata a occhio.
+                    BoxWithConstraints(Modifier.fillMaxWidth()) {
+                        val barHeight = maxWidth / NAVBAR_BG_ASPECT_RATIO
+                        Box(Modifier.fillMaxWidth().height(barHeight)) {
+                            // Continua lo stesso sfondo del dashboard sotto
+                            // l'intera barra (§ "c'è ancora lo sfondo dietro
+                            // nero") — i margini trasparenti reali
+                            // dell'artwork (fra le corna e il pannello)
+                            // lasciavano vedere il containerColor piatto
+                            // dello Scaffold, una cucitura netta contro lo
+                            // sfondo strutturato del dashboard appena sopra.
+                            Image(
+                                painter = painterResource(R.drawable.rouge_bg_dashboard),
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.matchParentSize(),
+                            )
+                            Image(
+                                painter = painterResource(R.drawable.rouge_navbar_bg),
+                                contentDescription = null,
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier.matchParentSize(),
+                            )
+                            NavRow(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .align(Alignment.TopStart)
+                                    .offset(y = barHeight * NAVBAR_PANEL_TOP_FRACTION)
+                                    .navigationBarsPadding()
+                                    .padding(vertical = 8.dp),
+                            )
+                        }
+                    }
+                } else {
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .background(
+                                androidx.compose.ui.graphics.Brush.verticalGradient(
+                                    listOf(Color.Transparent, palette.accent.copy(alpha = 0x22 / 255f)),
+                                ),
                             ),
-                        ),
-                ) {
-                    // Rouge gets the user's own reference art as the bar frame
-                    // itself (§ richiesta esplicita: "cambia anche barra dello
-                    // stato sotto con questa, e le relative icone") instead of
-                    // the flat translucent wash — same "real dedicated art on
-                    // Rouge" pattern as JarvisOrb/JarvisCard/ChatFab.
-                    if (themeId == JarvisThemeId.ROUGE) {
-                        // aspectRatio, not matchParentSize+FillWidth (§
-                        // richiesta esplicita dell'utente: "si vede tutta
-                        // l'immagine", ripetuta — FillWidth dentro un box di
-                        // altezza fissa (quella dell'icona/etichetta) copriva
-                        // sì tutta la larghezza, ma l'immagine risultante era
-                        // più "alta" del box: l'eccedenza veniva comunque
-                        // ritagliata sopra/sotto, tagliando parte delle
-                        // corna). Qui l'immagine detta essa stessa l'altezza
-                        // del box (mai ritagliata, mai distorta) e la Row
-                        // sotto si centra al suo interno invece di definirne
-                        // l'altezza.
-                        Image(
-                            painter = painterResource(R.drawable.rouge_navbar_bg),
-                            contentDescription = null,
-                            contentScale = ContentScale.Fit,
+                    ) {
+                        // Custom bar rather than Material's NavigationBar: the
+                        // stock one paints an opaque surface and a pill-shaped
+                        // indicator behind the active item, both of which
+                        // fight a translucent HUD. Here the bar is glass and
+                        // the active entry is marked by the icon itself
+                        // lighting up.
+                        NavRow(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .aspectRatio(NAVBAR_BG_ASPECT_RATIO),
+                                .background(Color(0x99040C14))
+                                .navigationBarsPadding()
+                                .padding(vertical = 8.dp),
                         )
-                    }
-                    // Custom bar rather than Material's NavigationBar: the
-                    // stock one paints an opaque surface and a pill-shaped
-                    // indicator behind the active item, both of which fight a
-                    // translucent HUD. Here the bar is glass and the active
-                    // entry is marked by the icon itself lighting up. On Rouge
-                    // the frame image above already supplies the dark pill
-                    // background, so the flat fill here is skipped there —
-                    // layering it on top would dim the artwork underneath.
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            // Il box ora è alto quanto l'immagine intera
-                            // (corna comprese), non più quanto la sola Row —
-                            // .align(Center) la centra al suo interno invece
-                            // di lasciare che ne definisca l'altezza.
-                            .align(Alignment.Center)
-                            .then(if (themeId == JarvisThemeId.ROUGE) Modifier else Modifier.background(Color(0x99040C14)))
-                            .navigationBarsPadding()
-                            .padding(vertical = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceEvenly,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Tab.entries.forEach { entry ->
-                            val active = tab == entry && entry != Tab.CHAT
-                            val tint = if (active) palette.accentBright else Color(0xFF6B7C87)
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clickable(
-                                        interactionSource = remember { MutableInteractionSource() },
-                                        indication = null,
-                                    ) {
-                                        if (entry == Tab.CHAT) overlay = Overlay.CHAT else tab = entry
-                                    }
-                                    .padding(vertical = 4.dp),
-                            ) {
-                                ThemedIcon(
-                                    entry.icon,
-                                    // Rouge art on EVERY tab now, not only the
-                                    // active one (§ richiesta esplicita
-                                    // dell'utente: "icone sotto sulla barra
-                                    // non si vedono cambiate" — con l'arte
-                                    // limitata al solo tab attivo, 3 icone su
-                                    // 5 restavano quasi sempre sul vettoriale
-                                    // Material invariato). Contrasto
-                                    // attivo/inattivo ora affidato all'alpha
-                                    // sotto, non più alla presenza/assenza
-                                    // dell'arte stessa.
-                                    rouge = entry.rougeIcon,
-                                    contentDescription = entry.label,
-                                    tint = tint,
-                                    alpha = if (active || entry == Tab.CHAT) 1f else 0.55f,
-                                    // 30dp non 22dp (§ "barra e icone si
-                                    // vedono male") — le icone Rouge sono arte
-                                    // reale a colore pieno, non un vettoriale
-                                    // sottile: a 22-26dp risultavano minute
-                                    // contro la nuova cornice più decorata.
-                                    modifier = Modifier.size(30.dp),
-                                )
-                                Spacer(Modifier.height(3.dp))
-                                Text(
-                                    entry.label,
-                                    fontSize = 9.sp,
-                                    color = tint,
-                                    maxLines = 1,
-                                    style = if (active) {
-                                        androidx.compose.ui.text.TextStyle(
-                                            shadow = androidx.compose.ui.graphics.Shadow(
-                                                color = palette.accentBright,
-                                                blurRadius = 16f,
-                                            ),
-                                        )
-                                    } else {
-                                        androidx.compose.ui.text.TextStyle.Default
-                                    },
-                                )
-                                // A short lit underline under the open section.
-                                Spacer(Modifier.height(3.dp))
-                                Box(
-                                    Modifier
-                                        .width(if (active) 18.dp else 0.dp)
-                                        .height(2.dp)
-                                        .background(palette.accentBright),
-                                )
-                            }
-                        }
                     }
                 }
             },
