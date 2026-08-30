@@ -12,6 +12,9 @@ import com.simone.jarvismobile.context.ContextEngine
 import com.simone.jarvismobile.core.weather.RainDecision
 import com.simone.jarvismobile.data.SettingsRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -37,13 +40,26 @@ class WeatherManager @Inject constructor(
     private val contextEngine: ContextEngine,
     private val places: PlaceRepository,
 ) {
+    /**
+     * The coordinate the last [refresh] actually queried, rounded the same
+     * ~1km as the request itself — never the exact fix. Exists purely for
+     * diagnostics (§ segnalazione dell'utente: "da stamattina ogni prova mi
+     * dà sempre CLOUDY anche se non è vero") — a wrong saved place (or a
+     * fallback fix from somewhere else entirely) is now visible instead of
+     * assumed correct.
+     */
+    private val _lastQueryPoint = MutableStateFlow<Pair<Double, Double>?>(null)
+    val lastQueryPoint: StateFlow<Pair<Double, Double>?> = _lastQueryPoint.asStateFlow()
+
     @SuppressLint("MissingPermission")
     suspend fun refresh() {
         if (!settings.weatherEnabled.first()) return
         val point = resolvePoint() ?: run {
             Log.i(TAG, "weather_skip_no_fix")
+            _lastQueryPoint.value = null
             return
         }
+        _lastQueryPoint.value = point
         val forecast = source.fetchRain(point.first, point.second)
         contextEngine.onWeather(
             rainToday = RainDecision.isRainDay(forecast?.todayCategory, forecast?.todayMillimeters),

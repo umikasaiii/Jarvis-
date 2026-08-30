@@ -76,9 +76,15 @@ class DiagnosticsViewModel @Inject constructor(
             val enabled = settings.weatherEnabled.first()
             val placeId = settings.weatherPlaceId.first()
             weather.refresh()
+            val point = weather.lastQueryPoint.value
             _weatherStatus.value = buildString {
                 append("meteo=").append(if (enabled) "attivo" else "SPENTO")
                 append(" luogo=").append(placeId.ifBlank { "posizione GPS" })
+                // Coordinata reale interrogata (§ "sempre CLOUDY anche se
+                // non è vero") — un luogo salvato con coordinate sbagliate
+                // (es. 0,0) ora si vede qui invece di essere solo ipotizzato.
+                append(" coord=")
+                append(if (point != null) "%.2f,%.2f".format(point.first, point.second) else "nessuna")
                 append("\n").append(contextEngine.describe())
             }
         }
