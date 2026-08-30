@@ -94,23 +94,16 @@ private enum class Overlay {
 }
 
 /**
- * rouge_navbar_bg.png's real pixel dimensions (1600x420) — kept the source of
+ * rouge_navbar_bg.png's real pixel dimensions (1600x205) — kept the source of
  * truth so the on-screen bar always shows the full artwork, never cropped.
- * This is the user's own tighter re-crop (§ richiesta esplicita: "ritagliata
- * senza sfondo... ti rimando immagine ritagliata") — it drops the long,
- * mostly-empty horn-tail extension the earlier full-bbox crop kept, so the
- * dark panel now fills far more of the image's own height.
+ * A new, slimmer frame the user provided (§ richiesta esplicita: "cambiala
+ * con questa") — unlike the earlier horned bar, its dark panel fills nearly
+ * the entire image height (measured: opaque band from ~4% to ~96%, no tall
+ * decoration above/below it), so — unlike that earlier asset — a plain
+ * centred `Row` already lands inside the panel; no fraction-based anchor is
+ * needed here.
  */
-private const val NAVBAR_BG_ASPECT_RATIO = 1600f / 420f
-
-/**
- * Where the artwork's own dark panel (the part icons must sit inside, as
- * opposed to the horn decoration around it) starts, as a fraction of the
- * image's total height — measured by pixel analysis of the current source
- * art (the panel's opaque band begins at y=206 of the 420px-tall asset), not
- * eyeballed (§ richiesta esplicita dell'utente: "le icone escono fuori").
- */
-private const val NAVBAR_PANEL_TOP_FRACTION = 206f / 420f
+private const val NAVBAR_BG_ASPECT_RATIO = 1600f / 205f
 
 /**
  * Top-level navigation. The dashboard shell is always present; the written chat
@@ -265,50 +258,39 @@ fun JarvisApp(
                 // because it needs a real measured height the default
                 // branch never did.
                 if (themeId == JarvisThemeId.ROUGE) {
-                    // BoxWithConstraints, not aspectRatio()+matchParentSize+
-                    // FillWidth (§ richiesta esplicita dell'utente, ripetuta
-                    // due volte: "si vede tutta l'immagine" / "le icone
-                    // escono fuori... c'è ancora lo sfondo dietro nero") —
-                    // aspectRatio da solo faceva sì che l'immagine dettasse
-                    // l'altezza del box, ma la Row restava centrata a
-                    // occhio (bias 0.5) invece che sul pannello vero
-                    // dell'artwork, che occupa solo la fascia centrale
-                    // (corna sopra, coda sotto) — le icone finivano fuori
-                    // dal pannello. Qui l'altezza reale del box si misura
-                    // esplicitamente (maxWidth / rapporto) e la Row viene
-                    // ancorata all'inizio del pannello vero, misurato per
-                    // pixel sull'immagine sorgente, non centrata a occhio.
+                    // BoxWithConstraints, not matchParentSize (§ richiesta
+                    // esplicita dell'utente, ripetuta più volte: "si vede
+                    // tutta l'immagine" / "le icone escono fuori") —
+                    // l'altezza reale del box si misura esplicitamente
+                    // (maxWidth / rapporto), così l'artwork non viene mai
+                    // ritagliato per adattarsi a un'altezza indovinata.
                     BoxWithConstraints(Modifier.fillMaxWidth()) {
                         val barHeight = maxWidth / NAVBAR_BG_ASPECT_RATIO
                         Box(Modifier.fillMaxWidth().height(barHeight)) {
                             // Nessun riempimento dietro l'artwork (§ richiesta
                             // esplicita dell'utente: "deve essere ritagliata
-                            // SENZA SFONDO") — il tentativo precedente di
-                            // continuare lo sfondo del dashboard qui sotto
-                            // (per coprire la cucitura contro il
-                            // containerColor piatto dello Scaffold) ha
-                            // prodotto un rettangolo ancora più visibile,
-                            // ritagliato in modo indipendente dallo sfondo
-                            // del dashboard sopra e quindi mai davvero
-                            // continuo. Resta solo l'artwork stesso, con la
-                            // sua trasparenza reale.
+                            // SENZA SFONDO") — resta solo l'artwork stesso,
+                            // con la sua trasparenza reale.
                             Image(
                                 painter = painterResource(R.drawable.rouge_navbar_bg),
                                 contentDescription = null,
                                 contentScale = ContentScale.Fit,
                                 modifier = Modifier.matchParentSize(),
                             )
+                            // A differenza del vecchio frame "cornuto", il
+                            // pannello scuro di questo asset riempie quasi
+                            // l'intera altezza dell'immagine (misurato:
+                            // ~4%-96%) — un centraggio semplice basta, non
+                            // serve più ancorare la Row a una frazione
+                            // misurata sui pixel.
                             NavRow(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .align(Alignment.TopStart)
-                                    .offset(y = barHeight * NAVBAR_PANEL_TOP_FRACTION)
+                                    .align(Alignment.Center)
                                     .navigationBarsPadding()
-                                    // 4dp non 8dp: il pannello reale è più
-                                    // basso della Row a piena imbottitura,
-                                    // meno spazio verticale qui aiuta le
-                                    // etichette a restare dentro.
-                                    .padding(vertical = 4.dp),
+                                    // 2dp: il pannello di questo frame più
+                                    // sottile lascia poco margine verticale.
+                                    .padding(vertical = 2.dp),
                             )
                         }
                     }
