@@ -93,17 +93,24 @@ private enum class Overlay {
     NAVIGATION, MAPS, FAVORITES, BACKUP, ARCHIVE, SYSTEM_STATUS,
 }
 
-/** rouge_navbar_bg.png's real pixel dimensions (1600x585) — kept the source of truth so the on-screen bar always shows the full artwork, never cropped. */
-private const val NAVBAR_BG_ASPECT_RATIO = 1600f / 585f
+/**
+ * rouge_navbar_bg.png's real pixel dimensions (1600x420) — kept the source of
+ * truth so the on-screen bar always shows the full artwork, never cropped.
+ * This is the user's own tighter re-crop (§ richiesta esplicita: "ritagliata
+ * senza sfondo... ti rimando immagine ritagliata") — it drops the long,
+ * mostly-empty horn-tail extension the earlier full-bbox crop kept, so the
+ * dark panel now fills far more of the image's own height.
+ */
+private const val NAVBAR_BG_ASPECT_RATIO = 1600f / 420f
 
 /**
  * Where the artwork's own dark panel (the part icons must sit inside, as
- * opposed to the horns/tail decoration around it) starts, as a fraction of
- * the image's total height — measured by pixel analysis of the source art
- * (the panel's opaque band begins at y=281 of the 701px-tall cropped image),
- * not eyeballed (§ richiesta esplicita dell'utente: "le icone escono fuori").
+ * opposed to the horn decoration around it) starts, as a fraction of the
+ * image's total height — measured by pixel analysis of the current source
+ * art (the panel's opaque band begins at y=206 of the 420px-tall asset), not
+ * eyeballed (§ richiesta esplicita dell'utente: "le icone escono fuori").
  */
-private const val NAVBAR_PANEL_TOP_FRACTION = 281f / 701f
+private const val NAVBAR_PANEL_TOP_FRACTION = 206f / 420f
 
 /**
  * Top-level navigation. The dashboard shell is always present; the written chat
@@ -297,7 +304,11 @@ fun JarvisApp(
                                     .align(Alignment.TopStart)
                                     .offset(y = barHeight * NAVBAR_PANEL_TOP_FRACTION)
                                     .navigationBarsPadding()
-                                    .padding(vertical = 8.dp),
+                                    // 4dp non 8dp: il pannello reale è più
+                                    // basso della Row a piena imbottitura,
+                                    // meno spazio verticale qui aiuta le
+                                    // etichette a restare dentro.
+                                    .padding(vertical = 4.dp),
                             )
                         }
                     }
