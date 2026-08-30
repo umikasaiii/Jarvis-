@@ -274,19 +274,17 @@ fun JarvisApp(
                     BoxWithConstraints(Modifier.fillMaxWidth()) {
                         val barHeight = maxWidth / NAVBAR_BG_ASPECT_RATIO
                         Box(Modifier.fillMaxWidth().height(barHeight)) {
-                            // Continua lo stesso sfondo del dashboard sotto
-                            // l'intera barra (§ "c'è ancora lo sfondo dietro
-                            // nero") — i margini trasparenti reali
-                            // dell'artwork (fra le corna e il pannello)
-                            // lasciavano vedere il containerColor piatto
-                            // dello Scaffold, una cucitura netta contro lo
-                            // sfondo strutturato del dashboard appena sopra.
-                            Image(
-                                painter = painterResource(R.drawable.rouge_bg_dashboard),
-                                contentDescription = null,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.matchParentSize(),
-                            )
+                            // Nessun riempimento dietro l'artwork (§ richiesta
+                            // esplicita dell'utente: "deve essere ritagliata
+                            // SENZA SFONDO") — il tentativo precedente di
+                            // continuare lo sfondo del dashboard qui sotto
+                            // (per coprire la cucitura contro il
+                            // containerColor piatto dello Scaffold) ha
+                            // prodotto un rettangolo ancora più visibile,
+                            // ritagliato in modo indipendente dallo sfondo
+                            // del dashboard sopra e quindi mai davvero
+                            // continuo. Resta solo l'artwork stesso, con la
+                            // sua trasparenza reale.
                             Image(
                                 painter = painterResource(R.drawable.rouge_navbar_bg),
                                 contentDescription = null,
