@@ -298,10 +298,15 @@ fun DashboardScreen(
             // way into Impostazioni now that there is no bottom tab for it.
             // A separate row above the title Box on purpose, not the same
             // TopEnd corner as the PRO badge below, so the two never overlap.
+            // Rouge art reuses the same rouge_ic_menu.png already added for
+            // Memoria's drawer button (§ richiesta esplicita dell'utente:
+            // "per l'icona in alto a destra usa questa immagine" — the same
+            // file she had just sent for the menu icon, verified byte-
+            // identical) rather than a second copy of the same asset.
             Box(Modifier.fillMaxWidth()) {
                 ThemedIcon(
                     Icons.Filled.Settings,
-                    R.drawable.rouge_ic_settings,
+                    R.drawable.rouge_ic_menu,
                     tint = Muted,
                     contentDescription = "Impostazioni",
                     modifier = Modifier
@@ -601,14 +606,11 @@ fun DashboardScreen(
         }
 
         // Floating, collapsible written-chat button — now the ONLY way to
-        // open the written chat (§ richiesta esplicita dell'utente: "togli
-        // la barra in basso... la chat c'è icona rapida, da spostare più in
-        // basso a destra"). end/bottom shrunk further (10dp/4dp, was
-        // 18dp/10dp) to sit closer to the corner now that no bottom bar
-        // reserves space below it any more.
+        // open the written chat. end 10dp -> 26dp (§ richiesta esplicita:
+        // "icona della chat mettila poco più a sinistra"), bottom unchanged.
         ChatFab(
             unread = unread,
-            modifier = Modifier.align(Alignment.BottomEnd).padding(end = 10.dp, bottom = 4.dp),
+            modifier = Modifier.align(Alignment.BottomEnd).padding(end = 26.dp, bottom = 4.dp),
             onClick = { viewModel.markChatSeen(); onOpenChat() },
         )
     }
