@@ -17,6 +17,7 @@ import com.simone.jarvismobile.core.proactive.ProactiveSettings
 import com.simone.jarvismobile.core.proactive.ProactiveSnapshot
 import com.simone.jarvismobile.core.proactive.ProactiveSuggestion
 import com.simone.jarvismobile.data.SettingsRepository
+import com.simone.jarvismobile.weather.WeatherManager
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.first
 import java.time.Instant
@@ -42,6 +43,7 @@ class ProactiveManager @Inject constructor(
     private val notifier: ProactiveNotifier,
     private val coordinator: SessionCoordinator,
     private val contextEngine: ContextEngine,
+    private val weather: WeatherManager,
 ) {
     /**
      * Called periodically by the worker as a coarse fallback (see
@@ -148,10 +150,21 @@ class ProactiveManager @Inject constructor(
             .filter { it.date == today && isBirthday(it.text) }
             .map { birthdayName(it.text) }
 
+        // Forces a real refresh before reading, same reasoning already applied
+        // to the rule engine's KIND_RULE firings (§ AlarmReceiver): the
+        // periodic WeatherScheduler worker runs every 3h, but WorkManager can
+        // push a periodic job back for hours across an overnight Doze —
+        // reading only the cache at the very first unlock of the day meant
+        // the morning briefing's weather emoji was routinely missing simply
+        // because the last successful refresh predated the 6h staleness
+        // window (§ segnalazione dell'utente: emoji del meteo assente dal
+        // briefing mattutino). A no-op when weather is off (checked inside
+        // refresh() itself), so this costs nothing for anyone not using it.
+        runCatching { weather.refresh() }
         // Reuses ContextEngine's own staleness cutoff, so a refresher that has
         // stopped working reads as "unknown" here too, not as a frozen forecast.
         val rain = runCatching { contextEngine.evaluationContext(now = now) }.getOrNull()
-        val weather = runCatching { contextEngine.todayWeather(now = now) }.getOrNull()
+        val weatherCategory = runCatching { contextEngine.todayWeather(now = now) }.getOrNull()
 
         return ProactiveSnapshot(
             batteryPercent = percent,
@@ -161,7 +174,7 @@ class ProactiveManager @Inject constructor(
             todayTasks = tasks,
             birthdaysToday = birthdays,
             rainToday = rain?.rainToday,
-            todayWeather = weather,
+            todayWeather = weatherCategory,
         )
     }
 
