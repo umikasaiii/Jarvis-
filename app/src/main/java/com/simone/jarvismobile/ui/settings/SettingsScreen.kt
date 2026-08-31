@@ -180,7 +180,7 @@ fun SettingsScreen(
                     "Classico è l'originale. Rosso ricolora bordi, glow e icone " +
                         "attive in rosso. Rouge fa lo stesso ma con l'orb, lo " +
                         "sfondo e le card sostituiti da grafica vera, non solo " +
-                        "ricolorata. Ares ha anche una Home con blocchi propri, " +
+                        "ricolorata. Atena ha anche una Home con blocchi propri, " +
                         "diversa dagli altri temi. Il resto (verde/ambra/viola " +
                         "di stato) resta fisso.",
                     style = MaterialTheme.typography.bodySmall,

@@ -23,8 +23,15 @@ enum class JarvisThemeId(val storageId: String, val label: String) {
      *  (§ richiesta esplicita dell'utente: "cambiamo anche le impostazioni dei
      *  blocchi, cambiano solo quelli di questo tema senza toccare gli altri") —
      *  see [com.simone.jarvismobile.ui.dashboard.AresHomeScreen]. Shares the
-     *  same measured red accent as Rosso/Rouge (same reference art family). */
-    ARES("ares", "Ares"),
+     *  same measured red accent as Rosso/Rouge (same reference art family).
+     *  Renamed "Atena" in the visible label (§ richiesta esplicita dell'utente,
+     *  stesso giorno: "invece di Ares si chiamerà 'Atena'") — storageId kept
+     *  as "ares" for compatibility with a device that already selected it
+     *  (this session's own test device), same pattern as BLU's stable
+     *  "blu" storageId under the "Classico" label. Kotlin identifiers
+     *  (this enum entry, AresHomeScreen/AresViewModel/Ares* composables)
+     *  are internal code names, not user-visible, so left unrenamed. */
+    ARES("ares", "Atena"),
     ;
 
     companion object {

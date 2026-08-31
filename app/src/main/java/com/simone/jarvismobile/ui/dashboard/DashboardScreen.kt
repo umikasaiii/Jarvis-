@@ -1772,9 +1772,11 @@ internal fun AresHomeScreen(
                 )
             }
 
-            // --- Riga di stato: "••PRONTO••" compatto (§ richiesta esplicita
-            // dell'utente: "lo voglio esattamente identico a questo"), non
-            // più i due pallini distanziati usati dagli altri temi.
+            // --- Riga di stato: "•PRONTO•" compatto, un solo pallino per lato
+            // (§ richiesta esplicita dell'utente: "intorno a Pronto non devono
+            // esserci due pallini a lato, ma uno" — correzione del doppio
+            // pallino usato in precedenza), non i due pallini distanziati
+            // usati dagli altri temi.
             val status = statusFor(state, hasError, Cyan)
             Row(
                 modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
@@ -1782,7 +1784,7 @@ internal fun AresHomeScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    "••${status.label}••",
+                    "•${status.label}•",
                     color = status.color,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,
