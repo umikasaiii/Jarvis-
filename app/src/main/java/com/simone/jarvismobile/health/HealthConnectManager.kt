@@ -72,7 +72,10 @@ class HealthConnectManager @Inject constructor(
     }
 
     data class WeeklyHealthAverages(
-        val avgHeartRateBpm: Double?,
+        // BPM_AVG aggregates to a Long (§ fix CI: "Argument type mismatch:
+        // actual type is 'Long?', but 'Double?' was expected" — the library's
+        // real signature, not the Double this was first guessed as).
+        val avgHeartRateBpm: Long?,
         val avgSleepPerNight: Duration?,
     )
 

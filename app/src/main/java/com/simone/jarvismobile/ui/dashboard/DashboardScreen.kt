@@ -1935,7 +1935,7 @@ private fun AresSystemBlock(
                 AresHealthTile(
                     icon = Icons.Filled.Favorite,
                     label = "BPM medi (7gg)",
-                    value = healthAverages?.avgHeartRateBpm?.let { "${it.roundToInt()} bpm" },
+                    value = healthAverages?.avgHeartRateBpm?.let { "$it bpm" },
                     healthAvailable = healthAvailable,
                     healthGranted = healthGranted,
                     onRequestHealth = onRequestHealth,
