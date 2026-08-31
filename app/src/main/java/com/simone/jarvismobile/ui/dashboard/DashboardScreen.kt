@@ -1285,10 +1285,14 @@ private fun ToggleRow(icon: ImageVector, title: String, subtitle: String, on: Bo
         Switch(
             checked = on,
             onCheckedChange = null,
+            // Cyan (the theme accent), not a hardcoded Blue — on Rosso/Rouge/
+            // Ares this switch was always blue regardless of theme (§
+            // richiesta esplicita dell'utente: "lo voglio esattamente
+            // identico" al riferimento, dove l'interruttore è rosso).
             colors = SwitchDefaults.colors(
                 checkedThumbColor = Color.White,
-                checkedTrackColor = Blue,
-                checkedBorderColor = Blue,
+                checkedTrackColor = Cyan,
+                checkedBorderColor = Cyan,
                 uncheckedThumbColor = Muted,
                 uncheckedTrackColor = Color(0x33FFFFFF),
                 uncheckedBorderColor = Color(0x33FFFFFF),
@@ -1716,24 +1720,22 @@ internal fun AresHomeScreen(
                 )
             }
 
-            // --- Riga di stato (stesso testo/colore degli altri temi) -------
+            // --- Riga di stato: "••PRONTO••" compatto (§ richiesta esplicita
+            // dell'utente: "lo voglio esattamente identico a questo"), non
+            // più i due pallini distanziati usati dagli altri temi.
             val status = statusFor(state, hasError, Cyan)
             Row(
                 modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Box(Modifier.size(5.dp).clip(RoundedCornerShape(3.dp)).background(status.color))
-                Spacer(Modifier.width(10.dp))
                 Text(
-                    status.label,
+                    "••${status.label}••",
                     color = status.color,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,
-                    letterSpacing = 4.sp,
+                    letterSpacing = 2.sp,
                 )
-                Spacer(Modifier.width(10.dp))
-                Box(Modifier.size(5.dp).clip(RoundedCornerShape(3.dp)).background(status.color))
             }
 
             // --- Orb dentro il suo sfondo rettangolare -----------------------
@@ -1864,13 +1866,35 @@ private fun weatherCategoryLabel(category: WeatherCategory?): String = when (cat
     null -> "—"
 }
 
-private fun weatherCategoryEmoji(category: WeatherCategory?): String = when (category) {
-    WeatherCategory.CLEAR -> "☀️"
-    WeatherCategory.PARTLY_CLOUDY -> "⛅"
-    WeatherCategory.CLOUDY -> "☁️"
-    WeatherCategory.RAIN -> "🌧️"
-    WeatherCategory.THUNDERSTORM -> "⛈️"
-    null -> "—"
+/**
+ * Real icon art cropped from the user's own reference image (§ richiesta
+ * esplicita: "lo voglio esattamente identico a questo"), replacing the flat
+ * Unicode weather emoji used in the first Ares round. No dedicated
+ * thunderstorm glyph exists in the reference pack — the rain cloud is the
+ * closest honest stand-in rather than inventing a fifth icon.
+ */
+private fun weatherIconRes(category: WeatherCategory?): Int? = when (category) {
+    WeatherCategory.CLEAR -> R.drawable.ares_wx_clear
+    WeatherCategory.PARTLY_CLOUDY -> R.drawable.ares_wx_partly_cloudy
+    WeatherCategory.CLOUDY -> R.drawable.ares_wx_cloudy
+    WeatherCategory.RAIN -> R.drawable.ares_wx_rain
+    WeatherCategory.THUNDERSTORM -> R.drawable.ares_wx_rain
+    null -> null
+}
+
+@Composable
+private fun WeatherIcon(category: WeatherCategory?, size: androidx.compose.ui.unit.Dp) {
+    val res = weatherIconRes(category)
+    if (res != null) {
+        Image(
+            painter = painterResource(res),
+            contentDescription = null,
+            contentScale = ContentScale.Fit,
+            modifier = Modifier.size(size),
+        )
+    } else {
+        Box(Modifier.size(size))
+    }
 }
 
 /**
@@ -1895,7 +1919,7 @@ private fun AresSystemBlock(
                 Text("OGGI", color = Cyan, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 2.sp)
                 if (outlook?.currentTempC != null) {
                     Row(verticalAlignment = Alignment.Bottom) {
-                        Text(weatherCategoryEmoji(outlook.currentCategory), fontSize = 24.sp)
+                        WeatherIcon(outlook.currentCategory, 48.dp)
                         Spacer(Modifier.width(6.dp))
                         Text(
                             "${outlook.currentTempC.roundToInt()}°",
@@ -1922,7 +1946,7 @@ private fun AresSystemBlock(
                         val day = days.getOrNull(i)
                         Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(dayLabels[i], color = Muted, fontSize = 8.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(weatherCategoryEmoji(day?.category), fontSize = 14.sp)
+                            WeatherIcon(day?.category, 28.dp)
                             val hi = day?.tempMaxC?.roundToInt()?.toString() ?: "—"
                             val lo = day?.tempMinC?.roundToInt()?.toString() ?: "—"
                             Text("$hi°/$lo°", color = Ink, fontSize = 9.sp, maxLines = 1)
@@ -1932,18 +1956,25 @@ private fun AresSystemBlock(
             }
             // --- BPM + sonno -------------------------------------------------
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                val bpm = healthAverages?.avgHeartRateBpm
                 AresHealthTile(
                     icon = Icons.Filled.Favorite,
                     label = "BPM medi (7gg)",
-                    value = healthAverages?.avgHeartRateBpm?.let { "$it bpm" },
+                    value = bpm?.let { "$it bpm" },
+                    // 40-160 bpm covers resting through elevated heart rate —
+                    // a reasonable gauge range, not a medical claim.
+                    gaugeFraction = bpm?.let { ((it - 40.0) / 120.0).coerceIn(0.0, 1.0).toFloat() },
                     healthAvailable = healthAvailable,
                     healthGranted = healthGranted,
                     onRequestHealth = onRequestHealth,
                 )
+                val sleep = healthAverages?.avgSleepPerNight
                 AresHealthTile(
                     icon = Icons.Filled.Bedtime,
                     label = "Sonno medio (7gg)",
-                    value = healthAverages?.avgSleepPerNight?.let { "${it.toHours()}h ${it.toMinutesPart()}m" },
+                    value = sleep?.let { "${it.toHours()}h ${it.toMinutesPart()}m" },
+                    // 0-10h covers the realistic nightly range.
+                    gaugeFraction = sleep?.let { (it.toMinutes() / 600.0).coerceIn(0.0, 1.0).toFloat() },
                     healthAvailable = healthAvailable,
                     healthGranted = healthGranted,
                     onRequestHealth = onRequestHealth,
@@ -1957,40 +1988,72 @@ private fun AresSystemBlock(
  * One BPM/sonno tile. Never shows a placeholder number — Health Connect
  * unavailable, ungranted, and "no data written there" are three genuinely
  * different states, and each says so honestly instead of collapsing to a
- * blank or a guess.
+ * blank or a guess. [gaugeFraction] (0-1, only present alongside a real
+ * [value]) draws a ring around the icon like the reference mockup — its
+ * arc length reflects the real reading against a reasonable min/max range
+ * (documented at the call site), never an invented percentage.
  */
 @Composable
 private fun AresHealthTile(
     icon: ImageVector,
     label: String,
     value: String?,
+    gaugeFraction: Float?,
     healthAvailable: Boolean,
     healthGranted: Boolean,
     onRequestHealth: () -> Unit,
 ) {
-    Column(
+    Row(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
             .background(Color(0x33081521))
             .padding(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, null, tint = Cyan, modifier = Modifier.size(13.dp))
-            Spacer(Modifier.width(6.dp))
-            Text(label, color = Muted, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
-        Spacer(Modifier.height(3.dp))
-        when {
-            !healthAvailable -> Text("Health Connect non disponibile", color = Muted, fontSize = 9.sp)
-            !healthGranted -> TextButton(
-                onClick = onRequestHealth,
-                contentPadding = PaddingValues(horizontal = 0.dp, vertical = 2.dp),
-            ) {
-                Text("Concedi accesso", color = Cyan, fontSize = 11.sp)
+        val cyan = Cyan
+        Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) {
+            Canvas(Modifier.fillMaxSize()) {
+                val strokeWidth = 3.dp.toPx()
+                val ringRadius = size.minDimension / 2f - strokeWidth
+                drawArc(
+                    color = cyan.copy(alpha = 0.18f),
+                    startAngle = -90f,
+                    sweepAngle = 360f,
+                    useCenter = false,
+                    topLeft = Offset(center.x - ringRadius, center.y - ringRadius),
+                    size = Size(ringRadius * 2, ringRadius * 2),
+                    style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
+                )
+                if (gaugeFraction != null) {
+                    drawArc(
+                        color = cyan,
+                        startAngle = -90f,
+                        sweepAngle = 360f * gaugeFraction.coerceIn(0f, 1f),
+                        useCenter = false,
+                        topLeft = Offset(center.x - ringRadius, center.y - ringRadius),
+                        size = Size(ringRadius * 2, ringRadius * 2),
+                        style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
+                    )
+                }
             }
-            value != null -> Text(value, color = Ink, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-            else -> Text("Nessun dato", color = Muted, fontSize = 10.sp)
+            Icon(icon, null, tint = Cyan, modifier = Modifier.size(16.dp))
+        }
+        Spacer(Modifier.width(8.dp))
+        Column(Modifier.weight(1f)) {
+            Text(label, color = Muted, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.height(2.dp))
+            when {
+                !healthAvailable -> Text("Health Connect non disponibile", color = Muted, fontSize = 9.sp)
+                !healthGranted -> TextButton(
+                    onClick = onRequestHealth,
+                    contentPadding = PaddingValues(horizontal = 0.dp, vertical = 2.dp),
+                ) {
+                    Text("Concedi accesso", color = Cyan, fontSize = 11.sp)
+                }
+                value != null -> Text(value, color = Ink, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                else -> Text("Nessun dato", color = Muted, fontSize = 10.sp)
+            }
         }
     }
 }
