@@ -1671,9 +1671,28 @@ internal fun AresHomeScreen(
     // il contract è un'unica istanza stabile per tutta la vita di questo
     // composable.
     val healthPermissionContract = remember(aresViewModel) { aresViewModel.healthPermissionContract() }
+    // Bug segnalato di nuovo dall'utente anche DOPO la stabilizzazione del
+    // contract qui sopra ("cliccabile ma comunque non apre e non succede
+    // nulla") -- quindi quel fix, per quanto reale, non era l'unica causa o
+    // non lo era affatto. Senza log di dispositivo in questo ambiente non e'
+    // verificabile con certezza se la Activity di Health Connect non si apre
+    // proprio, oppure si apre e si richiude all'istante restituendo un
+    // risultato vuoto (es. un provider OEM che risponde ma non mostra mai
+    // davvero la UI). Il callback ora mostra sempre un Toast col conteggio
+    // reale dei permessi concessi: se non compare NEMMENO questo Toast, il
+    // round-trip non si completa affatto (causa piu' a monte, fuori da
+    // questo composable); se compare con "0 concessi", l'activity si apre e
+    // chiude subito senza che l'utente riesca a interagire.
     val healthLauncher = rememberLauncherForActivityResult(
         contract = healthPermissionContract,
-    ) { aresViewModel.refreshHealth() }
+    ) { granted ->
+        android.widget.Toast.makeText(
+            healthContext,
+            "Health Connect: ${granted.size} permessi concessi",
+            android.widget.Toast.LENGTH_LONG,
+        ).show()
+        aresViewModel.refreshHealth()
+    }
     // Bug reale segnalato dall'utente: "premendo concedi accesso non succede
     // niente" — nessun crash, quindi non un'eccezione non gestita, ma senza
     // log visibile in questo ambiente non è verificabile con certezza se il
@@ -1798,6 +1817,7 @@ internal fun AresHomeScreen(
                 outlook = outlook,
                 healthAvailable = aresViewModel.healthAvailable,
                 healthGranted = healthGranted,
+                healthSdkStatusLabel = aresViewModel.healthSdkStatusLabel(),
                 healthAverages = healthAverages,
                 onRequestHealth = onRequestHealthConnect,
             )
@@ -1941,6 +1961,7 @@ private fun AresSystemBlock(
     outlook: WeeklyOutlook?,
     healthAvailable: Boolean,
     healthGranted: Boolean,
+    healthSdkStatusLabel: String,
     healthAverages: HealthConnectManager.WeeklyHealthAverages?,
     onRequestHealth: () -> Unit,
 ) {
@@ -1999,6 +2020,7 @@ private fun AresSystemBlock(
                     gaugeFraction = bpm?.let { ((it - 40.0) / 120.0).coerceIn(0.0, 1.0).toFloat() },
                     healthAvailable = healthAvailable,
                     healthGranted = healthGranted,
+                    healthSdkStatusLabel = healthSdkStatusLabel,
                     onRequestHealth = onRequestHealth,
                 )
                 val sleep = healthAverages?.avgSleepPerNight
@@ -2010,6 +2032,7 @@ private fun AresSystemBlock(
                     gaugeFraction = sleep?.let { (it.toMinutes() / 600.0).coerceIn(0.0, 1.0).toFloat() },
                     healthAvailable = healthAvailable,
                     healthGranted = healthGranted,
+                    healthSdkStatusLabel = healthSdkStatusLabel,
                     onRequestHealth = onRequestHealth,
                 )
             }
@@ -2034,6 +2057,7 @@ private fun AresHealthTile(
     gaugeFraction: Float?,
     healthAvailable: Boolean,
     healthGranted: Boolean,
+    healthSdkStatusLabel: String,
     onRequestHealth: () -> Unit,
 ) {
     Row(
@@ -2078,11 +2102,23 @@ private fun AresHealthTile(
             Spacer(Modifier.height(2.dp))
             when {
                 !healthAvailable -> Text("Health Connect non disponibile", color = Muted, fontSize = 9.sp)
-                !healthGranted -> TextButton(
-                    onClick = onRequestHealth,
-                    contentPadding = PaddingValues(horizontal = 0.dp, vertical = 2.dp),
-                ) {
-                    Text("Concedi accesso", color = Cyan, fontSize = 11.sp)
+                !healthGranted -> Column {
+                    TextButton(
+                        onClick = onRequestHealth,
+                        contentPadding = PaddingValues(horizontal = 0.dp, vertical = 2.dp),
+                    ) {
+                        Text("Concedi accesso", color = Cyan, fontSize = 11.sp)
+                    }
+                    // Diagnostica temporanea (§ "cliccabile ma non succede
+                    // nulla" segnalato anche dopo il fix del contract): dice
+                    // se l'SDK di Health Connect si dichiara davvero
+                    // disponibile su questo dispositivo, cosa non
+                    // verificabile in questo ambiente senza un device reale.
+                    Text(
+                        "SDK: $healthSdkStatusLabel",
+                        color = Muted,
+                        fontSize = 8.sp,
+                    )
                 }
                 value != null -> Text(value, color = Ink, fontSize = 17.sp, fontWeight = FontWeight.Bold)
                 else -> Text("Nessun dato", color = Muted, fontSize = 10.sp)

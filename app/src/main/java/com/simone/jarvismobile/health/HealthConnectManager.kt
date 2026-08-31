@@ -55,6 +55,24 @@ class HealthConnectManager @Inject constructor(
     /** False when Health Connect itself isn't installed/available on this device. */
     val isAvailable: Boolean get() = client != null
 
+    /**
+     * Human-readable SDK status for the Diagnostica-style surface shown next
+     * to "Concedi accesso" (§ bug reale: il tocco è ricettivo ma non apre
+     * nulla anche dopo aver stabilizzato il contract di
+     * rememberLauncherForActivityResult — nessun log di dispositivo
+     * disponibile in questo ambiente per capire se il problema è a monte
+     * dell'SDK stesso, quindi il prossimo screenshot dell'utente deve poter
+     * mostrare un dato concreto invece di un altro tentativo alla cieca).
+     */
+    fun sdkStatusLabel(): String = runCatching {
+        when (HealthConnectClient.getSdkStatus(context)) {
+            HealthConnectClient.SDK_AVAILABLE -> "disponibile"
+            HealthConnectClient.SDK_UNAVAILABLE -> "non supportato su questo dispositivo"
+            HealthConnectClient.SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED -> "provider da installare o aggiornare"
+            else -> "stato sconosciuto"
+        }
+    }.getOrElse { "errore nel controllo SDK (${it.message})" }
+
     /** The only two permissions this app ever requests from Health Connect. */
     val permissions: Set<String> = setOf(
         HealthPermission.getReadPermission(HeartRateRecord::class),

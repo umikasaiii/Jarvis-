@@ -37,6 +37,8 @@ class AresViewModel @Inject constructor(
     val healthAvailable: Boolean get() = health.isAvailable
     val healthPermissions: Set<String> get() = health.permissions
     fun healthPermissionContract() = health.requestPermissionsContract()
+    /** Diagnostica testuale mostrata sotto "Concedi accesso" (§ vedi HealthConnectManager). */
+    fun healthSdkStatusLabel(): String = health.sdkStatusLabel()
 
     init {
         refreshWeather()
