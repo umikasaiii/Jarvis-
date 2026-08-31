@@ -131,6 +131,25 @@
         android:theme="@style/Theme.JarvisMobile"
         tools:targetApi="31">
 
+        <!--
+          Bug reale segnalato dall'utente da dispositivo: "Concedi accesso"
+          per Health Connect si apriva e chiudeva subito con 0 permessi
+          concessi, senza mostrare mai la schermata reale — e J.A.R.V.I.S.
+          non compariva affatto nell'elenco "Autorizzazioni app" di Health
+          Connect (verificato con screenshot dell'utente: Health Sync,
+          Honor Health, Automate, Claude, Home Assistant, Starfit erano
+          tutte elencate, JARVIS no). Le sole voci <uses-permission>
+          android.permission.health.* non bastano perché Health Connect
+          possa riconoscere e registrare l'app come richiedente valido:
+          serve anche questo meta-dato che punta all'elenco esplicito dei
+          permessi (res/values/health_connect.xml), esattamente gli stessi
+          due che HealthConnectManager.kt richiede via
+          HealthPermission.getReadPermission(...).
+        -->
+        <meta-data
+            android:name="health_permissions"
+            android:resource="@array/health_permissions" />
+
         <activity
             android:name=".ui.MainActivity"
             android:exported="true"

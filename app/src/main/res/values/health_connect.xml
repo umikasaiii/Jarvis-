@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Health Connect's permissions UI discovers which apps may request its data
+  by scanning this declared array, referenced from a <meta-data> tag on the
+  <application> element in AndroidManifest.xml — not just the plain
+  <uses-permission> entries. Without it, on this project's target Health
+  Connect version, the app can be entirely absent from Health Connect's own
+  "Autorizzazioni app" list (confirmed on-device: J.A.R.V.I.S. never
+  appeared there even after PermissionController.createRequestPermissionResultContract()
+  round-tripped with 0 granted permissions and no visible dialog — the
+  request had nowhere real to land). Every entry here must exactly match a
+  string HealthConnectManager.kt requests via HealthPermission.getReadPermission(...).
+-->
+<resources>
+    <array name="health_permissions">
+        <item>android.permission.health.READ_HEART_RATE</item>
+        <item>android.permission.health.READ_SLEEP</item>
+    </array>
+</resources>
