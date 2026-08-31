@@ -19,6 +19,12 @@ enum class JarvisThemeId(val storageId: String, val label: String) {
      *  art from the user's own reference images instead of a tinted recolour —
      *  see [com.simone.jarvismobile.ui.components.JarvisCard], [com.simone.jarvismobile.ui.components.JarvisOrb]. */
     ROUGE("rouge", "Rouge"),
+    /** A fourth theme with its own Home *layout*, not just its own colours/art
+     *  (§ richiesta esplicita dell'utente: "cambiamo anche le impostazioni dei
+     *  blocchi, cambiano solo quelli di questo tema senza toccare gli altri") —
+     *  see [com.simone.jarvismobile.ui.dashboard.AresHomeScreen]. Shares the
+     *  same measured red accent as Rosso/Rouge (same reference art family). */
+    ARES("ares", "Ares"),
     ;
 
     companion object {
@@ -56,10 +62,11 @@ private val RossoPalette = JarvisPalette(
 
 fun paletteFor(id: JarvisThemeId): JarvisPalette = when (id) {
     JarvisThemeId.BLU -> BluPalette
-    // Both red themes share the exact same measured accent — it was sampled
-    // from this same reference pack in the first place, so there is no second
-    // colour to invent; only the chrome art differs (see JarvisThemeId.ROUGE).
-    JarvisThemeId.ROSSO, JarvisThemeId.ROUGE -> RossoPalette
+    // All three red themes share the exact same measured accent — it was
+    // sampled from this same reference pack in the first place, so there is
+    // no second colour to invent; only the chrome art (and, for Ares, the
+    // whole Home layout) differs.
+    JarvisThemeId.ROSSO, JarvisThemeId.ROUGE, JarvisThemeId.ARES -> RossoPalette
 }
 
 /** Bound at the app root ([JarvisTheme]); every HUD-styled screen reads from here. */

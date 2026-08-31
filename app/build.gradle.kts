@@ -210,6 +210,16 @@ dependencies {
     // existing deep links/broadcasts, never their own controllers.
     implementation("androidx.glance:glance-appwidget:1.1.1")
 
+    // Health Connect (opt-in, tema Ares > blocco Sistema): weekly average heart
+    // rate / sleep duration, read only if the user grants it and only from
+    // whatever app already writes that data into Health Connect on their
+    // device (Health Connect is a local on-device data broker, not a cloud
+    // service of its own). Same "deliberate, scoped exception" reasoning as
+    // Drive above — see docs/DECISIONS/0015-drive-authorization-client.md,
+    // §onestà in CLAUDE.md for why this specific version/API surface is
+    // unverified against a live compiler in this environment.
+    implementation(libs.androidx.health.connect.client)
+
     // Offline PDF text extraction for the document-import pipeline (Apache PDFBox
     // Android port). Fully on-device; DOCX is parsed with java.util.zip, no dep.
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")

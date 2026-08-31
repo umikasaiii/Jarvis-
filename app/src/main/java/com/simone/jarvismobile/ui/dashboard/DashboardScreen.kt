@@ -18,6 +18,7 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -25,10 +26,13 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -42,6 +46,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.AcUnit
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.NotificationsOff
@@ -109,7 +115,11 @@ import com.simone.jarvismobile.core.agenda.AgendaEntry
 import com.simone.jarvismobile.core.agenda.ReminderAlert
 import com.simone.jarvismobile.core.agenda.ReminderAlertType
 import com.simone.jarvismobile.core.state.ConversationState
+import com.simone.jarvismobile.core.weather.WeatherCategory
+import com.simone.jarvismobile.core.weather.WindDirection
 import com.simone.jarvismobile.driving.DrivingModeActivity
+import com.simone.jarvismobile.health.HealthConnectManager
+import com.simone.jarvismobile.weather.WeeklyOutlook
 import com.simone.jarvismobile.ui.components.HudOverlay
 import com.simone.jarvismobile.ui.components.JarvisCard
 import com.simone.jarvismobile.ui.components.JarvisOrb
@@ -123,6 +133,7 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.format.TextStyle
 import java.util.Locale
+import kotlin.math.roundToInt
 
 // --- Palette ---------------------------------------------------------------
 // The brand accent (§ Impostazioni › Temi) — every other name here stays a
@@ -274,6 +285,41 @@ fun DashboardScreen(
         R.drawable.bg_dashboard
     }
 
+    // Ares has its own Home layout entirely (§ richiesta esplicita
+    // dell'utente: "cambiano solo quelli di questo tema senza toccare gli
+    // altri") — everything below this branch (through the ChatFab) is
+    // completely untouched for Classico/Rosso/Rouge.
+    if (LocalJarvisThemeId.current == JarvisThemeId.ARES) {
+        AresHomeScreen(
+            name = name,
+            state = state,
+            hasError = lastError != null,
+            today = today,
+            upcoming = upcoming,
+            allEntries = allEntries,
+            timeline = timeline,
+            selectedDate = selectedDate,
+            unread = unread,
+            proModeActive = proModeActive,
+            onSelectDate = { selectedDate = it },
+            onOrbClick = {
+                when {
+                    state == ConversationState.Speaking -> viewModel.onInterruptAndTalk()
+                    state.isRestingLike() -> viewModel.onTalkPressed()
+                    else -> viewModel.onCancel()
+                }
+            },
+            onToggleDone = { viewModel.toggleDone(it) },
+            onEditAlerts = { editingAlerts = it },
+            onOpenSettings = onOpenSettings,
+            onOpenChat = { viewModel.markChatSeen(); onOpenChat() },
+            onOpenAgenda = onOpenAgenda,
+            onOpenAutomations = onOpenAutomations,
+            onOpenDrive = { context.startActivity(DrivingModeActivity.intent(context)) },
+            onOpenTranslator = onOpenTranslator,
+            onOpenArchive = onOpenArchive,
+        )
+    } else {
     Box(modifier = Modifier.fillMaxSize().background(Color(0xFF02060B))) {
         Image(
             painter = painterResource(dashboardBgRes),
@@ -605,6 +651,7 @@ fun DashboardScreen(
             modifier = Modifier.align(Alignment.BottomEnd).padding(end = 2.dp, bottom = 4.dp),
             onClick = { viewModel.markChatSeen(); onOpenChat() },
         )
+    }
     }
 
     editingAlerts?.let { entry ->
@@ -1554,4 +1601,519 @@ private fun orbSubtitle(state: ConversationState): String = when (state) {
     ConversationState.Listening, ConversationState.FollowUpWindow -> "Ti ascolto"
     ConversationState.Speaking -> "Tocca per fermare"
     else -> ""
+}
+
+// ============================================================================
+// --- Tema Ares: Home layout dedicato ---------------------------------------
+// ============================================================================
+//
+// Un layout Home completamente diverso da Classico/Rosso/Rouge (§ richiesta
+// esplicita dell'utente: "creiamo un altro tema... cambiamo anche le
+// impostazioni dei blocchi, cambiano solo quelli di questo tema senza
+// toccare gli altri"), costruito dalle immagini di riferimento fornite
+// dall'utente. Riusa AgendaBlock/GlassCard/CardHeader/ToggleRow/Cyan/Ink/
+// Muted già definiti sopra in questo file (private ad esso — per questo
+// AresHomeScreen vive qui invece che in un file separato) e gli stessi
+// ViewModel/stato reale che il layout classico già raccoglie: solo la
+// disposizione e gli sfondi dei blocchi sono nuovi, mai una seconda fonte
+// dati per lo stesso fatto.
+
+private const val ARES_ORB_BG_ASPECT_RATIO = 1200f / 296f
+private const val ARES_REMINDERS_ASPECT_RATIO = 900f / 589f
+private const val ARES_SHORTCUTS_ASPECT_RATIO = 900f / 408f
+private const val ARES_MEMORY_ASPECT_RATIO = 784f / 675f
+
+@Composable
+internal fun AresHomeScreen(
+    name: String,
+    state: ConversationState,
+    hasError: Boolean,
+    today: List<AgendaEntry>,
+    upcoming: List<AgendaEntry>,
+    allEntries: List<AgendaEntry>,
+    timeline: List<AgendaEntry>,
+    selectedDate: LocalDate,
+    unread: Int,
+    proModeActive: Boolean,
+    onSelectDate: (LocalDate) -> Unit,
+    onOrbClick: () -> Unit,
+    onToggleDone: (AgendaEntry) -> Unit,
+    onEditAlerts: (AgendaEntry) -> Unit,
+    onOpenSettings: () -> Unit,
+    onOpenChat: () -> Unit,
+    onOpenAgenda: () -> Unit,
+    onOpenAutomations: () -> Unit,
+    onOpenDrive: () -> Unit,
+    onOpenTranslator: () -> Unit,
+    onOpenArchive: () -> Unit,
+) {
+    val aresViewModel: AresViewModel = hiltViewModel()
+    val outlook by aresViewModel.outlook.collectAsStateWithLifecycle()
+    val healthGranted by aresViewModel.healthGranted.collectAsStateWithLifecycle()
+    val healthAverages by aresViewModel.healthAverages.collectAsStateWithLifecycle()
+    val healthLauncher = rememberLauncherForActivityResult(
+        contract = aresViewModel.healthPermissionContract(),
+    ) { aresViewModel.refreshHealth() }
+
+    val archiveVm: com.simone.jarvismobile.ui.archive.ArchiveViewModel = hiltViewModel()
+    val storageUsage by archiveVm.storageUsage.collectAsStateWithLifecycle()
+
+    val dayEntries = Agenda.sorted(allEntries.filter { it.date == selectedDate })
+    val reminderEntries = timeline.filter { !it.done }.take(7)
+
+    Box(modifier = Modifier.fillMaxSize().background(Color(0xFF02060B))) {
+        // Stesso sfondo di Rouge (§ richiesta esplicita dell'utente: "lo
+        // sfondo in background rimane il precedente, stesso del rouge") —
+        // nessun nuovo asset per il pieno schermo.
+        Image(
+            painter = painterResource(R.drawable.rouge_bg_dashboard),
+            contentDescription = null,
+            modifier = Modifier.matchParentSize(),
+            contentScale = ContentScale.Crop,
+        )
+        HudOverlay(Modifier.matchParentSize())
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 14.dp, vertical = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            // --- Titolo JARVIS + icona Impostazioni (stesso pattern degli altri temi) ---
+            Box(
+                modifier = Modifier.fillMaxWidth().height(64.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = name.uppercase(),
+                    color = Color.White,
+                    fontSize = 30.sp,
+                    fontWeight = FontWeight.Light,
+                    letterSpacing = 12.sp,
+                    textAlign = TextAlign.Center,
+                    style = androidx.compose.ui.text.TextStyle(
+                        shadow = androidx.compose.ui.graphics.Shadow(
+                            color = Cyan,
+                            offset = Offset.Zero,
+                            blurRadius = 28f,
+                        ),
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (proModeActive) {
+                    com.simone.jarvismobile.ui.components.ProModeBadge(
+                        modifier = Modifier.align(Alignment.TopEnd),
+                    )
+                }
+                Image(
+                    painter = painterResource(R.drawable.rouge_ic_menu),
+                    contentDescription = "Impostazioni",
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .size(32.dp)
+                        .clickable(onClick = onOpenSettings),
+                )
+            }
+
+            // --- Riga di stato (stesso testo/colore degli altri temi) -------
+            val status = statusFor(state, hasError, Cyan)
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(Modifier.size(5.dp).clip(RoundedCornerShape(3.dp)).background(status.color))
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    status.label,
+                    color = status.color,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    letterSpacing = 4.sp,
+                )
+                Spacer(Modifier.width(10.dp))
+                Box(Modifier.size(5.dp).clip(RoundedCornerShape(3.dp)).background(status.color))
+            }
+
+            // --- Orb dentro il suo sfondo rettangolare -----------------------
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val bannerHeight = maxWidth / ARES_ORB_BG_ASPECT_RATIO
+                Box(Modifier.fillMaxWidth().height(bannerHeight)) {
+                    Image(
+                        painter = painterResource(R.drawable.ares_orb_bg),
+                        contentDescription = null,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.matchParentSize(),
+                    )
+                    Image(
+                        painter = painterResource(R.drawable.ares_orb),
+                        contentDescription = name,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .size(bannerHeight * 0.9f)
+                            .clickable(onClick = onOrbClick),
+                    )
+                }
+            }
+
+            // --- Sistema: meteo (oggi + 3 giorni) + bpm/sonno settimanali ---
+            AresSystemBlock(
+                outlook = outlook,
+                healthAvailable = aresViewModel.healthAvailable,
+                healthGranted = healthGranted,
+                healthAverages = healthAverages,
+                onRequestHealth = { healthLauncher.launch(aresViewModel.healthPermissions) },
+            )
+
+            // --- Promemoria (largo) + Memoria (stretta, verticale) ----------
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                AresRemindersCard(
+                    entries = reminderEntries,
+                    modifier = Modifier.weight(2f),
+                    onClick = onOpenAgenda,
+                )
+                AresMemoryCard(
+                    usedBytes = storageUsage.usedBytes,
+                    modifier = Modifier.weight(1f),
+                    onClick = onOpenArchive,
+                )
+            }
+
+            // --- Automazioni / JARVIS Drive / Traduttore (solo icone) ------
+            AresShortcutsRow(
+                onOpenAutomations = onOpenAutomations,
+                onOpenDrive = onOpenDrive,
+                onOpenTranslator = onOpenTranslator,
+            )
+
+            // --- Calendario, stesso blocco degli altri temi -----------------
+            AgendaBlock(
+                today = today,
+                week = upcoming,
+                allEntries = allEntries,
+                timeline = timeline,
+                selectedDate = selectedDate,
+                dayEntries = dayEntries,
+                onEditAlerts = onEditAlerts,
+                onDayClick = onSelectDate,
+                onToggleDone = onToggleDone,
+            )
+
+            // --- Domotica, ancora DEMO come negli altri temi (Fase 7 non iniziata) ---
+            GlassCard(badge = { DemoBadge("F7") }) {
+                CardHeader(Icons.Filled.Home, "DOMOTICA")
+                ToggleRow(Icons.Filled.Lightbulb, "Luci", "Soggiorno", on = true)
+                ToggleRow(Icons.Filled.AcUnit, "Clima", "22°C", on = false)
+                ToggleRow(Icons.Filled.Security, "Sicurezza", "Inserito", on = true)
+            }
+
+            Spacer(Modifier.height(72.dp)) // room so the chat button never covers the last card
+        }
+
+        // Pulsante chat, arte dedicata Ares (§ prima immagine del secondo
+        // messaggio: un'icona a onda sonora, coerente con un assistente
+        // vocale) — stessa posizione/dimensione della chat FAB delle altre
+        // versioni tema.
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 2.dp, bottom = 4.dp)
+                .size(112.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Image(
+                painter = painterResource(R.drawable.ares_chat_fab),
+                contentDescription = "Chat",
+                modifier = Modifier
+                    .size(104.dp)
+                    .clip(androidx.compose.foundation.shape.CircleShape)
+                    .clickable(onClick = onOpenChat),
+                contentScale = ContentScale.Fit,
+            )
+            if (unread > 0) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .size(22.dp)
+                        .clip(androidx.compose.foundation.shape.CircleShape)
+                        .background(Color(0x33081521))
+                        .border(1.dp, Cyan.copy(alpha = 0.75f), androidx.compose.foundation.shape.CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        if (unread > 9) "9+" else "$unread",
+                        color = Cyan,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** "Sereno"/"Parzialmente nuvoloso"/… — the same five buckets the morning digest already uses. */
+private fun weatherCategoryLabel(category: WeatherCategory?): String = when (category) {
+    WeatherCategory.CLEAR -> "Sereno"
+    WeatherCategory.PARTLY_CLOUDY -> "Parzialmente nuvoloso"
+    WeatherCategory.CLOUDY -> "Nuvoloso"
+    WeatherCategory.RAIN -> "Pioggia"
+    WeatherCategory.THUNDERSTORM -> "Temporale"
+    null -> "—"
+}
+
+private fun weatherCategoryEmoji(category: WeatherCategory?): String = when (category) {
+    WeatherCategory.CLEAR -> "☀️"
+    WeatherCategory.PARTLY_CLOUDY -> "⛅"
+    WeatherCategory.CLOUDY -> "☁️"
+    WeatherCategory.RAIN -> "🌧️"
+    WeatherCategory.THUNDERSTORM -> "⛈️"
+    null -> "—"
+}
+
+/**
+ * Meteo di oggi + prossimi 3 giorni, e le due medie settimanali (bpm/sonno) —
+ * il pannello "SISTEMA" dell'immagine di riferimento dell'utente (presa
+ * esplicitamente "solo come esempio" per il layout, mai per i numeri: quelli
+ * qui sono sempre reali o assenti, mai gli esempi mostrati nella foto).
+ */
+@Composable
+private fun AresSystemBlock(
+    outlook: WeeklyOutlook?,
+    healthAvailable: Boolean,
+    healthGranted: Boolean,
+    healthAverages: HealthConnectManager.WeeklyHealthAverages?,
+    onRequestHealth: () -> Unit,
+) {
+    GlassCard {
+        CardHeader(Icons.Filled.Cloud, "SISTEMA", reserveEnd = false)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            // --- Meteo -----------------------------------------------------
+            Column(Modifier.weight(1f)) {
+                Text("OGGI", color = Cyan, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 2.sp)
+                if (outlook?.currentTempC != null) {
+                    Row(verticalAlignment = Alignment.Bottom) {
+                        Text(weatherCategoryEmoji(outlook.currentCategory), fontSize = 24.sp)
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            "${outlook.currentTempC.roundToInt()}°",
+                            color = Ink, fontSize = 26.sp, fontWeight = FontWeight.Bold,
+                        )
+                    }
+                    Text(weatherCategoryLabel(outlook.currentCategory), color = Muted, fontSize = 10.sp)
+                    val dir = WindDirection.label(outlook.currentWindDirectionDeg)
+                    if (outlook.currentWindKmh != null) {
+                        Text(
+                            "${outlook.currentWindKmh.roundToInt()} km/h" + (dir?.let { " $it" } ?: ""),
+                            color = Muted, fontSize = 9.sp,
+                        )
+                    }
+                } else {
+                    Text("Meteo non disponibile", color = Muted, fontSize = 10.sp)
+                    Text("(attivalo in Impostazioni)", color = Muted, fontSize = 9.sp)
+                }
+                Spacer(Modifier.height(8.dp))
+                val dayLabels = listOf("Domani", "Dopodomani", "Tra 3gg")
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    val days = outlook?.upcoming.orEmpty()
+                    for (i in 0 until 3) {
+                        val day = days.getOrNull(i)
+                        Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(dayLabels[i], color = Muted, fontSize = 8.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(weatherCategoryEmoji(day?.category), fontSize = 14.sp)
+                            val hi = day?.tempMaxC?.roundToInt()?.toString() ?: "—"
+                            val lo = day?.tempMinC?.roundToInt()?.toString() ?: "—"
+                            Text("$hi°/$lo°", color = Ink, fontSize = 9.sp, maxLines = 1)
+                        }
+                    }
+                }
+            }
+            // --- BPM + sonno -------------------------------------------------
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                AresHealthTile(
+                    icon = Icons.Filled.Favorite,
+                    label = "BPM medi (7gg)",
+                    value = healthAverages?.avgHeartRateBpm?.let { "${it.roundToInt()} bpm" },
+                    healthAvailable = healthAvailable,
+                    healthGranted = healthGranted,
+                    onRequestHealth = onRequestHealth,
+                )
+                AresHealthTile(
+                    icon = Icons.Filled.Bedtime,
+                    label = "Sonno medio (7gg)",
+                    value = healthAverages?.avgSleepPerNight?.let { "${it.toHours()}h ${it.toMinutesPart()}m" },
+                    healthAvailable = healthAvailable,
+                    healthGranted = healthGranted,
+                    onRequestHealth = onRequestHealth,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * One BPM/sonno tile. Never shows a placeholder number — Health Connect
+ * unavailable, ungranted, and "no data written there" are three genuinely
+ * different states, and each says so honestly instead of collapsing to a
+ * blank or a guess.
+ */
+@Composable
+private fun AresHealthTile(
+    icon: ImageVector,
+    label: String,
+    value: String?,
+    healthAvailable: Boolean,
+    healthGranted: Boolean,
+    onRequestHealth: () -> Unit,
+) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(Color(0x33081521))
+            .padding(10.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, null, tint = Cyan, modifier = Modifier.size(13.dp))
+            Spacer(Modifier.width(6.dp))
+            Text(label, color = Muted, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Spacer(Modifier.height(3.dp))
+        when {
+            !healthAvailable -> Text("Health Connect non disponibile", color = Muted, fontSize = 9.sp)
+            !healthGranted -> TextButton(
+                onClick = onRequestHealth,
+                contentPadding = PaddingValues(horizontal = 0.dp, vertical = 2.dp),
+            ) {
+                Text("Concedi accesso", color = Cyan, fontSize = 11.sp)
+            }
+            value != null -> Text(value, color = Ink, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+            else -> Text("Nessun dato", color = Muted, fontSize = 10.sp)
+        }
+    }
+}
+
+/**
+ * Promemoria: gli impegni/attività non completati più vicini, sullo sfondo
+ * fornito dall'utente. Le proporzioni dell'inset sono una stima ragionevole
+ * sull'area vuota dell'immagine (badge circolare a sinistra, righe a destra),
+ * non verificata a schermo in questo ambiente senza SDK Android.
+ */
+@Composable
+private fun AresRemindersCard(
+    entries: List<AgendaEntry>,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    BoxWithConstraints(modifier.clickable(onClick = onClick)) {
+        val h = maxWidth / ARES_REMINDERS_ASPECT_RATIO
+        Box(Modifier.fillMaxWidth().height(h)) {
+            Image(
+                painter = painterResource(R.drawable.ares_bg_reminders),
+                contentDescription = "Promemoria",
+                contentScale = ContentScale.FillBounds,
+                modifier = Modifier.matchParentSize(),
+            )
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(start = h * 0.32f, end = h * 0.10f, top = h * 0.14f, bottom = h * 0.10f),
+                verticalArrangement = Arrangement.SpaceEvenly,
+            ) {
+                if (entries.isEmpty()) {
+                    Text("Nessun promemoria", color = Muted, fontSize = 11.sp)
+                } else {
+                    entries.forEach { e ->
+                        Text(
+                            e.text,
+                            color = Ink,
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Memoria: spazio totale scritto da JARVIS (§ risposta esplicita dell'utente
+ * alla domanda di chiarimento: "mostra memoria totale di jarvis interno, non
+ * divisa per file"), non la ripartizione per tipo mostrata nell'immagine di
+ * esempio. Tap apre Archivio, che espone davvero le cartelle Documenti/Note/
+ * Liste/Da vedere/Memoria/TODO — la stessa richiesta dell'utente ("come prima
+ * era archivio le varie cartelle").
+ */
+@Composable
+private fun AresMemoryCard(
+    usedBytes: Long,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    BoxWithConstraints(modifier.clickable(onClick = onClick)) {
+        val h = maxWidth / ARES_MEMORY_ASPECT_RATIO
+        Box(Modifier.fillMaxWidth().height(h)) {
+            Image(
+                painter = painterResource(R.drawable.ares_bg_memory),
+                contentDescription = "Memoria",
+                contentScale = ContentScale.FillBounds,
+                modifier = Modifier.matchParentSize(),
+            )
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = h * 0.06f),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    formatAresBytes(usedBytes),
+                    color = Ink,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text("memoria JARVIS", color = Muted, fontSize = 9.sp)
+            }
+        }
+    }
+}
+
+/** Abbreviated MB/GB — same convention as Archivio's own storage bar. */
+private fun formatAresBytes(bytes: Long): String {
+    val mb = bytes / 1024.0 / 1024.0
+    return if (mb >= 1024.0) "%.1f GB".format(mb / 1024.0) else "%.0f MB".format(mb)
+}
+
+/**
+ * Automazioni / JARVIS Drive / Traduttore — solo le tre icone già disegnate
+ * nell'immagine fornita dall'utente (§ "senza scritte"), tre aree cliccabili
+ * trasparenti sovrapposte in egual misura.
+ */
+@Composable
+private fun AresShortcutsRow(
+    onOpenAutomations: () -> Unit,
+    onOpenDrive: () -> Unit,
+    onOpenTranslator: () -> Unit,
+) {
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val h = maxWidth / ARES_SHORTCUTS_ASPECT_RATIO
+        Box(Modifier.fillMaxWidth().height(h)) {
+            Image(
+                painter = painterResource(R.drawable.ares_bg_shortcuts),
+                contentDescription = null,
+                contentScale = ContentScale.FillBounds,
+                modifier = Modifier.matchParentSize(),
+            )
+            Row(Modifier.matchParentSize()) {
+                Box(Modifier.weight(1f).fillMaxHeight().clickable(onClick = onOpenAutomations))
+                Box(Modifier.weight(1f).fillMaxHeight().clickable(onClick = onOpenDrive))
+                Box(Modifier.weight(1f).fillMaxHeight().clickable(onClick = onOpenTranslator))
+            }
+        }
+    }
 }

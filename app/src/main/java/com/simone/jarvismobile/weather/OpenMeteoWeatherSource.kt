@@ -30,6 +30,36 @@ data class RainForecast(
 )
 
 /**
+ * A single future day's outlook (§ tema Ares, blocco Sistema): the day's
+ * category, high/low, and wind. Null per field when the API omits it — never
+ * a guessed value.
+ */
+data class DayOutlook(
+    val category: WeatherCategory?,
+    val tempMaxC: Double?,
+    val tempMinC: Double?,
+    val windKmh: Double?,
+    val windDirectionDeg: Double?,
+)
+
+/**
+ * Right-now conditions plus the next three days (§ tema Ares, blocco Sistema
+ * — "oggi... sotto il tempo dei prossimi 3 giorni"), a separate fetch from
+ * [RainForecast]/[WeatherSource.fetchRain]: that path is the tested, already-
+ * correct rain/no-rain signal the automation engine and morning briefing
+ * depend on, and this extension deliberately does not touch it — a second,
+ * additive method instead of widening the existing one.
+ */
+data class WeeklyOutlook(
+    val currentTempC: Double?,
+    val currentCategory: WeatherCategory?,
+    val currentWindKmh: Double?,
+    val currentWindDirectionDeg: Double?,
+    /** Tomorrow, the day after, three days out — in that order. */
+    val upcoming: List<DayOutlook>,
+)
+
+/**
  * Fetches a two-day weather forecast for a rounded coordinate.
  *
  * Deliberately the one place in JARVIS that talks to the network for its own
@@ -73,6 +103,13 @@ class OpenMeteoWeatherSource @Inject constructor() : WeatherSource {
                 .getOrNull()
         }
 
+    override suspend fun fetchWeeklyOutlook(latitude: Double, longitude: Double): WeeklyOutlook? =
+        withContext(Dispatchers.IO) {
+            runCatching { fetchOutlookOrThrow(latitude, longitude) }
+                .onFailure { Log.w(TAG, "weather_outlook_fetch_failed ${it.javaClass.simpleName}") }
+                .getOrNull()
+        }
+
     /** Throws on anything wrong; the caller wraps this in [runCatching]. */
     private fun fetchOrThrow(latitude: Double, longitude: Double): RainForecast? {
         val url = "https://api.open-meteo.com/v1/forecast" +
@@ -89,6 +126,40 @@ class OpenMeteoWeatherSource @Inject constructor() : WeatherSource {
             tomorrowCategory = WeatherCategory.fromWmoCode(codes?.getOrNull(1)),
             todayMillimeters = millimeters?.getOrNull(0),
             tomorrowMillimeters = millimeters?.getOrNull(1),
+        )
+    }
+
+    /**
+     * Throws on anything wrong; the caller wraps this in [runCatching]. A
+     * second, independent request from [fetchOrThrow] — different fields
+     * (`current_weather` for right-now, plus temperature/wind in `daily`),
+     * `forecast_days=4` so `daily[0]` is today and `daily[1..3]` are the
+     * three days the Ares panel shows below it.
+     */
+    private fun fetchOutlookOrThrow(latitude: Double, longitude: Double): WeeklyOutlook? {
+        val url = "https://api.open-meteo.com/v1/forecast" +
+            "?latitude=${round(latitude)}&longitude=${round(longitude)}" +
+            "&daily=weathercode,temperature_2m_max,temperature_2m_min,windspeed_10m_max,winddirection_10m_dominant" +
+            "&current_weather=true&timezone=auto&forecast_days=4"
+        val request = Request.Builder().url(url).build()
+        val response = client.newCall(request).execute()
+        val body = response.use { r -> if (r.isSuccessful) r.body?.string() else null } ?: return null
+        val parsed = json.decodeFromString(OpenMeteoOutlookResponse.serializer(), body)
+        val daily = parsed.daily
+        val current = parsed.currentWeather
+        fun dayAt(index: Int): DayOutlook = DayOutlook(
+            category = WeatherCategory.fromWmoCode(daily?.weatherCode?.getOrNull(index)),
+            tempMaxC = daily?.tempMax?.getOrNull(index),
+            tempMinC = daily?.tempMin?.getOrNull(index),
+            windKmh = daily?.windSpeedMax?.getOrNull(index),
+            windDirectionDeg = daily?.windDirectionDominant?.getOrNull(index),
+        )
+        return WeeklyOutlook(
+            currentTempC = current?.temperature,
+            currentCategory = WeatherCategory.fromWmoCode(current?.weatherCode),
+            currentWindKmh = current?.windSpeed,
+            currentWindDirectionDeg = current?.windDirection,
+            upcoming = listOf(dayAt(1), dayAt(2), dayAt(3)),
         )
     }
 
@@ -110,6 +181,38 @@ class OpenMeteoWeatherSource @Inject constructor() : WeatherSource {
         val precipitationSum: List<Double>? = null,
     )
 
+    @Serializable
+    private data class OpenMeteoOutlookResponse(
+        val daily: OutlookDaily? = null,
+        @SerialName("current_weather")
+        val currentWeather: CurrentWeather? = null,
+    )
+
+    @Serializable
+    private data class OutlookDaily(
+        @SerialName("weathercode")
+        val weatherCode: List<Int>? = null,
+        @SerialName("temperature_2m_max")
+        val tempMax: List<Double>? = null,
+        @SerialName("temperature_2m_min")
+        val tempMin: List<Double>? = null,
+        @SerialName("windspeed_10m_max")
+        val windSpeedMax: List<Double>? = null,
+        @SerialName("winddirection_10m_dominant")
+        val windDirectionDominant: List<Double>? = null,
+    )
+
+    @Serializable
+    private data class CurrentWeather(
+        val temperature: Double? = null,
+        @SerialName("weathercode")
+        val weatherCode: Int? = null,
+        @SerialName("windspeed")
+        val windSpeed: Double? = null,
+        @SerialName("winddirection")
+        val windDirection: Double? = null,
+    )
+
     private companion object {
         const val TAG = "JarvisWeather"
         const val TIMEOUT_SECONDS = 10L
@@ -120,4 +223,7 @@ class OpenMeteoWeatherSource @Inject constructor() : WeatherSource {
 interface WeatherSource {
     /** Null on any failure; per-day values are null when the API omits them. */
     suspend fun fetchRain(latitude: Double, longitude: Double): RainForecast?
+
+    /** Null on any failure — never a guessed/last-known outlook. */
+    suspend fun fetchWeeklyOutlook(latitude: Double, longitude: Double): WeeklyOutlook?
 }

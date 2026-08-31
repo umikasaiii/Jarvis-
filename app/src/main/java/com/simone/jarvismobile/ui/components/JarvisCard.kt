@@ -46,7 +46,16 @@ fun JarvisCard(
     // of the blue one) — it needs no tint, since it is already red.
     val themeId = LocalJarvisThemeId.current
     val cardRes = if (themeId == JarvisThemeId.ROUGE) R.drawable.rouge_bg_card else R.drawable.bg_card
-    val tint = if (themeId == JarvisThemeId.ROSSO) ColorFilter.tint(LocalJarvisPalette.current.accent) else null
+    // Ares has no dedicated card-frame art of its own (most of its blocks use
+    // their own bespoke background images instead — see AresHomeScreen), so
+    // for the handful of cards it does reuse (Sistema, Domotica) it falls
+    // back to the same tinted default frame Rosso already uses, rather than
+    // rendering blue on a red theme.
+    val tint = if (themeId == JarvisThemeId.ROSSO || themeId == JarvisThemeId.ARES) {
+        ColorFilter.tint(LocalJarvisPalette.current.accent)
+    } else {
+        null
+    }
     Box(modifier) {
         // The frame is the supplied artwork. Its interior is transparent, so no
         // panel sits behind the card — that faint slab was the "sfondo dietro".

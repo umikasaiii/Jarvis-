@@ -180,7 +180,9 @@ fun SettingsScreen(
                     "Classico è l'originale. Rosso ricolora bordi, glow e icone " +
                         "attive in rosso. Rouge fa lo stesso ma con l'orb, lo " +
                         "sfondo e le card sostituiti da grafica vera, non solo " +
-                        "ricolorata. Il resto (verde/ambra/viola di stato) resta fisso.",
+                        "ricolorata. Ares ha anche una Home con blocchi propri, " +
+                        "diversa dagli altri temi. Il resto (verde/ambra/viola " +
+                        "di stato) resta fisso.",
                     style = MaterialTheme.typography.bodySmall,
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

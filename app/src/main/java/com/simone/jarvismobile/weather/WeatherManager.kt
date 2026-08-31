@@ -69,6 +69,23 @@ class WeatherManager @Inject constructor(
         Log.i(TAG, "weather_refreshed ok=${forecast != null}")
     }
 
+    /**
+     * Today's live conditions plus the next three days (§ tema Ares, blocco
+     * Sistema). Reuses the same coordinate resolution as [refresh] — the
+     * user's chosen place, or a fresh-enough last-known fix — but is
+     * otherwise independent of it: this never writes to [ContextEngine] and
+     * never affects [lastQueryPoint] or the rain/no-rain signal, only
+     * returns a richer forecast for the UI to render directly. Null when
+     * weather is off, no fix is available, or the fetch itself fails —
+     * never a guessed outlook.
+     */
+    @SuppressLint("MissingPermission")
+    suspend fun fetchWeeklyOutlook(): WeeklyOutlook? {
+        if (!settings.weatherEnabled.first()) return null
+        val point = resolvePoint() ?: return null
+        return source.fetchWeeklyOutlook(point.first, point.second)
+    }
+
     /** The chosen saved place's coordinate, or the last-known fix as a fallback. */
     @SuppressLint("MissingPermission")
     private suspend fun resolvePoint(): Pair<Double, Double>? {

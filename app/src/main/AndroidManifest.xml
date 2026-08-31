@@ -70,6 +70,13 @@
     <!-- Phase 6 tools: set timers/alarms in the system clock app without opening its UI. -->
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
 
+    <!-- Health Connect (opt-in, tema Ares > blocco Sistema): read-only, and only
+         the two metrics the block actually shows — no step count, no weight,
+         no other health data. Requested at runtime via PermissionController,
+         never assumed granted; JARVIS never writes to Health Connect. -->
+    <uses-permission android:name="android.permission.health.READ_HEART_RATE" />
+    <uses-permission android:name="android.permission.health.READ_SLEEP" />
+
     <!-- Deliberately NOT requested: MANAGE_EXTERNAL_STORAGE, QUERY_ALL_PACKAGES,
          REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, any Accessibility service. See
          docs/PRIVACY.md and docs/SECURITY.md. -->
@@ -107,6 +114,10 @@
         <package android:name="com.google.android.apps.maps" />
         <package android:name="com.android.chrome" />
         <package android:name="md.obsidian" />
+        <!-- Health Connect app itself (pre-Android 14 devices install it
+             separately from Play Store; Android 14+ has it built in but the
+             package check still needs this declared to see it). -->
+        <package android:name="com.google.android.apps.healthdata" />
     </queries>
 
     <application
