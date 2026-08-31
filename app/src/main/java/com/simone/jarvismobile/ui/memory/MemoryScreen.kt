@@ -99,6 +99,7 @@ import com.simone.jarvismobile.core.memory.ShortTermMemorySnapshot
 import com.simone.jarvismobile.core.memory.SizeStep
 import com.simone.jarvismobile.memory.MemoryIndex
 import com.simone.jarvismobile.memory.NoteBackgroundStore
+import com.simone.jarvismobile.ui.components.ThemedIcon
 import com.simone.jarvismobile.ui.theme.LocalJarvisPalette
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -235,7 +236,19 @@ fun MemoryScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 IconButton(onClick = { showDrawer = true }) {
-                    Icon(Icons.Filled.Menu, contentDescription = "Cartelle", tint = INK)
+                    // Rouge gets the user's own reference art (§ richiesta
+                    // esplicita: "Usa questa per icona del menu") instead of
+                    // the plain Material hamburger — same ThemedIcon pattern
+                    // already used for every other Rouge-themed icon in the
+                    // app; explicit size, since the Image branch has no
+                    // built-in 24dp default the way Icon() does.
+                    ThemedIcon(
+                        Icons.Filled.Menu,
+                        R.drawable.rouge_ic_menu,
+                        tint = INK,
+                        contentDescription = "Cartelle",
+                        modifier = Modifier.size(24.dp),
+                    )
                 }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(
