@@ -1655,9 +1655,27 @@ internal fun AresHomeScreen(
     val outlook by aresViewModel.outlook.collectAsStateWithLifecycle()
     val healthGranted by aresViewModel.healthGranted.collectAsStateWithLifecycle()
     val healthAverages by aresViewModel.healthAverages.collectAsStateWithLifecycle()
+    val healthContext = LocalContext.current
     val healthLauncher = rememberLauncherForActivityResult(
         contract = aresViewModel.healthPermissionContract(),
     ) { aresViewModel.refreshHealth() }
+    // Bug reale segnalato dall'utente: "premendo concedi accesso non succede
+    // niente" — nessun crash, quindi non un'eccezione non gestita, ma senza
+    // log visibile in questo ambiente non è verificabile con certezza se il
+    // launcher stesso fallisce silenziosamente o se la richiesta apre e
+    // richiude senza aggiornare lo stato. Questo try/catch rende visibile
+    // (Toast) un eventuale fallimento reale del lancio invece di lasciarlo
+    // silenzioso, così il prossimo tentativo dice qualcosa di concreto.
+    val onRequestHealthConnect: () -> Unit = {
+        runCatching { healthLauncher.launch(aresViewModel.healthPermissions) }
+            .onFailure {
+                android.widget.Toast.makeText(
+                    healthContext,
+                    "Impossibile aprire Health Connect: ${it.message}",
+                    android.widget.Toast.LENGTH_LONG,
+                ).show()
+            }
+    }
 
     val archiveVm: com.simone.jarvismobile.ui.archive.ArchiveViewModel = hiltViewModel()
     val storageUsage by archiveVm.storageUsage.collectAsStateWithLifecycle()
@@ -1766,7 +1784,7 @@ internal fun AresHomeScreen(
                 healthAvailable = aresViewModel.healthAvailable,
                 healthGranted = healthGranted,
                 healthAverages = healthAverages,
-                onRequestHealth = { healthLauncher.launch(aresViewModel.healthPermissions) },
+                onRequestHealth = onRequestHealthConnect,
             )
 
             // --- Promemoria (largo) + Memoria (stretta, verticale) ----------
@@ -2061,8 +2079,16 @@ private fun AresHealthTile(
 /**
  * Promemoria: gli impegni/attività non completati più vicini, sullo sfondo
  * fornito dall'utente. Le proporzioni dell'inset sono una stima ragionevole
- * sull'area vuota dell'immagine (badge circolare a sinistra, righe a destra),
- * non verificata a schermo in questo ambiente senza SDK Android.
+ * sull'area vuota dell'immagine (badge circolare a sinistra, righe a destra).
+ *
+ * Bug reale segnalato dall'utente da screenshot del dispositivo: il testo
+ * (es. "ciao") si sovrapponeva al badge circolare a sinistra. Causa reale:
+ * l'inset orizzontale (`start`) era calcolato da [ARES_REMINDERS_ASPECT_RATIO]
+ * usando `h` (l'altezza della card) come base — dimensionalmente sbagliato
+ * per un inset *orizzontale* su una card larga (h è molto più piccola della
+ * larghezza reale), quindi il margine sinistro finiva troppo stretto. Corretto
+ * usando `maxWidth` (la larghezza reale del box) per gli inset orizzontali,
+ * `h` solo per quelli verticali.
  */
 @Composable
 private fun AresRemindersCard(
@@ -2071,7 +2097,8 @@ private fun AresRemindersCard(
     onClick: () -> Unit,
 ) {
     BoxWithConstraints(modifier.clickable(onClick = onClick)) {
-        val h = maxWidth / ARES_REMINDERS_ASPECT_RATIO
+        val w = maxWidth
+        val h = w / ARES_REMINDERS_ASPECT_RATIO
         Box(Modifier.fillMaxWidth().height(h)) {
             Image(
                 painter = painterResource(R.drawable.ares_bg_reminders),
@@ -2082,7 +2109,7 @@ private fun AresRemindersCard(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(start = h * 0.32f, end = h * 0.10f, top = h * 0.14f, bottom = h * 0.10f),
+                    .padding(start = w * 0.34f, end = w * 0.08f, top = h * 0.14f, bottom = h * 0.10f),
                 verticalArrangement = Arrangement.SpaceEvenly,
             ) {
                 if (entries.isEmpty()) {
