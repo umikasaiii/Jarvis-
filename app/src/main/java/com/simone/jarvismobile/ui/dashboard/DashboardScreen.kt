@@ -1656,8 +1656,23 @@ internal fun AresHomeScreen(
     val healthGranted by aresViewModel.healthGranted.collectAsStateWithLifecycle()
     val healthAverages by aresViewModel.healthAverages.collectAsStateWithLifecycle()
     val healthContext = LocalContext.current
+    // Causa radice reale trovata (§ "premendo concedi accesso non succede
+    // niente", confermato dall'utente: nemmeno un popup di sistema appare
+    // per un istante): rememberLauncherForActivityResult richiede lo STESSO
+    // oggetto contract a ogni ricomposizione — passare
+    // aresViewModel.healthPermissionContract() diretto costruiva una nuova
+    // istanza di PermissionController.createRequestPermissionResultContract()
+    // a ogni ricomposizione (che qui capita spesso: outlook/healthAverages
+    // sono StateFlow che ricompongono questo intero schermo). Ogni
+    // ricomposizione quindi deregistrava e riregistrava il launcher presso
+    // l'ActivityResultRegistry; se il tocco arrivava proprio in quella
+    // finestra, launch() falliva silenziosamente senza lanciare eccezione —
+    // coerente con "nessun crash, nessun popup". Fissata con remember, così
+    // il contract è un'unica istanza stabile per tutta la vita di questo
+    // composable.
+    val healthPermissionContract = remember(aresViewModel) { aresViewModel.healthPermissionContract() }
     val healthLauncher = rememberLauncherForActivityResult(
-        contract = aresViewModel.healthPermissionContract(),
+        contract = healthPermissionContract,
     ) { aresViewModel.refreshHealth() }
     // Bug reale segnalato dall'utente: "premendo concedi accesso non succede
     // niente" — nessun crash, quindi non un'eccezione non gestita, ma senza
