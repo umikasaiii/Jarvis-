@@ -292,30 +292,6 @@ fun DashboardScreen(
                 .padding(horizontal = 14.dp, vertical = 6.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            // Small settings icon, top-right (§ richiesta esplicita
-            // dell'utente: "togli la barra in basso... per le impostazioni
-            // metti icona abbastanza piccola in alto a destra") — the only
-            // way into Impostazioni now that there is no bottom tab for it.
-            // A separate row above the title Box on purpose, not the same
-            // TopEnd corner as the PRO badge below, so the two never overlap.
-            // Rouge art reuses the same rouge_ic_menu.png already added for
-            // Memoria's drawer button (§ richiesta esplicita dell'utente:
-            // "per l'icona in alto a destra usa questa immagine" — the same
-            // file she had just sent for the menu icon, verified byte-
-            // identical) rather than a second copy of the same asset.
-            Box(Modifier.fillMaxWidth()) {
-                ThemedIcon(
-                    Icons.Filled.Settings,
-                    R.drawable.rouge_ic_menu,
-                    tint = Muted,
-                    contentDescription = "Impostazioni",
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .size(22.dp)
-                        .clickable(onClick = onOpenSettings),
-                )
-            }
-
             Box(
                 modifier = Modifier.fillMaxWidth().height(64.dp),
                 contentAlignment = Alignment.Center,
@@ -341,6 +317,21 @@ fun DashboardScreen(
                     modifier = Modifier.align(Alignment.TopEnd),
                 )
             }
+            // Settings icon, now inside the title box itself — bigger and at
+            // "JARVIS height" (§ richiesta esplicita dell'utente: "icona del
+            // menu piu grande e più in basso, ad altezza jarvis") instead of
+            // a thin strip above it. CenterEnd, not TopEnd, so it never
+            // shares the PRO badge's corner.
+            ThemedIcon(
+                Icons.Filled.Settings,
+                R.drawable.rouge_ic_menu,
+                tint = Muted,
+                contentDescription = "Impostazioni",
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .size(32.dp)
+                    .clickable(onClick = onOpenSettings),
+            )
             }
 
             // --- Status line + orb, alone --------------------------------
@@ -606,11 +597,12 @@ fun DashboardScreen(
         }
 
         // Floating, collapsible written-chat button — now the ONLY way to
-        // open the written chat. end 10dp -> 26dp (§ richiesta esplicita:
-        // "icona della chat mettila poco più a sinistra"), bottom unchanged.
+        // open the written chat. end 26dp -> 2dp (§ richiesta esplicita:
+        // "icona del messaggio molto più a destra" — the opposite direction
+        // from the previous round), bottom unchanged.
         ChatFab(
             unread = unread,
-            modifier = Modifier.align(Alignment.BottomEnd).padding(end = 26.dp, bottom = 4.dp),
+            modifier = Modifier.align(Alignment.BottomEnd).padding(end = 2.dp, bottom = 4.dp),
             onClick = { viewModel.markChatSeen(); onOpenChat() },
         )
     }
