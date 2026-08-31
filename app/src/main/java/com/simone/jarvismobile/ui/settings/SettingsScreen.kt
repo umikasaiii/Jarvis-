@@ -53,6 +53,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.simone.jarvismobile.core.engine.JarvisEngineMode
 import com.simone.jarvismobile.core.engine.ReasoningMode
 import com.simone.jarvismobile.data.SettingsRepository
+import com.simone.jarvismobile.ui.commands.CommandsScreen
 import com.simone.jarvismobile.ui.components.ProModeBadge
 import com.simone.jarvismobile.ui.theme.JarvisThemeId
 
@@ -710,6 +711,15 @@ fun SettingsScreen(
 
         TranslatorSettingsSection(onOpenTranslator = onOpenTranslator)
 
+        }
+
+        // La barra di navigazione in basso (Home/Chat/Comandi/Attività/
+        // Impostazioni) è stata rimossa (§ richiesta esplicita dell'utente:
+        // "la home resta fissa... comandi puoi mettere una sezione apribile
+        // nelle impostazioni") — Comandi non è più uno schermo a sé, ma una
+        // sezione apribile qui, stesso componente riusato tale e quale.
+        CollapsibleSection("Comandi") {
+        CommandsScreen()
         }
 
         CollapsibleSection("Automazioni in background") {

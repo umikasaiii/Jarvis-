@@ -57,6 +57,7 @@ import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Sync
@@ -291,6 +292,25 @@ fun DashboardScreen(
                 .padding(horizontal = 14.dp, vertical = 6.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            // Small settings icon, top-right (§ richiesta esplicita
+            // dell'utente: "togli la barra in basso... per le impostazioni
+            // metti icona abbastanza piccola in alto a destra") — the only
+            // way into Impostazioni now that there is no bottom tab for it.
+            // A separate row above the title Box on purpose, not the same
+            // TopEnd corner as the PRO badge below, so the two never overlap.
+            Box(Modifier.fillMaxWidth()) {
+                ThemedIcon(
+                    Icons.Filled.Settings,
+                    R.drawable.rouge_ic_settings,
+                    tint = Muted,
+                    contentDescription = "Impostazioni",
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .size(22.dp)
+                        .clickable(onClick = onOpenSettings),
+                )
+            }
+
             Box(
                 modifier = Modifier.fillMaxWidth().height(64.dp),
                 contentAlignment = Alignment.Center,
@@ -580,12 +600,15 @@ fun DashboardScreen(
             Spacer(Modifier.height(72.dp)) // room so the FAB never covers the last card
         }
 
-        // Floating, collapsible written-chat button (bottom-right).
+        // Floating, collapsible written-chat button — now the ONLY way to
+        // open the written chat (§ richiesta esplicita dell'utente: "togli
+        // la barra in basso... la chat c'è icona rapida, da spostare più in
+        // basso a destra"). end/bottom shrunk further (10dp/4dp, was
+        // 18dp/10dp) to sit closer to the corner now that no bottom bar
+        // reserves space below it any more.
         ChatFab(
             unread = unread,
-            // bottom 18dp -> 10dp (§ richiesta esplicita: "mettila
-            // leggermente più in basso ma di poco").
-            modifier = Modifier.align(Alignment.BottomEnd).padding(end = 18.dp, bottom = 10.dp),
+            modifier = Modifier.align(Alignment.BottomEnd).padding(end = 10.dp, bottom = 4.dp),
             onClick = { viewModel.markChatSeen(); onOpenChat() },
         )
     }

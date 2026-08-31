@@ -6,14 +6,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.BatteryFull
@@ -104,9 +101,15 @@ private val HINTS = mapOf(
 )
 
 /**
- * Commands tab (Phase 6): the real capabilities registered in the tool registry,
- * each with the phrase that triggers it. These run offline and deterministically
- * — no model needed — so they work even before a model is loaded.
+ * The real capabilities registered in the tool registry, each with the phrase
+ * that triggers it. These run offline and deterministically — no model needed
+ * — so they work even before a model is loaded. Lives inside a collapsible
+ * "Comandi" section in Impostazioni (§ richiesta esplicita dell'utente:
+ * rimossa la barra di navigazione in basso, "comandi puoi mettere una sezione
+ * apribile nelle impostazioni") rather than its own screen — no outer
+ * fillMaxSize/scroll of its own any more, since it now sits inside
+ * Impostazioni's already-scrolling column and a second unbounded scroll
+ * nested inside the first would crash on measurement.
  */
 @Composable
 fun CommandsScreen(viewModel: CommandsViewModel = hiltViewModel()) {
@@ -114,9 +117,9 @@ fun CommandsScreen(viewModel: CommandsViewModel = hiltViewModel()) {
 
     Column(
         modifier = Modifier
-            .fillMaxSize()
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
             .background(Brush.verticalGradient(listOf(Color(0xFF050C16), Color(0xFF081420), Color(0xFF03080E))))
-            .verticalScroll(rememberScrollState())
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {

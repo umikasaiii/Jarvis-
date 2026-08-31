@@ -1,14 +1,5 @@
 package com.simone.jarvismobile.ui
 
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Arrangement
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
@@ -16,32 +7,16 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Chat
-import androidx.compose.material.icons.filled.Apps
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.Icon
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -53,13 +28,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.simone.jarvismobile.R
 import com.simone.jarvismobile.ui.archive.ArchiveScreen
-import com.simone.jarvismobile.ui.components.ThemedIcon
-import com.simone.jarvismobile.ui.commands.CommandsScreen
 import com.simone.jarvismobile.ui.dashboard.DashboardScreen
 import com.simone.jarvismobile.ui.diagnostics.DiagnosticsScreen
 import com.simone.jarvismobile.ui.automation.AutomationsScreen
@@ -76,39 +46,31 @@ import com.simone.jarvismobile.ui.models.ModelsScreen
 import com.simone.jarvismobile.ui.settings.SettingsScreen
 import com.simone.jarvismobile.ui.agenda.AgendaScreen
 import com.simone.jarvismobile.ui.status.SystemStatusScreen
-import com.simone.jarvismobile.ui.theme.JarvisThemeId
-import com.simone.jarvismobile.ui.theme.LocalJarvisPalette
-import com.simone.jarvismobile.ui.theme.LocalJarvisThemeId
 
-private enum class Tab(val label: String, val icon: ImageVector, val rougeIcon: Int? = null) {
-    HOME("Home", Icons.Filled.Home, R.drawable.rouge_ic_home),
-    CHAT("Chat", Icons.AutoMirrored.Filled.Chat, R.drawable.rouge_ic_chat),
-    COMANDI("Comandi", Icons.Filled.Apps, R.drawable.rouge_ic_commands),
-    NOTIFICHE("Attività", Icons.Filled.CheckCircle, R.drawable.rouge_ic_tasks),
-    IMPOSTAZIONI("Impostazioni", Icons.Filled.Settings, R.drawable.rouge_ic_settings),
-}
-
+/**
+ * Full-screen destinations reached from Home. Home itself (§ richiesta
+ * esplicita dell'utente: "la home resta fissa, e ci si torna andando
+ * indietro") is never one of these — it is the permanent base underneath
+ * the [Scaffold], and every overlay here closes on the system back
+ * gesture/button via [BackHandler], never via a bottom tab. AGENDA and
+ * SETTINGS used to be tabs in a now-removed bottom navigation bar; COMANDI
+ * used to be a third tab and is gone entirely — it lives inside Impostazioni
+ * as a collapsible section instead (see [SettingsScreen]).
+ */
 private enum class Overlay {
     CHAT, MODELS, MEMORY, DIAGNOSTICS, AUTOMATIONS, RULES, TRANSLATOR, DOCUMENTS,
-    NAVIGATION, MAPS, FAVORITES, BACKUP, ARCHIVE, SYSTEM_STATUS,
+    NAVIGATION, MAPS, FAVORITES, BACKUP, ARCHIVE, SYSTEM_STATUS, AGENDA, SETTINGS,
 }
 
 /**
- * rouge_navbar_bg.png's real pixel dimensions (1600x205) — kept the source of
- * truth so the on-screen bar always shows the full artwork, never cropped.
- * A new, slimmer frame the user provided (§ richiesta esplicita: "cambiala
- * con questa") — unlike the earlier horned bar, its dark panel fills nearly
- * the entire image height (measured: opaque band from ~4% to ~96%, no tall
- * decoration above/below it), so — unlike that earlier asset — a plain
- * centred `Row` already lands inside the panel; no fraction-based anchor is
- * needed here.
- */
-private const val NAVBAR_BG_ASPECT_RATIO = 1600f / 205f
-
-/**
- * Top-level navigation. The dashboard shell is always present; the written chat
- * opens as a bottom sheet over the dimmed dashboard (so the background still
- * shows through), while Models/Memory/Diagnostics open full-screen.
+ * Top-level navigation. Home is the one fixed base screen; every other
+ * destination (chat, agenda, settings, models, memory, …) opens as a full
+ * overlay on top of it and closes back to Home on the system back gesture —
+ * there is no bottom navigation bar any more (§ richiesta esplicita
+ * dell'utente: "togli la barra in basso: la home resta fissa, e ci si torna
+ * andando indietro"). The written chat still opens as a bottom sheet over
+ * the dimmed dashboard (so the background is glimpsed behind it); every
+ * other destination opens full-screen and opaque.
  */
 @Composable
 fun JarvisApp(
@@ -117,7 +79,6 @@ fun JarvisApp(
     startListeningRequest: Int = 0,
     openAgendaRequest: Int = 0,
 ) {
-    var tab by remember { mutableStateOf(Tab.HOME) }
     var overlay by remember { mutableStateOf(if (initiallyOpenChat) Overlay.CHAT else null) }
     // Reading the chat marks it read: the badge must clear when the sheet closes,
     // not only when it opens, or messages seen while it was open stay counted.
@@ -132,10 +93,7 @@ fun JarvisApp(
 
     // The reminder notification's tap opens the Attività (agenda) screen.
     LaunchedEffect(openAgendaRequest) {
-        if (openAgendaRequest > 0) {
-            overlay = null
-            tab = Tab.NOTIFICHE
-        }
+        if (openAgendaRequest > 0) overlay = Overlay.AGENDA
     }
 
     // A spoken "avvia traduzione live …" starts the session in the background and
@@ -160,197 +118,21 @@ fun JarvisApp(
         if (openMaps > 0) overlay = Overlay.MAPS
     }
 
-    // The one HUD accent used directly in this file (bottom nav wash + active
-    // tab tint), following the theme the same way the dashboard's Cyan does.
-    val palette = LocalJarvisPalette.current
-    val themeId = LocalJarvisThemeId.current
-
-    // Factored out so both the Rouge branch (a taller, artwork-driven box)
-    // and the default branch (a compact, content-driven box) below can share
-    // the exact same tab row instead of duplicating ~60 lines of icon/label
-    // rendering between them.
-    @Composable
-    fun NavRow(modifier: Modifier) {
-        Row(
-            modifier = modifier,
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Tab.entries.forEach { entry ->
-                val active = tab == entry && entry != Tab.CHAT
-                val tint = if (active) palette.accentBright else Color(0xFF6B7C87)
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier
-                        .weight(1f)
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                        ) {
-                            if (entry == Tab.CHAT) overlay = Overlay.CHAT else tab = entry
-                        }
-                        .padding(vertical = 4.dp),
-                ) {
-                    ThemedIcon(
-                        entry.icon,
-                        // Rouge art on EVERY tab now, not only the
-                        // active one (§ richiesta esplicita
-                        // dell'utente: "icone sotto sulla barra
-                        // non si vedono cambiate" — con l'arte
-                        // limitata al solo tab attivo, 3 icone su
-                        // 5 restavano quasi sempre sul vettoriale
-                        // Material invariato). Contrasto
-                        // attivo/inattivo ora affidato all'alpha
-                        // sotto, non più alla presenza/assenza
-                        // dell'arte stessa.
-                        rouge = entry.rougeIcon,
-                        contentDescription = entry.label,
-                        tint = tint,
-                        alpha = if (active || entry == Tab.CHAT) 1f else 0.55f,
-                        // 30dp non 22dp (§ "barra e icone si
-                        // vedono male") — le icone Rouge sono arte
-                        // reale a colore pieno, non un vettoriale
-                        // sottile: a 22-26dp risultavano minute
-                        // contro la nuova cornice più decorata.
-                        modifier = Modifier.size(30.dp),
-                    )
-                    Spacer(Modifier.height(3.dp))
-                    Text(
-                        entry.label,
-                        fontSize = 9.sp,
-                        color = tint,
-                        maxLines = 1,
-                        style = if (active) {
-                            androidx.compose.ui.text.TextStyle(
-                                shadow = androidx.compose.ui.graphics.Shadow(
-                                    color = palette.accentBright,
-                                    blurRadius = 16f,
-                                ),
-                            )
-                        } else {
-                            androidx.compose.ui.text.TextStyle.Default
-                        },
-                    )
-                    // A short lit underline under the open section.
-                    Spacer(Modifier.height(3.dp))
-                    Box(
-                        Modifier
-                            .width(if (active) 18.dp else 0.dp)
-                            .height(2.dp)
-                            .background(palette.accentBright),
-                    )
-                }
-            }
-        }
-    }
-
     Box(Modifier.fillMaxSize()) {
-        // Base: the tab shell with the bottom navigation.
-        Scaffold(
-            containerColor = Color(0xFF05101A),
-            bottomBar = {
-                // Rouge gets the user's own reference art as the bar frame
-                // itself (§ richiesta esplicita: "cambia anche barra dello
-                // stato sotto con questa, e le relative icone") instead of
-                // the flat translucent wash — same "real dedicated art on
-                // Rouge" pattern as JarvisOrb/JarvisCard/ChatFab. Split into
-                // its own branch (rather than one Box both themes share)
-                // because it needs a real measured height the default
-                // branch never did.
-                if (themeId == JarvisThemeId.ROUGE) {
-                    // BoxWithConstraints, not matchParentSize (§ richiesta
-                    // esplicita dell'utente, ripetuta più volte: "si vede
-                    // tutta l'immagine" / "le icone escono fuori") —
-                    // l'altezza reale del box si misura esplicitamente
-                    // (maxWidth / rapporto), così l'artwork non viene mai
-                    // ritagliato per adattarsi a un'altezza indovinata.
-                    BoxWithConstraints(Modifier.fillMaxWidth()) {
-                        val barHeight = maxWidth / NAVBAR_BG_ASPECT_RATIO
-                        Box(Modifier.fillMaxWidth().height(barHeight)) {
-                            // Nessun riempimento dietro l'artwork (§ richiesta
-                            // esplicita dell'utente: "deve essere ritagliata
-                            // SENZA SFONDO") — resta solo l'artwork stesso,
-                            // con la sua trasparenza reale.
-                            Image(
-                                painter = painterResource(R.drawable.rouge_navbar_bg),
-                                contentDescription = null,
-                                contentScale = ContentScale.Fit,
-                                modifier = Modifier.matchParentSize(),
-                            )
-                            // A differenza del vecchio frame "cornuto", il
-                            // pannello scuro di questo asset riempie quasi
-                            // l'intera altezza dell'immagine (misurato:
-                            // ~4%-96%) — un centraggio semplice basta, non
-                            // serve più ancorare la Row a una frazione
-                            // misurata sui pixel.
-                            NavRow(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .align(Alignment.Center)
-                                    .navigationBarsPadding()
-                                    // 2dp: il pannello di questo frame più
-                                    // sottile lascia poco margine verticale.
-                                    .padding(vertical = 2.dp),
-                            )
-                        }
-                    }
-                } else {
-                    Box(
-                        Modifier
-                            .fillMaxWidth()
-                            .background(
-                                androidx.compose.ui.graphics.Brush.verticalGradient(
-                                    listOf(Color.Transparent, palette.accent.copy(alpha = 0x22 / 255f)),
-                                ),
-                            ),
-                    ) {
-                        // Custom bar rather than Material's NavigationBar: the
-                        // stock one paints an opaque surface and a pill-shaped
-                        // indicator behind the active item, both of which
-                        // fight a translucent HUD. Here the bar is glass and
-                        // the active entry is marked by the icon itself
-                        // lighting up.
-                        NavRow(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(Color(0x99040C14))
-                                .navigationBarsPadding()
-                                .padding(vertical = 8.dp),
-                        )
-                    }
-                }
-            },
-        ) { innerPadding ->
+        // Base: Home alone, no bottom bar — always present underneath every overlay.
+        Scaffold(containerColor = Color(0xFF05101A)) { innerPadding ->
             Box(Modifier.fillMaxSize().padding(innerPadding)) {
-                when (tab) {
-                    Tab.HOME -> DashboardScreen(
-                        onOpenSettings = { tab = Tab.IMPOSTAZIONI },
-                        onOpenMemory = { overlay = Overlay.MEMORY },
-                        onOpenChat = { overlay = Overlay.CHAT },
-                        onOpenAgenda = { tab = Tab.NOTIFICHE },
-                        onOpenAutomations = { overlay = Overlay.AUTOMATIONS },
-                        onOpenModels = { overlay = Overlay.MODELS },
-                        onOpenTranslator = { overlay = Overlay.TRANSLATOR },
-                        onOpenSystemStatus = { overlay = Overlay.SYSTEM_STATUS },
-                        onOpenArchive = { overlay = Overlay.ARCHIVE },
-                    )
-                    Tab.CHAT -> Unit
-                    Tab.COMANDI -> CommandsScreen()
-                    Tab.NOTIFICHE -> AgendaScreen()
-                    Tab.IMPOSTAZIONI -> SettingsScreen(
-                        onBack = { tab = Tab.HOME },
-                        onOpenModels = { overlay = Overlay.MODELS },
-                        onOpenMemory = { overlay = Overlay.MEMORY },
-                        onOpenAutomations = { overlay = Overlay.AUTOMATIONS },
-                        onOpenTranslator = { overlay = Overlay.TRANSLATOR },
-                        onOpenDocuments = { overlay = Overlay.DOCUMENTS },
-                        onOpenNavigation = { overlay = Overlay.NAVIGATION },
-                        onOpenMaps = { overlay = Overlay.MAPS },
-                        onOpenFavorites = { overlay = Overlay.FAVORITES },
-                        onOpenBackup = { overlay = Overlay.BACKUP },
-                        onOpenArchive = { overlay = Overlay.ARCHIVE },
-                    )
-                }
+                DashboardScreen(
+                    onOpenSettings = { overlay = Overlay.SETTINGS },
+                    onOpenMemory = { overlay = Overlay.MEMORY },
+                    onOpenChat = { overlay = Overlay.CHAT },
+                    onOpenAgenda = { overlay = Overlay.AGENDA },
+                    onOpenAutomations = { overlay = Overlay.AUTOMATIONS },
+                    onOpenModels = { overlay = Overlay.MODELS },
+                    onOpenTranslator = { overlay = Overlay.TRANSLATOR },
+                    onOpenSystemStatus = { overlay = Overlay.SYSTEM_STATUS },
+                    onOpenArchive = { overlay = Overlay.ARCHIVE },
+                )
             }
         }
 
@@ -390,7 +172,7 @@ fun JarvisApp(
                         JarvisChatWindow(
                             autoStartRequest = startListeningRequest,
                             onOpenDiagnostics = { overlay = Overlay.DIAGNOSTICS },
-                            onOpenSettings = { overlay = null; tab = Tab.IMPOSTAZIONI },
+                            onOpenSettings = { overlay = Overlay.SETTINGS },
                             onOpenModels = { overlay = Overlay.MODELS },
                             onOpenMemory = { overlay = Overlay.MEMORY },
                         )
@@ -399,14 +181,16 @@ fun JarvisApp(
             }
         }
 
-        // Full-screen overlays (opaque) for the secondary screens.
+        // Full-screen overlays (opaque) for every other destination, Agenda and
+        // Impostazioni included now that neither has a bottom tab of its own.
         if (overlay == Overlay.MODELS || overlay == Overlay.MEMORY ||
             overlay == Overlay.DIAGNOSTICS || overlay == Overlay.AUTOMATIONS ||
             overlay == Overlay.RULES ||
             overlay == Overlay.TRANSLATOR || overlay == Overlay.DOCUMENTS ||
             overlay == Overlay.NAVIGATION || overlay == Overlay.MAPS ||
             overlay == Overlay.FAVORITES || overlay == Overlay.BACKUP ||
-            overlay == Overlay.ARCHIVE || overlay == Overlay.SYSTEM_STATUS
+            overlay == Overlay.ARCHIVE || overlay == Overlay.SYSTEM_STATUS ||
+            overlay == Overlay.AGENDA || overlay == Overlay.SETTINGS
         ) {
             BackHandler { overlay = null }
             Box(Modifier.fillMaxSize().background(Color(0xFF071119))) {
@@ -430,10 +214,24 @@ fun JarvisApp(
                     Overlay.BACKUP -> BackupScreen(onBack = { overlay = null })
                     Overlay.ARCHIVE -> ArchiveScreen(
                         onBack = { overlay = null },
-                        onOpenTasks = { overlay = null; tab = Tab.NOTIFICHE },
+                        onOpenTasks = { overlay = Overlay.AGENDA },
                         onOpenDocuments = { overlay = Overlay.DOCUMENTS },
                     )
                     Overlay.SYSTEM_STATUS -> SystemStatusScreen(onBack = { overlay = null })
+                    Overlay.AGENDA -> AgendaScreen()
+                    Overlay.SETTINGS -> SettingsScreen(
+                        onBack = { overlay = null },
+                        onOpenModels = { overlay = Overlay.MODELS },
+                        onOpenMemory = { overlay = Overlay.MEMORY },
+                        onOpenAutomations = { overlay = Overlay.AUTOMATIONS },
+                        onOpenTranslator = { overlay = Overlay.TRANSLATOR },
+                        onOpenDocuments = { overlay = Overlay.DOCUMENTS },
+                        onOpenNavigation = { overlay = Overlay.NAVIGATION },
+                        onOpenMaps = { overlay = Overlay.MAPS },
+                        onOpenFavorites = { overlay = Overlay.FAVORITES },
+                        onOpenBackup = { overlay = Overlay.BACKUP },
+                        onOpenArchive = { overlay = Overlay.ARCHIVE },
+                    )
                     else -> Unit
                 }
             }
