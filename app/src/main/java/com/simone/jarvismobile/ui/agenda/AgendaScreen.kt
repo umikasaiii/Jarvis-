@@ -111,7 +111,9 @@ fun AgendaScreen(viewModel: AgendaViewModel = hiltViewModel()) {
     var newTask by remember { mutableStateOf("") }
     // Show the completed archive expanded by default — it was collapsed, which
     // made finished tasks look like they had vanished.
-    var completedOpen by remember { mutableStateOf(true) }
+    // § richiesta esplicita dell'utente: "appena apro la sezione attività
+    // devo trovare le attività completate chiuse" — partiva aperta di default.
+    var completedOpen by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<AgendaEntry?>(null) }
     var subtaskParent by remember { mutableStateOf<AgendaEntry?>(null) }
     var newListDialog by remember { mutableStateOf(false) }
@@ -486,7 +488,7 @@ private fun AddTaskScreen(
  * them.
  */
 @Composable
-private fun TaskTimePicker(
+internal fun TaskTimePicker(
     initial: java.time.LocalTime?,
     onDismiss: () -> Unit,
     onPick: (java.time.LocalTime) -> Unit,
@@ -551,7 +553,7 @@ private fun TaskTimePicker(
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
-private fun TaskDatePicker(
+internal fun TaskDatePicker(
     initial: LocalDate?,
     onDismiss: () -> Unit,
     onPick: (LocalDate) -> Unit,

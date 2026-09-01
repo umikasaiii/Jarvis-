@@ -61,6 +61,7 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SmartToy
@@ -1622,11 +1623,19 @@ private fun orbSubtitle(state: ConversationState): String = when (state) {
 // disposizione e gli sfondi dei blocchi sono nuovi, mai una seconda fonte
 // dati per lo stesso fatto.
 
-private const val ARES_ORB_BG_ASPECT_RATIO = 1200f / 296f
-private const val ARES_REMINDERS_ASPECT_RATIO = 658f / 700f
+// Aggiornato al nuovo banner unico fornito dall'utente (§ "tutte e 4"),
+// 1200x286 reale dopo il ritaglio al bounding box alpha.
+private const val ARES_ORB_BG_ASPECT_RATIO = 1200f / 286f
+// Ricalcolate su un nuovo ritaglio bounding-box reale delle immagini
+// sorgente originali (§ bug reale segnalato dall'utente, "riquadro bpm e
+// sonno... non deformare nulla" — il ritaglio precedente per Promemoria e
+// Memoria aveva un margine leggermente diverso da quello reale, causando
+// una lieve non-uniformità; ricontrollato pixel per pixel con Pillow).
+private const val ARES_REMINDERS_ASPECT_RATIO = 630f / 700f
 private const val ARES_SHORTCUTS_ASPECT_RATIO = 1100f / 234f
-private const val ARES_MEMORY_ASPECT_RATIO = 694f / 700f
-private const val ARES_METEO_ASPECT_RATIO = 456f / 700f
+private const val ARES_MEMORY_ASPECT_RATIO = 1f
+private const val ARES_METEO_ASPECT_RATIO = 459f / 700f
+private const val ARES_BPM_SONNO_ASPECT_RATIO = 695f / 700f
 
 @Composable
 internal fun AresHomeScreen(
@@ -1722,11 +1731,13 @@ internal fun AresHomeScreen(
     val todayReminders = Agenda.sorted(today.filter { !it.done }).take(3)
 
     Box(modifier = Modifier.fillMaxSize().background(Color(0xFF02060B))) {
-        // Stesso sfondo di Rouge (§ richiesta esplicita dell'utente: "lo
-        // sfondo in background rimane il precedente, stesso del rouge") —
-        // nessun nuovo asset per il pieno schermo.
+        // Sfondo dedicato Atena (§ richiesta esplicita dell'utente, "tutte e
+        // 4" le immagini rimaste inutilizzate del giro precedente) — prima
+        // condiviso con Rouge su richiesta esplicita di un turno precedente,
+        // ora sostituito perché l'utente ha chiesto esplicitamente di usare
+        // anche questa immagine.
         Image(
-            painter = painterResource(R.drawable.rouge_bg_dashboard),
+            painter = painterResource(R.drawable.ares_bg_dashboard),
             contentDescription = null,
             modifier = Modifier.matchParentSize(),
             contentScale = ContentScale.Crop,
@@ -1738,84 +1749,87 @@ internal fun AresHomeScreen(
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 14.dp, vertical = 6.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            // Spaziatura complessiva ridotta (§ richiesta esplicita: "di
+            // conseguenza avvicina un po' tutto") 12dp->9dp.
+            verticalArrangement = Arrangement.spacedBy(9.dp),
         ) {
-            // --- Titolo JARVIS + icona Impostazioni (stesso pattern degli altri temi) ---
-            Box(
-                modifier = Modifier.fillMaxWidth().height(64.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = name.uppercase(),
-                    color = Color.White,
-                    fontSize = 30.sp,
-                    fontWeight = FontWeight.Light,
-                    letterSpacing = 12.sp,
-                    textAlign = TextAlign.Center,
-                    style = androidx.compose.ui.text.TextStyle(
-                        shadow = androidx.compose.ui.graphics.Shadow(
-                            color = Cyan,
-                            offset = Offset.Zero,
-                            blurRadius = 28f,
-                        ),
-                    ),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                if (proModeActive) {
-                    com.simone.jarvismobile.ui.components.ProModeBadge(
-                        modifier = Modifier.align(Alignment.TopEnd),
+            // --- Titolo JARVIS + "PRONTO", raggruppati in un'unica colonna
+            // stretta (§ richiesta esplicita: "la scritta pronto mettila più
+            // vicina alla scritta atena") invece di due elementi separati
+            // spaziati dalla stessa distanza usata per il resto della
+            // pagina — box del titolo abbassato 64dp->46dp (meno spazio
+            // vuoto sotto il testo centrato) e i due elementi ravvicinati
+            // con spacedBy(0dp) invece della spaziatura generale.
+            Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
+                Box(
+                    modifier = Modifier.fillMaxWidth().height(46.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    // Wordmark "ATENA" (§ "tutte e 4" — richiesta esplicita
+                    // dell'utente di usare anche questa immagine, rimasta
+                    // inutilizzata nel giro precedente). Onestà: questa è
+                    // un'immagine statica con la scritta "ATENA" fissa, non
+                    // più il nome configurabile [name] — se l'utente
+                    // rinomina l'assistente da Impostazioni, il titolo del
+                    // tema Atena non lo rifletterà più.
+                    Image(
+                        painter = painterResource(R.drawable.ares_wordmark),
+                        contentDescription = name,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.fillMaxHeight().padding(vertical = 4.dp),
+                    )
+                    if (proModeActive) {
+                        com.simone.jarvismobile.ui.components.ProModeBadge(
+                            modifier = Modifier.align(Alignment.TopEnd),
+                        )
+                    }
+                    Image(
+                        painter = painterResource(R.drawable.rouge_ic_menu),
+                        contentDescription = "Impostazioni",
+                        modifier = Modifier
+                            .align(Alignment.CenterEnd)
+                            .size(32.dp)
+                            .clickable(onClick = onOpenSettings),
                     )
                 }
-                Image(
-                    painter = painterResource(R.drawable.rouge_ic_menu),
-                    contentDescription = "Impostazioni",
-                    modifier = Modifier
-                        .align(Alignment.CenterEnd)
-                        .size(32.dp)
-                        .clickable(onClick = onOpenSettings),
-                )
-            }
 
-            // --- Riga di stato: "•PRONTO•" compatto, un solo pallino per lato
-            // (§ richiesta esplicita dell'utente: "intorno a Pronto non devono
-            // esserci due pallini a lato, ma uno" — correzione del doppio
-            // pallino usato in precedenza), non i due pallini distanziati
-            // usati dagli altri temi.
-            val status = statusFor(state, hasError, Cyan)
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    "•${status.label}•",
-                    color = status.color,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    letterSpacing = 2.sp,
-                )
+                // --- Riga di stato: "•PRONTO•" compatto, un solo pallino per
+                // lato (§ richiesta esplicita dell'utente: "intorno a Pronto
+                // non devono esserci due pallini a lato, ma uno" — correzione
+                // del doppio pallino usato in precedenza), non i due pallini
+                // distanziati usati dagli altri temi.
+                val status = statusFor(state, hasError, Cyan)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "•${status.label}•",
+                        color = status.color,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        letterSpacing = 2.sp,
+                    )
+                }
             }
 
             // --- Orb dentro il suo sfondo rettangolare, tutto il blocco
             // cliccabile (§ richiesta esplicita: "Orb e tutto il blocco deve
             // essere cliccabile") — prima solo l'immagine dell'orb reagiva al
             // tocco, ora l'intero banner (compreso lo sfondo con i circuiti).
+            // Banner refinement fornito dall'utente (§ "tutte e 4"): un'unica
+            // immagine con cornice+circuiti+orb già integrati, al posto dei
+            // due layer precedenti (ares_orb_bg sotto + ares_orb sopra) — il
+            // nuovo artwork porta già l'orb disegnato al suo interno.
             BoxWithConstraints(Modifier.fillMaxWidth().clickable(onClick = onOrbClick)) {
                 val bannerHeight = maxWidth / ARES_ORB_BG_ASPECT_RATIO
-                Box(Modifier.fillMaxWidth().height(bannerHeight)) {
-                    Image(
-                        painter = painterResource(R.drawable.ares_orb_bg),
-                        contentDescription = null,
-                        contentScale = ContentScale.Fit,
-                        modifier = Modifier.matchParentSize(),
-                    )
-                    Image(
-                        painter = painterResource(R.drawable.ares_orb),
-                        contentDescription = name,
-                        contentScale = ContentScale.Fit,
-                        modifier = Modifier.align(Alignment.Center).size(bannerHeight * 0.9f),
-                    )
-                }
+                Image(
+                    painter = painterResource(R.drawable.ares_orb_banner),
+                    contentDescription = name,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxWidth().height(bannerHeight),
+                )
             }
 
             // --- Meteo (card a sé) + BPM/Sonno (card a sé), stessa altezza
@@ -1841,7 +1855,9 @@ internal fun AresHomeScreen(
                         healthAverages = healthAverages,
                         onRequestHealth = onRequestHealthConnect,
                         modifier = Modifier.weight(1f),
-                        height = cardHeight,
+                        // Nessuna altezza forzata (§ bug "non deformare
+                        // nulla" sopra): questa card usa la propria
+                        // proporzione reale, non quella di AresMeteoCard.
                     )
                 }
             }
@@ -1859,12 +1875,20 @@ internal fun AresHomeScreen(
                 )
             }
 
-            // --- Promemoria (largo) + Memoria (stretta, verticale) ----------
+            // --- Promemoria + Memoria, stessa larghezza (§ bug reale
+            // segnalato dall'utente da screenshot: "fallo più piccolo [...]
+            // memoria più grande, devono essere grandi uguali" — prima
+            // Promemoria aveva il doppio della larghezza di Memoria, quindi
+            // anche un'altezza molto maggiore data la propria proporzione;
+            // ora entrambe le colonne pesano uguale e le due card, con
+            // proporzioni reali vicine (0.9 e 1.0), risultano quasi identiche
+            // senza dover forzare un'altezza condivisa che le deformerebbe).
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 AresRemindersCard(
                     entries = todayReminders,
-                    modifier = Modifier.weight(2f),
+                    modifier = Modifier.weight(1f),
                     onOpenSection = onOpenAgenda,
+                    onToggleDone = onToggleDone,
                 )
                 AresMemoryCard(
                     usedBytes = storageUsage.usedBytes,
@@ -1916,14 +1940,16 @@ internal fun AresHomeScreen(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(end = 2.dp, bottom = 4.dp)
-                .size(96.dp),
+                // Ridotta di nuovo (§ richiesta esplicita: "l'icona in basso
+                // a destra della chat deve essere più piccola") 96dp->72dp.
+                .size(72.dp),
             contentAlignment = Alignment.Center,
         ) {
             Image(
                 painter = painterResource(R.drawable.ares_chat_fab),
                 contentDescription = "Chat",
                 modifier = Modifier
-                    .size(88.dp)
+                    .size(64.dp)
                     .clip(androidx.compose.foundation.shape.CircleShape)
                     .clickable(onClick = onOpenChat),
                 contentScale = ContentScale.Fit,
@@ -2031,24 +2057,38 @@ private fun AresMeteoCard(
                     .padding(start = w * 0.09f, end = w * 0.07f, top = h * 0.15f, bottom = h * 0.04f),
             ) {
                 if (outlook?.currentTempC != null) {
+                    // "Oggi" sopra l'icona (§ richiesta esplicita), stesso
+                    // stile delle etichette "Domani"/"Dopodom."/"Tra 3gg".
+                    Text("Oggi", color = Muted, fontSize = 7.sp, modifier = Modifier.clickable { onDayClick(0) })
                     Row(
                         verticalAlignment = Alignment.Bottom,
                         modifier = Modifier.clickable { onDayClick(0) },
                     ) {
                         WeatherIcon(outlook.currentCategory, 44.dp, outlook.currentIsDay)
                         Spacer(Modifier.width(6.dp))
+                        // Gradi più grandi (§ richiesta esplicita "scritti più
+                        // in grande"). Onestà: il font geometrico della foto
+                        // di riferimento non è riproducibile qui — nessun
+                        // file .ttf fornito e nessun accesso di rete in
+                        // questo ambiente per recuperarne uno — resta il
+                        // font di sistema, solo ingrandito.
                         Text(
                             "${outlook.currentTempC.roundToInt()}°",
-                            color = Ink, fontSize = 24.sp, fontWeight = FontWeight.Bold,
+                            color = Ink, fontSize = 40.sp, fontWeight = FontWeight.Bold,
                         )
                     }
-                    Text(weatherCategoryLabel(outlook.currentCategory), color = Muted, fontSize = 10.sp)
-                    val dir = WindDirection.label(outlook.currentWindDirectionDeg)
-                    if (outlook.currentWindKmh != null) {
-                        Text(
-                            "${outlook.currentWindKmh.roundToInt()} km/h" + (dir?.let { " $it" } ?: ""),
-                            color = Muted, fontSize = 9.sp,
-                        )
+                    // Descrizione e vento indentati sotto i gradi, non sotto
+                    // l'icona (§ richiesta esplicita: "la scritta sereno...
+                    // a destra sotto i gradi... e sotto il vento").
+                    Column(Modifier.padding(start = 50.dp)) {
+                        Text(weatherCategoryLabel(outlook.currentCategory), color = Muted, fontSize = 10.sp)
+                        val dir = WindDirection.label(outlook.currentWindDirectionDeg)
+                        if (outlook.currentWindKmh != null) {
+                            Text(
+                                "${outlook.currentWindKmh.roundToInt()} km/h" + (dir?.let { " $it" } ?: ""),
+                                color = Muted, fontSize = 9.sp,
+                            )
+                        }
                     }
                 } else {
                     Text("Meteo non disponibile", color = Muted, fontSize = 10.sp)
@@ -2065,7 +2105,7 @@ private fun AresMeteoCard(
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
                             Text(dayLabels[i], color = Muted, fontSize = 7.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            WeatherIcon(day?.category, 24.dp, isDay = true)
+                            WeatherIcon(day?.category, 28.dp, isDay = true)
                             val hi = day?.tempMaxC?.roundToInt()?.toString() ?: "—"
                             val lo = day?.tempMinC?.roundToInt()?.toString() ?: "—"
                             Text("$hi°/$lo°", color = Ink, fontSize = 9.sp, maxLines = 1)
@@ -2095,7 +2135,14 @@ private fun AresBpmSonnoCard(
 ) {
     BoxWithConstraints(modifier) {
         val w = maxWidth
-        val h = height ?: w
+        // Bug reale segnalato dall'utente da screenshot ("non deformare
+        // nulla"): l'altezza condivisa con AresMeteoCard (aspect molto più
+        // alto/stretto, 0.66 contro lo 0.99 quasi quadrato di questo
+        // template) forzava FillBounds a stirare pesantemente il pannello.
+        // Ora usa sempre la propria proporzione reale — le due card della
+        // riga possono avere altezze leggermente diverse, ma nessuna delle
+        // due viene più deformata.
+        val h = height ?: (w / ARES_BPM_SONNO_ASPECT_RATIO)
         Box(Modifier.fillMaxWidth().height(h)) {
             Image(
                 painter = painterResource(R.drawable.ares_bpm_sonno_card),
@@ -2156,12 +2203,17 @@ private fun AresHealthValue(
                 // già l'intera riga). fontSize ridotto e nowrap forzato così
                 // il testo resta su una riga sola, mai spezzato a metà
                 // parola vicino al bordo dell'anello.
+                // Testo su due righe consentito (§ revisione: forzare una
+                // riga sola con softWrap=false avrebbe fatto sconfinare il
+                // testo fuori dai margini reali misurati sui pixel — 15
+                // caratteri a 10sp non ci stanno in ~58dp di larghezza
+                // disponibile — quindi il wrap naturale resta la scelta più
+                // sicura, il vero difetto era il margine troppo stretto dal
+                // bordo/anello, già corretto qui sopra).
                 Text(
                     "Concedi accesso",
                     color = Cyan,
                     fontSize = 10.sp,
-                    maxLines = 1,
-                    softWrap = false,
                     modifier = Modifier.clickable(onClick = onRequestHealth),
                 )
                 // Diagnostica temporanea (§ "cliccabile ma non succede
@@ -2196,6 +2248,7 @@ private fun AresRemindersCard(
     entries: List<AgendaEntry>,
     modifier: Modifier = Modifier,
     onOpenSection: () -> Unit,
+    onToggleDone: (AgendaEntry) -> Unit,
 ) {
     var showQuickAdd by remember { mutableStateOf(false) }
     BoxWithConstraints(modifier) {
@@ -2212,16 +2265,23 @@ private fun AresRemindersCard(
                 // Intestazione "PROMEMORIA" già disegnata nel template — la
                 // zona cliccabile combacia con quella riga, apre la sezione
                 // intera (Agenda), mai il dialog rapido.
-                Box(Modifier.fillMaxWidth().weight(0.18f).clickable(onClick = onOpenSection))
+                Box(Modifier.fillMaxWidth().weight(0.20f).clickable(onClick = onOpenSection))
+                // Confini di zona ricalcolati sui pixel reali dei 3 cerchi
+                // checkbox del template ricaricato (§ misurato con Pillow:
+                // centri a frazione ~0.289/0.467/0.643 dell'altezza totale —
+                // prima 0.18/0.62/0.20 lasciava un disallineamento residuo
+                // fino a ~40px sul terzo cerchio).
                 Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(0.62f)
-                        .padding(start = w * 0.20f, end = w * 0.08f),
+                    modifier = Modifier.fillMaxWidth().weight(0.53f),
                     verticalArrangement = Arrangement.SpaceEvenly,
                 ) {
                     if (entries.isEmpty()) {
-                        Text("Nessun promemoria per oggi", color = Muted, fontSize = 10.sp)
+                        Text(
+                            "Nessun promemoria per oggi",
+                            color = Muted,
+                            fontSize = 10.sp,
+                            modifier = Modifier.padding(start = w * 0.20f, end = w * 0.08f),
+                        )
                     } else {
                         // Sempre 3 righe fisse (§ bug reale segnalato
                         // dall'utente da screenshot: con meno di 3 impegni
@@ -2231,20 +2291,50 @@ private fun AresRemindersCard(
                         // nel template) — una riga vuota per uno slot senza
                         // impegno, mai un elemento in meno da distribuire.
                         (0 until 3).forEach { i ->
-                            Text(
-                                entries.getOrNull(i)?.text.orEmpty(),
-                                color = Ink,
-                                fontSize = 12.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.fillMaxWidth(),
-                            )
+                            val entry = entries.getOrNull(i)
+                            // Altezza fissa, non fillMaxHeight (§ bug reale
+                            // trovato in revisione: dentro una Column con
+                            // SpaceEvenly, un figlio non pesato che chiede
+                            // fillMaxHeight() reclamerebbe l'intera altezza
+                            // disponibile, spingendo le altre righe fuori
+                            // schermo o sovrapponendole — mai arrivato a
+                            // runtime, corretto prima del push).
+                            Row(
+                                modifier = Modifier.fillMaxWidth().height(28.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                // Zona di tocco sul cerchio (§ richiesta
+                                // esplicita: "se clicco sul pallino deve
+                                // segnarmeli come completati") — l'intera
+                                // fascia sinistra, non solo il cerchietto
+                                // disegnato, per un bersaglio comodo.
+                                Box(
+                                    modifier = Modifier
+                                        .width(w * 0.20f)
+                                        .fillMaxHeight()
+                                        .then(
+                                            if (entry != null) {
+                                                Modifier.clickable { onToggleDone(entry) }
+                                            } else {
+                                                Modifier
+                                            },
+                                        ),
+                                )
+                                Text(
+                                    entry?.text.orEmpty(),
+                                    color = Ink,
+                                    fontSize = 12.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f).padding(end = w * 0.08f),
+                                )
+                            }
                         }
                     }
                 }
                 // "+ Aggiungi promemoria", già disegnato nel template — apre
                 // solo il piccolo dialog di aggiunta rapida.
-                Box(Modifier.fillMaxWidth().weight(0.20f).clickable { showQuickAdd = true })
+                Box(Modifier.fillMaxWidth().weight(0.27f).clickable { showQuickAdd = true })
             }
         }
     }
@@ -2264,27 +2354,121 @@ private fun AresRemindersCard(
 private fun AresQuickAddReminderDialog(onDismiss: () -> Unit) {
     val vm: com.simone.jarvismobile.ui.agenda.AgendaViewModel = hiltViewModel()
     var text by remember { mutableStateOf("") }
+    // "Essendo gli stessi della sezione attività... deve farmi inserire
+    // anche data orario e note, come il classico promemoria" — stessi campi
+    // di AddTaskScreen (data/ora/note), riusa gli stessi picker
+    // (com.simone.jarvismobile.ui.agenda.TaskDatePicker/TaskTimePicker, resi
+    // internal apposta per non duplicarli) e la stessa AgendaViewModel.addTask,
+    // ma resta un piccolo dialog apribile, non una schermata intera.
+    var date by remember { mutableStateOf<java.time.LocalDate?>(null) }
+    var time by remember { mutableStateOf<java.time.LocalTime?>(null) }
+    var notes by remember { mutableStateOf("") }
+    var showDatePicker by remember { mutableStateOf(false) }
+    var showTimePicker by remember { mutableStateOf(false) }
+    val today = java.time.LocalDate.now()
+
     AlertDialog(
         onDismissRequest = onDismiss,
+        // Stile scuro/ciano coerente con la chat di JARVIS invece del dialog
+        // Material chiaro di default (§ "in stile chat").
+        containerColor = Color(0xFF0A121C),
+        titleContentColor = Color.White,
+        textContentColor = Ink,
         title = { Text("Nuovo promemoria") },
         text = {
-            OutlinedTextField(
-                value = text,
-                onValueChange = { text = it },
-                singleLine = true,
-                placeholder = { Text("Cosa devo ricordarti?") },
-            )
+            Column {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    singleLine = true,
+                    placeholder = { Text("Cosa devo ricordarti?", color = Muted) },
+                    colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Cyan,
+                        unfocusedBorderColor = Muted,
+                        focusedTextColor = Ink,
+                        unfocusedTextColor = Ink,
+                        cursorColor = Cyan,
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    Modifier.fillMaxWidth().clickable { showDatePicker = true }.padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Filled.CalendarMonth,
+                        contentDescription = null,
+                        tint = if (date != null) Cyan else Muted,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        date?.let { Agenda.fullDate(it, today) } ?: "Aggiungi data",
+                        color = if (date != null) Ink else Muted,
+                        fontSize = 13.sp,
+                    )
+                }
+                Row(
+                    Modifier.fillMaxWidth().clickable { showTimePicker = true }.padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Filled.Schedule,
+                        contentDescription = null,
+                        tint = if (time != null) Cyan else Muted,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        time?.let { Agenda.humanTime(it) } ?: "Aggiungi ora",
+                        color = if (time != null) Ink else Muted,
+                        fontSize = 13.sp,
+                    )
+                }
+                Spacer(Modifier.height(4.dp))
+                OutlinedTextField(
+                    value = notes,
+                    onValueChange = { notes = it },
+                    placeholder = { Text("Note", color = Muted) },
+                    minLines = 2,
+                    maxLines = 3,
+                    colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Cyan,
+                        unfocusedBorderColor = Muted,
+                        focusedTextColor = Ink,
+                        unfocusedTextColor = Ink,
+                        cursorColor = Cyan,
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
         },
         confirmButton = {
             TextButton(onClick = {
                 if (text.isNotBlank()) {
-                    vm.addTask(title = text, due = java.time.LocalDate.now())
+                    vm.addTask(title = text, due = date, time = time, notes = notes)
                     onDismiss()
                 }
-            }) { Text("Salva") }
+            }) { Text("Salva", color = Cyan) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Annulla") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Annulla", color = Muted) } },
     )
+
+    if (showDatePicker) {
+        com.simone.jarvismobile.ui.agenda.TaskDatePicker(
+            initial = date,
+            onDismiss = { showDatePicker = false },
+            onPick = { picked -> date = picked; showDatePicker = false },
+        )
+    }
+    if (showTimePicker) {
+        com.simone.jarvismobile.ui.agenda.TaskTimePicker(
+            initial = time,
+            onDismiss = { showTimePicker = false },
+            onPick = { picked -> time = picked; showTimePicker = false },
+        )
+    }
 }
 
 /**
@@ -2434,13 +2618,23 @@ private fun AresHourlyForecastSheet(
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         forecast.hours.forEach { reading ->
-                            Box(Modifier.fillMaxWidth().height(46.dp)) {
-                                Image(
-                                    painter = painterResource(R.drawable.ares_pill_row),
-                                    contentDescription = null,
-                                    contentScale = ContentScale.FillBounds,
-                                    modifier = Modifier.matchParentSize(),
-                                )
+                            // Bug reale segnalato dall'utente da screenshot
+                            // ("è tutto rosso e non si capisce niente"): la
+                            // pillola glow (ares_pill_row.png) è un accento
+                            // decorativo pensato per un elemento isolato, non
+                            // per essere ripetuta come sfondo di 24 righe
+                            // impilate — il risultato era un muro di rosso
+                            // saturo che affogava il testo. Sostituita con
+                            // uno sfondo scuro sobrio (coerente con il resto
+                            // dell'app), niente più asset per riga.
+                            Box(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .height(44.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(Color(0xFF10161F))
+                                    .border(1.dp, Color(0x33FF3B30), RoundedCornerShape(10.dp)),
+                            ) {
                                 Row(
                                     Modifier.matchParentSize().padding(horizontal = 16.dp),
                                     verticalAlignment = Alignment.CenterVertically,

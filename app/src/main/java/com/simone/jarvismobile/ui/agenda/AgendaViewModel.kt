@@ -85,6 +85,7 @@ class AgendaViewModel @Inject constructor(
         due: LocalDate? = null,
         time: java.time.LocalTime? = null,
         starred: Boolean = false,
+        notes: String = "",
     ) = viewModelScope.launch {
         val clean = title.trim()
         if (clean.isEmpty()) return@launch
@@ -100,7 +101,15 @@ class AgendaViewModel @Inject constructor(
         } else {
             emptyList()
         }
-        val entry = AgendaEntry(date = date, time = time, text = clean, list = list, starred = starred, alerts = alerts)
+        val entry = AgendaEntry(
+            date = date,
+            time = time,
+            text = clean,
+            list = list,
+            starred = starred,
+            alerts = alerts,
+            notes = notes.trim(),
+        )
         if (!agenda.add(entry)) _message.value = "Non sono riuscito a salvare l'attività."
     }
 
