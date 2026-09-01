@@ -161,7 +161,7 @@ class HealthConnectManager @Inject constructor(
         do {
             val response = c.readRecords(ReadRecordsRequest(type, timeRangeFilter = range, pageToken = pageToken))
             all += response.records
-            pageToken = response.pageToken.takeIf { it.isNotBlank() }
+            pageToken = response.pageToken?.takeIf { it.isNotBlank() }
             guard++
         } while (pageToken != null && guard < 50)
         return all
