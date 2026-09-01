@@ -70,18 +70,14 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.imageResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -97,7 +93,6 @@ import com.simone.jarvismobile.document.DocumentImportManager
 import com.simone.jarvismobile.ui.theme.JarvisThemeId
 import com.simone.jarvismobile.ui.theme.LocalJarvisPalette
 import com.simone.jarvismobile.ui.theme.LocalJarvisThemeId
-import kotlin.math.roundToInt
 
 private const val MAX_VISIBLE_MESSAGES = 40
 
@@ -257,8 +252,7 @@ fun JarvisChatWindow(
     val status = statusFor(state)
 
     Box(Modifier.fillMaxSize()) {
-        FixedBackground()
-        FixedHudFrame(Modifier.matchParentSize())
+        FixedFrameBackground()
 
         Column(
             modifier = Modifier
@@ -521,116 +515,39 @@ private fun DuplicateDialog(
     )
 }
 
-// --- layer 1: background ---------------------------------------------------
+// --- layer 1+3: background + frame ------------------------------------------
 
 /**
- * The chat backdrop. It is a sibling of the scrolling list, not a decoration
- * inside it, so it stays put while messages move.
- *
- * The source art is opaque (alpha=255 throughout, a real photographic-style
- * texture), so a flat [ColorFilter.tint] would flatten the whole circuit
- * pattern into one solid rectangle instead of recolouring it — the same
- * problem `bg_dashboard` had for Rosso. `chat_background_red.webp` is a
- * pre-generated hue rotation of the same asset (source hue ~207° → target
- * ~3.5°, matching RossoPalette.accent, via a Pillow HSV shift) instead of a
- * hand-picked replacement: it preserves every dot/line/glow at its original
- * brightness, just recoloured, and needs no dedicated Rouge variant since
- * Rouge shares Rosso's exact palette.
+ * The chat backdrop and its border, now a single asset (§ richiesta esplicita,
+ * immagine fornita in un giro precedente e poi rimandata insistendo di
+ * usarla: "Tutte le immagini che ti mando utilizzale... Cambia il design
+ * della chat scritta"). `chat_bg_frame2.png` bakes the dotted texture, the
+ * corner glow and the notched red border into one 740x1600 (~0.4625) image —
+ * measured close to a typical modern phone's screen ratio (HONOR 200 is
+ * ~0.46), so [ContentScale.Crop] renders it with only a negligible crop at
+ * the very edges instead of stretching/deforming it. It replaces both the
+ * old flat circuit-pattern background (`chat_background(_red)`, opaque,
+ * theme-hue-rotated) and the old measured 3-slice `chat_hud_frame.png`
+ * border (`FixedHudFrame`, kept for reference in the drawable folder but no
+ * longer referenced from Kotlin, same convention already used for other
+ * orphaned assets in this project) — the two were separate layers because
+ * the frame's centre was genuinely transparent; this new asset's centre is
+ * an opaque dark texture, so stacking it over the old background would just
+ * hide the old one underneath, wasted work. Applied to every theme, same as
+ * the header/composer redesign in the immediately preceding round (neither
+ * of those is gated by [LocalJarvisThemeId] either), so gating only the
+ * background here would look inconsistent — a red header/composer over a
+ * blue background on Classico — rather than fixing an oversight this round
+ * didn't introduce.
  */
 @Composable
-private fun FixedBackground() {
-    val themeId = LocalJarvisThemeId.current
-    val res = if (themeId == JarvisThemeId.BLU) R.drawable.chat_background else R.drawable.chat_background_red
+private fun FixedFrameBackground() {
     Image(
-        painter = painterResource(res),
+        painter = painterResource(R.drawable.chat_bg_frame2),
         contentDescription = null,
         contentScale = ContentScale.Crop,
         modifier = Modifier.fillMaxSize(),
     )
-}
-
-// --- layer 3: HUD frame ----------------------------------------------------
-
-// The frame is sliced horizontally into three bands and only the middle one is
-// stretched. Stretching the whole 2:3 artwork onto a ~1:2 phone panel would pull
-// the corner brackets and the lower arc out of shape; the middle band is nothing
-// but the two straight side rails, so it can grow to any height without showing
-// it. The numbers are fractions of the source, measured on rows where the art
-// contains the rails and nothing else — cutting anywhere else would slice a
-// circuit trace in half.
-private const val FRAME_TOP_END = 480f / 1536f
-private const val FRAME_RAIL_TOP = 484f / 1536f
-private const val FRAME_RAIL_HEIGHT = 12f / 1536f
-private const val FRAME_BOTTOM_START = 1086f / 1536f
-
-/** The frame is scenery, not content: it stays behind the conversation. */
-private const val FRAME_ALPHA = 0.8f
-
-/**
- * The HUD frame: a fixed, non-interactive overlay with a genuinely transparent
- * centre. It draws nothing but the artwork, so it takes no pointer input and the
- * message list underneath stays fully touchable.
- */
-@Composable
-private fun FixedHudFrame(modifier: Modifier = Modifier) {
-    val frame = ImageBitmap.imageResource(R.drawable.chat_hud_frame)
-    // Same conditional recolour as HudOverlay/JarvisCard's frame: this is a
-    // real-alpha, near-monochrome line texture (corners/rails, no baked
-    // background), so a flat tint recolours it cleanly without flattening detail.
-    val themeId = LocalJarvisThemeId.current
-    val tint = if (themeId == JarvisThemeId.BLU) null else ColorFilter.tint(LocalJarvisPalette.current.accent)
-    Canvas(modifier) {
-        val sw = frame.width
-        val sh = frame.height
-        val w = size.width.roundToInt()
-        if (w <= 0 || sw <= 0) return@Canvas
-
-        val scale = size.width / sw
-        val topSrc = (sh * FRAME_TOP_END).roundToInt()
-        val bottomSrc = (sh * FRAME_BOTTOM_START).roundToInt()
-
-        var topH = topSrc * scale
-        var bottomH = (sh - bottomSrc) * scale
-        // A very short panel (a small window, a huge keyboard) must still show
-        // both ends rather than overdraw them.
-        val ends = topH + bottomH
-        if (ends > size.height && ends > 0f) {
-            val k = size.height / ends
-            topH *= k
-            bottomH *= k
-        }
-        val midH = (size.height - topH - bottomH).coerceAtLeast(0f)
-
-        drawImage(
-            image = frame,
-            srcOffset = IntOffset.Zero,
-            srcSize = IntSize(sw, topSrc),
-            dstOffset = IntOffset.Zero,
-            dstSize = IntSize(w, topH.roundToInt()),
-            alpha = FRAME_ALPHA,
-            colorFilter = tint,
-        )
-        if (midH > 0f) {
-            drawImage(
-                image = frame,
-                srcOffset = IntOffset(0, (sh * FRAME_RAIL_TOP).roundToInt()),
-                srcSize = IntSize(sw, (sh * FRAME_RAIL_HEIGHT).roundToInt().coerceAtLeast(2)),
-                dstOffset = IntOffset(0, topH.roundToInt()),
-                dstSize = IntSize(w, midH.roundToInt()),
-                alpha = FRAME_ALPHA,
-                colorFilter = tint,
-            )
-        }
-        drawImage(
-            image = frame,
-            srcOffset = IntOffset(0, bottomSrc),
-            srcSize = IntSize(sw, sh - bottomSrc),
-            dstOffset = IntOffset(0, (size.height - bottomH).roundToInt()),
-            dstSize = IntSize(w, bottomH.roundToInt()),
-            alpha = FRAME_ALPHA,
-            colorFilter = tint,
-        )
-    }
 }
 
 // --- header ----------------------------------------------------------------

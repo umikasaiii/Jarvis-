@@ -2089,30 +2089,36 @@ private fun AresMeteoCard(
                     .padding(start = w * 0.09f, end = w * 0.07f, top = h * 0.15f, bottom = h * 0.04f),
             ) {
                 if (outlook?.currentTempC != null) {
-                    // "Oggi" sopra l'icona (§ richiesta esplicita), stesso
-                    // stile delle etichette "Domani"/"Dopodom."/"Tra 3gg".
-                    Text("Oggi", color = Muted, fontSize = 7.sp, modifier = Modifier.clickable { onDayClick(0) })
-                    Row(
-                        verticalAlignment = Alignment.Bottom,
-                        modifier = Modifier.clickable { onDayClick(0) },
+                    // Blocco di oggi centrato orizzontalmente nella card
+                    // (§ richiesta esplicita: "quello di oggi non è
+                    // centrato") — prima era allineato a sinistra/inizio,
+                    // ora l'intero blocco (etichetta, icona+gradi, stato+
+                    // vento) è una colonna centrata, come nel riferimento.
+                    Column(
+                        modifier = Modifier.fillMaxWidth().clickable { onDayClick(0) },
+                        horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        WeatherIcon(outlook.currentCategory, 44.dp, outlook.currentIsDay)
-                        Spacer(Modifier.width(6.dp))
-                        // Gradi più grandi (§ richiesta esplicita "scritti più
-                        // in grande"). Onestà: il font geometrico della foto
-                        // di riferimento non è riproducibile qui — nessun
-                        // file .ttf fornito e nessun accesso di rete in
-                        // questo ambiente per recuperarne uno — resta il
-                        // font di sistema, solo ingrandito.
-                        Text(
-                            "${outlook.currentTempC.roundToInt()}°",
-                            color = Ink, fontSize = 40.sp, fontWeight = FontWeight.Bold,
-                        )
-                    }
-                    // Descrizione e vento indentati sotto i gradi, non sotto
-                    // l'icona (§ richiesta esplicita: "la scritta sereno...
-                    // a destra sotto i gradi... e sotto il vento").
-                    Column(Modifier.padding(start = 50.dp)) {
+                        // "Oggi" sopra l'icona (§ richiesta esplicita), stesso
+                        // stile delle etichette "Domani"/"Dopodom."/"Tra 3gg".
+                        Text("Oggi", color = Muted, fontSize = 7.sp)
+                        Row(verticalAlignment = Alignment.Bottom) {
+                            WeatherIcon(outlook.currentCategory, 44.dp, outlook.currentIsDay)
+                            Spacer(Modifier.width(6.dp))
+                            // Gradi più grandi (§ richiesta esplicita "scritti più
+                            // in grande"). Onestà: il font geometrico della foto
+                            // di riferimento non è riproducibile qui — nessun
+                            // file .ttf fornito e nessun accesso di rete in
+                            // questo ambiente per recuperarne uno — resta il
+                            // font di sistema, solo ingrandito.
+                            Text(
+                                "${outlook.currentTempC.roundToInt()}°",
+                                color = Ink, fontSize = 40.sp, fontWeight = FontWeight.Bold,
+                            )
+                        }
+                        // Descrizione e vento centrati sotto, non più
+                        // indentati sotto i gradi (§ centratura richiesta
+                        // esplicitamente in questo giro sostituisce
+                        // l'indentazione di un giro precedente).
                         Text(weatherCategoryLabel(outlook.currentCategory), color = Muted, fontSize = 10.sp)
                         val dir = WindDirection.label(outlook.currentWindDirectionDeg)
                         if (outlook.currentWindKmh != null) {
@@ -2144,7 +2150,15 @@ private fun AresMeteoCard(
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
                             Text(dayLabels[i], color = Muted, fontSize = 7.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            WeatherIcon(day?.category, 28.dp, isDay = true)
+                            // Icone dei 3 giorni ingrandite 28dp->38dp e
+                            // schiarite alla fonte (§ richiesta esplicita:
+                            // "quello prossimo non si vede è troppo
+                            // piccolo") — misurato via Pillow che gli asset
+                            // originali erano rosso scuro (RGB medio
+                            // ~80-90 su canale rosso, ancora più bassi su
+                            // verde/blu), quasi invisibili sulla card quasi
+                            // nera: non solo una questione di dimensione.
+                            WeatherIcon(day?.category, 38.dp, isDay = true)
                             val hi = day?.tempMaxC?.roundToInt()?.toString() ?: "—"
                             val lo = day?.tempMinC?.roundToInt()?.toString() ?: "—"
                             Text("$hi°/$lo°", color = Ink, fontSize = 9.sp, maxLines = 1)
