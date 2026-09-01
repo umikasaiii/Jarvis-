@@ -28,15 +28,14 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -49,13 +48,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material.icons.outlined.Bolt
-import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -382,21 +378,6 @@ private val DOCUMENT_MIME_TYPES = arrayOf(
 
 // --- document attachments --------------------------------------------------
 
-/** The "+" that opens the attach menu, sized like the other composer controls. */
-@Composable
-private fun AttachButton(onClick: () -> Unit) {
-    Box(
-        modifier = Modifier
-            .size(44.dp)
-            .clip(CircleShape)
-            .background(Color(0x22FFFFFF))
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text("+", color = Cyan, fontSize = 26.sp, fontWeight = FontWeight.Light)
-    }
-}
-
 /** Horizontally scrollable strip of attachment cards above the composer. */
 @Composable
 private fun AttachmentRow(
@@ -670,7 +651,14 @@ private fun ChatHeader(name: String, status: ChatStatus, onOpenSettings: () -> U
             modifier = Modifier.weight(1f, fill = false),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(Icons.Outlined.Bolt, null, tint = Cyan, modifier = Modifier.size(21.dp))
+            // Fulmine dedicato (§ richiesta esplicita: "cambia il design
+            // della chat scritta") al posto del glifo Material — arte
+            // reale con alpha vera, nessun tint necessario (già rosso).
+            Image(
+                painter = painterResource(R.drawable.chat_lightning_icon),
+                contentDescription = null,
+                modifier = Modifier.height(24.dp),
+            )
             Spacer(Modifier.width(7.dp))
             Text(
                 name.uppercase(),
@@ -683,14 +671,15 @@ private fun ChatHeader(name: String, status: ChatStatus, onOpenSettings: () -> U
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
             StatusPill(status)
-            IconButton(onClick = onOpenSettings, modifier = Modifier.size(38.dp)) {
-                Icon(
-                    Icons.Outlined.Settings,
-                    contentDescription = "Impostazioni",
-                    tint = Color(0xFFC6D4DC),
-                    modifier = Modifier.size(20.dp),
-                )
-            }
+            // Pulsante Impostazioni con la nuova cornice ottagonale fornita
+            // dall'utente, al posto dell'IconButton Material generico.
+            Image(
+                painter = painterResource(R.drawable.chat_settings_btn),
+                contentDescription = "Impostazioni",
+                modifier = Modifier
+                    .size(38.dp)
+                    .clickable(onClick = onOpenSettings),
+            )
         }
     }
 }
@@ -894,25 +883,124 @@ private fun ChatComposer(
     onAttach: () -> Unit,
     onSend: () -> Unit,
 ) {
+    // Nuovo "dock" fornito dall'utente (§ richiesta esplicita: "cambia il
+    // design della chat scritta") — un'unica barra con due fori reali
+    // (misurati sui pixel dell'asset: centro a frazione 0.101/0.898 della
+    // larghezza, diametro ~0.13) per allega/invia, più la pillola centrale
+    // già disegnata per il campo di testo. Il microfono non ha un foro
+    // dedicato in questo asset (solo 2 fori, non 3) — resta un pulsante a
+    // parte con l'artwork esistente invece di indovinare una posizione mai
+    // mostrata nel riferimento.
     Row(
         modifier = Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        AttachButton(onClick = onAttach)
         MicrophoneButton(
             status = status,
             enabled = !busy,
             contentDescription = micDescription,
             onClick = onMic,
         )
-        MessageInput(value = text, onValueChange = onTextChange, enabled = !busy)
-        SendButton(
-            enabled = busy || text.isNotBlank(),
-            sending = busy,
-            onClick = onSend,
-        )
+        BoxWithConstraints(Modifier.weight(1f)) {
+            val barWidth = maxWidth
+            val barHeight = barWidth / CHAT_DOCK_BAR_ASPECT_RATIO
+            val holeSize = barWidth * CHAT_DOCK_HOLE_DIAMETER_FRACTION
+            Box(Modifier.fillMaxWidth().height(barHeight)) {
+                Image(
+                    painter = painterResource(R.drawable.chat_dock_bar),
+                    contentDescription = null,
+                    contentScale = ContentScale.FillBounds,
+                    modifier = Modifier.matchParentSize(),
+                )
+                Image(
+                    painter = painterResource(R.drawable.chat_attach_btn),
+                    contentDescription = "Allega",
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .offset(x = barWidth * CHAT_DOCK_LEFT_HOLE_CENTER_X - holeSize / 2)
+                        .size(holeSize)
+                        .clip(CircleShape)
+                        .clickable(onClick = onAttach),
+                )
+                DockMessageInput(
+                    value = text,
+                    onValueChange = onTextChange,
+                    enabled = !busy,
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .fillMaxWidth()
+                        .padding(horizontal = holeSize * 0.95f),
+                )
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .offset(x = -(barWidth * (1f - CHAT_DOCK_RIGHT_HOLE_CENTER_X) - holeSize / 2))
+                        .size(holeSize)
+                        .clip(CircleShape)
+                        .clickable(enabled = busy || text.isNotBlank(), onClick = onSend),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Image(
+                        painter = painterResource(R.drawable.chat_send_btn2),
+                        contentDescription = if (busy) "Ferma risposta" else "Invia",
+                        // L'artwork è una freccia; mentre una risposta è in
+                        // corso il pulsante significa "ferma", quindi la
+                        // freccia arretra e un simbolo di stop prende il
+                        // centro — stesso comportamento del vecchio
+                        // SendButton basato su AssetButton.
+                        alpha = if (busy) 0.3f else 1f,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                    if (busy) {
+                        Icon(
+                            Icons.Filled.Stop,
+                            contentDescription = null,
+                            tint = Coral,
+                            modifier = Modifier.size(holeSize * 0.4f),
+                        )
+                    }
+                }
+            }
+        }
     }
+}
+
+private const val CHAT_DOCK_BAR_ASPECT_RATIO = 1200f / 267f
+private const val CHAT_DOCK_LEFT_HOLE_CENTER_X = 0.101f
+private const val CHAT_DOCK_RIGHT_HOLE_CENTER_X = 0.898f
+private const val CHAT_DOCK_HOLE_DIAMETER_FRACTION = 0.135f
+
+/** No border/fill of its own so the new dock bar's own baked-in pill shows through underneath. */
+@Composable
+private fun DockMessageInput(
+    value: String,
+    onValueChange: (String) -> Unit,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = modifier,
+        placeholder = { Text("Scrivi un messaggio…", color = Muted, fontSize = 15.sp) },
+        enabled = enabled,
+        maxLines = 5,
+        shape = RoundedCornerShape(26.dp),
+        textStyle = MaterialTheme.typography.bodyLarge.copy(color = Ink, fontSize = 16.sp),
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = Color.Transparent,
+            unfocusedBorderColor = Color.Transparent,
+            disabledBorderColor = Color.Transparent,
+            focusedContainerColor = Color.Transparent,
+            unfocusedContainerColor = Color.Transparent,
+            disabledContainerColor = Color.Transparent,
+            cursorColor = Cyan,
+            focusedTextColor = Ink,
+            unfocusedTextColor = Ink,
+            disabledTextColor = Muted,
+        ),
+    )
 }
 
 /**
@@ -950,32 +1038,6 @@ private fun MicrophoneButton(
         glowColor = themedAccent(status),
         onClick = onClick,
     )
-}
-
-/** Asset 4, same footprint as the microphone so the composer stays symmetric. */
-@Composable
-private fun SendButton(enabled: Boolean, sending: Boolean, onClick: () -> Unit) {
-    AssetButton(
-        res = R.drawable.chat_send,
-        contentDescription = if (sending) "Ferma risposta" else "Invia",
-        enabled = enabled,
-        pressedScale = 0.92f,
-        glow = if (enabled) 0.24f else 0f,
-        glowColor = if (sending) Coral else Cyan,
-        // The asset is an arrow; while a reply is running the control means
-        // "stop", so the arrow steps back and a stop mark takes the centre.
-        artworkAlpha = if (sending) 0.3f else 1f,
-        onClick = onClick,
-    ) {
-        if (sending) {
-            Icon(
-                Icons.Filled.Stop,
-                contentDescription = null,
-                tint = Coral,
-                modifier = Modifier.size(20.dp),
-            )
-        }
-    }
 }
 
 /**
@@ -1060,32 +1122,6 @@ private fun AssetButton(
     }
 }
 
-@Composable
-private fun RowScope.MessageInput(value: String, onValueChange: (String) -> Unit, enabled: Boolean) {
-    val shape = RoundedCornerShape(26.dp)
-    OutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
-        modifier = Modifier.weight(1f).heightIn(min = 52.dp),
-        placeholder = { Text("Scrivi un messaggio…", color = Muted, fontSize = 15.sp) },
-        enabled = enabled,
-        maxLines = 5,
-        shape = shape,
-        textStyle = MaterialTheme.typography.bodyLarge.copy(color = Ink, fontSize = 16.sp),
-        colors = OutlinedTextFieldDefaults.colors(
-            focusedBorderColor = CyanBright.copy(alpha = 0.8f),
-            unfocusedBorderColor = Cyan.copy(alpha = 0.45f),
-            disabledBorderColor = Cyan.copy(alpha = 0.25f),
-            focusedContainerColor = Color(0xCC03080F),
-            unfocusedContainerColor = Color(0xB3020610),
-            disabledContainerColor = Color(0xB3020610),
-            cursorColor = Cyan,
-            focusedTextColor = Ink,
-            unfocusedTextColor = Ink,
-            disabledTextColor = Muted,
-        ),
-    )
-}
 
 /**
  * Kept from the previous layout: these are the only way into a new conversation

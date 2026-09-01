@@ -38,6 +38,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CutCornerShape
@@ -1623,19 +1624,37 @@ private fun orbSubtitle(state: ConversationState): String = when (state) {
 // disposizione e gli sfondi dei blocchi sono nuovi, mai una seconda fonte
 // dati per lo stesso fatto.
 
-// Aggiornato al nuovo banner unico fornito dall'utente (§ "tutte e 4"),
-// 1200x286 reale dopo il ritaglio al bounding box alpha.
-private const val ARES_ORB_BG_ASPECT_RATIO = 1200f / 286f
-// Ricalcolate su un nuovo ritaglio bounding-box reale delle immagini
-// sorgente originali (§ bug reale segnalato dall'utente, "riquadro bpm e
-// sonno... non deformare nulla" — il ritaglio precedente per Promemoria e
-// Memoria aveva un margine leggermente diverso da quello reale, causando
-// una lieve non-uniformità; ricontrollato pixel per pixel con Pillow).
-private const val ARES_REMINDERS_ASPECT_RATIO = 630f / 700f
+// Banner unico fornito dall'utente (§ "tutte e 4"), 1200x286 reale dopo il
+// ritaglio al bounding box alpha. Allargato un po' in altezza (§ richiesta
+// esplicita "allarga un po' riquadro dell'orb in altezza") abbassando
+// l'aspect ratio: la Image usa FillBounds, quindi l'artwork si allunga
+// leggermente invece di lasciare spazio vuoto (Fit lo avrebbe solo
+// centrato con margini, non ingrandito davvero).
+private const val ARES_ORB_BG_ASPECT_RATIO = 1200f / 340f
+// Bug reale segnalato dall'utente da screenshot ("togli assolutamente
+// sfondi bianchi dietro i blocchi"): le immagini sorgente di METEO/
+// PROMEMORIA/MEMORIA avevano alpha=255 OVUNQUE con un fondo quasi-bianco —
+// non trasparenza vera, a differenza di quanto assunto nei giri precedenti
+// — quindi il crop-al-bbox-alpha non tagliava nulla e il fondo bianco
+// finiva dritto nell'asset. Ricostruita l'alpha reale via flood-fill dai
+// bordi dell'immagine (solo il bianco CONNESSO al bordo diventa
+// trasparente — mai il testo bianco interno, isolato dal nero della card)
+// e ri-misurate le dimensioni reali dopo il ritaglio corretto.
+private const val ARES_REMINDERS_ASPECT_RATIO = 659f / 700f
 private const val ARES_SHORTCUTS_ASPECT_RATIO = 1100f / 234f
-private const val ARES_MEMORY_ASPECT_RATIO = 1f
-private const val ARES_METEO_ASPECT_RATIO = 459f / 700f
-private const val ARES_BPM_SONNO_ASPECT_RATIO = 695f / 700f
+private const val ARES_MEMORY_ASPECT_RATIO = 695f / 700f
+private const val ARES_METEO_ASPECT_RATIO = 457f / 700f
+// BPM/Sonno: il singolo template a due pannelli è stato separato in due
+// asset indipendenti (§ richiesta esplicita: "allarga poco i battiti e il
+// sonno, anche distanziandoli un po'" — lo spazio fra i due pannelli era
+// cotto nell'unica immagine, senza possibilità di controllarlo da Compose).
+private const val ARES_BPM_ASPECT_RATIO = 695f / 345f
+private const val ARES_SONNO_ASPECT_RATIO = 695f / 335f
+// "poco" = 8% in più di altezza per ciascun pannello rispetto alla propria
+// proporzione reale (mild FillBounds stretch, già lo stesso meccanismo
+// usato per l'orb qui sopra).
+private const val ARES_BPM_SONNO_GROW = 1.08f
+private val ARES_BPM_SONNO_GAP = 10.dp
 
 @Composable
 internal fun AresHomeScreen(
@@ -1827,7 +1846,12 @@ internal fun AresHomeScreen(
                 Image(
                     painter = painterResource(R.drawable.ares_orb_banner),
                     contentDescription = name,
-                    contentScale = ContentScale.Fit,
+                    // FillBounds, non Fit (§ "allarga un po' riquadro
+                    // dell'orb in altezza"): con Fit l'artwork resterebbe
+                    // alla sua dimensione naturale centrata con margini
+                    // vuoti sopra/sotto in un box più alto, mai
+                    // effettivamente più grande.
+                    contentScale = ContentScale.FillBounds,
                     modifier = Modifier.fillMaxWidth().height(bannerHeight),
                 )
             }
@@ -1837,7 +1861,16 @@ internal fun AresHomeScreen(
             var hourlyDayIndex by remember { mutableStateOf<Int?>(null) }
             BoxWithConstraints(Modifier.fillMaxWidth()) {
                 val columnWidth = (maxWidth - 10.dp) / 2
-                val cardHeight = columnWidth / ARES_METEO_ASPECT_RATIO
+                // L'altezza di Meteo ora è DERIVATA dalla somma reale di
+                // BPM+gap+Sonno, non dalla propria proporzione (§ richiesta
+                // esplicita: "devono essere pari: l'inizio del meteo deve
+                // combaciare con inizio dei bpm, la fine del meteo deve
+                // combaciare con la fine del sonno") — le due colonne
+                // condividono sempre lo stesso totale per costruzione,
+                // invece di doverlo indovinare per tentativi.
+                val bpmHeight = columnWidth / ARES_BPM_ASPECT_RATIO * ARES_BPM_SONNO_GROW
+                val sonnoHeight = columnWidth / ARES_SONNO_ASPECT_RATIO * ARES_BPM_SONNO_GROW
+                val cardHeight = bpmHeight + ARES_BPM_SONNO_GAP + sonnoHeight
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     AresMeteoCard(
                         outlook = outlook,
@@ -1854,10 +1887,9 @@ internal fun AresHomeScreen(
                         healthSdkStatusLabel = aresViewModel.healthSdkStatusLabel(),
                         healthAverages = healthAverages,
                         onRequestHealth = onRequestHealthConnect,
+                        bpmHeight = bpmHeight,
+                        sonnoHeight = sonnoHeight,
                         modifier = Modifier.weight(1f),
-                        // Nessuna altezza forzata (§ bug "non deformare
-                        // nulla" sopra): questa card usa la propria
-                        // proporzione reale, non quella di AresMeteoCard.
                     )
                 }
             }
@@ -2086,7 +2118,14 @@ private fun AresMeteoCard(
                         if (outlook.currentWindKmh != null) {
                             Text(
                                 "${outlook.currentWindKmh.roundToInt()} km/h" + (dir?.let { " $it" } ?: ""),
-                                color = Muted, fontSize = 9.sp,
+                                color = Muted,
+                                fontSize = 9.sp,
+                                // Avvicinato allo stato del tempo (§ richiesta
+                                // esplicita: "avvicina scritta vento vicino
+                                // allo stato del tempo") — il line-height di
+                                // default lasciava un margine visibile fra
+                                // le due righe.
+                                modifier = Modifier.offset(y = (-3).dp),
                             )
                         }
                     }
@@ -2118,10 +2157,13 @@ private fun AresMeteoCard(
 }
 
 /**
- * BPM medi + sonno medio, sul template a due pannelli fornito dall'utente
- * (icona/etichetta/anello già disegnati nell'immagine — qui viene sovrapposto
- * solo il dato dinamico: numero, tendenza, o "Concedi accesso", mai un
- * secondo anello ridisegnato sopra quello già presente nel PNG).
+ * BPM medi + sonno medio, ora due card separate (§ richiesta esplicita:
+ * "allarga poco i battiti e il sonno, anche distanziandoli un po'" — lo
+ * spazio fra i due pannelli era cotto in un'unica immagine, senza modo di
+ * controllarlo da qui) invece del singolo template a due pannelli usato
+ * finora. [bpmHeight]/[sonnoHeight] arrivano già calcolati dal chiamante
+ * (che li usa anche per allineare l'altezza totale di questa colonna con
+ * AresMeteoCard) così le due card restano sempre coerenti con quella somma.
  */
 @Composable
 private fun AresBpmSonnoCard(
@@ -2130,48 +2172,48 @@ private fun AresBpmSonnoCard(
     healthSdkStatusLabel: String,
     healthAverages: HealthConnectManager.WeeklyHealthAverages?,
     onRequestHealth: () -> Unit,
+    bpmHeight: Dp,
+    sonnoHeight: Dp,
     modifier: Modifier = Modifier,
-    height: Dp? = null,
 ) {
-    BoxWithConstraints(modifier) {
-        val w = maxWidth
-        // Bug reale segnalato dall'utente da screenshot ("non deformare
-        // nulla"): l'altezza condivisa con AresMeteoCard (aspect molto più
-        // alto/stretto, 0.66 contro lo 0.99 quasi quadrato di questo
-        // template) forzava FillBounds a stirare pesantemente il pannello.
-        // Ora usa sempre la propria proporzione reale — le due card della
-        // riga possono avere altezze leggermente diverse, ma nessuna delle
-        // due viene più deformata.
-        val h = height ?: (w / ARES_BPM_SONNO_ASPECT_RATIO)
-        Box(Modifier.fillMaxWidth().height(h)) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(ARES_BPM_SONNO_GAP)) {
+        BoxWithConstraints(Modifier.fillMaxWidth().height(bpmHeight)) {
+            val w = maxWidth
             Image(
-                painter = painterResource(R.drawable.ares_bpm_sonno_card),
+                painter = painterResource(R.drawable.ares_bpm_card),
                 contentDescription = null,
                 contentScale = ContentScale.FillBounds,
                 modifier = Modifier.matchParentSize(),
             )
-            Column(Modifier.fillMaxSize()) {
-                val bpm = healthAverages?.avgHeartRateBpm
-                AresHealthValue(
-                    value = bpm?.let { "$it bpm" },
-                    healthAvailable = healthAvailable,
-                    healthGranted = healthGranted,
-                    healthSdkStatusLabel = healthSdkStatusLabel,
-                    onRequestHealth = onRequestHealth,
-                    modifier = Modifier.weight(1f).fillMaxWidth()
-                        .padding(start = w * 0.46f, end = w * 0.18f),
-                )
-                val sleep = healthAverages?.avgSleepPerNight
-                AresHealthValue(
-                    value = sleep?.let { "${it.toHours()}h ${it.toMinutesPart()}m" },
-                    healthAvailable = healthAvailable,
-                    healthGranted = healthGranted,
-                    healthSdkStatusLabel = healthSdkStatusLabel,
-                    onRequestHealth = onRequestHealth,
-                    modifier = Modifier.weight(1f).fillMaxWidth()
-                        .padding(start = w * 0.46f, end = w * 0.18f),
-                )
-            }
+            val bpm = healthAverages?.avgHeartRateBpm
+            AresHealthValue(
+                value = bpm?.let { "$it bpm" },
+                healthAvailable = healthAvailable,
+                healthGranted = healthGranted,
+                healthSdkStatusLabel = healthSdkStatusLabel,
+                onRequestHealth = onRequestHealth,
+                modifier = Modifier.fillMaxSize()
+                    .padding(start = w * 0.46f, end = w * 0.18f),
+            )
+        }
+        BoxWithConstraints(Modifier.fillMaxWidth().height(sonnoHeight)) {
+            val w = maxWidth
+            Image(
+                painter = painterResource(R.drawable.ares_sonno_card),
+                contentDescription = null,
+                contentScale = ContentScale.FillBounds,
+                modifier = Modifier.matchParentSize(),
+            )
+            val sleep = healthAverages?.avgSleepPerNight
+            AresHealthValue(
+                value = sleep?.let { "${it.toHours()}h ${it.toMinutesPart()}m" },
+                healthAvailable = healthAvailable,
+                healthGranted = healthGranted,
+                healthSdkStatusLabel = healthSdkStatusLabel,
+                onRequestHealth = onRequestHealth,
+                modifier = Modifier.fillMaxSize()
+                    .padding(start = w * 0.46f, end = w * 0.18f),
+            )
         }
     }
 }
@@ -2253,7 +2295,10 @@ private fun AresRemindersCard(
     var showQuickAdd by remember { mutableStateOf(false) }
     BoxWithConstraints(modifier) {
         val w = maxWidth
-        val h = w / ARES_REMINDERS_ASPECT_RATIO
+        // "Ingrandisci poco" (§ richiesta esplicita), stesso mild-stretch
+        // dell'8% già usato per Memoria qui sotto — le due card restano
+        // della stessa proporzione relativa fra loro.
+        val h = w / ARES_REMINDERS_ASPECT_RATIO * 1.08f
         Box(Modifier.fillMaxWidth().height(h)) {
             Image(
                 painter = painterResource(R.drawable.ares_promemoria_card),
@@ -2265,14 +2310,13 @@ private fun AresRemindersCard(
                 // Intestazione "PROMEMORIA" già disegnata nel template — la
                 // zona cliccabile combacia con quella riga, apre la sezione
                 // intera (Agenda), mai il dialog rapido.
-                Box(Modifier.fillMaxWidth().weight(0.20f).clickable(onClick = onOpenSection))
+                Box(Modifier.fillMaxWidth().weight(0.18f).clickable(onClick = onOpenSection))
                 // Confini di zona ricalcolati sui pixel reali dei 3 cerchi
-                // checkbox del template ricaricato (§ misurato con Pillow:
-                // centri a frazione ~0.289/0.467/0.643 dell'altezza totale —
-                // prima 0.18/0.62/0.20 lasciava un disallineamento residuo
-                // fino a ~40px sul terzo cerchio).
+                // checkbox del NUOVO template (asset rigenerato con alpha
+                // reale, dimensioni cambiate da 630x700 a 659x700) — centri
+                // misurati a frazione ~0.276/0.478/0.677 dell'altezza totale.
                 Column(
-                    modifier = Modifier.fillMaxWidth().weight(0.53f),
+                    modifier = Modifier.fillMaxWidth().weight(0.60f),
                     verticalArrangement = Arrangement.SpaceEvenly,
                 ) {
                     if (entries.isEmpty()) {
@@ -2326,7 +2370,10 @@ private fun AresRemindersCard(
                                     fontSize = 12.sp,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f).padding(end = w * 0.08f),
+                                    // Distanziato dal cerchio (§ richiesta
+                                    // esplicita: "i promemoria sono troppo
+                                    // attaccati ai pallini a sinistra").
+                                    modifier = Modifier.weight(1f).padding(start = 8.dp, end = w * 0.08f),
                                 )
                             }
                         }
@@ -2334,7 +2381,7 @@ private fun AresRemindersCard(
                 }
                 // "+ Aggiungi promemoria", già disegnato nel template — apre
                 // solo il piccolo dialog di aggiunta rapida.
-                Box(Modifier.fillMaxWidth().weight(0.27f).clickable { showQuickAdd = true })
+                Box(Modifier.fillMaxWidth().weight(0.22f).clickable { showQuickAdd = true })
             }
         }
     }
@@ -2489,7 +2536,10 @@ private fun AresMemoryCard(
     onClick: () -> Unit,
 ) {
     BoxWithConstraints(modifier.clickable(onClick = onClick)) {
-        val h = maxWidth / ARES_MEMORY_ASPECT_RATIO
+        // "Ingrandisci poco" (§ richiesta esplicita) — 8% di altezza in più
+        // rispetto alla proporzione reale, stesso mild-stretch già usato
+        // per l'orb qui sopra.
+        val h = maxWidth / ARES_MEMORY_ASPECT_RATIO * 1.08f
         Box(Modifier.fillMaxWidth().height(h)) {
             Image(
                 painter = painterResource(R.drawable.ares_memoria_card2),
@@ -2502,7 +2552,12 @@ private fun AresMemoryCard(
                 color = Ink,
                 fontSize = 17.sp,
                 fontWeight = FontWeight.Bold,
-                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = h * 0.20f),
+                // Bug reale segnalato dall'utente da screenshot ("la
+                // scritta 0Mb copre la scritta sotto"): l'inset 0.20f era
+                // calibrato sul vecchio asset — misurato ora con Pillow che
+                // "memoria utilizzata" inizia a frazione ~0.72 dall'alto
+                // (0.28 dal basso) nel nuovo template ricostruito.
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = h * 0.30f),
             )
         }
     }

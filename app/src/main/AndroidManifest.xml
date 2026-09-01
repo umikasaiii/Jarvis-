@@ -116,8 +116,15 @@
         <package android:name="md.obsidian" />
         <!-- Health Connect app itself (pre-Android 14 devices install it
              separately from Play Store; Android 14+ has it built in but the
-             package check still needs this declared to see it). -->
+             package check still needs this declared to see it). Nuova
+             ipotesi non ancora verificata (§ "ancora non riesco a
+             collegare health connect"): sui build Android 14+ il modulo
+             potrebbe girare sotto un package diverso da quello Play Store
+             standalone — dichiarato anche in via precauzionale, un
+             <queries><package> in più che non esiste sul device è
+             innocuo, non un'altra modifica di logica alla cieca. -->
         <package android:name="com.google.android.apps.healthdata" />
+        <package android:name="com.google.android.healthconnect.controller" />
     </queries>
 
     <application
