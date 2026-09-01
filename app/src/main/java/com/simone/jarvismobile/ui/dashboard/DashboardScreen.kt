@@ -1655,6 +1655,13 @@ private const val ARES_SONNO_ASPECT_RATIO = 695f / 335f
 // usato per l'orb qui sopra).
 private const val ARES_BPM_SONNO_GROW = 1.08f
 private val ARES_BPM_SONNO_GAP = 10.dp
+// § richiesta esplicita: "allargando solo blocchi senza allargare immagini
+// (sempre in altezza)" — a differenza di ARES_BPM_SONNO_GROW (che stira
+// l'artwork stesso via FillBounds), questo extra resta fuori dall'Image:
+// ciascun blocco bpm/sonno diventa più alto, ma l'immagine al suo interno
+// mantiene esattamente la stessa dimensione renderizzata di prima, centrata
+// nello spazio in più.
+private val ARES_BPM_SONNO_EXTRA = 16.dp
 
 @Composable
 internal fun AresHomeScreen(
@@ -1870,7 +1877,11 @@ internal fun AresHomeScreen(
                 // invece di doverlo indovinare per tentativi.
                 val bpmHeight = columnWidth / ARES_BPM_ASPECT_RATIO * ARES_BPM_SONNO_GROW
                 val sonnoHeight = columnWidth / ARES_SONNO_ASPECT_RATIO * ARES_BPM_SONNO_GROW
-                val cardHeight = bpmHeight + ARES_BPM_SONNO_GAP + sonnoHeight
+                // Meteo si vede male, allarga un po' (in altezza) il blocco
+                // facendo entrare tutto" — Meteo eredita automaticamente
+                // l'extra di bpm/sonno perché la sua altezza è sempre la
+                // somma delle due colonne (§ vincolo "devono essere pari").
+                val cardHeight = (bpmHeight + ARES_BPM_SONNO_EXTRA) + ARES_BPM_SONNO_GAP + (sonnoHeight + ARES_BPM_SONNO_EXTRA)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     AresMeteoCard(
                         outlook = outlook,
@@ -2190,44 +2201,53 @@ private fun AresBpmSonnoCard(
     sonnoHeight: Dp,
     modifier: Modifier = Modifier,
 ) {
+    // Ogni blocco è un Box più alto di ARES_BPM_SONNO_EXTRA del necessario
+    // (§ "allargando solo blocchi senza allargare immagini") con l'immagine
+    // centrata dentro a un riquadro interno di altezza invariata — il
+    // riquadro (il "blocco") cresce, l'artwork al suo interno resta
+    // esattamente della stessa dimensione renderizzata di prima.
     Column(modifier, verticalArrangement = Arrangement.spacedBy(ARES_BPM_SONNO_GAP)) {
-        BoxWithConstraints(Modifier.fillMaxWidth().height(bpmHeight)) {
-            val w = maxWidth
-            Image(
-                painter = painterResource(R.drawable.ares_bpm_card),
-                contentDescription = null,
-                contentScale = ContentScale.FillBounds,
-                modifier = Modifier.matchParentSize(),
-            )
-            val bpm = healthAverages?.avgHeartRateBpm
-            AresHealthValue(
-                value = bpm?.let { "$it bpm" },
-                healthAvailable = healthAvailable,
-                healthGranted = healthGranted,
-                healthSdkStatusLabel = healthSdkStatusLabel,
-                onRequestHealth = onRequestHealth,
-                modifier = Modifier.fillMaxSize()
-                    .padding(start = w * 0.46f, end = w * 0.18f),
-            )
+        Box(Modifier.fillMaxWidth().height(bpmHeight + ARES_BPM_SONNO_EXTRA)) {
+            BoxWithConstraints(Modifier.fillMaxWidth().height(bpmHeight).align(Alignment.Center)) {
+                val w = maxWidth
+                Image(
+                    painter = painterResource(R.drawable.ares_bpm_card),
+                    contentDescription = null,
+                    contentScale = ContentScale.FillBounds,
+                    modifier = Modifier.matchParentSize(),
+                )
+                val bpm = healthAverages?.avgHeartRateBpm
+                AresHealthValue(
+                    value = bpm?.let { "$it bpm" },
+                    healthAvailable = healthAvailable,
+                    healthGranted = healthGranted,
+                    healthSdkStatusLabel = healthSdkStatusLabel,
+                    onRequestHealth = onRequestHealth,
+                    modifier = Modifier.fillMaxSize()
+                        .padding(start = w * 0.46f, end = w * 0.18f),
+                )
+            }
         }
-        BoxWithConstraints(Modifier.fillMaxWidth().height(sonnoHeight)) {
-            val w = maxWidth
-            Image(
-                painter = painterResource(R.drawable.ares_sonno_card),
-                contentDescription = null,
-                contentScale = ContentScale.FillBounds,
-                modifier = Modifier.matchParentSize(),
-            )
-            val sleep = healthAverages?.avgSleepPerNight
-            AresHealthValue(
-                value = sleep?.let { "${it.toHours()}h ${it.toMinutesPart()}m" },
-                healthAvailable = healthAvailable,
-                healthGranted = healthGranted,
-                healthSdkStatusLabel = healthSdkStatusLabel,
-                onRequestHealth = onRequestHealth,
-                modifier = Modifier.fillMaxSize()
-                    .padding(start = w * 0.46f, end = w * 0.18f),
-            )
+        Box(Modifier.fillMaxWidth().height(sonnoHeight + ARES_BPM_SONNO_EXTRA)) {
+            BoxWithConstraints(Modifier.fillMaxWidth().height(sonnoHeight).align(Alignment.Center)) {
+                val w = maxWidth
+                Image(
+                    painter = painterResource(R.drawable.ares_sonno_card),
+                    contentDescription = null,
+                    contentScale = ContentScale.FillBounds,
+                    modifier = Modifier.matchParentSize(),
+                )
+                val sleep = healthAverages?.avgSleepPerNight
+                AresHealthValue(
+                    value = sleep?.let { "${it.toHours()}h ${it.toMinutesPart()}m" },
+                    healthAvailable = healthAvailable,
+                    healthGranted = healthGranted,
+                    healthSdkStatusLabel = healthSdkStatusLabel,
+                    onRequestHealth = onRequestHealth,
+                    modifier = Modifier.fillMaxSize()
+                        .padding(start = w * 0.46f, end = w * 0.18f),
+                )
+            }
         }
     }
 }

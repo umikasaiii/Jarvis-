@@ -6,22 +6,14 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -29,7 +21,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -66,10 +57,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -90,9 +79,7 @@ import com.simone.jarvismobile.core.document.DocumentRecord
 import com.simone.jarvismobile.core.document.DocumentStatus
 import com.simone.jarvismobile.core.state.ConversationState
 import com.simone.jarvismobile.document.DocumentImportManager
-import com.simone.jarvismobile.ui.theme.JarvisThemeId
 import com.simone.jarvismobile.ui.theme.LocalJarvisPalette
-import com.simone.jarvismobile.ui.theme.LocalJarvisThemeId
 
 private const val MAX_VISIBLE_MESSAGES = 40
 
@@ -233,16 +220,6 @@ fun JarvisChatWindow(
         add(Manifest.permission.BLUETOOTH_CONNECT)
     }.toTypedArray()
 
-    fun onMicTap() {
-        when {
-            state == ConversationState.Speaking -> viewModel.onInterruptAndTalk()
-            state.isRestingLike() -> {
-                if (micGranted) viewModel.onTalkPressed() else permissionLauncher.launch(neededPermissions())
-            }
-            else -> viewModel.onCancel()
-        }
-    }
-
     if (autoStartRequest > 0) {
         LaunchedEffect(autoStartRequest) {
             if (micGranted) viewModel.onTalkPressed() else permissionLauncher.launch(neededPermissions())
@@ -312,13 +289,7 @@ fun JarvisChatWindow(
                 onTextChange = { textInput = it },
                 status = status,
                 busy = composerBusy,
-                onMic = ::onMicTap,
                 onAttach = { showAttachSheet = true },
-                micDescription = when {
-                    state == ConversationState.Speaking -> "Interrompi e parla"
-                    !state.isRestingLike() -> "Ferma"
-                    else -> "Parla"
-                },
                 onSend = {
                     if (composerBusy) {
                         viewModel.onStopResponse()
@@ -535,7 +506,7 @@ private fun DuplicateDialog(
  * an opaque dark texture, so stacking it over the old background would just
  * hide the old one underneath, wasted work. Applied to every theme, same as
  * the header/composer redesign in the immediately preceding round (neither
- * of those is gated by [LocalJarvisThemeId] either), so gating only the
+ * of those is gated by theme either), so gating only the
  * background here would look inconsistent — a red header/composer over a
  * blue background on Classico — rather than fixing an oversight this round
  * didn't introduce.
@@ -795,31 +766,20 @@ private fun ChatComposer(
      * not stay locked waiting for that.
      */
     busy: Boolean,
-    micDescription: String,
-    onMic: () -> Unit,
     onAttach: () -> Unit,
     onSend: () -> Unit,
 ) {
-    // Nuovo "dock" fornito dall'utente (§ richiesta esplicita: "cambia il
-    // design della chat scritta") — un'unica barra con due fori reali
-    // (misurati sui pixel dell'asset: centro a frazione 0.101/0.898 della
-    // larghezza, diametro ~0.13) per allega/invia, più la pillola centrale
-    // già disegnata per il campo di testo. Il microfono non ha un foro
-    // dedicato in questo asset (solo 2 fori, non 3) — resta un pulsante a
-    // parte con l'artwork esistente invece di indovinare una posizione mai
-    // mostrata nel riferimento.
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        MicrophoneButton(
-            status = status,
-            enabled = !busy,
-            contentDescription = micDescription,
-            onClick = onMic,
-        )
-        BoxWithConstraints(Modifier.weight(1f)) {
+    // Dock fornito dall'utente — un'unica barra con due fori reali (misurati
+    // sui pixel dell'asset: centro a frazione 0.101/0.898 della larghezza,
+    // diametro ~0.13) per allega/invia, più la pillola centrale già
+    // disegnata per il campo di testo. Il microfono separato (§ giro
+    // precedente: "il microfono non ha un foro dedicato in questo asset...
+    // resta un pulsante a parte") è stato rimosso su richiesta esplicita
+    // ("togli cerchio rosso vicino alla barra della chat, e la barra
+    // allargala tutta") — la barra ora occupa l'intera larghezza della riga
+    // invece di condividerla con un pulsante separato.
+    Box(Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 6.dp)) {
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
             val barWidth = maxWidth
             val barHeight = barWidth / CHAT_DOCK_BAR_ASPECT_RATIO
             val holeSize = barWidth * CHAT_DOCK_HOLE_DIAMETER_FRACTION
@@ -919,126 +879,6 @@ private fun DockMessageInput(
         ),
     )
 }
-
-/**
- * Asset 3. The halo carries the state; the artwork's own rim/icon glow is a
- * near-monochrome cyan-on-black render (same family as `bg_card`/`hud_*`), so
- * on Rosso/Rouge it is tinted the same way instead of staying fixed cyan.
- */
-@Composable
-private fun MicrophoneButton(
-    status: ChatStatus,
-    enabled: Boolean,
-    contentDescription: String,
-    onClick: () -> Unit,
-) {
-    // While listening the halo breathes, so the control shows the mic is open
-    // even when the user is not looking at the status pill.
-    val listening = status == ChatStatus.ASCOLTO
-    val transition = rememberInfiniteTransition(label = "mic")
-    val pulse by transition.animateFloat(
-        initialValue = if (listening) 0.45f else 0f,
-        targetValue = if (listening) 1f else 0f,
-        animationSpec = infiniteRepeatable(
-            tween(1100, easing = FastOutSlowInEasing),
-            RepeatMode.Reverse,
-        ),
-        label = "micPulse",
-    )
-
-    AssetButton(
-        res = R.drawable.chat_microphone,
-        contentDescription = contentDescription,
-        enabled = enabled,
-        pressedScale = 0.94f,
-        glow = if (listening) pulse else 0.22f,
-        glowColor = themedAccent(status),
-        onClick = onClick,
-    )
-}
-
-/**
- * A round image button. The bitmap keeps its own alpha and a 1:1 box, so it is
- * never stretched into an oval and never shows a rectangle behind it; the ripple
- * is switched off because a rectangular highlight would square off the disc.
- */
-@Composable
-private fun AssetButton(
-    res: Int,
-    contentDescription: String,
-    enabled: Boolean,
-    pressedScale: Float,
-    glow: Float,
-    glowColor: Color,
-    artworkAlpha: Float = 1f,
-    onClick: () -> Unit,
-    overlay: @Composable () -> Unit = {},
-) {
-    val interaction = remember { MutableInteractionSource() }
-    val press = remember { Animatable(1f) }
-    LaunchedEffect(interaction, pressedScale) {
-        interaction.interactions.collect { i ->
-            when (i) {
-                is PressInteraction.Press -> press.animateTo(pressedScale, tween(80))
-                else -> {
-                    press.animateTo(1.03f, tween(110))
-                    press.animateTo(1f, tween(130))
-                }
-            }
-        }
-    }
-
-    // The disc/rim artwork is a near-monochrome cyan-on-black render (same
-    // family as `bg_card`/`hud_*`), so it is tinted like them on Rosso/Rouge
-    // instead of staying fixed cyan regardless of the selected theme.
-    val themeId = LocalJarvisThemeId.current
-    val artTint = if (themeId == JarvisThemeId.BLU) null else ColorFilter.tint(LocalJarvisPalette.current.accent)
-
-    // The touch target is the whole box, not the artwork inside it. It used to
-    // sit on the 54dp image, so the lit ring around the disc — which reads as
-    // part of the button — did nothing, and stopping a running reply meant
-    // hitting a smaller circle than the one on screen.
-    Box(
-        modifier = Modifier
-            .size(62.dp)
-            .aspectRatio(1f)
-            .clip(CircleShape)
-            .clickable(
-                interactionSource = interaction,
-                indication = null,
-                enabled = enabled,
-                onClick = onClick,
-            ),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (glow > 0f) {
-            Canvas(Modifier.fillMaxSize()) {
-                val r = size.minDimension / 2f
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        listOf(glowColor.copy(alpha = 0.55f * glow), Color.Transparent),
-                        center = center,
-                        radius = r,
-                    ),
-                    radius = r,
-                )
-            }
-        }
-        Image(
-            painter = painterResource(res),
-            contentDescription = contentDescription,
-            contentScale = ContentScale.Fit,
-            alpha = if (enabled) artworkAlpha else artworkAlpha * 0.45f,
-            colorFilter = artTint,
-            modifier = Modifier
-                .size(54.dp)
-                .aspectRatio(1f)
-                .scale(press.value),
-        )
-        overlay()
-    }
-}
-
 
 /**
  * Kept from the previous layout: these are the only way into a new conversation
