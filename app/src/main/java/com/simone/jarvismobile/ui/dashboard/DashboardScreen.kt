@@ -28,7 +28,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -2113,7 +2112,7 @@ private fun AresBpmSonnoCard(
                     healthSdkStatusLabel = healthSdkStatusLabel,
                     onRequestHealth = onRequestHealth,
                     modifier = Modifier.weight(1f).fillMaxWidth()
-                        .padding(start = w * 0.42f, end = w * 0.08f),
+                        .padding(start = w * 0.46f, end = w * 0.18f),
                 )
                 val sleep = healthAverages?.avgSleepPerNight
                 AresHealthValue(
@@ -2123,7 +2122,7 @@ private fun AresBpmSonnoCard(
                     healthSdkStatusLabel = healthSdkStatusLabel,
                     onRequestHealth = onRequestHealth,
                     modifier = Modifier.weight(1f).fillMaxWidth()
-                        .padding(start = w * 0.42f, end = w * 0.08f),
+                        .padding(start = w * 0.46f, end = w * 0.18f),
                 )
             }
         }
@@ -2149,12 +2148,22 @@ private fun AresHealthValue(
         when {
             !healthAvailable -> Text("Health Connect non disponibile", color = Muted, fontSize = 9.sp)
             !healthGranted -> Column {
-                TextButton(
-                    onClick = onRequestHealth,
-                    contentPadding = PaddingValues(horizontal = 0.dp, vertical = 2.dp),
-                ) {
-                    Text("Concedi accesso", color = Cyan, fontSize = 11.sp)
-                }
+                // Plain clickable Text, non TextButton (§ bug reale
+                // segnalato dall'utente da screenshot: la prima lettera di
+                // "Concedi"/"accesso" appariva mangiata — TextButton avvolge
+                // il contenuto in una Surface Material3 con la propria area
+                // minima/clip, che qui non serve dato che il tocco copre
+                // già l'intera riga). fontSize ridotto e nowrap forzato così
+                // il testo resta su una riga sola, mai spezzato a metà
+                // parola vicino al bordo dell'anello.
+                Text(
+                    "Concedi accesso",
+                    color = Cyan,
+                    fontSize = 10.sp,
+                    maxLines = 1,
+                    softWrap = false,
+                    modifier = Modifier.clickable(onClick = onRequestHealth),
+                )
                 // Diagnostica temporanea (§ "cliccabile ma non succede
                 // nulla" segnalato anche dopo il fix del contract): dice
                 // se l'SDK di Health Connect si dichiara davvero
@@ -2214,9 +2223,16 @@ private fun AresRemindersCard(
                     if (entries.isEmpty()) {
                         Text("Nessun promemoria per oggi", color = Muted, fontSize = 10.sp)
                     } else {
-                        entries.forEach { e ->
+                        // Sempre 3 righe fisse (§ bug reale segnalato
+                        // dall'utente da screenshot: con meno di 3 impegni
+                        // SpaceEvenly ridistribuiva 1-2 elementi su tutta
+                        // l'altezza disponibile, disallineandoli dai 3
+                        // cerchi checkbox a posizione fissa già disegnati
+                        // nel template) — una riga vuota per uno slot senza
+                        // impegno, mai un elemento in meno da distribuire.
+                        (0 until 3).forEach { i ->
                             Text(
-                                e.text,
+                                entries.getOrNull(i)?.text.orEmpty(),
                                 color = Ink,
                                 fontSize = 12.sp,
                                 maxLines = 1,
