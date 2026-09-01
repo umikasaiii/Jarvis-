@@ -4,8 +4,8 @@ import android.content.Context
 import android.content.Intent
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.permission.HealthPermission
-import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.Record
+import androidx.health.connect.client.records.RestingHeartRateRecord
 import androidx.health.connect.client.records.SleepSessionRecord
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
@@ -40,7 +40,7 @@ import kotlin.reflect.KClass
  * questo ambiente non può risolvere Maven Central né raggiungere la
  * documentazione live (stesso limite di rete già documentato per
  * TomTom/Valhalla) — i nomi/le firme esatte qui sotto (`ReadRecordsRequest`,
- * `HeartRateRecord.Sample`, `PermissionController`) sono scritti da
+ * `RestingHeartRateRecord`, `PermissionController`) sono scritti da
  * conoscenza di training, non verificati contro un compilatore reale qui.
  * La prima vera verifica è la compilazione Kotlin di CI, come già successo
  * (e corretto) una volta per `HeartRateRecord.BPM_AVG` — poi abbandonato in
@@ -82,9 +82,23 @@ class HealthConnectManager @Inject constructor(
         }
     }.getOrElse { "errore nel controllo SDK (${it.message})" }
 
-    /** The only two permissions this app ever requests from Health Connect. */
+    /**
+     * Le uniche due permissions richieste da questa app. **Cambiata la prima
+     * (§ richiesta esplicita dell'utente: "vorrei che per bpm si riporti la
+     * media dei battiti a riposo")**: da `HeartRateRecord` (il flusso
+     * continuo di campioni, usato per calcolarci sopra una media
+     * dell'intera giornata comprese le fasi attive) a
+     * `RestingHeartRateRecord` — un tipo di record Health Connect distinto,
+     * pensato apposta per la sola frequenza a riposo (lo stesso concetto
+     * che Honor Health mostra come sua cifra principale). **Permesso
+     * diverso, non lo stesso**: Health Connect tratta i due tipi di record
+     * come permessi separati, quindi un utente che aveva già concesso
+     * l'accesso alla frequenza cardiaca "normale" deve concedere anche
+     * questo nuovo permesso specifico prima che i BPM tornino a comparire —
+     * non un bug, un requisito reale della piattaforma.
+     */
     val permissions: Set<String> = setOf(
-        HealthPermission.getReadPermission(HeartRateRecord::class),
+        HealthPermission.getReadPermission(RestingHeartRateRecord::class),
         HealthPermission.getReadPermission(SleepSessionRecord::class),
     )
 
@@ -186,12 +200,13 @@ class HealthConnectManager @Inject constructor(
      * `ZoneId.systemDefault()` — lo stesso fuso del dispositivo, mai UTC —
      * così la data di ogni lettura è sotto il nostro controllo diretto,
      * non quello di un bucket interno non ispezionabile:
-     * - **BPM**: media aritmetica di **ogni singolo campione** loggato quel
-     *   giorno locale (§ richiesta esplicita dell'utente: "attenzione a
-     *   prendere media e non ultimo dato della giornata") — non più una
-     *   metrica di aggregazione opaca (`HeartRateRecord.BPM_AVG`) della cui
-     *   esatta definizione (media semplice? pesata nel tempo? su quali
-     *   campioni?) non c'era modo di essere certi in questo ambiente.
+     * - **BPM**: media aritmetica di **ogni lettura di frequenza cardiaca a
+     *   riposo** (`RestingHeartRateRecord`, § richiesta esplicita
+     *   dell'utente: "vorrei che per bpm si riporti la media dei battiti a
+     *   riposo") loggata quel giorno locale — un tipo di record Health
+     *   Connect distinto dal flusso continuo `HeartRateRecord` usato
+     *   in precedenza, e concettualmente lo stesso dato che Honor Health
+     *   mostra come sua cifra principale ("Frequenza cardiaca a riposo").
      * - **Sonno**: ogni sessione è attribuita alla data locale del suo
      *   **risveglio** (`endTime`), non dell'inizio — la stessa convenzione
      *   che usa Honor Health stesso (una sessione 28→29 agosto compare lì
@@ -205,6 +220,9 @@ class HealthConnectManager @Inject constructor(
      * lettura — è che quella sessione non è mai stata sincronizzata da
      * Honor Health a Health Connect (due archivi distinti, § nota generale
      * di questo file), un gap che nessun codice lato JARVIS può colmare.
+     * Stessa cosa se manca la frequenza a riposo: dipende da cosa Honor
+     * Health ha scritto (o non scritto) in Health Connect quel giorno, non
+     * da come JARVIS lo legge.
      */
     private suspend fun fetchDailySeries(): List<DailyHealthReading> {
         val c = client ?: return emptyList()
@@ -214,15 +232,13 @@ class HealthConnectManager @Inject constructor(
         val start = end.minus(7, ChronoUnit.DAYS)
         val range = TimeRangeFilter.between(start, end)
         return runCatching {
-            val heartRateRecords = readAllRecords(c, HeartRateRecord::class, range)
+            val restingHeartRateRecords = readAllRecords(c, RestingHeartRateRecord::class, range)
             val sleepRecords = readAllRecords(c, SleepSessionRecord::class, range)
 
             val bpmByDate = mutableMapOf<LocalDate, MutableList<Long>>()
-            heartRateRecords.forEach { record ->
-                record.samples.forEach { sample ->
-                    val date = sample.time.atZone(zone).toLocalDate()
-                    bpmByDate.getOrPut(date) { mutableListOf() }.add(sample.beatsPerMinute)
-                }
+            restingHeartRateRecords.forEach { record ->
+                val date = record.time.atZone(zone).toLocalDate()
+                bpmByDate.getOrPut(date) { mutableListOf() }.add(record.beatsPerMinute)
             }
             val sleepByDate = mutableMapOf<LocalDate, MutableList<Duration>>()
             sleepRecords.forEach { record ->
