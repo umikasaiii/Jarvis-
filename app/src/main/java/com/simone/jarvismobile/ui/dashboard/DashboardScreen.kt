@@ -1659,8 +1659,11 @@ private val ARES_BPM_SONNO_GAP = 10.dp
 // l'artwork stesso via FillBounds), questo extra resta fuori dall'Image:
 // ciascun blocco bpm/sonno diventa più alto, ma l'immagine al suo interno
 // mantiene esattamente la stessa dimensione renderizzata di prima, centrata
-// nello spazio in più.
-private val ARES_BPM_SONNO_EXTRA = 16.dp
+// nello spazio in più. Aumentato ulteriormente in un giro successivo (16dp
+// -> 44dp) per fare spazio alla sparkline richiesta esplicitamente sotto il
+// simbolo, oltre a far crescere di riflesso anche Meteo (§ "allunga in
+// altezza ancora un po' il blocco" — la sua altezza è sempre bpm+gap+sonno).
+private val ARES_BPM_SONNO_EXTRA = 44.dp
 
 @Composable
 internal fun AresHomeScreen(
@@ -1689,6 +1692,7 @@ internal fun AresHomeScreen(
     val outlook by aresViewModel.outlook.collectAsStateWithLifecycle()
     val healthGranted by aresViewModel.healthGranted.collectAsStateWithLifecycle()
     val healthAverages by aresViewModel.healthAverages.collectAsStateWithLifecycle()
+    val healthDaily by aresViewModel.healthDaily.collectAsStateWithLifecycle()
     val healthContext = LocalContext.current
     // Il dialogo di consenso in-app (PermissionController.createRequestPermissionResultContract,
     // con lo stesso identico contract stabilizzato via remember, § round
@@ -1849,6 +1853,9 @@ internal fun AresHomeScreen(
             // --- Meteo (card a sé) + BPM/Sonno (card a sé), stessa altezza
             // (§ nuovo mockup: griglia 2 colonne, non più un'unica "Sistema")
             var hourlyDayIndex by remember { mutableStateOf<Int?>(null) }
+            // § richiesta esplicita: "se clicco sulle icone bpm e sonno vorrei
+            // visualizzare la media di ogni singolo giorno... compreso di data".
+            var healthDetail by remember { mutableStateOf<HealthDetailKind?>(null) }
             BoxWithConstraints(Modifier.fillMaxWidth()) {
                 val columnWidth = (maxWidth - 10.dp) / 2
                 // L'altezza di Meteo ora è DERIVATA dalla somma reale di
@@ -1880,12 +1887,18 @@ internal fun AresHomeScreen(
                         healthGranted = healthGranted,
                         healthSdkStatusLabel = aresViewModel.healthSdkStatusLabel(),
                         healthAverages = healthAverages,
+                        healthDaily = healthDaily,
                         onRequestHealth = onRequestHealthConnect,
+                        onOpenBpmDetail = { healthDetail = HealthDetailKind.BPM },
+                        onOpenSonnoDetail = { healthDetail = HealthDetailKind.SONNO },
                         bpmHeight = bpmHeight,
                         sonnoHeight = sonnoHeight,
                         modifier = Modifier.weight(1f),
                     )
                 }
+            }
+            healthDetail?.let { kind ->
+                AresHealthDetailDialog(kind = kind, daily = healthDaily, onDismiss = { healthDetail = null })
             }
             if (hourlyDayIndex != null) {
                 val hourly by aresViewModel.hourly.collectAsStateWithLifecycle()
@@ -2083,21 +2096,25 @@ private fun AresMeteoCard(
                     .padding(start = w * 0.09f, end = w * 0.07f, top = h * 0.15f, bottom = h * 0.04f),
             ) {
                 if (outlook?.currentTempC != null) {
-                    // Blocco di oggi centrato orizzontalmente nella card
-                    // (§ richiesta esplicita: "quello di oggi non è
-                    // centrato") — prima era allineato a sinistra/inizio,
-                    // ora l'intero blocco (etichetta, icona+gradi, stato+
-                    // vento) è una colonna centrata, come nel riferimento.
-                    Column(
-                        modifier = Modifier.fillMaxWidth().clickable { onDayClick(0) },
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        // "Oggi" sopra l'icona (§ richiesta esplicita), stesso
-                        // stile delle etichette "Domani"/"Dopodom."/"Tra 3gg".
-                        Text("Oggi", color = Muted, fontSize = 7.sp)
-                        Row(verticalAlignment = Alignment.Bottom) {
+                    // § richiesta esplicita, giro successivo: "icona più a
+                    // sinistra, e i gradi più a destra, e più vicino stato e
+                    // vento visto che finiscono di sotto" — la riga
+                    // icona+gradi ora è sparsa su tutta la larghezza
+                    // (SpaceBetween) invece di un'unica coppia centrata;
+                    // "Oggi"/stato/vento restano centrati (mai spostati) ma
+                    // sollevati con un offset verso la riga sopra, così il
+                    // blocco non lascia un vuoto prima di "Sereno".
+                    Column(modifier = Modifier.fillMaxWidth().clickable { onDayClick(0) }) {
+                        Text(
+                            "Oggi", color = Muted, fontSize = 7.sp,
+                            modifier = Modifier.align(Alignment.CenterHorizontally),
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
                             WeatherIcon(outlook.currentCategory, 44.dp, outlook.currentIsDay)
-                            Spacer(Modifier.width(6.dp))
                             // Gradi più grandi (§ richiesta esplicita "scritti più
                             // in grande"). Onestà: il font geometrico della foto
                             // di riferimento non è riproducibile qui — nessun
@@ -2109,23 +2126,21 @@ private fun AresMeteoCard(
                                 color = Ink, fontSize = 40.sp, fontWeight = FontWeight.Bold,
                             )
                         }
-                        // Descrizione e vento centrati sotto, non più
-                        // indentati sotto i gradi (§ centratura richiesta
-                        // esplicitamente in questo giro sostituisce
-                        // l'indentazione di un giro precedente).
-                        Text(weatherCategoryLabel(outlook.currentCategory), color = Muted, fontSize = 10.sp)
+                        Text(
+                            weatherCategoryLabel(outlook.currentCategory), color = Muted, fontSize = 10.sp,
+                            modifier = Modifier.align(Alignment.CenterHorizontally).offset(y = (-6).dp),
+                        )
                         val dir = WindDirection.label(outlook.currentWindDirectionDeg)
                         if (outlook.currentWindKmh != null) {
                             Text(
                                 "${outlook.currentWindKmh.roundToInt()} km/h" + (dir?.let { " $it" } ?: ""),
                                 color = Muted,
                                 fontSize = 9.sp,
-                                // Avvicinato allo stato del tempo (§ richiesta
-                                // esplicita: "avvicina scritta vento vicino
-                                // allo stato del tempo") — il line-height di
-                                // default lasciava un margine visibile fra
-                                // le due righe.
-                                modifier = Modifier.offset(y = (-3).dp),
+                                // Stesso -6dp dello stato sopra più i -3dp già
+                                // tarati in un giro precedente fra vento e
+                                // stato — così l'intero blocco si stringe
+                                // insieme, non solo il primo elemento.
+                                modifier = Modifier.align(Alignment.CenterHorizontally).offset(y = (-9).dp),
                             )
                         }
                     }
@@ -2173,25 +2188,39 @@ private fun AresMeteoCard(
  * (che li usa anche per allineare l'altezza totale di questa colonna con
  * AresMeteoCard) così le due card restano sempre coerenti con quella somma.
  */
+/** Quale dei due dettagli giornalieri (§ tocco su bpm/sonno) è aperto, se lo è. */
+private enum class HealthDetailKind { BPM, SONNO }
+
 @Composable
 private fun AresBpmSonnoCard(
     healthAvailable: Boolean,
     healthGranted: Boolean,
     healthSdkStatusLabel: String,
     healthAverages: HealthConnectManager.WeeklyHealthAverages?,
+    healthDaily: List<HealthConnectManager.DailyHealthReading>,
     onRequestHealth: () -> Unit,
+    onOpenBpmDetail: () -> Unit,
+    onOpenSonnoDetail: () -> Unit,
     bpmHeight: Dp,
     sonnoHeight: Dp,
     modifier: Modifier = Modifier,
 ) {
     // Ogni blocco è un Box più alto di ARES_BPM_SONNO_EXTRA del necessario
     // (§ "allargando solo blocchi senza allargare immagini") con l'immagine
-    // centrata dentro a un riquadro interno di altezza invariata — il
-    // riquadro (il "blocco") cresce, l'artwork al suo interno resta
-    // esattamente della stessa dimensione renderizzata di prima.
+    // ancorata in alto a dimensione invariata — il riquadro (il "blocco")
+    // cresce, l'artwork al suo interno resta esattamente della stessa
+    // dimensione renderizzata di prima; lo spazio in più sotto ospita la
+    // sparkline (§ richiesta esplicita: "sotto il simbolo creare... un
+    // piccolo grafico a linea che varia in base all'andamento dei numeri").
+    // L'intero blocco è cliccabile (§ "se clicco sulle icone bpm e sonno
+    // vorrei visualizzare la media di ogni singolo giorno... compreso di
+    // data") per aprire il dettaglio giornaliero.
     Column(modifier, verticalArrangement = Arrangement.spacedBy(ARES_BPM_SONNO_GAP)) {
-        Box(Modifier.fillMaxWidth().height(bpmHeight + ARES_BPM_SONNO_EXTRA)) {
-            BoxWithConstraints(Modifier.fillMaxWidth().height(bpmHeight).align(Alignment.Center)) {
+        Column(
+            Modifier.fillMaxWidth().height(bpmHeight + ARES_BPM_SONNO_EXTRA)
+                .clickable(enabled = healthGranted, onClick = onOpenBpmDetail),
+        ) {
+            BoxWithConstraints(Modifier.fillMaxWidth().height(bpmHeight)) {
                 val w = maxWidth
                 Image(
                     painter = painterResource(R.drawable.ares_bpm_card),
@@ -2210,9 +2239,19 @@ private fun AresBpmSonnoCard(
                         .padding(start = w * 0.46f, end = w * 0.18f),
                 )
             }
+            if (healthGranted) {
+                Sparkline(
+                    values = healthDaily.map { it.heartRateBpm?.toFloat() },
+                    color = Cyan,
+                    modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 10.dp, vertical = 2.dp),
+                )
+            }
         }
-        Box(Modifier.fillMaxWidth().height(sonnoHeight + ARES_BPM_SONNO_EXTRA)) {
-            BoxWithConstraints(Modifier.fillMaxWidth().height(sonnoHeight).align(Alignment.Center)) {
+        Column(
+            Modifier.fillMaxWidth().height(sonnoHeight + ARES_BPM_SONNO_EXTRA)
+                .clickable(enabled = healthGranted, onClick = onOpenSonnoDetail),
+        ) {
+            BoxWithConstraints(Modifier.fillMaxWidth().height(sonnoHeight)) {
                 val w = maxWidth
                 Image(
                     painter = painterResource(R.drawable.ares_sonno_card),
@@ -2231,8 +2270,101 @@ private fun AresBpmSonnoCard(
                         .padding(start = w * 0.46f, end = w * 0.18f),
                 )
             }
+            if (healthGranted) {
+                Sparkline(
+                    values = healthDaily.map { it.sleepHours?.toFloat() },
+                    color = Cyan,
+                    modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 10.dp, vertical = 2.dp),
+                )
+            }
         }
     }
+}
+
+/**
+ * Piccolo grafico a linea (§ richiesta esplicita: "un piccolo grafico a
+ * linea che varia in base all'andamento dei numeri", riferimento visivo
+ * fornito dall'utente solo per capire cosa si intende — non un asset o uno
+ * stile da copiare 1:1). Ogni voce di [values] è un giorno (più vecchio a
+ * sinistra); `null` (nessun dato quel giorno, mai un valore inventato) è
+ * semplicemente saltato — il tratto salta il buco invece di scendere a
+ * zero. Con meno di due punti reali non c'è un andamento da disegnare, quindi
+ * non si disegna nulla piuttosto che un'unica linea piatta priva di senso.
+ */
+@Composable
+private fun Sparkline(values: List<Float?>, color: Color, modifier: Modifier = Modifier) {
+    val points = values.mapIndexedNotNull { i, v -> v?.let { i to it } }
+    if (points.size < 2) return
+    Canvas(modifier) {
+        val minV = points.minOf { it.second }
+        val maxV = points.maxOf { it.second }
+        val range = (maxV - minV).takeIf { it > 0f } ?: 1f
+        val stepX = if (values.size > 1) size.width / (values.size - 1) else size.width
+        fun offsetFor(index: Int, value: Float): Offset {
+            val x = index * stepX
+            val y = size.height - ((value - minV) / range) * size.height
+            return Offset(x, y.coerceIn(0f, size.height))
+        }
+        val strokeWidth = 1.6.dp.toPx()
+        for (i in 0 until points.size - 1) {
+            val (idxA, valA) = points[i]
+            val (idxB, valB) = points[i + 1]
+            drawLine(
+                color = color,
+                start = offsetFor(idxA, valA),
+                end = offsetFor(idxB, valB),
+                strokeWidth = strokeWidth,
+                cap = StrokeCap.Round,
+            )
+        }
+        points.forEach { (idx, v) ->
+            drawCircle(color = color, radius = strokeWidth * 1.3f, center = offsetFor(idx, v))
+        }
+    }
+}
+
+/**
+ * Media di ogni singolo giorno, con data (§ richiesta esplicita: "vorrei
+ * visualizzare la media di ogni singolo giorno che prende in
+ * considerazione, compreso di data"). Un giorno senza lettura mostra "—",
+ * mai un valore inventato.
+ */
+@Composable
+private fun AresHealthDetailDialog(
+    kind: HealthDetailKind,
+    daily: List<HealthConnectManager.DailyHealthReading>,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (kind == HealthDetailKind.BPM) "BPM medi per giorno" else "Sonno per notte") },
+        text = {
+            if (daily.isEmpty()) {
+                Text("Nessun dato disponibile.", color = Muted)
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    daily.forEach { day ->
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text(
+                                day.date.format(java.time.format.DateTimeFormatter.ofPattern("d MMMM", Locale.ITALIAN)),
+                                color = Ink,
+                            )
+                            val value = when (kind) {
+                                HealthDetailKind.BPM -> day.heartRateBpm?.let { "$it bpm" }
+                                HealthDetailKind.SONNO -> day.sleepHours?.let {
+                                    val h = it.toInt()
+                                    val m = ((it - h) * 60).toInt()
+                                    "${h}h ${m}m"
+                                }
+                            }
+                            Text(value ?: "—", color = if (value != null) Ink else Muted)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Chiudi") } },
+    )
 }
 
 /**

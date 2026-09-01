@@ -6,14 +6,19 @@ import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.SleepSessionRecord
-import androidx.health.connect.client.request.AggregateRequest
+import androidx.health.connect.client.request.AggregateGroupByPeriodRequest
 import androidx.health.connect.client.time.TimeRangeFilter
+import com.simone.jarvismobile.data.SettingsRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.flow.first
 import java.time.Duration
-import java.time.Instant
+import java.time.LocalDate
+import java.time.Period
+import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.math.roundToLong
 
 /**
  * Weekly-average heart rate and sleep duration for the tema Ares "Sistema"
@@ -30,17 +35,19 @@ import javax.inject.Singleton
  * absent, not a bug — same "unknown stays unknown, never a guess" discipline
  * [com.simone.jarvismobile.weather.WeatherManager] already follows.
  *
- * Onestà: `androidx.health.connect:connect-client` is an alpha library and
- * this environment cannot resolve Maven Central or reach the API docs (same
- * network limit already documented for TomTom/Valhalla) — the exact method
- * names below (`AggregateRequest`, `AggregationResult` indexing,
- * `PermissionController`) are written from training knowledge of the public
- * API, not verified against a live compiler here. First real verification is
- * CI's Gradle dependency resolution + Kotlin compile.
+ * Onestà: `androidx.health.connect:connect-client` è una libreria alpha e
+ * questo ambiente non può risolvere Maven Central né raggiungere la
+ * documentazione live (stesso limite di rete già documentato per
+ * TomTom/Valhalla) — i nomi/le firme esatte qui sotto (`AggregateGroupByPeriodRequest`,
+ * l'indicizzazione di `AggregationResult`, `PermissionController`) sono
+ * scritti da conoscenza di training, non verificati contro un compilatore
+ * reale qui. La prima vera verifica è la compilazione Kotlin di CI, come
+ * già successo (e corretto) una volta per `HeartRateRecord.BPM_AVG`.
  */
 @Singleton
 class HealthConnectManager @Inject constructor(
     @ApplicationContext private val context: Context,
+    private val settings: SettingsRepository,
 ) {
     private val client: HealthConnectClient? by lazy {
         runCatching {
@@ -85,23 +92,12 @@ class HealthConnectManager @Inject constructor(
      * accesso [...] ed io posso metterlo manualmente") — un percorso diverso
      * dal dialogo di consenso in-app (`PermissionController.createRequestPermissionResultContract()`,
      * rimosso perché mai risultato in un consenso reale su questo
-     * dispositivo di test, vedi
-     * l'indagine in CLAUDE.md: JARVIS non compare affatto nell'elenco
-     * "Autorizzazioni app" di Health Connect, causa mai trovata). Da qui
-     * l'utente naviga da solo fino alla pagina dei permessi per app e
-     * concede/nega manualmente — nessun deep-link app-specifico usato perché
-     * nessuna forma verificata esiste per questo (stesso limite di rete già
-     * documentato: nessun accesso alla documentazione live in questo
-     * ambiente). Usata la stringa azione grezza `"androidx.health.ACTION_HEALTH_CONNECT_SETTINGS"`
-     * invece del nome della costante Kotlin esposta dalla libreria: la
-     * stringa stessa è la parte stabile del contratto pubblico (documentata
-     * da tempo per questo scopo esatto), mentre la classe/costante Kotlin
-     * che la incapsula è potenzialmente cambiata fra le versioni alpha di
-     * `androidx.health.connect:connect-client` — riferirla per nome avrebbe
-     * rischiato un "unresolved reference" mai verificabile qui, la stessa
-     * categoria di errore già presa una volta con `HeartRateRecord.BPM_AVG`
-     * (Long, non Double). La Activity di Health Connect stessa gestisce
-     * l'azione indipendentemente da come l'app chiamante la referenzia.
+     * dispositivo di test, vedi l'indagine in CLAUDE.md). Usata la stringa
+     * azione grezza `"androidx.health.ACTION_HEALTH_CONNECT_SETTINGS"` invece
+     * del nome della costante Kotlin esposta dalla libreria: la stringa
+     * stessa è la parte stabile del contratto pubblico, mentre la
+     * classe/costante Kotlin che la incapsula è potenzialmente cambiata fra
+     * le versioni alpha.
      */
     fun settingsIntent(): Intent = Intent("androidx.health.ACTION_HEALTH_CONNECT_SETTINGS")
 
@@ -112,30 +108,103 @@ class HealthConnectManager @Inject constructor(
         }.getOrDefault(false)
     }
 
+    /** One calendar day's readings — `date` is always real, either value can be legitimately absent (never a guess). */
+    data class DailyHealthReading(
+        val date: LocalDate,
+        val heartRateBpm: Long?,
+        val sleepHours: Double?,
+    )
+
     data class WeeklyHealthAverages(
-        // BPM_AVG aggregates to a Long (§ fix CI: "Argument type mismatch:
-        // actual type is 'Long?', but 'Double?' was expected" — the library's
-        // real signature, not the Double this was first guessed as).
         val avgHeartRateBpm: Long?,
         val avgSleepPerNight: Duration?,
     )
 
-    /** Null when unavailable, ungranted, or the read itself fails — never a guess. */
-    suspend fun weeklyAverages(): WeeklyHealthAverages? {
-        val c = client ?: return null
-        if (!hasPermissions()) return null
-        val end = Instant.now()
+    /** [daily]: oldest first, 7 entries — yesterday back to 7 days before (§ vedi [fetchDailySeries]). */
+    data class HealthSnapshot(
+        val daily: List<DailyHealthReading>,
+        val averages: WeeklyHealthAverages,
+    )
+
+    /**
+     * `aggregateGroupByPeriod` è il metodo pubblico di
+     * `androidx.health.connect:connect-client` per bucket giornalieri (un
+     * `AggregationResult` per ciascun `Period.ofDays(1)` nell'intervallo) —
+     * distinto dal singolo intervallo che questo file usava prima
+     * (`aggregate(AggregateRequest(...))`), rimosso: [computeAverages] ora
+     * deriva le medie dagli stessi 7 bucket giornalieri invece di un secondo
+     * calcolo separato, per costruzione mai divergente da essi.
+     *
+     * **Finestra "da ieri a 7 giorni prima" (§ richiesta esplicita
+     * dell'utente: "la media la deve calcolare da ieri a 7 giorni prima, non
+     * da lunedì a domenica fisso")**: `end` è la mezzanotte di oggi (quindi
+     * la fine di ieri), non `Instant.now()` — la giornata di oggi è ancora in
+     * corso e mescolarne i dati parziali (specie il sonno di stanotte, non
+     * ancora accaduto) avrebbe sporcato la media. Il range resta comunque
+     * sempre una finestra scorrevole di 7 giorni, mai un lunedì-domenica di
+     * calendario fisso.
+     */
+    private suspend fun fetchDailySeries(): List<DailyHealthReading> {
+        val c = client ?: return emptyList()
+        val today = LocalDate.now()
+        val end = today.atStartOfDay(ZoneId.systemDefault()).toInstant()
         val start = end.minus(7, ChronoUnit.DAYS)
         val range = TimeRangeFilter.between(start, end)
         return runCatching {
-            val heartRate = c.aggregate(AggregateRequest(setOf(HeartRateRecord.BPM_AVG), range))
-            val sleep = c.aggregate(AggregateRequest(setOf(SleepSessionRecord.SLEEP_DURATION_TOTAL), range))
-            val avgBpm = heartRate[HeartRateRecord.BPM_AVG]
-            val totalSleep = sleep[SleepSessionRecord.SLEEP_DURATION_TOTAL]
-            WeeklyHealthAverages(
-                avgHeartRateBpm = avgBpm,
-                avgSleepPerNight = totalSleep?.dividedBy(7),
+            val heartRateGroups = c.aggregateGroupByPeriod(
+                AggregateGroupByPeriodRequest(setOf(HeartRateRecord.BPM_AVG), range, Period.ofDays(1)),
             )
-        }.getOrNull()
+            val sleepGroups = c.aggregateGroupByPeriod(
+                AggregateGroupByPeriodRequest(setOf(SleepSessionRecord.SLEEP_DURATION_TOTAL), range, Period.ofDays(1)),
+            )
+            (0 until 7).map { i ->
+                DailyHealthReading(
+                    date = today.minusDays((7 - i).toLong()),
+                    heartRateBpm = heartRateGroups.getOrNull(i)?.result?.get(HeartRateRecord.BPM_AVG),
+                    sleepHours = sleepGroups.getOrNull(i)?.result?.get(SleepSessionRecord.SLEEP_DURATION_TOTAL)
+                        ?.toMinutes()?.div(60.0),
+                )
+            }
+        }.getOrDefault(emptyList())
     }
+
+    /**
+     * Media dei soli giorni con un dato reale, non della finestra intera
+     * (§ bug reale trovato: il calcolo precedente divideva il sonno totale
+     * per 7 fisso — con solo 2 notti effettivamente sincronizzate su Health
+     * Connect, il risultato era ~2h invece della vera media per notte
+     * dormita, coerente con l'1h55m segnalato dall'utente come sbagliato).
+     * Un giorno assente ora viene semplicemente escluso dalla media invece
+     * di contare come uno zero implicito.
+     */
+    private fun computeAverages(daily: List<DailyHealthReading>): WeeklyHealthAverages {
+        val bpmValues = daily.mapNotNull { it.heartRateBpm }
+        val sleepValues = daily.mapNotNull { it.sleepHours }
+        return WeeklyHealthAverages(
+            avgHeartRateBpm = if (bpmValues.isNotEmpty()) bpmValues.average().roundToLong() else null,
+            avgSleepPerNight = if (sleepValues.isNotEmpty()) Duration.ofMinutes((sleepValues.average() * 60.0).roundToLong()) else null,
+        )
+    }
+
+    /**
+     * Live read from Health Connect, then persisted (§ richiesta esplicita:
+     * "questi risultati devono aggiornarsi ogni mattina poco dopo il
+     * briefing mattutino") — chiamato sia da [com.simone.jarvismobile.proactive.ProactiveManager]
+     * nello stesso punto in cui già aggiorna il meteo ogni mattina, sia da
+     * `AresViewModel` per un refresh immediato quando l'utente apre la
+     * schermata o concede l'accesso. Null quando i permessi mancano o la
+     * lettura fallisce — la cache esistente resta quella vecchia, mai
+     * cancellata da un fallimento.
+     */
+    suspend fun refresh(): HealthSnapshot? {
+        if (!hasPermissions()) return null
+        val daily = fetchDailySeries()
+        if (daily.isEmpty()) return null
+        val snapshot = HealthSnapshot(daily, computeAverages(daily))
+        runCatching { settings.setHealthDailyCache(snapshot.toCacheJson(System.currentTimeMillis())) }
+        return snapshot
+    }
+
+    /** Ultimo snapshot salvato — istantaneo, nessuna lettura da Health Connect (§ stesso pattern di [com.simone.jarvismobile.weather.WeatherManager.cachedOutlook]). */
+    suspend fun cachedSnapshot(): HealthSnapshot? = healthSnapshotFromCacheJson(settings.healthDailyCache.first())
 }

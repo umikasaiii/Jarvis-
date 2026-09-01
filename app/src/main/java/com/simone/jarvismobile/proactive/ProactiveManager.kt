@@ -17,6 +17,7 @@ import com.simone.jarvismobile.core.proactive.ProactiveSettings
 import com.simone.jarvismobile.core.proactive.ProactiveSnapshot
 import com.simone.jarvismobile.core.proactive.ProactiveSuggestion
 import com.simone.jarvismobile.data.SettingsRepository
+import com.simone.jarvismobile.health.HealthConnectManager
 import com.simone.jarvismobile.weather.WeatherManager
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.first
@@ -44,6 +45,7 @@ class ProactiveManager @Inject constructor(
     private val coordinator: SessionCoordinator,
     private val contextEngine: ContextEngine,
     private val weather: WeatherManager,
+    private val health: HealthConnectManager,
 ) {
     /**
      * Called periodically by the worker as a coarse fallback (see
@@ -161,6 +163,13 @@ class ProactiveManager @Inject constructor(
         // briefing mattutino). A no-op when weather is off (checked inside
         // refresh() itself), so this costs nothing for anyone not using it.
         runCatching { weather.refresh() }
+        // Health Connect BPM/sonno (§ richiesta esplicita dell'utente:
+        // "questi risultati devono aggiornarsi ogni mattina poco dopo il
+        // briefing mattutino") — stesso punto e stesso motivo del refresh
+        // meteo qui sopra: la prima cosa che succede vicino al vero primo
+        // sblocco della giornata. No-op economico quando i permessi non
+        // sono concessi (controllato dentro refresh() stesso).
+        runCatching { health.refresh() }
         // Reuses ContextEngine's own staleness cutoff, so a refresher that has
         // stopped working reads as "unknown" here too, not as a frozen forecast.
         val rain = runCatching { contextEngine.evaluationContext(now = now) }.getOrNull()

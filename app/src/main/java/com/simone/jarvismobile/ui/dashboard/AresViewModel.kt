@@ -35,6 +35,15 @@ class AresViewModel @Inject constructor(
     private val _healthAverages = MutableStateFlow<HealthConnectManager.WeeklyHealthAverages?>(null)
     val healthAverages: StateFlow<HealthConnectManager.WeeklyHealthAverages?> = _healthAverages.asStateFlow()
 
+    /**
+     * Andamento giornaliero, con data, per la sparkline e per il dettaglio a
+     * tocco (§ richiesta esplicita: "un piccolo grafico a linea che varia in
+     * base all'andamento dei numeri" + "se clicco... vorrei visualizzare la
+     * media di ogni singolo giorno... compreso di data").
+     */
+    private val _healthDaily = MutableStateFlow<List<HealthConnectManager.DailyHealthReading>>(emptyList())
+    val healthDaily: StateFlow<List<HealthConnectManager.DailyHealthReading>> = _healthDaily.asStateFlow()
+
     val healthAvailable: Boolean get() = health.isAvailable
     /** Apre le impostazioni di Health Connect (§ richiesta esplicita: "aprire la pagina... ed io posso metterlo manualmente"). */
     fun healthSettingsIntent() = health.settingsIntent()
@@ -75,12 +84,30 @@ class AresViewModel @Inject constructor(
         _hourly.value = null
     }
 
-    /** Called on screen resume and right after the permission dialog closes. */
+    private fun applySnapshot(snapshot: HealthConnectManager.HealthSnapshot) {
+        _healthAverages.value = snapshot.averages
+        _healthDaily.value = snapshot.daily
+    }
+
+    /**
+     * Chiamato all'apertura schermo e a ogni ON_RESUME. Mostra prima la
+     * cache (istantanea, § stesso pattern di [WeatherManager.cachedOutlook]),
+     * poi un refresh live la sovrascrive se riesce — così l'utente vede
+     * subito qualcosa invece di uno schermo vuoto mentre Health Connect
+     * risponde, e i dati restano comunque aggiornati appena aperti (oltre al
+     * refresh automatico mattutino in ProactiveManager).
+     */
     fun refreshHealth() {
         viewModelScope.launch {
             val granted = health.hasPermissions()
             _healthGranted.value = granted
-            _healthAverages.value = if (granted) health.weeklyAverages() else null
+            if (!granted) {
+                _healthAverages.value = null
+                _healthDaily.value = emptyList()
+                return@launch
+            }
+            health.cachedSnapshot()?.let { applySnapshot(it) }
+            health.refresh()?.let { applySnapshot(it) }
         }
     }
 }

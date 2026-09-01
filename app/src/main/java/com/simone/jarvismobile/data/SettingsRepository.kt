@@ -134,6 +134,10 @@ class SettingsRepository @Inject constructor(
         val WEATHER_ENABLED = booleanPreferencesKey("weather_enabled")
         val WEATHER_PLACE_ID = stringPreferencesKey("weather_place_id")
         val WEATHER_OUTLOOK_CACHE = stringPreferencesKey("weather_outlook_cache")
+        // Tema Atena, Health Connect (§ richiesta esplicita: "aggiornarsi ogni
+        // mattina poco dopo il briefing mattutino") — stesso pattern di
+        // WEATHER_OUTLOOK_CACHE.
+        val HEALTH_DAILY_CACHE = stringPreferencesKey("health_daily_cache")
         val THEME_ID = stringPreferencesKey("theme_id")
         // User-picked destination folder (SAF tree URI). Survives uninstall and
         // doubles as the restore source when it already holds backups.
@@ -912,6 +916,10 @@ class SettingsRepository @Inject constructor(
     val weatherOutlookCache: Flow<String> =
         context.settingsDataStore.data.map { it[Keys.WEATHER_OUTLOOK_CACHE] ?: "" }
 
+    /** Same "instant from cache, overwritten wholesale on refresh" contract as [weatherOutlookCache], for Health Connect's daily BPM/sonno series. */
+    val healthDailyCache: Flow<String> =
+        context.settingsDataStore.data.map { it[Keys.HEALTH_DAILY_CACHE] ?: "" }
+
     /**
      * The visual theme's id (§ Impostazioni › Temi), e.g. "blu" (default) or
      * "rosso". Stored as a plain string rather than an enum so an app downgrade
@@ -979,6 +987,10 @@ class SettingsRepository @Inject constructor(
 
     suspend fun setWeatherOutlookCache(value: String) {
         context.settingsDataStore.edit { it[Keys.WEATHER_OUTLOOK_CACHE] = value }
+    }
+
+    suspend fun setHealthDailyCache(value: String) {
+        context.settingsDataStore.edit { it[Keys.HEALTH_DAILY_CACHE] = value }
     }
 
     suspend fun setThemeId(value: String) {
