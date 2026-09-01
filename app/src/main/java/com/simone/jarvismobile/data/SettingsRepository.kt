@@ -133,6 +133,7 @@ class SettingsRepository @Inject constructor(
         // offline-first, only ever the rounded coordinate, never anything else) --
         val WEATHER_ENABLED = booleanPreferencesKey("weather_enabled")
         val WEATHER_PLACE_ID = stringPreferencesKey("weather_place_id")
+        val WEATHER_OUTLOOK_CACHE = stringPreferencesKey("weather_outlook_cache")
         val THEME_ID = stringPreferencesKey("theme_id")
         // User-picked destination folder (SAF tree URI). Survives uninstall and
         // doubles as the restore source when it already holds backups.
@@ -900,6 +901,18 @@ class SettingsRepository @Inject constructor(
         context.settingsDataStore.data.map { it[Keys.WEATHER_PLACE_ID] ?: "" }
 
     /**
+     * The last successfully fetched weekly outlook, serialised to JSON
+     * (§ tema Atena, richiesta esplicita: "il meteo deve essere aggiornato
+     * ogni tanto, e salvato temporaneamente in locale, e poi sovrascritto
+     * con quelli nuovi"). Read once on screen open so the UI shows the last
+     * known values instantly instead of blank while a fresh fetch is still
+     * in flight; overwritten wholesale on every successful refresh, never
+     * merged field-by-field. Empty string means "nothing cached yet".
+     */
+    val weatherOutlookCache: Flow<String> =
+        context.settingsDataStore.data.map { it[Keys.WEATHER_OUTLOOK_CACHE] ?: "" }
+
+    /**
      * The visual theme's id (§ Impostazioni › Temi), e.g. "blu" (default) or
      * "rosso". Stored as a plain string rather than an enum so an app downgrade
      * or a future theme id never fails to decode — an unrecognised value is
@@ -962,6 +975,10 @@ class SettingsRepository @Inject constructor(
 
     suspend fun setWeatherPlaceId(value: String) {
         context.settingsDataStore.edit { it[Keys.WEATHER_PLACE_ID] = value }
+    }
+
+    suspend fun setWeatherOutlookCache(value: String) {
+        context.settingsDataStore.edit { it[Keys.WEATHER_OUTLOOK_CACHE] = value }
     }
 
     suspend fun setThemeId(value: String) {

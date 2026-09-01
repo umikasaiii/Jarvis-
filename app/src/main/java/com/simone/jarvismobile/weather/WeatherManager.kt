@@ -67,6 +67,16 @@ class WeatherManager @Inject constructor(
             todayWeather = forecast?.todayCategory,
         )
         Log.i(TAG, "weather_refreshed ok=${forecast != null}")
+
+        // Same periodic tick (§ tema Atena: "il meteo deve essere aggiornato
+        // ogni tanto") also keeps the weekly-outlook cache current — reuses
+        // the coordinate already resolved above instead of resolving twice.
+        // A failed outlook fetch just leaves the previous cache in place,
+        // same as any other "unknown stays unknown" fallback in this class.
+        val outlook = source.fetchWeeklyOutlook(point.first, point.second)
+        if (outlook != null) {
+            settings.setWeatherOutlookCache(outlook.toCacheJson(System.currentTimeMillis()))
+        }
     }
 
     /**
@@ -83,7 +93,33 @@ class WeatherManager @Inject constructor(
     suspend fun fetchWeeklyOutlook(): WeeklyOutlook? {
         if (!settings.weatherEnabled.first()) return null
         val point = resolvePoint() ?: return null
-        return source.fetchWeeklyOutlook(point.first, point.second)
+        val outlook = source.fetchWeeklyOutlook(point.first, point.second)
+        if (outlook != null) {
+            settings.setWeatherOutlookCache(outlook.toCacheJson(System.currentTimeMillis()))
+        }
+        return outlook
+    }
+
+    /**
+     * The last cached outlook (§ "salvato temporaneamente in locale"), read
+     * synchronously-ish so a screen can show *something* the instant it opens
+     * instead of a blank card while [fetchWeeklyOutlook] is still in flight.
+     * Never a guess: null when nothing has ever been cached or the stored
+     * JSON fails to decode.
+     */
+    suspend fun cachedOutlook(): WeeklyOutlook? = outlookFromCacheJson(settings.weatherOutlookCache.first())
+
+    /**
+     * 24-hour detail for one day (§ tema Atena: tap su un'icona meteo). Same
+     * coordinate resolution, but never persisted/cached — it is fetched fresh
+     * only when the user actually opens the day-detail sheet, so a value the
+     * user never looks at never costs a request.
+     */
+    @SuppressLint("MissingPermission")
+    suspend fun fetchHourlyForecast(dayIndex: Int): HourlyForecast? {
+        if (!settings.weatherEnabled.first()) return null
+        val point = resolvePoint() ?: return null
+        return source.fetchHourlyForecast(point.first, point.second, dayIndex)
     }
 
     /** The chosen saved place's coordinate, or the last-known fix as a fallback. */

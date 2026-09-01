@@ -55,8 +55,30 @@ data class WeeklyOutlook(
     val currentCategory: WeatherCategory?,
     val currentWindKmh: Double?,
     val currentWindDirectionDeg: Double?,
+    /** From Open-Meteo's own `is_day` flag — real day/night, not a local sunrise/
+     *  sunset guess (§ tema Atena, richiesta esplicita: icone meteo diverse di
+     *  giorno/notte). Null only if the API omits the field. */
+    val currentIsDay: Boolean? = null,
     /** Tomorrow, the day after, three days out — in that order. */
     val upcoming: List<DayOutlook>,
+)
+
+/** One hour's reading inside an [HourlyForecast] (§ tema Atena: "aprirmi previsione
+ *  meteo per tutte le 24h di quel giorno"). [hour] is 0-23, local time. */
+data class HourlyReading(
+    val hour: Int,
+    val category: WeatherCategory?,
+    val tempC: Double?,
+    val isDay: Boolean?,
+)
+
+/** 24 hours for one calendar day, resolved from the same 4-day request as the
+ *  weekly outlook — a separate, on-demand fetch (only called when the user
+ *  actually taps a day icon), not prefetched for all 4 days on every screen
+ *  open. */
+data class HourlyForecast(
+    val date: java.time.LocalDate,
+    val hours: List<HourlyReading>,
 )
 
 /**
@@ -110,6 +132,16 @@ class OpenMeteoWeatherSource @Inject constructor() : WeatherSource {
                 .getOrNull()
         }
 
+    override suspend fun fetchHourlyForecast(
+        latitude: Double,
+        longitude: Double,
+        dayIndex: Int,
+    ): HourlyForecast? = withContext(Dispatchers.IO) {
+        runCatching { fetchHourlyOrThrow(latitude, longitude, dayIndex) }
+            .onFailure { Log.w(TAG, "weather_hourly_fetch_failed ${it.javaClass.simpleName}") }
+            .getOrNull()
+    }
+
     /** Throws on anything wrong; the caller wraps this in [runCatching]. */
     private fun fetchOrThrow(latitude: Double, longitude: Double): RainForecast? {
         val url = "https://api.open-meteo.com/v1/forecast" +
@@ -159,8 +191,45 @@ class OpenMeteoWeatherSource @Inject constructor() : WeatherSource {
             currentCategory = WeatherCategory.fromWmoCode(current?.weatherCode),
             currentWindKmh = current?.windSpeed,
             currentWindDirectionDeg = current?.windDirection,
+            currentIsDay = current?.isDay?.let { it == 1 },
             upcoming = listOf(dayAt(1), dayAt(2), dayAt(3)),
         )
+    }
+
+    /**
+     * Throws on anything wrong; the caller wraps this in [runCatching]. A
+     * third, independent request — `hourly=` instead of `daily=`/`current_weather=`
+     * — fetched only when the user actually taps a day icon (§ tema Atena),
+     * never prefetched. [dayIndex] matches [WeeklyOutlook]'s own convention
+     * (0 = today, 1..3 = the three [DayOutlook.category] cards), so the same
+     * index the UI already has for a tapped day slices straight into this
+     * response's flat 96-hour (4×24) arrays — no separate date math needed.
+     */
+    private fun fetchHourlyOrThrow(latitude: Double, longitude: Double, dayIndex: Int): HourlyForecast? {
+        val url = "https://api.open-meteo.com/v1/forecast" +
+            "?latitude=${round(latitude)}&longitude=${round(longitude)}" +
+            "&hourly=temperature_2m,weathercode,is_day&timezone=auto&forecast_days=4"
+        val request = Request.Builder().url(url).build()
+        val response = client.newCall(request).execute()
+        val body = response.use { r -> if (r.isSuccessful) r.body?.string() else null } ?: return null
+        val parsed = json.decodeFromString(OpenMeteoHourlyResponse.serializer(), body)
+        val hourly = parsed.hourly ?: return null
+        val times = hourly.time.orEmpty()
+        val start = (dayIndex * 24).coerceIn(0, times.size)
+        val end = ((dayIndex + 1) * 24).coerceIn(0, times.size)
+        if (start >= end) return null
+        val date = times.getOrNull(start)?.take(10)?.let {
+            runCatching { java.time.LocalDate.parse(it) }.getOrNull()
+        } ?: return null
+        val hours = (start until end).map { i ->
+            HourlyReading(
+                hour = i - start,
+                category = WeatherCategory.fromWmoCode(hourly.weatherCode?.getOrNull(i)),
+                tempC = hourly.temperature?.getOrNull(i),
+                isDay = hourly.isDay?.getOrNull(i)?.let { it == 1 },
+            )
+        }
+        return HourlyForecast(date, hours)
     }
 
     /**
@@ -211,6 +280,22 @@ class OpenMeteoWeatherSource @Inject constructor() : WeatherSource {
         val windSpeed: Double? = null,
         @SerialName("winddirection")
         val windDirection: Double? = null,
+        @SerialName("is_day")
+        val isDay: Int? = null,
+    )
+
+    @Serializable
+    private data class OpenMeteoHourlyResponse(val hourly: Hourly? = null)
+
+    @Serializable
+    private data class Hourly(
+        val time: List<String>? = null,
+        @SerialName("temperature_2m")
+        val temperature: List<Double>? = null,
+        @SerialName("weathercode")
+        val weatherCode: List<Int>? = null,
+        @SerialName("is_day")
+        val isDay: List<Int>? = null,
     )
 
     private companion object {
@@ -226,4 +311,8 @@ interface WeatherSource {
 
     /** Null on any failure — never a guessed/last-known outlook. */
     suspend fun fetchWeeklyOutlook(latitude: Double, longitude: Double): WeeklyOutlook?
+
+    /** Null on any failure. [dayIndex] follows [WeeklyOutlook]'s convention:
+     *  0 = today, 1..3 = [WeeklyOutlook.upcoming]'s three days. */
+    suspend fun fetchHourlyForecast(latitude: Double, longitude: Double, dayIndex: Int): HourlyForecast?
 }

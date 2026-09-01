@@ -38,6 +38,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CutCornerShape
@@ -46,13 +47,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.AcUnit
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Description
@@ -73,6 +73,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Switch
@@ -103,6 +104,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -314,7 +316,6 @@ fun DashboardScreen(
             onOpenSettings = onOpenSettings,
             onOpenChat = { viewModel.markChatSeen(); onOpenChat() },
             onOpenAgenda = onOpenAgenda,
-            onOpenAutomations = onOpenAutomations,
             onOpenDrive = { context.startActivity(DrivingModeActivity.intent(context)) },
             onOpenTranslator = onOpenTranslator,
             onOpenArchive = onOpenArchive,
@@ -1623,9 +1624,10 @@ private fun orbSubtitle(state: ConversationState): String = when (state) {
 // dati per lo stesso fatto.
 
 private const val ARES_ORB_BG_ASPECT_RATIO = 1200f / 296f
-private const val ARES_REMINDERS_ASPECT_RATIO = 900f / 589f
-private const val ARES_SHORTCUTS_ASPECT_RATIO = 900f / 408f
-private const val ARES_MEMORY_ASPECT_RATIO = 784f / 675f
+private const val ARES_REMINDERS_ASPECT_RATIO = 658f / 700f
+private const val ARES_SHORTCUTS_ASPECT_RATIO = 1100f / 234f
+private const val ARES_MEMORY_ASPECT_RATIO = 694f / 700f
+private const val ARES_METEO_ASPECT_RATIO = 456f / 700f
 
 @Composable
 internal fun AresHomeScreen(
@@ -1646,7 +1648,6 @@ internal fun AresHomeScreen(
     onOpenSettings: () -> Unit,
     onOpenChat: () -> Unit,
     onOpenAgenda: () -> Unit,
-    onOpenAutomations: () -> Unit,
     onOpenDrive: () -> Unit,
     onOpenTranslator: () -> Unit,
     onOpenArchive: () -> Unit,
@@ -1715,7 +1716,11 @@ internal fun AresHomeScreen(
     val storageUsage by archiveVm.storageUsage.collectAsStateWithLifecycle()
 
     val dayEntries = Agenda.sorted(allEntries.filter { it.date == selectedDate })
-    val reminderEntries = timeline.filter { !it.done }.take(7)
+    // Solo i primi 3 di OGGI non completati (§ richiesta esplicita: "andranno
+    // in ogni riga dei promemoria, i primi 3 della giornata che devono
+    // ancora essere completati") — [today] è già la lista degli impegni di
+    // oggi (stesso parametro usato dal blocco Sistema del tema classico).
+    val todayReminders = Agenda.sorted(today.filter { !it.done }).take(3)
 
     Box(modifier = Modifier.fillMaxSize().background(Color(0xFF02060B))) {
         // Stesso sfondo di Rouge (§ richiesta esplicita dell'utente: "lo
@@ -1792,8 +1797,11 @@ internal fun AresHomeScreen(
                 )
             }
 
-            // --- Orb dentro il suo sfondo rettangolare -----------------------
-            BoxWithConstraints(Modifier.fillMaxWidth()) {
+            // --- Orb dentro il suo sfondo rettangolare, tutto il blocco
+            // cliccabile (§ richiesta esplicita: "Orb e tutto il blocco deve
+            // essere cliccabile") — prima solo l'immagine dell'orb reagiva al
+            // tocco, ora l'intero banner (compreso lo sfondo con i circuiti).
+            BoxWithConstraints(Modifier.fillMaxWidth().clickable(onClick = onOrbClick)) {
                 val bannerHeight = maxWidth / ARES_ORB_BG_ASPECT_RATIO
                 Box(Modifier.fillMaxWidth().height(bannerHeight)) {
                     Image(
@@ -1806,30 +1814,58 @@ internal fun AresHomeScreen(
                         painter = painterResource(R.drawable.ares_orb),
                         contentDescription = name,
                         contentScale = ContentScale.Fit,
-                        modifier = Modifier
-                            .align(Alignment.Center)
-                            .size(bannerHeight * 0.9f)
-                            .clickable(onClick = onOrbClick),
+                        modifier = Modifier.align(Alignment.Center).size(bannerHeight * 0.9f),
                     )
                 }
             }
 
-            // --- Sistema: meteo (oggi + 3 giorni) + bpm/sonno settimanali ---
-            AresSystemBlock(
-                outlook = outlook,
-                healthAvailable = aresViewModel.healthAvailable,
-                healthGranted = healthGranted,
-                healthSdkStatusLabel = aresViewModel.healthSdkStatusLabel(),
-                healthAverages = healthAverages,
-                onRequestHealth = onRequestHealthConnect,
-            )
+            // --- Meteo (card a sé) + BPM/Sonno (card a sé), stessa altezza
+            // (§ nuovo mockup: griglia 2 colonne, non più un'unica "Sistema")
+            var hourlyDayIndex by remember { mutableStateOf<Int?>(null) }
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val columnWidth = (maxWidth - 10.dp) / 2
+                val cardHeight = columnWidth / ARES_METEO_ASPECT_RATIO
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    AresMeteoCard(
+                        outlook = outlook,
+                        modifier = Modifier.weight(1f),
+                        height = cardHeight,
+                        onDayClick = { dayIndex ->
+                            hourlyDayIndex = dayIndex
+                            aresViewModel.loadHourlyForecast(dayIndex)
+                        },
+                    )
+                    AresBpmSonnoCard(
+                        healthAvailable = aresViewModel.healthAvailable,
+                        healthGranted = healthGranted,
+                        healthSdkStatusLabel = aresViewModel.healthSdkStatusLabel(),
+                        healthAverages = healthAverages,
+                        onRequestHealth = onRequestHealthConnect,
+                        modifier = Modifier.weight(1f),
+                        height = cardHeight,
+                    )
+                }
+            }
+            if (hourlyDayIndex != null) {
+                val hourly by aresViewModel.hourly.collectAsStateWithLifecycle()
+                val hourlyLoading by aresViewModel.hourlyLoading.collectAsStateWithLifecycle()
+                AresHourlyForecastSheet(
+                    dayIndex = hourlyDayIndex!!,
+                    forecast = hourly,
+                    loading = hourlyLoading,
+                    onDismiss = {
+                        hourlyDayIndex = null
+                        aresViewModel.clearHourlyForecast()
+                    },
+                )
+            }
 
             // --- Promemoria (largo) + Memoria (stretta, verticale) ----------
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 AresRemindersCard(
-                    entries = reminderEntries,
+                    entries = todayReminders,
                     modifier = Modifier.weight(2f),
-                    onClick = onOpenAgenda,
+                    onOpenSection = onOpenAgenda,
                 )
                 AresMemoryCard(
                     usedBytes = storageUsage.usedBytes,
@@ -1838,9 +1874,9 @@ internal fun AresHomeScreen(
                 )
             }
 
-            // --- Automazioni / JARVIS Drive / Traduttore (solo icone) ------
+            // --- Impostazioni / Navigazione / Traduttore (solo icone) ------
             AresShortcutsRow(
-                onOpenAutomations = onOpenAutomations,
+                onOpenSettings = onOpenSettings,
                 onOpenDrive = onOpenDrive,
                 onOpenTranslator = onOpenTranslator,
             )
@@ -1866,25 +1902,29 @@ internal fun AresHomeScreen(
                 ToggleRow(Icons.Filled.Security, "Sicurezza", "Inserito", on = true)
             }
 
-            Spacer(Modifier.height(72.dp)) // room so the chat button never covers the last card
+            Spacer(Modifier.height(56.dp)) // room so the chat button never covers the last card
         }
 
         // Pulsante chat, arte dedicata Ares (§ prima immagine del secondo
         // messaggio: un'icona a onda sonora, coerente con un assistente
-        // vocale) — stessa posizione/dimensione della chat FAB delle altre
-        // versioni tema.
+        // vocale) — già un overlay fluttuante fuori dalla Column che
+        // scorre (non occupa spazio nel flusso), come richiesto ("in
+        // rilievo non occupando spazio nella home"); qui solo ridotto
+        // ("un po' più piccolo di prima") 104dp->88dp, contenitore
+        // 112dp->96dp, con lo spazio riservato in coda alla Column
+        // ridotto di conseguenza.
         Box(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(end = 2.dp, bottom = 4.dp)
-                .size(112.dp),
+                .size(96.dp),
             contentAlignment = Alignment.Center,
         ) {
             Image(
                 painter = painterResource(R.drawable.ares_chat_fab),
                 contentDescription = "Chat",
                 modifier = Modifier
-                    .size(104.dp)
+                    .size(88.dp)
                     .clip(androidx.compose.foundation.shape.CircleShape)
                     .clickable(onClick = onOpenChat),
                 contentScale = ContentScale.Fit,
@@ -1922,15 +1962,20 @@ private fun weatherCategoryLabel(category: WeatherCategory?): String = when (cat
 }
 
 /**
- * Real icon art cropped from the user's own reference image (§ richiesta
- * esplicita: "lo voglio esattamente identico a questo"), replacing the flat
- * Unicode weather emoji used in the first Ares round. No dedicated
+ * Real icon art cropped from the user's own reference images. No dedicated
  * thunderstorm glyph exists in the reference pack — the rain cloud is the
  * closest honest stand-in rather than inventing a fifth icon.
+ *
+ * [isDay] (§ tema Atena, richiesta esplicita: "per ogni situazione
+ * meteorologica apparirà la propria immagine") picks a real day/night variant
+ * for CLEAR/PARTLY_CLOUDY, from Open-Meteo's own `is_day` flag — never a
+ * local sunrise/sunset guess. CLOUDY/RAIN/THUNDERSTORM have only one variant
+ * in the reference pack (a plain cloud mass reads the same day or night), so
+ * [isDay] is ignored for those rather than inventing a second asset.
  */
-private fun weatherIconRes(category: WeatherCategory?): Int? = when (category) {
-    WeatherCategory.CLEAR -> R.drawable.ares_wx_clear
-    WeatherCategory.PARTLY_CLOUDY -> R.drawable.ares_wx_partly_cloudy
+private fun weatherIconRes(category: WeatherCategory?, isDay: Boolean?): Int? = when (category) {
+    WeatherCategory.CLEAR -> if (isDay == false) R.drawable.ares_wx_night_clear else R.drawable.ares_wx_clear
+    WeatherCategory.PARTLY_CLOUDY -> if (isDay == false) R.drawable.ares_wx_night_cloudy else R.drawable.ares_wx_partly_cloudy
     WeatherCategory.CLOUDY -> R.drawable.ares_wx_cloudy
     WeatherCategory.RAIN -> R.drawable.ares_wx_rain
     WeatherCategory.THUNDERSTORM -> R.drawable.ares_wx_rain
@@ -1938,48 +1983,64 @@ private fun weatherIconRes(category: WeatherCategory?): Int? = when (category) {
 }
 
 @Composable
-private fun WeatherIcon(category: WeatherCategory?, size: androidx.compose.ui.unit.Dp) {
-    val res = weatherIconRes(category)
+private fun WeatherIcon(
+    category: WeatherCategory?,
+    size: androidx.compose.ui.unit.Dp,
+    isDay: Boolean? = null,
+    onClick: (() -> Unit)? = null,
+) {
+    val res = weatherIconRes(category, isDay)
+    val base = if (onClick != null) Modifier.size(size).clickable(onClick = onClick) else Modifier.size(size)
     if (res != null) {
         Image(
             painter = painterResource(res),
             contentDescription = null,
             contentScale = ContentScale.Fit,
-            modifier = Modifier.size(size),
+            modifier = base,
         )
     } else {
-        Box(Modifier.size(size))
+        Box(base)
     }
 }
 
 /**
- * Meteo di oggi + prossimi 3 giorni, e le due medie settimanali (bpm/sonno) —
- * il pannello "SISTEMA" dell'immagine di riferimento dell'utente (presa
- * esplicitamente "solo come esempio" per il layout, mai per i numeri: quelli
- * qui sono sempre reali o assenti, mai gli esempi mostrati nella foto).
+ * Meteo di oggi (cliccabile -> previsione oraria) + prossimi 3 giorni
+ * (ciascuno cliccabile -> previsione oraria di quel giorno), sul template
+ * "METEO" fornito dall'utente. Card a sé, non più affiancata a bpm/sonno
+ * dentro un'unica "SISTEMA" (§ nuovo mockup: card separate).
  */
 @Composable
-private fun AresSystemBlock(
+private fun AresMeteoCard(
     outlook: WeeklyOutlook?,
-    healthAvailable: Boolean,
-    healthGranted: Boolean,
-    healthSdkStatusLabel: String,
-    healthAverages: HealthConnectManager.WeeklyHealthAverages?,
-    onRequestHealth: () -> Unit,
+    modifier: Modifier = Modifier,
+    height: Dp? = null,
+    onDayClick: (Int) -> Unit,
 ) {
-    GlassCard {
-        CardHeader(Icons.Filled.Cloud, "SISTEMA", reserveEnd = false)
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            // --- Meteo -----------------------------------------------------
-            Column(Modifier.weight(1f)) {
-                Text("OGGI", color = Cyan, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 2.sp)
+    BoxWithConstraints(modifier) {
+        val w = maxWidth
+        val h = height ?: (w / ARES_METEO_ASPECT_RATIO)
+        Box(Modifier.fillMaxWidth().height(h)) {
+            Image(
+                painter = painterResource(R.drawable.ares_meteo_frame),
+                contentDescription = "Meteo",
+                contentScale = ContentScale.FillBounds,
+                modifier = Modifier.matchParentSize(),
+            )
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(start = w * 0.09f, end = w * 0.07f, top = h * 0.15f, bottom = h * 0.04f),
+            ) {
                 if (outlook?.currentTempC != null) {
-                    Row(verticalAlignment = Alignment.Bottom) {
-                        WeatherIcon(outlook.currentCategory, 48.dp)
+                    Row(
+                        verticalAlignment = Alignment.Bottom,
+                        modifier = Modifier.clickable { onDayClick(0) },
+                    ) {
+                        WeatherIcon(outlook.currentCategory, 44.dp, outlook.currentIsDay)
                         Spacer(Modifier.width(6.dp))
                         Text(
                             "${outlook.currentTempC.roundToInt()}°",
-                            color = Ink, fontSize = 26.sp, fontWeight = FontWeight.Bold,
+                            color = Ink, fontSize = 24.sp, fontWeight = FontWeight.Bold,
                         )
                     }
                     Text(weatherCategoryLabel(outlook.currentCategory), color = Muted, fontSize = 10.sp)
@@ -1994,15 +2055,18 @@ private fun AresSystemBlock(
                     Text("Meteo non disponibile", color = Muted, fontSize = 10.sp)
                     Text("(attivalo in Impostazioni)", color = Muted, fontSize = 9.sp)
                 }
-                Spacer(Modifier.height(8.dp))
-                val dayLabels = listOf("Domani", "Dopodomani", "Tra 3gg")
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Spacer(Modifier.weight(1f))
+                val dayLabels = listOf("Domani", "Dopodom.", "Tra 3gg")
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                     val days = outlook?.upcoming.orEmpty()
                     for (i in 0 until 3) {
                         val day = days.getOrNull(i)
-                        Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(dayLabels[i], color = Muted, fontSize = 8.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            WeatherIcon(day?.category, 28.dp)
+                        Column(
+                            modifier = Modifier.weight(1f).clickable { onDayClick(i + 1) },
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Text(dayLabels[i], color = Muted, fontSize = 7.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            WeatherIcon(day?.category, 24.dp, isDay = true)
                             val hi = day?.tempMaxC?.roundToInt()?.toString() ?: "—"
                             val lo = day?.tempMinC?.roundToInt()?.toString() ?: "—"
                             Text("$hi°/$lo°", color = Ink, fontSize = 9.sp, maxLines = 1)
@@ -2010,32 +2074,56 @@ private fun AresSystemBlock(
                     }
                 }
             }
-            // --- BPM + sonno -------------------------------------------------
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        }
+    }
+}
+
+/**
+ * BPM medi + sonno medio, sul template a due pannelli fornito dall'utente
+ * (icona/etichetta/anello già disegnati nell'immagine — qui viene sovrapposto
+ * solo il dato dinamico: numero, tendenza, o "Concedi accesso", mai un
+ * secondo anello ridisegnato sopra quello già presente nel PNG).
+ */
+@Composable
+private fun AresBpmSonnoCard(
+    healthAvailable: Boolean,
+    healthGranted: Boolean,
+    healthSdkStatusLabel: String,
+    healthAverages: HealthConnectManager.WeeklyHealthAverages?,
+    onRequestHealth: () -> Unit,
+    modifier: Modifier = Modifier,
+    height: Dp? = null,
+) {
+    BoxWithConstraints(modifier) {
+        val w = maxWidth
+        val h = height ?: w
+        Box(Modifier.fillMaxWidth().height(h)) {
+            Image(
+                painter = painterResource(R.drawable.ares_bpm_sonno_card),
+                contentDescription = null,
+                contentScale = ContentScale.FillBounds,
+                modifier = Modifier.matchParentSize(),
+            )
+            Column(Modifier.fillMaxSize()) {
                 val bpm = healthAverages?.avgHeartRateBpm
-                AresHealthTile(
-                    icon = Icons.Filled.Favorite,
-                    label = "BPM medi (7gg)",
+                AresHealthValue(
                     value = bpm?.let { "$it bpm" },
-                    // 40-160 bpm covers resting through elevated heart rate —
-                    // a reasonable gauge range, not a medical claim.
-                    gaugeFraction = bpm?.let { ((it - 40.0) / 120.0).coerceIn(0.0, 1.0).toFloat() },
                     healthAvailable = healthAvailable,
                     healthGranted = healthGranted,
                     healthSdkStatusLabel = healthSdkStatusLabel,
                     onRequestHealth = onRequestHealth,
+                    modifier = Modifier.weight(1f).fillMaxWidth()
+                        .padding(start = w * 0.42f, end = w * 0.08f),
                 )
                 val sleep = healthAverages?.avgSleepPerNight
-                AresHealthTile(
-                    icon = Icons.Filled.Bedtime,
-                    label = "Sonno medio (7gg)",
+                AresHealthValue(
                     value = sleep?.let { "${it.toHours()}h ${it.toMinutesPart()}m" },
-                    // 0-10h covers the realistic nightly range.
-                    gaugeFraction = sleep?.let { (it.toMinutes() / 600.0).coerceIn(0.0, 1.0).toFloat() },
                     healthAvailable = healthAvailable,
                     healthGranted = healthGranted,
                     healthSdkStatusLabel = healthSdkStatusLabel,
                     onRequestHealth = onRequestHealth,
+                    modifier = Modifier.weight(1f).fillMaxWidth()
+                        .padding(start = w * 0.42f, end = w * 0.08f),
                 )
             }
         }
@@ -2043,145 +2131,144 @@ private fun AresSystemBlock(
 }
 
 /**
- * One BPM/sonno tile. Never shows a placeholder number — Health Connect
- * unavailable, ungranted, and "no data written there" are three genuinely
- * different states, and each says so honestly instead of collapsing to a
- * blank or a guess. [gaugeFraction] (0-1, only present alongside a real
- * [value]) draws a ring around the icon like the reference mockup — its
- * arc length reflects the real reading against a reasonable min/max range
- * (documented at the call site), never an invented percentage.
+ * Solo il dato dinamico di una riga BPM/Sonno del template — mai un
+ * placeholder: Health Connect non disponibile, non concesso, e "nessun dato
+ * scritto lì" restano tre stati onestamente distinti, come nella tile
+ * precedente che questo sostituisce.
  */
 @Composable
-private fun AresHealthTile(
-    icon: ImageVector,
-    label: String,
+private fun AresHealthValue(
     value: String?,
-    gaugeFraction: Float?,
     healthAvailable: Boolean,
     healthGranted: Boolean,
     healthSdkStatusLabel: String,
     onRequestHealth: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(Color(0x33081521))
-            .padding(10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        val cyan = Cyan
-        Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) {
-            Canvas(Modifier.fillMaxSize()) {
-                val strokeWidth = 3.dp.toPx()
-                val ringRadius = size.minDimension / 2f - strokeWidth
-                drawArc(
-                    color = cyan.copy(alpha = 0.18f),
-                    startAngle = -90f,
-                    sweepAngle = 360f,
-                    useCenter = false,
-                    topLeft = Offset(center.x - ringRadius, center.y - ringRadius),
-                    size = Size(ringRadius * 2, ringRadius * 2),
-                    style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
+    Column(modifier, verticalArrangement = Arrangement.Center) {
+        when {
+            !healthAvailable -> Text("Health Connect non disponibile", color = Muted, fontSize = 9.sp)
+            !healthGranted -> Column {
+                TextButton(
+                    onClick = onRequestHealth,
+                    contentPadding = PaddingValues(horizontal = 0.dp, vertical = 2.dp),
+                ) {
+                    Text("Concedi accesso", color = Cyan, fontSize = 11.sp)
+                }
+                // Diagnostica temporanea (§ "cliccabile ma non succede
+                // nulla" segnalato anche dopo il fix del contract): dice
+                // se l'SDK di Health Connect si dichiara davvero
+                // disponibile su questo dispositivo, cosa non
+                // verificabile in questo ambiente senza un device reale.
+                Text(
+                    "SDK: $healthSdkStatusLabel",
+                    color = Muted,
+                    fontSize = 8.sp,
                 )
-                if (gaugeFraction != null) {
-                    drawArc(
-                        color = cyan,
-                        startAngle = -90f,
-                        sweepAngle = 360f * gaugeFraction.coerceIn(0f, 1f),
-                        useCenter = false,
-                        topLeft = Offset(center.x - ringRadius, center.y - ringRadius),
-                        size = Size(ringRadius * 2, ringRadius * 2),
-                        style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
-                    )
-                }
             }
-            Icon(icon, null, tint = Cyan, modifier = Modifier.size(16.dp))
-        }
-        Spacer(Modifier.width(8.dp))
-        Column(Modifier.weight(1f)) {
-            Text(label, color = Muted, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Spacer(Modifier.height(2.dp))
-            when {
-                !healthAvailable -> Text("Health Connect non disponibile", color = Muted, fontSize = 9.sp)
-                !healthGranted -> Column {
-                    TextButton(
-                        onClick = onRequestHealth,
-                        contentPadding = PaddingValues(horizontal = 0.dp, vertical = 2.dp),
-                    ) {
-                        Text("Concedi accesso", color = Cyan, fontSize = 11.sp)
-                    }
-                    // Diagnostica temporanea (§ "cliccabile ma non succede
-                    // nulla" segnalato anche dopo il fix del contract): dice
-                    // se l'SDK di Health Connect si dichiara davvero
-                    // disponibile su questo dispositivo, cosa non
-                    // verificabile in questo ambiente senza un device reale.
-                    Text(
-                        "SDK: $healthSdkStatusLabel",
-                        color = Muted,
-                        fontSize = 8.sp,
-                    )
-                }
-                value != null -> Text(value, color = Ink, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                else -> Text("Nessun dato", color = Muted, fontSize = 10.sp)
-            }
+            value != null -> Text(value, color = Ink, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            else -> Text("Nessun dato", color = Muted, fontSize = 10.sp)
         }
     }
 }
 
 /**
- * Promemoria: gli impegni/attività non completati più vicini, sullo sfondo
- * fornito dall'utente. Le proporzioni dell'inset sono una stima ragionevole
- * sull'area vuota dell'immagine (badge circolare a sinistra, righe a destra).
- *
- * Bug reale segnalato dall'utente da screenshot del dispositivo: il testo
- * (es. "ciao") si sovrapponeva al badge circolare a sinistra. Causa reale:
- * l'inset orizzontale (`start`) era calcolato da [ARES_REMINDERS_ASPECT_RATIO]
- * usando `h` (l'altezza della card) come base — dimensionalmente sbagliato
- * per un inset *orizzontale* su una card larga (h è molto più piccola della
- * larghezza reale), quindi il margine sinistro finiva troppo stretto. Corretto
- * usando `maxWidth` (la larghezza reale del box) per gli inset orizzontali,
- * `h` solo per quelli verticali.
+ * Promemoria di oggi: le prime 3 voci non completate (§ richiesta esplicita:
+ * "andranno in ogni riga dei promemoria, i primi 3 della giornata che devono
+ * ancora essere completati"), sul template fornito dall'utente. Due zone
+ * cliccabili distinte, non un'unica card-click come prima (§ richiesta
+ * esplicita: "se clicco su aggiungi promemoria mi apre solo piccola finestra
+ * ... mentre se clicco sulla scritta promemoria mi apre la sezione intera"):
+ * l'intestazione apre l'Agenda completa, "+ Aggiungi promemoria" apre solo
+ * un piccolo dialog di aggiunta rapida.
  */
 @Composable
 private fun AresRemindersCard(
     entries: List<AgendaEntry>,
     modifier: Modifier = Modifier,
-    onClick: () -> Unit,
+    onOpenSection: () -> Unit,
 ) {
-    BoxWithConstraints(modifier.clickable(onClick = onClick)) {
+    var showQuickAdd by remember { mutableStateOf(false) }
+    BoxWithConstraints(modifier) {
         val w = maxWidth
         val h = w / ARES_REMINDERS_ASPECT_RATIO
         Box(Modifier.fillMaxWidth().height(h)) {
             Image(
-                painter = painterResource(R.drawable.ares_bg_reminders),
+                painter = painterResource(R.drawable.ares_promemoria_card),
                 contentDescription = "Promemoria",
                 contentScale = ContentScale.FillBounds,
                 modifier = Modifier.matchParentSize(),
             )
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(start = w * 0.34f, end = w * 0.08f, top = h * 0.14f, bottom = h * 0.10f),
-                verticalArrangement = Arrangement.SpaceEvenly,
-            ) {
-                if (entries.isEmpty()) {
-                    Text("Nessun promemoria", color = Muted, fontSize = 11.sp)
-                } else {
-                    entries.forEach { e ->
-                        Text(
-                            e.text,
-                            color = Ink,
-                            fontSize = 11.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
+            Column(Modifier.fillMaxSize()) {
+                // Intestazione "PROMEMORIA" già disegnata nel template — la
+                // zona cliccabile combacia con quella riga, apre la sezione
+                // intera (Agenda), mai il dialog rapido.
+                Box(Modifier.fillMaxWidth().weight(0.18f).clickable(onClick = onOpenSection))
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(0.62f)
+                        .padding(start = w * 0.20f, end = w * 0.08f),
+                    verticalArrangement = Arrangement.SpaceEvenly,
+                ) {
+                    if (entries.isEmpty()) {
+                        Text("Nessun promemoria per oggi", color = Muted, fontSize = 10.sp)
+                    } else {
+                        entries.forEach { e ->
+                            Text(
+                                e.text,
+                                color = Ink,
+                                fontSize = 12.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
                     }
                 }
+                // "+ Aggiungi promemoria", già disegnato nel template — apre
+                // solo il piccolo dialog di aggiunta rapida.
+                Box(Modifier.fillMaxWidth().weight(0.20f).clickable { showQuickAdd = true })
             }
         }
     }
+    if (showQuickAdd) {
+        AresQuickAddReminderDialog(onDismiss = { showQuickAdd = false })
+    }
+}
+
+/**
+ * Dialog minimo per un promemoria veloce (§ "piccola finestra apribile per
+ * inserire velocemente un promemoria") — non la schermata intera
+ * `AddTaskScreen` già esistente, riusata invece dalla sezione Agenda
+ * completa. Riusa [AgendaViewModel.addTask], la stessa funzione che
+ * `AddTaskScreen` chiama, quindi un'unica logica di salvataggio.
+ */
+@Composable
+private fun AresQuickAddReminderDialog(onDismiss: () -> Unit) {
+    val vm: com.simone.jarvismobile.ui.agenda.AgendaViewModel = hiltViewModel()
+    var text by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Nuovo promemoria") },
+        text = {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                singleLine = true,
+                placeholder = { Text("Cosa devo ricordarti?") },
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                if (text.isNotBlank()) {
+                    vm.addTask(title = text, due = java.time.LocalDate.now())
+                    onDismiss()
+                }
+            }) { Text("Salva") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Annulla") } },
+    )
 }
 
 /**
@@ -2190,7 +2277,10 @@ private fun AresRemindersCard(
  * divisa per file"), non la ripartizione per tipo mostrata nell'immagine di
  * esempio. Tap apre Archivio, che espone davvero le cartelle Documenti/Note/
  * Liste/Da vedere/Memoria/TODO — la stessa richiesta dell'utente ("come prima
- * era archivio le varie cartelle").
+ * era archivio le varie cartelle"). Numero mostrato sopra l'etichetta
+ * "memoria utilizzata" già disegnata nel nuovo template (§ richiesta
+ * esplicita: "sopra memoria utilizzata verrà segnata la memoria locale che è
+ * stata utilizzata").
  */
 @Composable
 private fun AresMemoryCard(
@@ -2202,26 +2292,18 @@ private fun AresMemoryCard(
         val h = maxWidth / ARES_MEMORY_ASPECT_RATIO
         Box(Modifier.fillMaxWidth().height(h)) {
             Image(
-                painter = painterResource(R.drawable.ares_bg_memory),
+                painter = painterResource(R.drawable.ares_memoria_card2),
                 contentDescription = "Memoria",
                 contentScale = ContentScale.FillBounds,
                 modifier = Modifier.matchParentSize(),
             )
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = h * 0.06f),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Text(
-                    formatAresBytes(usedBytes),
-                    color = Ink,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                )
-                Text("memoria JARVIS", color = Muted, fontSize = 9.sp)
-            }
+            Text(
+                formatAresBytes(usedBytes),
+                color = Ink,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = h * 0.20f),
+            )
         }
     }
 }
@@ -2233,13 +2315,17 @@ private fun formatAresBytes(bytes: Long): String {
 }
 
 /**
- * Automazioni / JARVIS Drive / Traduttore — solo le tre icone già disegnate
- * nell'immagine fornita dall'utente (§ "senza scritte"), tre aree cliccabili
- * trasparenti sovrapposte in egual misura.
+ * Impostazioni / Navigazione / Traduttore — sostituisce la riga precedente
+ * (Automazioni/JARVIS Drive/Traduttore) sul nuovo asset a tre icone fornito
+ * dall'utente per il tema Atena, che porta esattamente queste tre etichette
+ * disegnate ("il resto già lo sai" — coerente col primo mockup completo
+ * inviato, che mostrava già questa stessa terna). "Navigazione" riusa lo
+ * stesso ingresso di JARVIS Drive, l'unica funzione di navigazione già
+ * cablata su questo schermo.
  */
 @Composable
 private fun AresShortcutsRow(
-    onOpenAutomations: () -> Unit,
+    onOpenSettings: () -> Unit,
     onOpenDrive: () -> Unit,
     onOpenTranslator: () -> Unit,
 ) {
@@ -2247,15 +2333,118 @@ private fun AresShortcutsRow(
         val h = maxWidth / ARES_SHORTCUTS_ASPECT_RATIO
         Box(Modifier.fillMaxWidth().height(h)) {
             Image(
-                painter = painterResource(R.drawable.ares_bg_shortcuts),
+                painter = painterResource(R.drawable.ares_shortcuts_row2),
                 contentDescription = null,
                 contentScale = ContentScale.FillBounds,
                 modifier = Modifier.matchParentSize(),
             )
             Row(Modifier.matchParentSize()) {
-                Box(Modifier.weight(1f).fillMaxHeight().clickable(onClick = onOpenAutomations))
+                Box(Modifier.weight(1f).fillMaxHeight().clickable(onClick = onOpenSettings))
                 Box(Modifier.weight(1f).fillMaxHeight().clickable(onClick = onOpenDrive))
                 Box(Modifier.weight(1f).fillMaxHeight().clickable(onClick = onOpenTranslator))
+            }
+        }
+    }
+}
+
+/** "Oggi"/"Domani"/"Dopodomani"/"Tra 3 giorni" — matches [AresMeteoCard]'s own day index convention. */
+private fun aresHourlyDayLabel(dayIndex: Int): String = when (dayIndex) {
+    0 -> "Oggi"
+    1 -> "Domani"
+    2 -> "Dopodomani"
+    else -> "Tra 3 giorni"
+}
+
+/**
+ * Previsione oraria per un giorno (§ tema Atena, richiesta esplicita: "se
+ * clicco... deve aprirmi previsione meteo per tutte le 24h di quel giorno").
+ * [forecast] è null mentre [loading] è vero (fetch in corso) o se il fetch è
+ * fallito — mai un dato inventato quando manca.
+ */
+@Composable
+private fun AresHourlyForecastSheet(
+    dayIndex: Int,
+    forecast: com.simone.jarvismobile.weather.HourlyForecast?,
+    loading: Boolean,
+    onDismiss: () -> Unit,
+) {
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .heightIn(max = 560.dp)
+                .clip(RoundedCornerShape(18.dp))
+                .background(Color(0xFF060A10))
+                .border(1.dp, Cyan.copy(alpha = 0.45f), RoundedCornerShape(18.dp))
+                .padding(16.dp),
+        ) {
+            Column(Modifier.fillMaxWidth()) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column {
+                        Text(
+                            aresHourlyDayLabel(dayIndex).uppercase(),
+                            color = Cyan, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 2.sp,
+                        )
+                        val date = forecast?.date
+                        if (date != null) {
+                            Text(
+                                date.format(java.time.format.DateTimeFormatter.ofPattern("d MMMM", java.util.Locale.ITALIAN)),
+                                color = Muted, fontSize = 10.sp,
+                            )
+                        }
+                    }
+                    Icon(
+                        Icons.Filled.Close, contentDescription = "Chiudi",
+                        tint = Muted,
+                        modifier = Modifier.size(22.dp).clickable(onClick = onDismiss),
+                    )
+                }
+                Spacer(Modifier.height(10.dp))
+                when {
+                    loading -> Box(Modifier.fillMaxWidth().padding(vertical = 32.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = Cyan, modifier = Modifier.size(28.dp))
+                    }
+                    forecast == null -> Text(
+                        "Previsione oraria non disponibile.",
+                        color = Muted, fontSize = 12.sp,
+                        modifier = Modifier.padding(vertical = 24.dp),
+                    )
+                    else -> Column(
+                        Modifier.fillMaxWidth().heightIn(max = 460.dp).verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        forecast.hours.forEach { reading ->
+                            Box(Modifier.fillMaxWidth().height(46.dp)) {
+                                Image(
+                                    painter = painterResource(R.drawable.ares_pill_row),
+                                    contentDescription = null,
+                                    contentScale = ContentScale.FillBounds,
+                                    modifier = Modifier.matchParentSize(),
+                                )
+                                Row(
+                                    Modifier.matchParentSize().padding(horizontal = 16.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        "%02d:00".format(reading.hour),
+                                        color = Ink, fontSize = 12.sp, fontWeight = FontWeight.Medium,
+                                        modifier = Modifier.width(48.dp),
+                                    )
+                                    WeatherIcon(reading.category, 22.dp, reading.isDay)
+                                    Spacer(Modifier.weight(1f))
+                                    Text(
+                                        reading.tempC?.let { "${it.roundToInt()}°" } ?: "—",
+                                        color = Ink, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }

@@ -3,6 +3,7 @@ package com.simone.jarvismobile.ui.dashboard
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.simone.jarvismobile.health.HealthConnectManager
+import com.simone.jarvismobile.weather.HourlyForecast
 import com.simone.jarvismobile.weather.WeatherManager
 import com.simone.jarvismobile.weather.WeeklyOutlook
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -40,13 +41,38 @@ class AresViewModel @Inject constructor(
     /** Diagnostica testuale mostrata sotto "Concedi accesso" (§ vedi HealthConnectManager). */
     fun healthSdkStatusLabel(): String = health.sdkStatusLabel()
 
+    private val _hourly = MutableStateFlow<HourlyForecast?>(null)
+    val hourly: StateFlow<HourlyForecast?> = _hourly.asStateFlow()
+
+    private val _hourlyLoading = MutableStateFlow(false)
+    val hourlyLoading: StateFlow<Boolean> = _hourlyLoading.asStateFlow()
+
     init {
+        // Show the last-known outlook instantly (§ "salvato temporaneamente
+        // in locale"), then let refreshWeather()'s fresh fetch overwrite it
+        // once it resolves — never leaves the card blank while waiting.
+        viewModelScope.launch { _outlook.value = weather.cachedOutlook() }
         refreshWeather()
         refreshHealth()
     }
 
     fun refreshWeather() {
-        viewModelScope.launch { _outlook.value = weather.fetchWeeklyOutlook() }
+        viewModelScope.launch {
+            weather.fetchWeeklyOutlook()?.let { _outlook.value = it }
+        }
+    }
+
+    /** [dayIndex]: 0 = oggi, 1..3 = i tre giorni di [WeeklyOutlook.upcoming]. */
+    fun loadHourlyForecast(dayIndex: Int) {
+        viewModelScope.launch {
+            _hourlyLoading.value = true
+            _hourly.value = weather.fetchHourlyForecast(dayIndex)
+            _hourlyLoading.value = false
+        }
+    }
+
+    fun clearHourlyForecast() {
+        _hourly.value = null
     }
 
     /** Called on screen resume and right after the permission dialog closes. */
