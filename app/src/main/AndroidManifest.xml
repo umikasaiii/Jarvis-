@@ -73,8 +73,14 @@
     <!-- Health Connect (opt-in, tema Ares > blocco Sistema): read-only, and only
          the two metrics the block actually shows — no step count, no weight,
          no other health data. Requested at runtime via PermissionController,
-         never assumed granted; JARVIS never writes to Health Connect. -->
-    <uses-permission android:name="android.permission.health.READ_HEART_RATE" />
+         never assumed granted; JARVIS never writes to Health Connect.
+         READ_RESTING_HEART_RATE, non READ_HEART_RATE (§ bug reale trovato dal
+         confronto diretto con Honor Health: quando HealthConnectManager.kt è
+         passato a RestingHeartRateRecord, questa dichiarazione — e l'array
+         health_permissions.xml gemello per il meta-data dell'activity-alias —
+         non erano state aggiornate di conseguenza, quindi Health Connect non
+         offriva mai all'utente il permesso giusto da concedere). -->
+    <uses-permission android:name="android.permission.health.READ_RESTING_HEART_RATE" />
     <uses-permission android:name="android.permission.health.READ_SLEEP" />
 
     <!-- Deliberately NOT requested: MANAGE_EXTERNAL_STORAGE, QUERY_ALL_PACKAGES,

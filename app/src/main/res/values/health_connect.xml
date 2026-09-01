@@ -13,7 +13,7 @@
 -->
 <resources>
     <array name="health_permissions">
-        <item>android.permission.health.READ_HEART_RATE</item>
+        <item>android.permission.health.READ_RESTING_HEART_RATE</item>
         <item>android.permission.health.READ_SLEEP</item>
     </array>
 </resources>
