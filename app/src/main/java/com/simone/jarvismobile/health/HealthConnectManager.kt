@@ -5,20 +5,21 @@ import android.content.Intent
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.HeartRateRecord
+import androidx.health.connect.client.records.Record
 import androidx.health.connect.client.records.SleepSessionRecord
-import androidx.health.connect.client.request.AggregateGroupByPeriodRequest
+import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
 import com.simone.jarvismobile.data.SettingsRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.first
 import java.time.Duration
 import java.time.LocalDate
-import java.time.Period
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.roundToLong
+import kotlin.reflect.KClass
 
 /**
  * Weekly-average heart rate and sleep duration for the tema Ares "Sistema"
@@ -38,11 +39,12 @@ import kotlin.math.roundToLong
  * Onestà: `androidx.health.connect:connect-client` è una libreria alpha e
  * questo ambiente non può risolvere Maven Central né raggiungere la
  * documentazione live (stesso limite di rete già documentato per
- * TomTom/Valhalla) — i nomi/le firme esatte qui sotto (`AggregateGroupByPeriodRequest`,
- * l'indicizzazione di `AggregationResult`, `PermissionController`) sono
- * scritti da conoscenza di training, non verificati contro un compilatore
- * reale qui. La prima vera verifica è la compilazione Kotlin di CI, come
- * già successo (e corretto) una volta per `HeartRateRecord.BPM_AVG`.
+ * TomTom/Valhalla) — i nomi/le firme esatte qui sotto (`ReadRecordsRequest`,
+ * `HeartRateRecord.Sample`, `PermissionController`) sono scritti da
+ * conoscenza di training, non verificati contro un compilatore reale qui.
+ * La prima vera verifica è la compilazione Kotlin di CI, come già successo
+ * (e corretto) una volta per `HeartRateRecord.BPM_AVG` — poi abbandonato in
+ * favore della lettura grezza, vedi [fetchDailySeries].
  */
 @Singleton
 class HealthConnectManager @Inject constructor(
@@ -127,14 +129,31 @@ class HealthConnectManager @Inject constructor(
     )
 
     /**
-     * `aggregateGroupByPeriod` è il metodo pubblico di
-     * `androidx.health.connect:connect-client` per bucket giornalieri (un
-     * `AggregationResult` per ciascun `Period.ofDays(1)` nell'intervallo) —
-     * distinto dal singolo intervallo che questo file usava prima
-     * (`aggregate(AggregateRequest(...))`), rimosso: [computeAverages] ora
-     * deriva le medie dagli stessi 7 bucket giornalieri invece di un secondo
-     * calcolo separato, per costruzione mai divergente da essi.
-     *
+     * Legge tutte le pagine di [type] nella finestra [range] (§ `readRecords`
+     * pagina i risultati, `pageSize` di default 1000 — con campionamento
+     * continuo del battito questo si esaurisce facilmente su 7 giorni,
+     * seguito qui fino in fondo invece di fermarsi silenziosamente alla
+     * prima pagina). `guard` limita comunque le iterazioni per non entrare
+     * mai in un loop infinito su un `pageToken` che non si esaurisse mai.
+     */
+    private suspend fun <T : Record> readAllRecords(
+        c: HealthConnectClient,
+        type: KClass<T>,
+        range: TimeRangeFilter,
+    ): List<T> {
+        val all = mutableListOf<T>()
+        var pageToken: String? = null
+        var guard = 0
+        do {
+            val response = c.readRecords(ReadRecordsRequest(type, timeRangeFilter = range, pageToken = pageToken))
+            all += response.records
+            pageToken = response.pageToken.takeIf { it.isNotBlank() }
+            guard++
+        } while (pageToken != null && guard < 50)
+        return all
+    }
+
+    /**
      * **Finestra "da ieri a 7 giorni prima" (§ richiesta esplicita
      * dell'utente: "la media la deve calcolare da ieri a 7 giorni prima, non
      * da lunedì a domenica fisso")**: `end` è la mezzanotte di oggi (quindi
@@ -144,42 +163,79 @@ class HealthConnectManager @Inject constructor(
      * sempre una finestra scorrevole di 7 giorni, mai un lunedì-domenica di
      * calendario fisso.
      *
-     * **Bug reale trovato e corretto, segnalato dall'utente ("i dati bpm e
-     * sonno penso proprio che siano errati")**: la prima stesura leggeva
-     * `heartRateGroups.getOrNull(i)` per posizione nella lista, assumendo che
-     * `aggregateGroupByPeriod` restituisca sempre esattamente 7 bucket, uno
-     * per ciascun giorno richiesto, nello stesso ordine — un'assunzione mai
-     * verificata contro un dispositivo reale in questo ambiente. Se invece
-     * la libreria omette i bucket senza alcun dato (comportamento plausibile
-     * e comune per API di aggregazione a bucket), la posizione `i`
-     * nell'elenco restituito non corrisponde più al giorno `i` richiesto —
-     * con solo 2-3 notti sincronizzate su un dispositivo reale, questo
-     * avrebbe assegnato dati di un giorno a un altro, spiegando sia valori
-     * sbagliati sia "giorni mancati" nel posto sbagliato. Corretto usando la
-     * data reale di ogni bucket (`startTime`, un `LocalDateTime` per
-     * `AggregationResultGroupedByPeriod`) come chiave invece della posizione
-     * — corretto per costruzione indipendentemente dal fatto che i bucket
-     * vuoti vengano omessi o meno.
+     * **Riscritta da zero, secondo bug reale trovato dal confronto diretto
+     * con Honor Health (screenshot dell'utente con le stesse date)**: la
+     * versione precedente usava `aggregateGroupByPeriod` (bucket giornalieri
+     * pronti dalla libreria) e correggeva un bug di allineamento per
+     * posizione con la data reale del bucket (`startTime`) — ma un confronto
+     * diretto con Honor Health ha mostrato un caso concreto ancora sbagliato:
+     * una sessione di sonno interamente nel 30 agosto (00:18–10:21, nessun
+     * attraversamento di mezzanotte) veniva mostrata sotto "29 agosto" —
+     * uno spostamento di un giorno che nessuna assunzione sulla posizione
+     * poteva più spiegare. Causa più probabile: la libreria alpha non
+     * documenta quale fuso orario usi internamente per affettare i bucket
+     * giornalieri di `aggregateGroupByPeriod` (nessuna documentazione
+     * raggiungibile in questo ambiente per verificarlo), quindi qualunque
+     * comportamento — inclusa una conversione in UTC invece del fuso del
+     * dispositivo — resta un'ipotesi non verificabile da qui.
+     *
+     * Invece di continuare a rincorrere il comportamento interno di
+     * un'API opaca, questa versione legge i record **grezzi**
+     * (`readRecords`, l'API Health Connect più fondamentale e documentata)
+     * e fa **lei stessa** ogni conversione di fuso orario con
+     * `ZoneId.systemDefault()` — lo stesso fuso del dispositivo, mai UTC —
+     * così la data di ogni lettura è sotto il nostro controllo diretto,
+     * non quello di un bucket interno non ispezionabile:
+     * - **BPM**: media aritmetica di **ogni singolo campione** loggato quel
+     *   giorno locale (§ richiesta esplicita dell'utente: "attenzione a
+     *   prendere media e non ultimo dato della giornata") — non più una
+     *   metrica di aggregazione opaca (`HeartRateRecord.BPM_AVG`) della cui
+     *   esatta definizione (media semplice? pesata nel tempo? su quali
+     *   campioni?) non c'era modo di essere certi in questo ambiente.
+     * - **Sonno**: ogni sessione è attribuita alla data locale del suo
+     *   **risveglio** (`endTime`), non dell'inizio — la stessa convenzione
+     *   che usa Honor Health stesso (una sessione 28→29 agosto compare lì
+     *   sotto "29 ago", non "28 ago"), quindi il confronto diretto fra le
+     *   due app torna ad avere senso. Più sessioni nello stesso giorno
+     *   (es. sonno notturno + un pisolino finito lo stesso giorno) sommano
+     *   le rispettive durate.
+     *
+     * **Onestà, limite non risolto da questa correzione**: se Honor Health
+     * mostra dati per una notte che qui resta "—", non è (più) un bug di
+     * lettura — è che quella sessione non è mai stata sincronizzata da
+     * Honor Health a Health Connect (due archivi distinti, § nota generale
+     * di questo file), un gap che nessun codice lato JARVIS può colmare.
      */
     private suspend fun fetchDailySeries(): List<DailyHealthReading> {
         val c = client ?: return emptyList()
+        val zone = ZoneId.systemDefault()
         val today = LocalDate.now()
-        val end = today.atStartOfDay(ZoneId.systemDefault()).toInstant()
+        val end = today.atStartOfDay(zone).toInstant()
         val start = end.minus(7, ChronoUnit.DAYS)
         val range = TimeRangeFilter.between(start, end)
         return runCatching {
-            val heartRateByDate = c.aggregateGroupByPeriod(
-                AggregateGroupByPeriodRequest(setOf(HeartRateRecord.BPM_AVG), range, Period.ofDays(1)),
-            ).associate { it.startTime.toLocalDate() to it.result[HeartRateRecord.BPM_AVG] }
-            val sleepByDate = c.aggregateGroupByPeriod(
-                AggregateGroupByPeriodRequest(setOf(SleepSessionRecord.SLEEP_DURATION_TOTAL), range, Period.ofDays(1)),
-            ).associate { it.startTime.toLocalDate() to it.result[SleepSessionRecord.SLEEP_DURATION_TOTAL] }
+            val heartRateRecords = readAllRecords(c, HeartRateRecord::class, range)
+            val sleepRecords = readAllRecords(c, SleepSessionRecord::class, range)
+
+            val bpmByDate = mutableMapOf<LocalDate, MutableList<Long>>()
+            heartRateRecords.forEach { record ->
+                record.samples.forEach { sample ->
+                    val date = sample.time.atZone(zone).toLocalDate()
+                    bpmByDate.getOrPut(date) { mutableListOf() }.add(sample.beatsPerMinute)
+                }
+            }
+            val sleepByDate = mutableMapOf<LocalDate, MutableList<Duration>>()
+            sleepRecords.forEach { record ->
+                val date = record.endTime.atZone(zone).toLocalDate()
+                sleepByDate.getOrPut(date) { mutableListOf() }.add(Duration.between(record.startTime, record.endTime))
+            }
+
             (7 downTo 1).map { daysAgo ->
                 val date = today.minusDays(daysAgo.toLong())
                 DailyHealthReading(
                     date = date,
-                    heartRateBpm = heartRateByDate[date],
-                    sleepHours = sleepByDate[date]?.toMinutes()?.div(60.0),
+                    heartRateBpm = bpmByDate[date]?.let { it.average().roundToLong() },
+                    sleepHours = sleepByDate[date]?.let { sessions -> sessions.sumOf { it.toMinutes() } / 60.0 },
                 )
             }
         }.getOrDefault(emptyList())
