@@ -143,6 +143,23 @@ class HealthConnectManager @Inject constructor(
      * ancora accaduto) avrebbe sporcato la media. Il range resta comunque
      * sempre una finestra scorrevole di 7 giorni, mai un lunedì-domenica di
      * calendario fisso.
+     *
+     * **Bug reale trovato e corretto, segnalato dall'utente ("i dati bpm e
+     * sonno penso proprio che siano errati")**: la prima stesura leggeva
+     * `heartRateGroups.getOrNull(i)` per posizione nella lista, assumendo che
+     * `aggregateGroupByPeriod` restituisca sempre esattamente 7 bucket, uno
+     * per ciascun giorno richiesto, nello stesso ordine — un'assunzione mai
+     * verificata contro un dispositivo reale in questo ambiente. Se invece
+     * la libreria omette i bucket senza alcun dato (comportamento plausibile
+     * e comune per API di aggregazione a bucket), la posizione `i`
+     * nell'elenco restituito non corrisponde più al giorno `i` richiesto —
+     * con solo 2-3 notti sincronizzate su un dispositivo reale, questo
+     * avrebbe assegnato dati di un giorno a un altro, spiegando sia valori
+     * sbagliati sia "giorni mancati" nel posto sbagliato. Corretto usando la
+     * data reale di ogni bucket (`startTime`, un `LocalDateTime` per
+     * `AggregationResultGroupedByPeriod`) come chiave invece della posizione
+     * — corretto per costruzione indipendentemente dal fatto che i bucket
+     * vuoti vengano omessi o meno.
      */
     private suspend fun fetchDailySeries(): List<DailyHealthReading> {
         val c = client ?: return emptyList()
@@ -151,18 +168,18 @@ class HealthConnectManager @Inject constructor(
         val start = end.minus(7, ChronoUnit.DAYS)
         val range = TimeRangeFilter.between(start, end)
         return runCatching {
-            val heartRateGroups = c.aggregateGroupByPeriod(
+            val heartRateByDate = c.aggregateGroupByPeriod(
                 AggregateGroupByPeriodRequest(setOf(HeartRateRecord.BPM_AVG), range, Period.ofDays(1)),
-            )
-            val sleepGroups = c.aggregateGroupByPeriod(
+            ).associate { it.startTime.toLocalDate() to it.result[HeartRateRecord.BPM_AVG] }
+            val sleepByDate = c.aggregateGroupByPeriod(
                 AggregateGroupByPeriodRequest(setOf(SleepSessionRecord.SLEEP_DURATION_TOTAL), range, Period.ofDays(1)),
-            )
-            (0 until 7).map { i ->
+            ).associate { it.startTime.toLocalDate() to it.result[SleepSessionRecord.SLEEP_DURATION_TOTAL] }
+            (7 downTo 1).map { daysAgo ->
+                val date = today.minusDays(daysAgo.toLong())
                 DailyHealthReading(
-                    date = today.minusDays((7 - i).toLong()),
-                    heartRateBpm = heartRateGroups.getOrNull(i)?.result?.get(HeartRateRecord.BPM_AVG),
-                    sleepHours = sleepGroups.getOrNull(i)?.result?.get(SleepSessionRecord.SLEEP_DURATION_TOTAL)
-                        ?.toMinutes()?.div(60.0),
+                    date = date,
+                    heartRateBpm = heartRateByDate[date],
+                    sleepHours = sleepByDate[date]?.toMinutes()?.div(60.0),
                 )
             }
         }.getOrDefault(emptyList())

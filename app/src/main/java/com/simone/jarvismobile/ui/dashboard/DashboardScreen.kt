@@ -2287,19 +2287,44 @@ private fun AresBpmSonnoCard(
  * fornito dall'utente solo per capire cosa si intende — non un asset o uno
  * stile da copiare 1:1). Ogni voce di [values] è un giorno (più vecchio a
  * sinistra); `null` (nessun dato quel giorno, mai un valore inventato) è
- * semplicemente saltato — il tratto salta il buco invece di scendere a
- * zero. Con meno di due punti reali non c'è un andamento da disegnare, quindi
- * non si disegna nulla piuttosto che un'unica linea piatta priva di senso.
+ * semplicemente escluso. Con meno di due punti reali non c'è un andamento da
+ * disegnare, quindi non si disegna nulla piuttosto che un'unica linea piatta
+ * priva di senso.
+ *
+ * **Due correzioni, bug reale segnalato dall'utente ("grafico si vede
+ * malissimo")**: *(1)* prima non aveva alcun pannello dietro — un tratto
+ * nudo disegnato direttamente sullo sfondo scuro dell'app, senza bordo né
+ * riempimento, sembrava un glitch fluttuante scollegato dalle due card
+ * invece di un elemento grafico intenzionale; ora un riquadro arrotondato
+ * con bordo/riempimento tenue nello stesso colore della linea lo ancora
+ * visivamente. *(2)* prima posizionava ogni punto alla sua posizione
+ * assoluta di giorno su 7 (`index` nell'intera finestra) — con un
+ * dispositivo che ha sincronizzato solo gli ultimi 2-3 giorni, tutti i punti
+ * reali finivano compressi in un angolo stretto invece di usare la
+ * larghezza intera. Ora i punti nulli vengono scartati **prima** di
+ * calcolare le posizioni (`values.mapNotNull`), quindi i soli punti reali si
+ * distribuiscono sull'intera larghezza disponibile — **onestà, un
+ * compromesso deliberato**: la spaziatura orizzontale non rappresenta più il
+ * vero intervallo di giorni fra un punto e l'altro (una lacuna di 3 giorni
+ * appare larga uguale a una di 1 giorno), ma resta l'unica scelta che rende
+ * il grafico leggibile quando la copertura dati è ancora scarsa, invece di
+ * un frammento illeggibile schiacciato in un angolo.
  */
 @Composable
 private fun Sparkline(values: List<Float?>, color: Color, modifier: Modifier = Modifier) {
-    val points = values.mapIndexedNotNull { i, v -> v?.let { i to it } }
+    val points = values.mapNotNull { it }
     if (points.size < 2) return
-    Canvas(modifier) {
-        val minV = points.minOf { it.second }
-        val maxV = points.maxOf { it.second }
+    Canvas(
+        modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(color.copy(alpha = 0.08f))
+            .border(1.dp, color.copy(alpha = 0.28f), RoundedCornerShape(8.dp))
+            .padding(6.dp),
+    ) {
+        val minV = points.min()
+        val maxV = points.max()
         val range = (maxV - minV).takeIf { it > 0f } ?: 1f
-        val stepX = if (values.size > 1) size.width / (values.size - 1) else size.width
+        val stepX = if (points.size > 1) size.width / (points.size - 1) else size.width
         fun offsetFor(index: Int, value: Float): Offset {
             val x = index * stepX
             val y = size.height - ((value - minV) / range) * size.height
@@ -2307,18 +2332,16 @@ private fun Sparkline(values: List<Float?>, color: Color, modifier: Modifier = M
         }
         val strokeWidth = 1.6.dp.toPx()
         for (i in 0 until points.size - 1) {
-            val (idxA, valA) = points[i]
-            val (idxB, valB) = points[i + 1]
             drawLine(
                 color = color,
-                start = offsetFor(idxA, valA),
-                end = offsetFor(idxB, valB),
+                start = offsetFor(i, points[i]),
+                end = offsetFor(i + 1, points[i + 1]),
                 strokeWidth = strokeWidth,
                 cap = StrokeCap.Round,
             )
         }
-        points.forEach { (idx, v) ->
-            drawCircle(color = color, radius = strokeWidth * 1.3f, center = offsetFor(idx, v))
+        points.forEachIndexed { i, v ->
+            drawCircle(color = color, radius = strokeWidth * 1.3f, center = offsetFor(i, v))
         }
     }
 }
