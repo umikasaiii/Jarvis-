@@ -1693,6 +1693,7 @@ internal fun AresHomeScreen(
     val healthGranted by aresViewModel.healthGranted.collectAsStateWithLifecycle()
     val healthAverages by aresViewModel.healthAverages.collectAsStateWithLifecycle()
     val healthDaily by aresViewModel.healthDaily.collectAsStateWithLifecycle()
+    val healthPermissionsDiagnostic by aresViewModel.healthPermissionsDiagnostic.collectAsStateWithLifecycle()
     val healthContext = LocalContext.current
     // Il dialogo di consenso in-app (PermissionController.createRequestPermissionResultContract,
     // con lo stesso identico contract stabilizzato via remember, § round
@@ -1885,7 +1886,7 @@ internal fun AresHomeScreen(
                     AresBpmSonnoCard(
                         healthAvailable = aresViewModel.healthAvailable,
                         healthGranted = healthGranted,
-                        healthSdkStatusLabel = aresViewModel.healthSdkStatusLabel(),
+                        healthPermissionsDiagnostic = healthPermissionsDiagnostic,
                         healthAverages = healthAverages,
                         healthDaily = healthDaily,
                         onRequestHealth = onRequestHealthConnect,
@@ -2195,7 +2196,7 @@ private enum class HealthDetailKind { BPM, SONNO }
 private fun AresBpmSonnoCard(
     healthAvailable: Boolean,
     healthGranted: Boolean,
-    healthSdkStatusLabel: String,
+    healthPermissionsDiagnostic: String?,
     healthAverages: HealthConnectManager.WeeklyHealthAverages?,
     healthDaily: List<HealthConnectManager.DailyHealthReading>,
     onRequestHealth: () -> Unit,
@@ -2233,7 +2234,7 @@ private fun AresBpmSonnoCard(
                     value = bpm?.let { "$it bpm" },
                     healthAvailable = healthAvailable,
                     healthGranted = healthGranted,
-                    healthSdkStatusLabel = healthSdkStatusLabel,
+                    healthPermissionsDiagnostic = healthPermissionsDiagnostic,
                     onRequestHealth = onRequestHealth,
                     modifier = Modifier.fillMaxSize()
                         .padding(start = w * 0.46f, end = w * 0.18f),
@@ -2264,7 +2265,7 @@ private fun AresBpmSonnoCard(
                     value = sleep?.let { "${it.toHours()}h ${it.toMinutesPart()}m" },
                     healthAvailable = healthAvailable,
                     healthGranted = healthGranted,
-                    healthSdkStatusLabel = healthSdkStatusLabel,
+                    healthPermissionsDiagnostic = healthPermissionsDiagnostic,
                     onRequestHealth = onRequestHealth,
                     modifier = Modifier.fillMaxSize()
                         .padding(start = w * 0.46f, end = w * 0.18f),
@@ -2401,7 +2402,7 @@ private fun AresHealthValue(
     value: String?,
     healthAvailable: Boolean,
     healthGranted: Boolean,
-    healthSdkStatusLabel: String,
+    healthPermissionsDiagnostic: String?,
     onRequestHealth: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -2430,13 +2431,19 @@ private fun AresHealthValue(
                     fontSize = 10.sp,
                     modifier = Modifier.clickable(onClick = onRequestHealth),
                 )
-                // Diagnostica temporanea (§ "cliccabile ma non succede
-                // nulla" segnalato anche dopo il fix del contract): dice
-                // se l'SDK di Health Connect si dichiara davvero
-                // disponibile su questo dispositivo, cosa non
-                // verificabile in questo ambiente senza un device reale.
+                // Diagnostica dei permessi (§ bug reale segnalato
+                // dall'utente: Health Connect mostra i permessi concessi
+                // nelle sue Impostazioni, ma questa card resta comunque su
+                // "Concedi accesso" anche dopo un riavvio completo
+                // dell'app — quindi non un semplice ritardo di
+                // propagazione, già escluso). Se siamo in questo ramo,
+                // healthAvailable è già vero (altrimenti saremmo nel ramo
+                // sopra), quindi mostrare di nuovo "SDK: disponibile" non
+                // aggiungeva informazione — sostituito con cosa vede
+                // davvero il controllo dei permessi (concessi/mancanti/un
+                // eventuale errore altrimenti inghiottito in silenzio).
                 Text(
-                    "SDK: $healthSdkStatusLabel",
+                    healthPermissionsDiagnostic ?: "in verifica…",
                     color = Muted,
                     fontSize = 8.sp,
                 )

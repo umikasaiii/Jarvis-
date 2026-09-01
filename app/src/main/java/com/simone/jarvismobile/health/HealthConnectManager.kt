@@ -65,24 +65,6 @@ class HealthConnectManager @Inject constructor(
     val isAvailable: Boolean get() = client != null
 
     /**
-     * Human-readable SDK status for the Diagnostica-style surface shown next
-     * to "Concedi accesso" (§ bug reale: il tocco è ricettivo ma non apre
-     * nulla anche dopo aver stabilizzato il contract di
-     * rememberLauncherForActivityResult — nessun log di dispositivo
-     * disponibile in questo ambiente per capire se il problema è a monte
-     * dell'SDK stesso, quindi il prossimo screenshot dell'utente deve poter
-     * mostrare un dato concreto invece di un altro tentativo alla cieca).
-     */
-    fun sdkStatusLabel(): String = runCatching {
-        when (HealthConnectClient.getSdkStatus(context)) {
-            HealthConnectClient.SDK_AVAILABLE -> "disponibile"
-            HealthConnectClient.SDK_UNAVAILABLE -> "non supportato su questo dispositivo"
-            HealthConnectClient.SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED -> "provider da installare o aggiornare"
-            else -> "stato sconosciuto"
-        }
-    }.getOrElse { "errore nel controllo SDK (${it.message})" }
-
-    /**
      * Le uniche due permissions richieste da questa app. **Cambiata la prima
      * (§ richiesta esplicita dell'utente: "vorrei che per bpm si riporti la
      * media dei battiti a riposo")**: da `HeartRateRecord` (il flusso
@@ -122,6 +104,28 @@ class HealthConnectManager @Inject constructor(
         return runCatching {
             c.permissionController.getGrantedPermissions().containsAll(permissions)
         }.getOrDefault(false)
+    }
+
+    /**
+     * Diagnostica testuale, mai usata dal percorso normale — solo per il
+     * caso segnalato dall'utente: Health Connect mostra entrambi i
+     * permessi concessi (screenshot delle sue Impostazioni), ma
+     * `hasPermissions()` resta `false` anche dopo un riavvio completo
+     * dell'app (quindi non un semplice ritardo di propagazione, già
+     * escluso). `hasPermissions()` avvolge tutto in `runCatching { }
+     * .getOrDefault(false)`: un'eccezione reale (es. di tipo/versione
+     * sulla nuova `RestingHeartRateRecord`) sarebbe indistinguibile da un
+     * permesso davvero mancante — questa funzione non nasconde né l'una
+     * né l'altra, per dare al prossimo screenshot un dato concreto invece
+     * di un'altra ipotesi.
+     */
+    suspend fun permissionsDiagnostic(): String {
+        val c = client ?: return "client Health Connect nullo"
+        return runCatching {
+            val granted = c.permissionController.getGrantedPermissions()
+            val missing = permissions - granted
+            if (missing.isEmpty()) "concessi tutti (${granted.size} totali)" else "mancano ${missing.size}: ${missing.joinToString()}"
+        }.getOrElse { "eccezione ${it::class.simpleName}: ${it.message}" }
     }
 
     /** One calendar day's readings — `date` is always real, either value can be legitimately absent (never a guess). */

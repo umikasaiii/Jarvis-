@@ -47,8 +47,16 @@ class AresViewModel @Inject constructor(
     val healthAvailable: Boolean get() = health.isAvailable
     /** Apre le impostazioni di Health Connect (§ richiesta esplicita: "aprire la pagina... ed io posso metterlo manualmente"). */
     fun healthSettingsIntent() = health.settingsIntent()
-    /** Diagnostica testuale mostrata sotto "Concedi accesso" (§ vedi HealthConnectManager). */
-    fun healthSdkStatusLabel(): String = health.sdkStatusLabel()
+
+    /**
+     * Diagnostica dei permessi (§ bug reale segnalato dall'utente: Health
+     * Connect mostra i permessi concessi nelle sue Impostazioni, ma
+     * `hasPermissions()` resta `false` anche dopo un riavvio completo
+     * dell'app) — popolata solo quando l'accesso risulta negato, per non
+     * fare una chiamata in più quando tutto funziona già.
+     */
+    private val _healthPermissionsDiagnostic = MutableStateFlow<String?>(null)
+    val healthPermissionsDiagnostic: StateFlow<String?> = _healthPermissionsDiagnostic.asStateFlow()
 
     private val _hourly = MutableStateFlow<HourlyForecast?>(null)
     val hourly: StateFlow<HourlyForecast?> = _hourly.asStateFlow()
@@ -104,8 +112,10 @@ class AresViewModel @Inject constructor(
             if (!granted) {
                 _healthAverages.value = null
                 _healthDaily.value = emptyList()
+                _healthPermissionsDiagnostic.value = health.permissionsDiagnostic()
                 return@launch
             }
+            _healthPermissionsDiagnostic.value = null
             health.cachedSnapshot()?.let { applySnapshot(it) }
             health.refresh()?.let { applySnapshot(it) }
         }
