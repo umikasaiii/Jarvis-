@@ -30,6 +30,14 @@ const val ARCHIVE_UNFILED_FOLDER = ""
  * concern): a note's single folder for browsing, and whether it sits in the
  * "In primo piano" section at the top of the list. Empty [folder]
  * ([ARCHIVE_UNFILED_FOLDER]) is "Senza categoria".
+ *
+ * [theme]/[spacing] are only meaningful for [ArchiveKind.NOTE] (§ richiesta
+ * esplicita dell'utente: "deve essere tutto personalizzabile: sfondo dietro,
+ * colore, carattere") — the exact same string vocabulary Memoria's notes
+ * already use (`com.simone.jarvismobile.core.memory.MemoryNoteThemes`/
+ * `MemoryLineSpacing`), not a second, incompatible one: an Archivio note
+ * reuses the identical background-colour/image picker and the identical rich
+ * markup syntax ([content] stores it inline, same as [com.simone.jarvismobile.core.memory.MemoryRecord.text]).
  */
 data class ArchiveItem(
     val id: String,
@@ -42,6 +50,8 @@ data class ArchiveItem(
     val link: String = "",
     val folder: String = ARCHIVE_UNFILED_FOLDER,
     val pinned: Boolean = false,
+    val theme: String = "",
+    val spacing: String = "",
     val createdAt: Long,
     val updatedAt: Long,
 ) {

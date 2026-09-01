@@ -19,11 +19,13 @@ import com.simone.jarvismobile.core.memory.MemoryRecord
 import com.simone.jarvismobile.document.DocumentImportManager
 import com.simone.jarvismobile.document.folder
 import com.simone.jarvismobile.memory.MemoryIndex
+import com.simone.jarvismobile.memory.NoteBackgroundStore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -45,7 +47,36 @@ class ArchiveViewModel @Inject constructor(
     private val lists: ArchiveListRepository,
     private val documentManager: DocumentImportManager,
     private val memoryIndex: MemoryIndex,
+    val backgroundStore: NoteBackgroundStore,
 ) : ViewModel() {
+
+    // Sfondi nota personalizzati (§ richiesta esplicita dell'utente: "deve
+    // essere tutto personalizzabile: sfondo dietro") — stesso store globale
+    // (file system app-privato, nessuno scoping per record) già usato da
+    // Memoria: importare uno sfondo qui lo rende disponibile anche là, e
+    // viceversa, invece di un secondo elenco separato.
+    private val _customBackgrounds = MutableStateFlow<List<String>>(emptyList())
+    val customBackgrounds: StateFlow<List<String>> = _customBackgrounds.asStateFlow()
+
+    init {
+        refreshBackgrounds()
+    }
+
+    fun importBackground(uri: Uri) {
+        viewModelScope.launch {
+            backgroundStore.import(uri)
+            refreshBackgrounds()
+        }
+    }
+
+    fun deleteBackground(id: String) {
+        backgroundStore.delete(id)
+        refreshBackgrounds()
+    }
+
+    private fun refreshBackgrounds() {
+        _customBackgrounds.value = backgroundStore.list()
+    }
 
     private val allItems: StateFlow<List<ArchiveItem>> = repository.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -278,9 +309,18 @@ class ArchiveViewModel @Inject constructor(
         query.value = value
     }
 
-    fun createNote(title: String, content: String, folder: String = "", pinned: Boolean = false) {
+    fun createNote(
+        title: String,
+        content: String,
+        folder: String = "",
+        pinned: Boolean = false,
+        theme: String = "",
+        spacing: String = "",
+    ) {
         if (title.isBlank()) return
-        viewModelScope.launch { repository.create(ArchiveKind.NOTE, title, content, folder = folder, pinned = pinned) }
+        viewModelScope.launch {
+            repository.create(ArchiveKind.NOTE, title, content, folder = folder, pinned = pinned, theme = theme, spacing = spacing)
+        }
     }
 
     fun createWatchItem(title: String, watchType: String, link: String) {
@@ -288,9 +328,17 @@ class ArchiveViewModel @Inject constructor(
         viewModelScope.launch { repository.create(ArchiveKind.TO_WATCH, title, watchType = watchType, link = link) }
     }
 
-    fun updateNote(item: ArchiveItem, title: String, content: String, folder: String, pinned: Boolean) {
+    fun updateNote(
+        item: ArchiveItem,
+        title: String,
+        content: String,
+        folder: String,
+        pinned: Boolean,
+        theme: String,
+        spacing: String,
+    ) {
         viewModelScope.launch {
-            repository.update(item.id, title = title, content = content, folder = folder, pinned = pinned)
+            repository.update(item.id, title = title, content = content, folder = folder, pinned = pinned, theme = theme, spacing = spacing)
         }
     }
 

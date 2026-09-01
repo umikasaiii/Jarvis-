@@ -52,6 +52,8 @@ class ArchiveRepository @Inject constructor(
         link: String = "",
         folder: String = "",
         pinned: Boolean = false,
+        theme: String = "",
+        spacing: String = "",
     ): ArchiveItem? {
         if (title.isBlank()) return null
         val now = System.currentTimeMillis()
@@ -66,6 +68,8 @@ class ArchiveRepository @Inject constructor(
             link = link.trim(),
             folder = folder.trim(),
             pinned = pinned,
+            theme = theme,
+            spacing = spacing,
             createdAt = now,
             updatedAt = now,
         )
@@ -87,6 +91,8 @@ class ArchiveRepository @Inject constructor(
         link: String? = null,
         folder: String? = null,
         pinned: Boolean? = null,
+        theme: String? = null,
+        spacing: String? = null,
     ): ArchiveItem? {
         val existing = get(id) ?: return null
         val updated = existing.copy(
@@ -98,6 +104,8 @@ class ArchiveRepository @Inject constructor(
             link = link ?: existing.link,
             folder = folder?.trim() ?: existing.folder,
             pinned = pinned ?: existing.pinned,
+            theme = theme ?: existing.theme,
+            spacing = spacing ?: existing.spacing,
             updatedAt = System.currentTimeMillis(),
         )
         runCatching { dao.upsert(updated.toEntity()) }.onFailure {

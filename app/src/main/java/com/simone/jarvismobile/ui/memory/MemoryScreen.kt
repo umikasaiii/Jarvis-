@@ -1078,7 +1078,7 @@ private fun MemoryNoteEditorScreen(
  * is where the real styled result is shown, via [MemoryMarkup].
  */
 @Composable
-private fun FormattingToolbar(
+internal fun FormattingToolbar(
     onTitle: () -> Unit,
     onSubtitle: () -> Unit,
     onBold: () -> Unit,
@@ -1209,7 +1209,7 @@ private fun SpacingPickerButton(current: String, onPick: (String) -> Unit) {
     }
 }
 
-private fun spacingLineHeight(spacing: String): androidx.compose.ui.unit.TextUnit = when (spacing) {
+internal fun spacingLineHeight(spacing: String): androidx.compose.ui.unit.TextUnit = when (spacing) {
     MemoryLineSpacing.COMPACT -> 1.1.em
     MemoryLineSpacing.WIDE -> 1.9.em
     else -> 1.4.em
@@ -1226,11 +1226,11 @@ private fun spacingLineHeight(spacing: String): androidx.compose.ui.unit.TextUni
 private const val MARKUP_PLACEHOLDER = "testo"
 
 /** Wraps the selection — or a selected placeholder at the cursor — in [marker], e.g. "**bold**". */
-private fun wrapSelection(value: TextFieldValue, marker: String): TextFieldValue =
+internal fun wrapSelection(value: TextFieldValue, marker: String): TextFieldValue =
     wrapSelectionWith(value, marker, marker)
 
 /** Inserts [prefix] at the start of the line the cursor is on, e.g. "- " or "1. ". */
-private fun prefixLine(value: TextFieldValue, prefix: String): TextFieldValue {
+internal fun prefixLine(value: TextFieldValue, prefix: String): TextFieldValue {
     val text = value.text
     val cursor = value.selection.min
     val lineStart = if (cursor == 0) 0 else text.lastIndexOf('\n', cursor - 1) + 1
@@ -1239,7 +1239,7 @@ private fun prefixLine(value: TextFieldValue, prefix: String): TextFieldValue {
 }
 
 /** Like [wrapSelection] but with a different opening/closing mark, e.g. "<u>"/"</u>". */
-private fun wrapSelectionWith(value: TextFieldValue, prefix: String, suffix: String): TextFieldValue {
+internal fun wrapSelectionWith(value: TextFieldValue, prefix: String, suffix: String): TextFieldValue {
     val text = value.text
     val start = value.selection.min
     val end = value.selection.max
@@ -1253,7 +1253,7 @@ private fun wrapSelectionWith(value: TextFieldValue, prefix: String, suffix: Str
 }
 
 /** Inserts a Markdown thematic break ("---") as its own paragraph at the cursor. */
-private fun insertDivider(value: TextFieldValue): TextFieldValue {
+internal fun insertDivider(value: TextFieldValue): TextFieldValue {
     val text = value.text
     val cursor = value.selection.min
     val insert = "\n\n---\n\n"
@@ -1262,7 +1262,7 @@ private fun insertDivider(value: TextFieldValue): TextFieldValue {
 }
 
 /** Sets (or clears) the current line's alignment marker — "", "[center]" or "[right]". */
-private fun setLineAlign(value: TextFieldValue, tag: String): TextFieldValue {
+internal fun setLineAlign(value: TextFieldValue, tag: String): TextFieldValue {
     val text = value.text
     val cursor = value.selection.min
     val lineStart = if (cursor == 0) 0 else text.lastIndexOf('\n', cursor - 1) + 1
@@ -1279,7 +1279,7 @@ private fun setLineAlign(value: TextFieldValue, tag: String): TextFieldValue {
 }
 
 /** Toggles a `- [ ] `/`- [x] ` checklist marker on one physical line, by index — used by the tappable checkbox in preview. */
-private fun toggleChecklistLine(raw: String, lineIndex: Int): String {
+internal fun toggleChecklistLine(raw: String, lineIndex: Int): String {
     val lines = raw.split("\n").toMutableList()
     if (lineIndex !in lines.indices) return raw
     val line = lines[lineIndex]
@@ -1295,7 +1295,7 @@ private fun toggleChecklistLine(raw: String, lineIndex: Int): String {
 
 /** Renders [raw] via [MemoryMarkup] — the real styled result, not the raw markup syntax. */
 @Composable
-private fun MarkupPreview(
+internal fun MarkupPreview(
     raw: String,
     accent: Color,
     spacing: String,
@@ -1400,7 +1400,7 @@ private fun parseHex(hex: String): Color = runCatching {
  * scope boundary of [MemoryMarkup.transform] and stay visible as typed —
  * "Anteprima" is still where those render fully.
  */
-private object MarkupVisualTransformation : VisualTransformation {
+internal object MarkupVisualTransformation : VisualTransformation {
     override fun filter(text: AnnotatedString): TransformedText {
         val result = MemoryMarkup.transform(text.text)
         val annotated = buildAnnotatedString {
@@ -1430,7 +1430,7 @@ private object MarkupVisualTransformation : VisualTransformation {
  * thing on screen instead of being crowded out.
  */
 @Composable
-private fun ThemeSelector(
+internal fun ThemeSelector(
     current: String,
     onSelect: (String) -> Unit,
     customUserBackgrounds: List<String>,
@@ -1588,7 +1588,7 @@ private fun ThemePreviewSwatch(current: String, backgroundStore: NoteBackgroundS
  * equally-idiomatic, lint-clean alternative for the same async-load pattern.
  */
 @Composable
-private fun rememberUserBackgroundBitmap(store: NoteBackgroundStore, id: String): ImageBitmap? {
+internal fun rememberUserBackgroundBitmap(store: NoteBackgroundStore, id: String): ImageBitmap? {
     var bitmap by remember(id) { mutableStateOf<ImageBitmap?>(null) }
     LaunchedEffect(id) {
         bitmap = withContext(Dispatchers.IO) {
@@ -1611,7 +1611,7 @@ private fun themeSwatchColor(id: String): Color = when (id) {
     else -> Color(0xFF3FD8F0)
 }
 
-private fun themeBackgroundBrush(id: String): Brush = when (id) {
+internal fun themeBackgroundBrush(id: String): Brush = when (id) {
     "sunset" -> Brush.verticalGradient(listOf(Color(0xFF2E0B18), Color(0xFF4A1729), Color(0xFF1C0710)))
     "ocean" -> Brush.verticalGradient(listOf(Color(0xFF031A22), Color(0xFF0A3644), Color(0xFF021016)))
     "forest" -> Brush.verticalGradient(listOf(Color(0xFF091D12), Color(0xFF12331D), Color(0xFF05120A)))
@@ -1631,7 +1631,7 @@ private fun themeBackgroundBrush(id: String): Brush = when (id) {
  * identifiable copyrighted characters or franchise logos — cropped from
  * their reference grid (`docs/design` was not the source; see CLAUDE.md).
  */
-private fun customBackgroundRes(id: String): Int? = when (MemoryNoteThemes.imageKey(id)) {
+internal fun customBackgroundRes(id: String): Int? = when (MemoryNoteThemes.imageKey(id)) {
     "sakura_torii" -> R.drawable.memnote_bg_sakura_torii
     "coast_bridge" -> R.drawable.memnote_bg_coast_bridge
     "sunset_bamboo" -> R.drawable.memnote_bg_sunset_bamboo

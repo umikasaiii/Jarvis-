@@ -30,6 +30,20 @@ class ArchiveItemTest {
     }
 
     @Test
+    fun themeAndSpacingDefaultToBlank() {
+        val item = note()
+        assertTrue(item.theme.isEmpty())
+        assertTrue(item.spacing.isEmpty())
+    }
+
+    @Test
+    fun themeAndSpacingRoundTripThroughCopy() {
+        val item = note().copy(theme = "sunset", spacing = "wide")
+        assertTrue(item.theme == "sunset")
+        assertTrue(item.spacing == "wide")
+    }
+
+    @Test
     fun toWatchChunkCarriesTypeAndLink() {
         val item = ArchiveItem(
             id = "2",

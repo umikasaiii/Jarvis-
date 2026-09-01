@@ -115,5 +115,22 @@ object ArchiveMigrations {
         }
     }
 
-    val ALL = arrayOf(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_7_8)
+    /**
+     * Adds `theme`/`spacing` to `archive_items` (§ richiesta esplicita
+     * dell'utente: "deve essere tutto personalizzabile: sfondo dietro,
+     * colore, carattere, ecc." per l'editor Note di Archivio) — la stessa
+     * coppia di colonne già aggiunta a `MemoryRecord` per Memoria, non un
+     * secondo vocabolario. Stessa regola non distruttiva delle migrazioni
+     * sopra: una nota esistente parte semplicemente senza sfondo/spaziatura
+     * personalizzati (default `''`, risolto a "nessun tema"/"normale" da
+     * `MemoryNoteThemes.sanitize`/`MemoryLineSpacing.sanitize`).
+     */
+    val MIGRATION_8_9 = object : Migration(8, 9) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `archive_items` ADD COLUMN `theme` TEXT NOT NULL DEFAULT ''")
+            db.execSQL("ALTER TABLE `archive_items` ADD COLUMN `spacing` TEXT NOT NULL DEFAULT ''")
+        }
+    }
+
+    val ALL = arrayOf(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_7_8, MIGRATION_8_9)
 }

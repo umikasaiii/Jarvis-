@@ -9,12 +9,15 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -145,6 +148,14 @@ fun AgendaScreen(viewModel: AgendaViewModel = hiltViewModel()) {
             .background(
                 Brush.verticalGradient(listOf(Color(0xFF050C16), Color(0xFF081420), Color(0xFF03080E))),
             )
+            // § bug reale segnalato dall'utente: "Attività" e le sezioni
+            // finiscono sotto/dietro la barra di stato — questa schermata è
+            // un Overlay fuori dallo Scaffold principale (§ 6o), quindi
+            // fuori dal suo innerPadding che gestisce già gli inset per le
+            // schermate normali; stesso identico bug e stessa correzione già
+            // applicata a Memoria/Archivio in un giro precedente, mai
+            // portata qui.
+            .windowInsetsPadding(WindowInsets.statusBars)
             .imePadding()
             .padding(horizontal = 16.dp),
     ) {
@@ -403,6 +414,7 @@ private fun AddTaskScreen(
             .background(
                 Brush.verticalGradient(listOf(Color(0xFF050C16), Color(0xFF081420), Color(0xFF03080E))),
             )
+            .windowInsetsPadding(WindowInsets.statusBars)
             .imePadding(),
     ) {
         Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {

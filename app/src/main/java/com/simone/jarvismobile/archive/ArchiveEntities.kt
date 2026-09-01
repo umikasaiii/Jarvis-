@@ -29,6 +29,8 @@ data class ArchiveItemEntity(
     val link: String,
     val folder: String,
     val pinned: Boolean,
+    val theme: String,
+    val spacing: String,
     val createdAt: Long,
     val updatedAt: Long,
 )
@@ -67,6 +69,8 @@ fun ArchiveItemEntity.toModel(): ArchiveItem = ArchiveItem(
     link = link,
     folder = folder,
     pinned = pinned,
+    theme = theme,
+    spacing = spacing,
     createdAt = createdAt,
     updatedAt = updatedAt,
 )
@@ -82,6 +86,8 @@ fun ArchiveItem.toEntity(): ArchiveItemEntity = ArchiveItemEntity(
     link = link,
     folder = folder,
     pinned = pinned,
+    theme = theme,
+    spacing = spacing,
     createdAt = createdAt,
     updatedAt = updatedAt,
 )

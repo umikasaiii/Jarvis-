@@ -6,6 +6,7 @@ import android.content.Intent
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -42,7 +43,6 @@ import androidx.compose.material.icons.filled.List as ListIcon
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PushPin
-import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
@@ -68,8 +68,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -86,8 +89,26 @@ import com.simone.jarvismobile.core.archive.ListItemStatus
 import com.simone.jarvismobile.core.document.DocumentRecord
 import com.simone.jarvismobile.core.document.DocumentStatus
 import com.simone.jarvismobile.core.memory.MemoryCategories
+import com.simone.jarvismobile.core.memory.MemoryLineSpacing
+import com.simone.jarvismobile.core.memory.MemoryMarkup
+import com.simone.jarvismobile.core.memory.MemoryNoteThemes
 import com.simone.jarvismobile.core.memory.MemoryRecord
 import com.simone.jarvismobile.document.folder
+import com.simone.jarvismobile.memory.NoteBackgroundStore
+import com.simone.jarvismobile.ui.memory.FormattingToolbar
+import com.simone.jarvismobile.ui.memory.MarkupPreview
+import com.simone.jarvismobile.ui.memory.MarkupVisualTransformation
+import com.simone.jarvismobile.ui.memory.ThemeSelector
+import com.simone.jarvismobile.ui.memory.customBackgroundRes
+import com.simone.jarvismobile.ui.memory.insertDivider
+import com.simone.jarvismobile.ui.memory.prefixLine
+import com.simone.jarvismobile.ui.memory.rememberUserBackgroundBitmap
+import com.simone.jarvismobile.ui.memory.setLineAlign
+import com.simone.jarvismobile.ui.memory.spacingLineHeight
+import com.simone.jarvismobile.ui.memory.themeBackgroundBrush
+import com.simone.jarvismobile.ui.memory.toggleChecklistLine
+import com.simone.jarvismobile.ui.memory.wrapSelection
+import com.simone.jarvismobile.ui.memory.wrapSelectionWith
 import com.simone.jarvismobile.ui.theme.LocalJarvisPalette
 import java.time.Instant
 import java.time.LocalDate
@@ -114,8 +135,12 @@ private val CardBg = Color(0x660A1826)
 private enum class ArchiveFolder(val label: String, val icon: ImageVector) {
     DOCUMENTS("Documenti", Icons.Filled.Description),
     NOTES("Note", Icons.Filled.EditNote),
+    // "Da vedere" non è più una cartella radice a sé (§ richiesta esplicita
+    // dell'utente: "togli 'da vedere' e aggiungila a 'liste'") — i suoi
+    // elementi (ArchiveKind.TO_WATCH, dato invariato) vivono ora come una
+    // terza sezione dentro ListsTab, accanto a "Lista della spesa"/"Le mie
+    // liste", non come schermata separata.
     LISTS("Liste", Icons.Filled.ListIcon),
-    WATCH("Da vedere", Icons.Filled.Visibility),
     MEMORY("Memoria", Icons.Filled.Memory),
     TODO("TODO", Icons.Filled.CheckCircle),
 }
@@ -148,6 +173,7 @@ fun ArchiveScreen(
     val query by viewModel.searchQuery.collectAsStateWithLifecycle()
     val folders by viewModel.folders.collectAsStateWithLifecycle()
     val documentFolders by viewModel.documentFolders.collectAsStateWithLifecycle()
+    val customBackgrounds by viewModel.customBackgrounds.collectAsStateWithLifecycle()
 
     var openFolder by remember { mutableStateOf<ArchiveFolder?>(null) }
     var showAdd by remember { mutableStateOf(false) } // TO_WATCH only — notes get the full-screen editor
@@ -178,6 +204,12 @@ fun ArchiveScreen(
     val photoPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments(),
     ) { uris -> if (uris.isNotEmpty()) viewModel.importFromPhone(uris, selectedDocFolder.orEmpty()) }
+
+    // Sfondo nota personalizzato, stesso picker/store di Memoria (§ richiesta
+    // esplicita: "deve essere tutto personalizzabile: sfondo dietro").
+    val backgroundPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri -> uri?.let { viewModel.importBackground(it) } }
 
     // Memoria is edited only in its own screen, so this view's copy can go
     // stale while the user is away — refresh whenever the folder is (re)opened.
@@ -242,8 +274,6 @@ fun ArchiveScreen(
                     notesCount = notes.size,
                     notesUpdated = notes.maxOfOrNull { it.updatedAt },
                     listsCount = customLists.size,
-                    watchCount = watch.size,
-                    watchUpdated = watch.maxOfOrNull { it.updatedAt },
                     memoryCount = memoryRecords.size,
                     memoryUpdated = memoryRecords.maxOfOrNull { it.updatedAt },
                     storageUsage = storageUsage,
@@ -286,20 +316,17 @@ fun ArchiveScreen(
                         if (selectedNoteFolder == path) selectedNoteFolder = null
                     },
                 )
-                ArchiveFolder.WATCH -> ItemsTab(
-                    items = watch,
-                    emptyText = "Nessun elemento nella lista da vedere.",
-                    onClick = {},
-                    onToggle = { viewModel.toggleWatched(it) },
-                    onDelete = { viewModel.delete(it) },
-                )
                 ArchiveFolder.LISTS -> ListsTab(
                     shoppingItems = shoppingItems,
                     customLists = customLists,
+                    watchItems = watch,
                     onAddShoppingItem = { showNewShoppingItem = true },
                     onToggleShoppingItem = { viewModel.toggleListItem("spesa", it) },
                     onDeleteShoppingItem = { viewModel.deleteListItem("spesa", it) },
                     onOpenList = { openList = it },
+                    onAddWatchItem = { showAdd = true },
+                    onToggleWatchItem = { viewModel.toggleWatched(it) },
+                    onDeleteWatchItem = { viewModel.delete(it) },
                 )
                 ArchiveFolder.MEMORY -> MemoryFolder(records = memoryRecords)
                 ArchiveFolder.TODO -> RedirectTab(
@@ -315,7 +342,6 @@ fun ArchiveScreen(
         val fabAction: (() -> Unit)? = when (openFolder) {
             ArchiveFolder.DOCUMENTS -> { { showImportMenu = true } }
             ArchiveFolder.NOTES -> { { editingNote = null; showNoteEditor = true } }
-            ArchiveFolder.WATCH -> { { showAdd = true } }
             ArchiveFolder.LISTS -> { { showNewList = true } }
             else -> null
         }
@@ -337,13 +363,17 @@ fun ArchiveScreen(
             NoteEditorScreen(
                 note = editingNote,
                 folders = folders,
+                customBackgrounds = customBackgrounds,
+                backgroundStore = viewModel.backgroundStore,
+                onImportBackground = { backgroundPicker.launch(arrayOf("image/*")) },
+                onDeleteBackground = viewModel::deleteBackground,
                 onDismiss = { showNoteEditor = false },
-                onSave = { title, content, folder, pinned ->
+                onSave = { title, content, folder, pinned, theme, spacing ->
                     val current = editingNote
                     if (current == null) {
-                        viewModel.createNote(title, content, folder, pinned)
+                        viewModel.createNote(title, content, folder, pinned, theme, spacing)
                     } else {
-                        viewModel.updateNote(current, title, content, folder, pinned)
+                        viewModel.updateNote(current, title, content, folder, pinned, theme, spacing)
                     }
                     showNoteEditor = false
                 },
@@ -463,8 +493,6 @@ private fun FolderRoot(
     notesCount: Int,
     notesUpdated: Long?,
     listsCount: Int,
-    watchCount: Int,
-    watchUpdated: Long?,
     memoryCount: Int,
     memoryUpdated: Long?,
     storageUsage: ArchiveViewModel.StorageUsage,
@@ -480,9 +508,6 @@ private fun FolderRoot(
         }
         item {
             FolderRow(ArchiveFolder.LISTS, "$listsCount liste personalizzate", onOpen)
-        }
-        item {
-            FolderRow(ArchiveFolder.WATCH, folderMeta(watchUpdated, watchCount, "elementi"), onOpen)
         }
         item {
             FolderRow(ArchiveFolder.MEMORY, folderMeta(memoryUpdated, memoryCount, "ricordi"), onOpen)
@@ -543,7 +568,6 @@ private fun ArchiveFolder.accent(): Color = when (this) {
     ArchiveFolder.DOCUMENTS -> Color(0xFF3FD8F0)
     ArchiveFolder.NOTES -> Color(0xFFF1C40F)
     ArchiveFolder.LISTS -> Color(0xFF2ECC71)
-    ArchiveFolder.WATCH -> Color(0xFFEB5AA6)
     ArchiveFolder.MEMORY -> Color(0xFF7C5CFF)
     ArchiveFolder.TODO -> Color(0xFFE67E22)
 }
@@ -987,7 +1011,10 @@ private fun NoteCard(note: ArchiveItem, onClick: () -> Unit, onTogglePin: () -> 
             Text(note.title, style = MaterialTheme.typography.titleMedium, color = Ink, maxLines = 1)
             if (note.content.isNotBlank()) {
                 Spacer(Modifier.size(2.dp))
-                Text(note.content, style = MaterialTheme.typography.bodySmall, color = Muted, maxLines = 2)
+                // Testo semplice, non la sintassi grezza (§ ora che il
+                // contenuto può portare markup **grassetto**/[color=...]/ecc.,
+                // stesso fix già fatto per NoteTile di Memoria).
+                Text(MemoryMarkup.plainText(note.content), style = MaterialTheme.typography.bodySmall, color = Muted, maxLines = 2)
             }
         }
         IconButton(onClick = onTogglePin) {
@@ -1012,27 +1039,67 @@ private fun NoteCard(note: ArchiveItem, onClick: () -> Unit, onTogglePin: () -> 
  * [com.simone.jarvismobile.ui.agenda.AddTaskScreen]'s, a folder chip that
  * opens [FolderPickerDialog], and a content field that fills the rest of the
  * screen instead of a cramped multi-line box in a dialog.
+ *
+ * Formatting/background are the exact same machinery Memoria's editor already
+ * built (§ richiesta esplicita dell'utente: "deve essere tutto personalizzabile:
+ * sfondo dietro, colore, carattere, ecc.") — [FormattingToolbar]/
+ * [MarkupVisualTransformation]/[ThemeSelector]/[MemoryNoteThemes]/
+ * [MemoryLineSpacing], reused verbatim from `ui.memory.MemoryScreen`, not a
+ * second rich-text engine: an Archivio note's [ArchiveItem.content] stores
+ * the identical inline markup Memoria's `MemoryRecord.text` does.
  */
 @Composable
 private fun NoteEditorScreen(
     note: ArchiveItem?,
     folders: List<String>,
+    customBackgrounds: List<String>,
+    backgroundStore: NoteBackgroundStore,
+    onImportBackground: () -> Unit,
+    onDeleteBackground: (String) -> Unit,
     onDismiss: () -> Unit,
-    onSave: (title: String, content: String, folder: String, pinned: Boolean) -> Unit,
+    onSave: (title: String, content: String, folder: String, pinned: Boolean, theme: String, spacing: String) -> Unit,
     onDelete: (() -> Unit)?,
 ) {
     var title by remember { mutableStateOf(note?.title ?: "") }
-    var content by remember { mutableStateOf(note?.content ?: "") }
+    var field by remember { mutableStateOf(TextFieldValue(note?.content ?: "")) }
     var folder by remember { mutableStateOf(note?.folder ?: "") }
     var pinned by remember { mutableStateOf(note?.pinned ?: false) }
+    var theme by remember { mutableStateOf(MemoryNoteThemes.sanitize(note?.theme ?: "")) }
+    var spacing by remember { mutableStateOf(MemoryLineSpacing.sanitize(note?.spacing ?: "")) }
     var showFolderPicker by remember { mutableStateOf(false) }
+    var showPreview by remember { mutableStateOf(false) }
 
-    Box(
-        Modifier
-            .fillMaxSize()
-            .background(Brush.verticalGradient(listOf(Color(0xFF050C16), Color(0xFF081420), Color(0xFF03080E))))
-            .imePadding(),
-    ) {
+    fun save() = onSave(title, field.text, folder, pinned, theme, spacing)
+
+    Box(Modifier.fillMaxSize().imePadding()) {
+        val backgroundRes = customBackgroundRes(theme)
+        val userBitmap = if (MemoryNoteThemes.isUserImage(theme)) rememberUserBackgroundBitmap(backgroundStore, theme) else null
+        if (backgroundRes != null || userBitmap != null) {
+            if (backgroundRes != null) {
+                Image(
+                    painter = painterResource(backgroundRes),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                Image(
+                    bitmap = userBitmap!!,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+            // A dark scrim over the artwork — Ink is a light tone made for a
+            // dark background, and these images are mostly light "paper".
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(Brush.verticalGradient(listOf(Color(0xCC050C16), Color(0xB3081420), Color(0xCC03080E)))),
+            )
+        } else {
+            Box(Modifier.fillMaxSize().background(themeBackgroundBrush(theme)))
+        }
         Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.statusBars).padding(horizontal = 20.dp)) {
             Spacer(Modifier.size(16.dp))
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -1058,10 +1125,9 @@ private fun NoteEditorScreen(
                         tint = if (pinned) Gold else Muted,
                     )
                 }
-                TextButton(
-                    onClick = { onSave(title, content, folder, pinned) },
-                    enabled = title.isNotBlank(),
-                ) { Text("Salva", color = if (title.isNotBlank()) Cyan else Muted) }
+                TextButton(onClick = ::save, enabled = title.isNotBlank()) {
+                    Text("Salva", color = if (title.isNotBlank()) Cyan else Muted)
+                }
             }
             Spacer(Modifier.size(16.dp))
             OutlinedTextField(
@@ -1073,16 +1139,62 @@ private fun NoteEditorScreen(
                 colors = borderlessFieldColors(),
                 singleLine = true,
             )
-            FolderChip(folder.ifBlank { "Senza categoria" }, selected = false) { showFolderPicker = true }
-            Spacer(Modifier.size(8.dp))
-            OutlinedTextField(
-                value = content,
-                onValueChange = { content = it },
-                modifier = Modifier.fillMaxWidth().weight(1f),
-                placeholder = { Text("Nota…", color = Muted) },
-                textStyle = MaterialTheme.typography.bodyLarge.copy(color = Ink),
-                colors = borderlessFieldColors(),
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                FolderChip(folder.ifBlank { "Senza categoria" }, selected = false) { showFolderPicker = true }
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = { showPreview = !showPreview }) {
+                    Text(if (showPreview) "Modifica" else "Anteprima", color = Cyan)
+                }
+            }
+            ThemeSelector(
+                current = theme,
+                onSelect = { theme = it },
+                customUserBackgrounds = customBackgrounds,
+                backgroundStore = backgroundStore,
+                onImport = onImportBackground,
+                onDelete = { id -> onDeleteBackground(id); if (theme == id) theme = MemoryNoteThemes.DEFAULT },
             )
+            Spacer(Modifier.size(8.dp))
+            if (showPreview) {
+                MarkupPreview(
+                    raw = field.text,
+                    accent = Cyan,
+                    spacing = spacing,
+                    onToggleLine = { index -> field = field.copy(text = toggleChecklistLine(field.text, index)) },
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                )
+            } else {
+                OutlinedTextField(
+                    value = field,
+                    onValueChange = { field = it },
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                    placeholder = { Text("Nota…", color = Muted) },
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = Ink, lineHeight = spacingLineHeight(spacing)),
+                    visualTransformation = MarkupVisualTransformation,
+                    colors = borderlessFieldColors(),
+                )
+                FormattingToolbar(
+                    onTitle = { field = prefixLine(field, "# ") },
+                    onSubtitle = { field = prefixLine(field, "## ") },
+                    onBold = { field = wrapSelection(field, "**") },
+                    onItalic = { field = wrapSelection(field, "*") },
+                    onUnderline = { field = wrapSelectionWith(field, "<u>", "</u>") },
+                    onHighlight = { field = wrapSelection(field, "==") },
+                    onTextColor = { hex -> field = wrapSelectionWith(field, "[color=$hex]", "[/color]") },
+                    onHighlightColor = { hex -> field = wrapSelectionWith(field, "[hl=$hex]", "[/hl]") },
+                    onFontSize = { tag -> field = wrapSelectionWith(field, "[size=$tag]", "[/size]") },
+                    onBullet = { field = prefixLine(field, "- ") },
+                    onNumbered = { field = prefixLine(field, "1. ") },
+                    onChecklist = { field = prefixLine(field, "- [ ] ") },
+                    onDivider = { field = insertDivider(field) },
+                    onAlignStart = { field = setLineAlign(field, "") },
+                    onAlignCenter = { field = setLineAlign(field, "[center]") },
+                    onAlignEnd = { field = setLineAlign(field, "[right]") },
+                    spacing = spacing,
+                    onSpacing = { spacing = it },
+                )
+            }
+            Spacer(Modifier.size(16.dp))
         }
     }
 
@@ -1212,32 +1324,17 @@ private fun FolderManagerDialog(
 // --- other folders, unchanged logic, JARVIS-restyled ------------------------
 
 @Composable
-private fun ItemsTab(
-    items: List<ArchiveItem>,
-    emptyText: String,
-    onClick: (ArchiveItem) -> Unit,
-    onToggle: (ArchiveItem) -> Unit,
-    onDelete: (ArchiveItem) -> Unit,
-) {
-    if (items.isEmpty()) {
-        Text(emptyText, color = Muted, modifier = Modifier.padding(24.dp), style = MaterialTheme.typography.bodyMedium)
-        return
-    }
-    LazyColumn(contentPadding = PaddingValues(bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        items(items, key = { it.id }) { item ->
-            ArchiveRow(item = item, onClick = { onClick(item) }, onToggle = { onToggle(item) }, onDelete = { onDelete(item) })
-        }
-    }
-}
-
-@Composable
 private fun ListsTab(
     shoppingItems: List<ArchiveListItem>,
     customLists: List<ArchiveList>,
+    watchItems: List<ArchiveItem>,
     onAddShoppingItem: () -> Unit,
     onToggleShoppingItem: (ArchiveListItem) -> Unit,
     onDeleteShoppingItem: (ArchiveListItem) -> Unit,
     onOpenList: (ArchiveList) -> Unit,
+    onAddWatchItem: () -> Unit,
+    onToggleWatchItem: (ArchiveItem) -> Unit,
+    onDeleteWatchItem: (ArchiveItem) -> Unit,
 ) {
     LazyColumn(contentPadding = PaddingValues(bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item { Text("Lista della spesa", style = MaterialTheme.typography.titleMedium, color = Ink) }
@@ -1262,6 +1359,22 @@ private fun ListsTab(
                     Text(list.name, style = MaterialTheme.typography.titleMedium, color = Ink)
                 }
             }
+        }
+        // "Da vedere" era una cartella radice a sé (film/libri/serie da
+        // recuperare, ArchiveKind.TO_WATCH — dato invariato) — spostata qui
+        // come terza sezione (§ richiesta esplicita dell'utente: "togli 'da
+        // vedere' e aggiungila a 'liste'"), stesso pattern "titolo + righe +
+        // pulsante aggiungi" già usato sopra per la spesa.
+        item { Text("Da vedere", style = MaterialTheme.typography.titleMedium, color = Ink, modifier = Modifier.padding(top = 12.dp)) }
+        if (watchItems.isEmpty()) {
+            item { Text("Nessun elemento nella lista da vedere.", style = MaterialTheme.typography.bodySmall, color = Muted) }
+        } else {
+            items(watchItems, key = { "watch:" + it.id }) { w ->
+                ArchiveRow(item = w, onClick = {}, onToggle = { onToggleWatchItem(w) }, onDelete = { onDeleteWatchItem(w) })
+            }
+        }
+        item {
+            OutlinedButton(onClick = onAddWatchItem, modifier = Modifier.fillMaxWidth()) { Text("Aggiungi da vedere") }
         }
     }
 }
