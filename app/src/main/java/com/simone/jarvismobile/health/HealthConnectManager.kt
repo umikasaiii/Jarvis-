@@ -233,7 +233,14 @@ class HealthConnectManager @Inject constructor(
      *   sotto "29 ago", non "28 ago"), quindi il confronto diretto fra le
      *   due app torna ad avere senso. Più sessioni nello stesso giorno
      *   (es. sonno notturno + un pisolino finito lo stesso giorno) sommano
-     *   le rispettive durate.
+     *   le rispettive durate. La durata di ciascuna sessione è la somma
+     *   delle sole fasi di sonno vero (`sleepStagesDuration`, sotto), non
+     *   l'intervallo grezzo `startTime`-`endTime` — § bug reale segnalato
+     *   dall'utente da un confronto diretto con Honor Health: una sessione
+     *   con 5 risvegli notturni (fasi "Sveglio" visibili nell'ipnogramma)
+     *   mostrava 10h9m su JARVIS contro i 9h26m di "Riposo notturno" su
+     *   Honor Health — la differenza è esattamente il tempo passato sveglio
+     *   dentro la sessione, mai sottratto dal calcolo precedente.
      *
      * **Onestà, limite non risolto da questa correzione**: se Honor Health
      * mostra dati per una notte che qui resta "—", non è (più) un bug di
@@ -263,7 +270,7 @@ class HealthConnectManager @Inject constructor(
             val sleepByDate = mutableMapOf<LocalDate, MutableList<Duration>>()
             sleepRecords.forEach { record ->
                 val date = record.endTime.atZone(zone).toLocalDate()
-                sleepByDate.getOrPut(date) { mutableListOf() }.add(Duration.between(record.startTime, record.endTime))
+                sleepByDate.getOrPut(date) { mutableListOf() }.add(record.sleepStagesDuration())
             }
 
             (7 downTo 1).map { daysAgo ->
@@ -275,6 +282,27 @@ class HealthConnectManager @Inject constructor(
                 )
             }
         }.getOrDefault(emptyList())
+    }
+
+    /**
+     * Durata reale del sonno, escludendo le fasi di veglia dentro la
+     * sessione (§ bug reale: `Duration.between(startTime, endTime)` conta
+     * l'intera sessione, addormentarsi-risveglio finale, comprese le fasi
+     * "Sveglio" nel mezzo — Honor Health le esclude dal suo "Riposo
+     * notturno"). Senza fasi dettagliate (`stages` vuoto — non tutte le
+     * fonti le scrivono) ricade sull'intervallo grezzo, l'unico dato
+     * disponibile in quel caso.
+     */
+    private fun SleepSessionRecord.sleepStagesDuration(): Duration {
+        if (stages.isEmpty()) return Duration.between(startTime, endTime)
+        val awake = setOf(
+            SleepSessionRecord.STAGE_TYPE_AWAKE,
+            SleepSessionRecord.STAGE_TYPE_AWAKE_IN_BED,
+            SleepSessionRecord.STAGE_TYPE_OUT_OF_BED,
+        )
+        return stages
+            .filterNot { it.stage in awake }
+            .fold(Duration.ZERO) { acc, stage -> acc + Duration.between(stage.startTime, stage.endTime) }
     }
 
     /**
