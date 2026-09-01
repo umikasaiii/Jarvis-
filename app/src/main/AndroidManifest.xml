@@ -188,6 +188,32 @@
             </intent-filter>
         </activity>
 
+        <!--
+          § indagine Health Connect proseguita: JARVIS assente dall'elenco
+          "Autorizzazioni app" nonostante il meta-dato health_permissions
+          qui sopra (verificato presente e corretto nell'APK decompilato in
+          un giro precedente) — quel meta-dato da solo copre solo la vecchia
+          via di dichiarazione, non basta. Requisito distinto e documentato
+          di Health Connect, mai provato prima in questo progetto: un
+          activity-alias con un intent-filter su
+          android.intent.action.VIEW_PERMISSION_USAGE + la categoria
+          android.intent.category.HEALTH_PERMISSIONS — è ciò che permette a
+          Health Connect di elencare l'app fra i richiedenti validi e di
+          mostrare "Perché la mia app ha bisogno di questi permessi" quando
+          l'utente tocca l'app nell'elenco. Punta alla stessa MainActivity
+          già esportata, non una schermata nuova.
+        -->
+        <activity-alias
+            android:name=".health.ViewPermissionUsageActivity"
+            android:exported="true"
+            android:targetActivity=".ui.MainActivity"
+            android:permission="android.permission.START_VIEW_PERMISSION_USAGE">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />
+                <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
+            </intent-filter>
+        </activity-alias>
+
         <!-- Driving Mode V2: the new in-app INTERNAL_JARVIS_NAVIGATION screen — a
              real Activity, not a system overlay. Reachable only from the
              developer feature flag while it's being built (docs/ARCHITECTURE.md);
