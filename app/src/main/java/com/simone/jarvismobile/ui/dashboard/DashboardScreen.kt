@@ -18,7 +18,6 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -1691,52 +1690,23 @@ internal fun AresHomeScreen(
     val healthGranted by aresViewModel.healthGranted.collectAsStateWithLifecycle()
     val healthAverages by aresViewModel.healthAverages.collectAsStateWithLifecycle()
     val healthContext = LocalContext.current
-    // Causa radice reale trovata (§ "premendo concedi accesso non succede
-    // niente", confermato dall'utente: nemmeno un popup di sistema appare
-    // per un istante): rememberLauncherForActivityResult richiede lo STESSO
-    // oggetto contract a ogni ricomposizione — passare
-    // aresViewModel.healthPermissionContract() diretto costruiva una nuova
-    // istanza di PermissionController.createRequestPermissionResultContract()
-    // a ogni ricomposizione (che qui capita spesso: outlook/healthAverages
-    // sono StateFlow che ricompongono questo intero schermo). Ogni
-    // ricomposizione quindi deregistrava e riregistrava il launcher presso
-    // l'ActivityResultRegistry; se il tocco arrivava proprio in quella
-    // finestra, launch() falliva silenziosamente senza lanciare eccezione —
-    // coerente con "nessun crash, nessun popup". Fissata con remember, così
-    // il contract è un'unica istanza stabile per tutta la vita di questo
-    // composable.
-    val healthPermissionContract = remember(aresViewModel) { aresViewModel.healthPermissionContract() }
-    // Bug segnalato di nuovo dall'utente anche DOPO la stabilizzazione del
-    // contract qui sopra ("cliccabile ma comunque non apre e non succede
-    // nulla") -- quindi quel fix, per quanto reale, non era l'unica causa o
-    // non lo era affatto. Senza log di dispositivo in questo ambiente non e'
-    // verificabile con certezza se la Activity di Health Connect non si apre
-    // proprio, oppure si apre e si richiude all'istante restituendo un
-    // risultato vuoto (es. un provider OEM che risponde ma non mostra mai
-    // davvero la UI). Il callback ora mostra sempre un Toast col conteggio
-    // reale dei permessi concessi: se non compare NEMMENO questo Toast, il
-    // round-trip non si completa affatto (causa piu' a monte, fuori da
-    // questo composable); se compare con "0 concessi", l'activity si apre e
-    // chiude subito senza che l'utente riesca a interagire.
-    val healthLauncher = rememberLauncherForActivityResult(
-        contract = healthPermissionContract,
-    ) { granted ->
-        android.widget.Toast.makeText(
-            healthContext,
-            "Health Connect: ${granted.size} permessi concessi",
-            android.widget.Toast.LENGTH_LONG,
-        ).show()
-        aresViewModel.refreshHealth()
-    }
-    // Bug reale segnalato dall'utente: "premendo concedi accesso non succede
-    // niente" — nessun crash, quindi non un'eccezione non gestita, ma senza
-    // log visibile in questo ambiente non è verificabile con certezza se il
-    // launcher stesso fallisce silenziosamente o se la richiesta apre e
-    // richiude senza aggiornare lo stato. Questo try/catch rende visibile
-    // (Toast) un eventuale fallimento reale del lancio invece di lasciarlo
-    // silenzioso, così il prossimo tentativo dice qualcosa di concreto.
+    // Il dialogo di consenso in-app (PermissionController.createRequestPermissionResultContract,
+    // con lo stesso identico contract stabilizzato via remember, § round
+    // precedente) non ha mai portato a un consenso reale su questo
+    // dispositivo di test nonostante due giri di fix (stabilizzazione del
+    // contract, poi diagnostica con Toast/etichetta SDK) — l'app risultava
+    // del tutto assente dall'elenco "Autorizzazioni app" di Health Connect,
+    // causa mai trovata (vedi CLAUDE.md). § richiesta esplicita dell'utente,
+    // approccio diverso: "permetti a jarvis di aprire la pagina [...] in cui
+    // richiede accesso [...] ed io posso metterlo manualmente" — invece di
+    // continuare a inseguire il dialogo in-app rotto, il tocco ora apre
+    // direttamente le impostazioni di Health Connect
+    // (HealthConnectManager.settingsIntent()), da cui l'utente può navigare
+    // da solo. Nessun ActivityResultContract più necessario: uno
+    // startActivity semplice, con lo stesso schema "try/catch + Toast
+    // visibile" già in uso per non lasciare un fallimento silenzioso.
     val onRequestHealthConnect: () -> Unit = {
-        runCatching { healthLauncher.launch(aresViewModel.healthPermissions) }
+        runCatching { healthContext.startActivity(aresViewModel.healthSettingsIntent()) }
             .onFailure {
                 android.widget.Toast.makeText(
                     healthContext,
@@ -1744,6 +1714,19 @@ internal fun AresHomeScreen(
                     android.widget.Toast.LENGTH_LONG,
                 ).show()
             }
+    }
+    // Senza più un ActivityResultContract non c'è un callback "di ritorno"
+    // automatico — lo stato (concesso/non concesso, medie) viene quindi
+    // ricontrollato a ogni ritorno in primo piano di questa schermata,
+    // stesso pattern DisposableEffect+ON_RESUME già usato più sopra in
+    // questo stesso file per la wake word.
+    val healthLifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    DisposableEffect(healthLifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) aresViewModel.refreshHealth()
+        }
+        healthLifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { healthLifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     val archiveVm: com.simone.jarvismobile.ui.archive.ArchiveViewModel = hiltViewModel()

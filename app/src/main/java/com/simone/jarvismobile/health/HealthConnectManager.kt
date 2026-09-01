@@ -1,8 +1,8 @@
 package com.simone.jarvismobile.health
 
 import android.content.Context
+import android.content.Intent
 import androidx.health.connect.client.HealthConnectClient
-import androidx.health.connect.client.PermissionController
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.SleepSessionRecord
@@ -79,8 +79,31 @@ class HealthConnectManager @Inject constructor(
         HealthPermission.getReadPermission(SleepSessionRecord::class),
     )
 
-    /** Passed to `rememberLauncherForActivityResult` by the Ares screen. */
-    fun requestPermissionsContract() = PermissionController.createRequestPermissionResultContract()
+    /**
+     * Opens Health Connect's own settings screen directly (§ richiesta esplicita
+     * dell'utente: "permetti a jarvis di aprire la pagina [...] in cui richiede
+     * accesso [...] ed io posso metterlo manualmente") — un percorso diverso
+     * dal dialogo di consenso in-app (`PermissionController.createRequestPermissionResultContract()`,
+     * rimosso perché mai risultato in un consenso reale su questo
+     * dispositivo di test, vedi
+     * l'indagine in CLAUDE.md: JARVIS non compare affatto nell'elenco
+     * "Autorizzazioni app" di Health Connect, causa mai trovata). Da qui
+     * l'utente naviga da solo fino alla pagina dei permessi per app e
+     * concede/nega manualmente — nessun deep-link app-specifico usato perché
+     * nessuna forma verificata esiste per questo (stesso limite di rete già
+     * documentato: nessun accesso alla documentazione live in questo
+     * ambiente). Usata la stringa azione grezza `"androidx.health.ACTION_HEALTH_CONNECT_SETTINGS"`
+     * invece del nome della costante Kotlin esposta dalla libreria: la
+     * stringa stessa è la parte stabile del contratto pubblico (documentata
+     * da tempo per questo scopo esatto), mentre la classe/costante Kotlin
+     * che la incapsula è potenzialmente cambiata fra le versioni alpha di
+     * `androidx.health.connect:connect-client` — riferirla per nome avrebbe
+     * rischiato un "unresolved reference" mai verificabile qui, la stessa
+     * categoria di errore già presa una volta con `HeartRateRecord.BPM_AVG`
+     * (Long, non Double). La Activity di Health Connect stessa gestisce
+     * l'azione indipendentemente da come l'app chiamante la referenzia.
+     */
+    fun settingsIntent(): Intent = Intent("androidx.health.ACTION_HEALTH_CONNECT_SETTINGS")
 
     suspend fun hasPermissions(): Boolean {
         val c = client ?: return false

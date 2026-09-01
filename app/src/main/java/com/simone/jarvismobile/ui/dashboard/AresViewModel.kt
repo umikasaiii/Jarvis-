@@ -36,8 +36,8 @@ class AresViewModel @Inject constructor(
     val healthAverages: StateFlow<HealthConnectManager.WeeklyHealthAverages?> = _healthAverages.asStateFlow()
 
     val healthAvailable: Boolean get() = health.isAvailable
-    val healthPermissions: Set<String> get() = health.permissions
-    fun healthPermissionContract() = health.requestPermissionsContract()
+    /** Apre le impostazioni di Health Connect (§ richiesta esplicita: "aprire la pagina... ed io posso metterlo manualmente"). */
+    fun healthSettingsIntent() = health.settingsIntent()
     /** Diagnostica testuale mostrata sotto "Concedi accesso" (§ vedi HealthConnectManager). */
     fun healthSdkStatusLabel(): String = health.sdkStatusLabel()
 
