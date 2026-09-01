@@ -124,7 +124,23 @@ class HealthConnectManager @Inject constructor(
         return runCatching {
             val granted = c.permissionController.getGrantedPermissions()
             val missing = permissions - granted
-            if (missing.isEmpty()) "concessi tutti (${granted.size} totali)" else "mancano ${missing.size}: ${missing.joinToString()}"
+            // Etichette brevi invece della stringa Android completa (§ bug
+            // reale: "android.permission.health.READ_..." è troppo lunga
+            // per lo spazio della card e restava tagliata a metà nello
+            // screenshot dell'utente — impossibile capire quale dei due
+            // mancasse davvero).
+            if (missing.isEmpty()) {
+                "concessi entrambi"
+            } else {
+                val labels = missing.map { permission ->
+                    when (permission) {
+                        HealthPermission.getReadPermission(RestingHeartRateRecord::class) -> "frequenza a riposo"
+                        HealthPermission.getReadPermission(SleepSessionRecord::class) -> "sonno"
+                        else -> permission
+                    }
+                }
+                "manca: ${labels.joinToString()}"
+            }
         }.getOrElse { "eccezione ${it::class.simpleName}: ${it.message}" }
     }
 
