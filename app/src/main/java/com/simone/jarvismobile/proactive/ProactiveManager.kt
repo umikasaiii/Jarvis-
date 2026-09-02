@@ -53,7 +53,7 @@ class ProactiveManager @Inject constructor(
      * whoever hasn't enabled "Automazioni in background", since there is then
      * no real unlock event to react to.
      */
-    suspend fun evaluate(now: LocalDateTime = LocalDateTime.now()) = run(now)
+    suspend fun evaluate(now: LocalDateTime = LocalDateTime.now()) = run(now, isRealUnlock = false)
 
     /**
      * Called at the real first-unlock-of-the-day event (§ "primo sblocco utile
@@ -63,13 +63,13 @@ class ProactiveManager @Inject constructor(
      * (rather than waiting for the next coarse tick) is what makes the morning
      * digest feel immediate instead of arriving up to an hour late.
      */
-    suspend fun evaluateOnUnlock(now: LocalDateTime = LocalDateTime.now()) = run(now)
+    suspend fun evaluateOnUnlock(now: LocalDateTime = LocalDateTime.now()) = run(now, isRealUnlock = true)
 
-    private suspend fun run(now: LocalDateTime) {
+    private suspend fun run(now: LocalDateTime, isRealUnlock: Boolean) {
         val config = readSettings()
         if (!config.enabled) return
         val today = now.toLocalDate()
-        val candidates = candidatesFor(now, snapshot(today, now), today)
+        val candidates = candidatesFor(now, snapshot(today, now), today, isRealUnlock)
         if (candidates.isEmpty()) return
         val state = store.load().rolledTo(today)
         when (val decision = ProactiveGovernor.decide(candidates, config, state, now)) {
@@ -88,26 +88,35 @@ class ProactiveManager @Inject constructor(
     /**
      * The evening digest stays in its natural window, so a midday periodic run
      * stays quiet about it. The morning digest is different: it is offered any
-     * time at or after [MORNING_EARLIEST_HOUR], on both the real unlock event
-     * and the coarse periodic fallback alike — never earlier, so a late-night
-     * unlock right after midnight is not mistaken for waking up. Confining the
-     * coarse path to a narrow morning slice (the previous MORNING_FROM-
-     * MORNING_TO window this used to also require) meant that for anyone
-     * without "Automazioni in background" enabled — no real unlock event to
-     * react to, only this periodic tick — a digest could sit undelivered for
-     * hours if the tick landed outside that slice, then arrive late once it
-     * finally did. The governor's own per-day dedup (`MORNING_DIGEST:<date>`)
-     * is what actually keeps this to once a day, so there is no need for a
-     * second, narrower gate here on top of it.
+     * time at or after [MORNING_EARLIEST_HOUR] — never earlier, so a late-night
+     * unlock right after midnight is not mistaken for waking up.
+     *
+     * **Bug reale segnalato dall'utente, corretto**: "il briefing arriva o
+     * prima dello sblocco o dopo" — con "Automazioni in background" attivo,
+     * il tick periodico grezzo (fino a 1h, [evaluate]) e il vero sblocco
+     * ([evaluateOnUnlock]) condividevano lo stesso dedup giornaliero del
+     * governor senza che il periodico sapesse che esisteva un percorso
+     * migliore: chiunque dei due scattasse per primo vinceva la corsa e
+     * consumava il "turno" del giorno — se il tick periodico cadeva alle 8 e
+     * lo sblocco reale avveniva solo alle 10, il briefing partiva alle 8
+     * (prima del vero sblocco) e il vero sblocco non aveva più nulla da
+     * offrire. Corretto: il tick periodico offre il digest mattutino solo
+     * quando "Automazioni in background" è **spento** (in quel caso resta
+     * l'unico percorso possibile, come documentato sopra su [evaluate]); il
+     * vero sblocco lo offre sempre. Il dedup giornaliero del governor stesso
+     * (`MORNING_DIGEST:<date>`) resta l'unico cancello "una volta al
+     * giorno" fra i due percorsi.
      */
-    private fun candidatesFor(
+    private suspend fun candidatesFor(
         now: LocalDateTime,
         snap: ProactiveSnapshot,
         today: LocalDate,
+        isRealUnlock: Boolean,
     ): List<ProactiveSuggestion> {
         val out = ArrayList<ProactiveSuggestion>()
         val hour = now.hour
-        if (hour >= MORNING_EARLIEST_HOUR) out += ProactiveComposer.morningDigest(snap, today)
+        val offerMorning = isRealUnlock || !settings.automationServiceEnabled.first()
+        if (hour >= MORNING_EARLIEST_HOUR && offerMorning) out += ProactiveComposer.morningDigest(snap, today)
         if (hour in EVENING_FROM..EVENING_TO) {
             ProactiveComposer.batteryBeforeAlarm(snap, today)?.let { out += it }
             ProactiveComposer.eveningDigest(snap, today)?.let { out += it }
