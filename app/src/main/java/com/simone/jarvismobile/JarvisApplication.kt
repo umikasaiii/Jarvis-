@@ -30,6 +30,8 @@ class JarvisApplication : Application() {
     @Inject lateinit var ruleScheduler: com.simone.jarvismobile.automation.rule.RuleScheduler
     @Inject lateinit var placeRepository: com.simone.jarvismobile.automation.rule.PlaceRepository
     @Inject lateinit var weatherScheduler: com.simone.jarvismobile.weather.WeatherScheduler
+    @Inject lateinit var eventBridgeScheduler: com.simone.jarvismobile.corebridge.EventBridgeScheduler
+    @Inject lateinit var eventBridge: com.simone.jarvismobile.corebridge.EventBridge
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -55,6 +57,25 @@ class JarvisApplication : Application() {
         // Re-book the weather refresh if the user opted in; a harmless no-op
         // (cancels any schedule) when the setting is off.
         appScope.launch { runCatching { weatherScheduler.sync() } }
+        // Event Bridge (JARVIS Core, § "fondamenta"): re-book the periodic
+        // retry-flush job, a harmless no-op when Core/Event Bridge is off.
+        appScope.launch { runCatching { eventBridgeScheduler.sync() } }
+        // First Event Bridge producer — a low-priority, public-context signal;
+        // never blocks startup (publish() is fire-and-forget).
+        appScope.launch {
+            runCatching {
+                eventBridge.publish(
+                    com.simone.jarvismobile.core.bridge.JarvisEvent(
+                        id = java.util.UUID.randomUUID().toString(),
+                        type = com.simone.jarvismobile.core.bridge.JarvisEventType.APP_STARTED,
+                        timestampMs = System.currentTimeMillis(),
+                        source = "JarvisApplication",
+                        priority = com.simone.jarvismobile.core.bridge.EventPriority.LOW,
+                        privacyLevel = com.simone.jarvismobile.core.tools.SensitivityLevel.PUBLIC,
+                    ),
+                )
+            }
+        }
     }
 
     private fun createListeningChannel() {

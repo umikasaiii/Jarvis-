@@ -59,6 +59,7 @@ class AutomationEventService : Service() {
     @Inject lateinit var proactive: ProactiveManager
     @Inject lateinit var newEngineExecutor: AutomationExecutor
     @Inject lateinit var newEngineContext: ContextEngine
+    @Inject lateinit var eventBridge: com.simone.jarvismobile.corebridge.EventBridge
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val lastFired = HashMap<String, Long>()
@@ -107,12 +108,23 @@ class AutomationEventService : Service() {
             WifiManager.WIFI_STATE_CHANGED_ACTION -> {
                 val state = intent.getIntExtra(WifiManager.EXTRA_WIFI_STATE, WifiManager.WIFI_STATE_UNKNOWN)
                 when (state) {
-                    WifiManager.WIFI_STATE_ENABLED -> fire { it is Trigger.WifiPower && it.on }
-                    WifiManager.WIFI_STATE_DISABLED -> fire { it is Trigger.WifiPower && !it.on }
+                    WifiManager.WIFI_STATE_ENABLED -> {
+                        fire { it is Trigger.WifiPower && it.on }
+                        publishEvent(com.simone.jarvismobile.core.bridge.JarvisEventType.NETWORK_CHANGED, mapOf("wifi" to "on"))
+                    }
+                    WifiManager.WIFI_STATE_DISABLED -> {
+                        fire { it is Trigger.WifiPower && !it.on }
+                        publishEvent(com.simone.jarvismobile.core.bridge.JarvisEventType.NETWORK_CHANGED, mapOf("wifi" to "off"))
+                    }
                 }
             }
             Intent.ACTION_HEADSET_PLUG -> {
-                if (intent.getIntExtra("state", 0) == 1) fire { it is Trigger.HeadphonesConnected }
+                if (intent.getIntExtra("state", 0) == 1) {
+                    fire { it is Trigger.HeadphonesConnected }
+                    publishEvent(com.simone.jarvismobile.core.bridge.JarvisEventType.HEADPHONES_CONNECTED)
+                }
+                // state == 0 (disconnect) is not handled by any trigger in this file today —
+                // no HEADPHONES_DISCONNECTED producer either, honestly, rather than a half-wired one.
             }
             BluetoothDevice.ACTION_ACL_CONNECTED -> {
                 val name = deviceName(intent)
@@ -123,6 +135,7 @@ class AutomationEventService : Service() {
 
     private fun onUnlock() {
         fire { it is Trigger.ScreenUnlocked }
+        publishEvent(com.simone.jarvismobile.core.bridge.JarvisEventType.USER_UNLOCKED)
         // Morning unlock: the first unlock of the day at/after the set time.
         val now = LocalTime.now()
         val today = LocalDate.now().toString()
@@ -175,6 +188,30 @@ class AutomationEventService : Service() {
         }
     }
 
+    /**
+     * Reports one significant Android event onward to JARVIS Core (§ Event
+     * Bridge, "fondamenta"). Reuses this service's own already-reliable
+     * observation of the underlying signal — no second, parallel receiver.
+     * [com.simone.jarvismobile.corebridge.EventBridge.publish] is itself a
+     * no-op when Core/Event Bridge is disabled, so this call is always safe.
+     */
+    private fun publishEvent(
+        type: com.simone.jarvismobile.core.bridge.JarvisEventType,
+        payload: Map<String, String> = emptyMap(),
+    ) {
+        eventBridge.publish(
+            com.simone.jarvismobile.core.bridge.JarvisEvent(
+                id = java.util.UUID.randomUUID().toString(),
+                type = type,
+                timestampMs = System.currentTimeMillis(),
+                source = "AutomationEventService",
+                priority = com.simone.jarvismobile.core.bridge.EventPriority.NORMAL,
+                payload = payload,
+                privacyLevel = com.simone.jarvismobile.core.tools.SensitivityLevel.PUBLIC,
+            ),
+        )
+    }
+
     private fun matchesDevice(wanted: String, connected: String?): Boolean {
         if (connected.isNullOrBlank()) return false
         if (wanted.isBlank()) return true
@@ -210,8 +247,14 @@ class AutomationEventService : Service() {
             .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
             .build()
         val callback = object : ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: Network) { fire { it is Trigger.MobileData && it.on } }
-            override fun onLost(network: Network) { fire { it is Trigger.MobileData && !it.on } }
+            override fun onAvailable(network: Network) {
+                fire { it is Trigger.MobileData && it.on }
+                publishEvent(com.simone.jarvismobile.core.bridge.JarvisEventType.NETWORK_CHANGED, mapOf("mobile" to "on"))
+            }
+            override fun onLost(network: Network) {
+                fire { it is Trigger.MobileData && !it.on }
+                publishEvent(com.simone.jarvismobile.core.bridge.JarvisEventType.NETWORK_CHANGED, mapOf("mobile" to "off"))
+            }
         }
         connectivity = callback
         runCatching { cm().registerNetworkCallback(request, callback) }

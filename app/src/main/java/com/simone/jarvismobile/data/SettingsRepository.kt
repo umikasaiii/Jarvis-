@@ -165,6 +165,21 @@ class SettingsRepository @Inject constructor(
         val JARVIS_AUTO_CONTEXT_ENABLED = booleanPreferencesKey("jarvis_auto_context_enabled")
         val JARVIS_CONVERSATIONAL_MODEL_SLOT = stringPreferencesKey("jarvis_conversational_model_slot")
         val JARVIS_ENGINE_DIAGNOSTICS_VERBOSE = booleanPreferencesKey("jarvis_engine_diagnostics_verbose")
+
+        // --- JARVIS Core (PC server, opzionale — vedi corebridge/) ---
+        // Nessun segreto qui: solo host/porta/preferenze. Un eventuale token di
+        // pairing futuro va in un EncryptedSharedPreferences dedicato (§ docs/SECURITY.md),
+        // mai in questo DataStore in chiaro — vedi corebridge/CorePairingCredentialStore.kt.
+        val CORE_ENABLED = booleanPreferencesKey("core_enabled")
+        val CORE_HOST = stringPreferencesKey("core_host")
+        val CORE_PORT = intPreferencesKey("core_port")
+        val CORE_HTTPS = booleanPreferencesKey("core_https")
+        val CORE_TIMEOUT_MS = intPreferencesKey("core_timeout_ms")
+        val CORE_PREFER_REMOTE = booleanPreferencesKey("core_prefer_remote")
+        val REMOTE_AI_ENABLED = booleanPreferencesKey("remote_ai_enabled")
+        val EVENT_BRIDGE_ENABLED = booleanPreferencesKey("event_bridge_enabled")
+        val REMOTE_VOICE_ENABLED = booleanPreferencesKey("remote_voice_enabled")
+        val REMOTE_MEMORY_ENABLED = booleanPreferencesKey("remote_memory_enabled")
     }
 
     /**
@@ -1136,6 +1151,90 @@ class SettingsRepository @Inject constructor(
         context.settingsDataStore.edit { it[Keys.JARVIS_ENGINE_DIAGNOSTICS_VERBOSE] = value }
     }
 
+    // --- JARVIS Core (PC server) ---
+    // Disattivato di default finché l'utente non lo configura esplicitamente
+    // (§ richiesta esplicita: "Default: Core disattivato finché non
+    // configurato"). Nessuna di queste chiavi contiene un segreto — un
+    // eventuale token di pairing futuro vive in un keystore separato, mai
+    // qui in chiaro.
+
+    /** Interruttore principale: se spento, l'app non tenta mai di raggiungere il Core. */
+    val coreEnabled: Flow<Boolean> =
+        context.settingsDataStore.data.map { it[Keys.CORE_ENABLED] ?: false }
+
+    suspend fun setCoreEnabled(value: Boolean) {
+        context.settingsDataStore.edit { it[Keys.CORE_ENABLED] = value }
+    }
+
+    val coreHost: Flow<String> =
+        context.settingsDataStore.data.map { it[Keys.CORE_HOST] ?: "" }
+
+    suspend fun setCoreHost(value: String) {
+        context.settingsDataStore.edit { it[Keys.CORE_HOST] = value.trim() }
+    }
+
+    val corePort: Flow<Int> =
+        context.settingsDataStore.data.map { (it[Keys.CORE_PORT] ?: DEFAULT_CORE_PORT).coerceIn(1, 65535) }
+
+    suspend fun setCorePort(value: Int) {
+        context.settingsDataStore.edit { it[Keys.CORE_PORT] = value.coerceIn(1, 65535) }
+    }
+
+    /** HTTP consentito solo per lo sviluppo su rete locale — l'architettura resta pronta per HTTPS/TLS. */
+    val coreHttps: Flow<Boolean> =
+        context.settingsDataStore.data.map { it[Keys.CORE_HTTPS] ?: false }
+
+    suspend fun setCoreHttps(value: Boolean) {
+        context.settingsDataStore.edit { it[Keys.CORE_HTTPS] = value }
+    }
+
+    val coreTimeoutMs: Flow<Int> =
+        context.settingsDataStore.data.map { (it[Keys.CORE_TIMEOUT_MS] ?: DEFAULT_CORE_TIMEOUT_MS).coerceAtLeast(1000) }
+
+    suspend fun setCoreTimeoutMs(value: Int) {
+        context.settingsDataStore.edit { it[Keys.CORE_TIMEOUT_MS] = value.coerceAtLeast(1000) }
+    }
+
+    /** Preferenza utente esplicita, distinta da "Core enabled": permette di tenere il Core configurato ma temporaneamente in pausa. */
+    val corePreferRemote: Flow<Boolean> =
+        context.settingsDataStore.data.map { it[Keys.CORE_PREFER_REMOTE] ?: true }
+
+    suspend fun setCorePreferRemote(value: Boolean) {
+        context.settingsDataStore.edit { it[Keys.CORE_PREFER_REMOTE] = value }
+    }
+
+    /** Feature flag: AiRouter può instradare al RemoteAiEngine. Spento di default finché il Core non è configurato e testato. */
+    val remoteAiEnabled: Flow<Boolean> =
+        context.settingsDataStore.data.map { it[Keys.REMOTE_AI_ENABLED] ?: false }
+
+    suspend fun setRemoteAiEnabled(value: Boolean) {
+        context.settingsDataStore.edit { it[Keys.REMOTE_AI_ENABLED] = value }
+    }
+
+    /** Feature flag: Event Bridge pubblica eventi verso il Core quando è raggiungibile. */
+    val eventBridgeEnabled: Flow<Boolean> =
+        context.settingsDataStore.data.map { it[Keys.EVENT_BRIDGE_ENABLED] ?: false }
+
+    suspend fun setEventBridgeEnabled(value: Boolean) {
+        context.settingsDataStore.edit { it[Keys.EVENT_BRIDGE_ENABLED] = value }
+    }
+
+    /** Non ancora implementato in questa fase — resta sempre false (§ vincolo esplicito della richiesta). */
+    val remoteVoiceEnabled: Flow<Boolean> =
+        context.settingsDataStore.data.map { it[Keys.REMOTE_VOICE_ENABLED] ?: false }
+
+    suspend fun setRemoteVoiceEnabled(value: Boolean) {
+        context.settingsDataStore.edit { it[Keys.REMOTE_VOICE_ENABLED] = value }
+    }
+
+    /** Non ancora implementato in questa fase — resta sempre false (§ vincolo esplicito della richiesta). */
+    val remoteMemoryEnabled: Flow<Boolean> =
+        context.settingsDataStore.data.map { it[Keys.REMOTE_MEMORY_ENABLED] ?: false }
+
+    suspend fun setRemoteMemoryEnabled(value: Boolean) {
+        context.settingsDataStore.edit { it[Keys.REMOTE_MEMORY_ENABLED] = value }
+    }
+
     companion object {
         const val DEFAULT_NAME = "JARVIS"
         /** A deliberately opinionated default so JARVIS has a character out of the box. */
@@ -1165,5 +1264,7 @@ class SettingsRepository @Inject constructor(
         const val DEFAULT_JARVIS_TOOL_LOOP_CAP = 4
         const val DEFAULT_JARVIS_MEMORY_TOPN = 6
         const val DEFAULT_JARVIS_CONTEXT_BUDGET_CHARS = 6000
+        const val DEFAULT_CORE_PORT = 8787
+        const val DEFAULT_CORE_TIMEOUT_MS = 15_000
     }
 }
