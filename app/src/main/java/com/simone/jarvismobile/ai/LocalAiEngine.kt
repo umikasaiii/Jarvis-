@@ -3,6 +3,7 @@ package com.simone.jarvismobile.ai
 import android.util.Log
 import com.simone.jarvismobile.core.ai.AiExecutionTarget
 import com.simone.jarvismobile.core.ai.AiFailureReason
+import com.simone.jarvismobile.core.snapshot.RelevantContextRenderer
 import com.simone.jarvismobile.llm.LlmRouter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
@@ -38,9 +39,11 @@ class LocalAiEngine @Inject constructor(
     override suspend fun generate(request: AiRequest): AiEngineResult {
         val needsReasoning = request.requestType == com.simone.jarvismobile.core.ai.AiRequestType.COMPLEX ||
             request.requestType == com.simone.jarvismobile.core.ai.AiRequestType.MEMORY
+        val contextBlock = request.relevantContext?.let { runCatching { RelevantContextRenderer.render(it) }.getOrNull() }?.takeIf { it.isNotBlank() }
+        val userText = if (contextBlock == null) request.text else "$contextBlock\n\n${request.text}"
         return try {
             val reply = llmRouter.chat(
-                userText = request.text,
+                userText = userText,
                 systemPrompt = request.systemPrompt,
                 needsReasoning = needsReasoning,
                 timeoutSeconds = request.timeoutSeconds,

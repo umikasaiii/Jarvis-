@@ -1,6 +1,13 @@
 package com.simone.jarvismobile.engine
 
+import android.util.Log
+import com.simone.jarvismobile.core.ai.AiRequestType
+import com.simone.jarvismobile.core.snapshot.ContextBudget
+import com.simone.jarvismobile.core.snapshot.RelevantContextRenderer
+import com.simone.jarvismobile.core.snapshot.RelevantContextSelector
+import com.simone.jarvismobile.core.snapshot.SnapshotDebugInfo
 import com.simone.jarvismobile.data.SettingsRepository
+import com.simone.jarvismobile.snapshot.PersonalIntelligenceSnapshotCache
 import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -34,10 +41,11 @@ data class AssembledContext(val text: String, val memoriesRetrieved: Int)
 class ContextAssembler @Inject constructor(
     private val settings: SettingsRepository,
     private val memoryEngine: MemoryEngine,
+    private val snapshotCache: PersonalIntelligenceSnapshotCache,
 ) {
     suspend fun assemble(query: String, pendingTaskSnapshot: String?): AssembledContext {
         val budget = settings.jarvisContextBudgetChars.first()
-        val parts = ArrayList<String>(2)
+        val parts = ArrayList<String>(3)
         var memoriesRetrieved = 0
 
         if (!pendingTaskSnapshot.isNullOrBlank()) {
@@ -52,6 +60,35 @@ class ContextAssembler @Inject constructor(
             }
         }
 
+        // Personal Intelligence Snapshot (§ fase Foundation): time/place/agenda/driving/device
+        // context, built automatically — the user never types any of this. Its own toggle,
+        // own runCatching: a failure here never breaks the turn (falls back to the two parts
+        // above exactly as before this section existed).
+        if (settings.jarvisPersonalSnapshotEnabled.first()) {
+            runCatching {
+                val snapshot = snapshotCache.get()
+                val relevant = RelevantContextSelector.select(snapshot, AiRequestType.CHAT, query, budget = settings.snapshotBudget())
+                val rendered = RelevantContextRenderer.render(relevant)
+                if (rendered.isNotBlank()) parts += rendered
+                if (com.simone.jarvismobile.BuildConfig.DEBUG) {
+                    Log.d(TAG, SnapshotDebugInfo.from(snapshot, relevant, ageMs = 0L).describe())
+                }
+            }.onFailure { e -> Log.w(TAG, "personal_snapshot_context_failed ${e.javaClass.simpleName}") }
+        }
+
         return AssembledContext(parts.joinToString("\n\n").take(budget), memoriesRetrieved)
     }
+
+    private companion object {
+        const val TAG = "ContextAssembler"
+    }
 }
+
+/** Reads the five snapshot-budget settings into one [ContextBudget] — shared by both live integration points ([ContextAssembler] and [com.simone.jarvismobile.ai.AiRouter]). */
+internal suspend fun SettingsRepository.snapshotBudget(): ContextBudget = ContextBudget(
+    maxContextItems = snapshotMaxContextItems.first(),
+    maxRecentEvents = snapshotMaxRecentEvents.first(),
+    maxAgendaItems = snapshotMaxAgendaItems.first(),
+    maxMemoryItems = snapshotMaxMemoryItems.first(),
+    maxSerializedCharacters = snapshotMaxSerializedChars.first(),
+)

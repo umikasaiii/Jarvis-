@@ -4,6 +4,7 @@ import android.util.Log
 import com.simone.jarvismobile.core.ai.AiExecutionTarget
 import com.simone.jarvismobile.core.ai.AiFailureReason
 import com.simone.jarvismobile.core.ai.AiRequestType
+import com.simone.jarvismobile.core.snapshot.RelevantContextRenderer
 import com.simone.jarvismobile.corebridge.CoreClient
 import com.simone.jarvismobile.corebridge.CoreRequestType
 import com.simone.jarvismobile.corebridge.CoreResponseStatus
@@ -45,7 +46,7 @@ class RemoteAiEngine @Inject constructor(
             timestamp = System.currentTimeMillis(),
             requestType = request.requestType.toCoreType(),
             text = request.text,
-            context = request.context,
+            context = contextMapFor(request),
             preferredModel = request.preferredModel,
             allowFallback = true,
         )
@@ -78,7 +79,7 @@ class RemoteAiEngine @Inject constructor(
             timestamp = System.currentTimeMillis(),
             requestType = request.requestType.toCoreType(),
             text = request.text,
-            context = request.context,
+            context = contextMapFor(request),
             preferredModel = request.preferredModel,
             allowFallback = true,
         )
@@ -100,6 +101,20 @@ class RemoteAiEngine @Inject constructor(
 
     override fun cancel(requestId: String) {
         coreClient.cancel(requestId)
+    }
+
+    /**
+     * Merges the caller's own [AiRequest.context] with a minimized snapshot
+     * projection (§ richiesta esplicita: "NON inviare automaticamente Raw
+     * Snapshot completo... non inviare più dati di quelli necessari") — no
+     * protocol change: `JarvisCoreRequest.context: Map<String, String>`
+     * already existed for exactly this purpose. Snapshot-derived keys are
+     * prefixed to never silently overwrite a caller-supplied key.
+     */
+    private fun contextMapFor(request: AiRequest): Map<String, String> {
+        val fromSnapshot = request.relevantContext?.let { runCatching { RelevantContextRenderer.renderForCore(it) }.getOrNull() }.orEmpty()
+        if (fromSnapshot.isEmpty()) return request.context
+        return request.context + fromSnapshot.mapKeys { (k, _) -> "snapshot_$k" }
     }
 
     private fun AiRequestType.toCoreType(): CoreRequestType = when (this) {

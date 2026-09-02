@@ -3,6 +3,7 @@ package com.simone.jarvismobile.ai
 import com.simone.jarvismobile.core.ai.AiExecutionTarget
 import com.simone.jarvismobile.core.ai.AiFailureReason
 import com.simone.jarvismobile.core.ai.AiRequestType
+import com.simone.jarvismobile.core.snapshot.RelevantPersonalContext
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -24,6 +25,14 @@ data class AiRequest(
     val timeoutSeconds: Long = 60,
     /** Set by [AiRouter] when its routing decision picked [AiExecutionTarget.REMOTE_BRAIN] — threaded to `JarvisCoreRequest.preferredModel`, ignored by [LocalAiEngine]. */
     val preferredModel: String? = null,
+    /**
+     * Already trimmed/budget-enforced/privacy-minimized (§ Personal
+     * Intelligence Snapshot phase — `RelevantContextSelector`'s output).
+     * Optional and additive: `null` behaves exactly as before this field
+     * existed. [LocalAiEngine] renders it into the prompt text;
+     * [RemoteAiEngine] renders it into `JarvisCoreRequest.context`.
+     */
+    val relevantContext: RelevantPersonalContext? = null,
 )
 
 /** Result of one [AiEngine.generate] call. */

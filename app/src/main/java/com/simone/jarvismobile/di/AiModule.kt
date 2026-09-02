@@ -1,10 +1,12 @@
 package com.simone.jarvismobile.di
 
 import com.simone.jarvismobile.ai.AiEngine
+import com.simone.jarvismobile.ai.DefaultSnapshotContextGate
 import com.simone.jarvismobile.ai.LocalAiEngine
 import com.simone.jarvismobile.ai.LocalEngine
 import com.simone.jarvismobile.ai.RemoteAiEngine
 import com.simone.jarvismobile.ai.RemoteEngine
+import com.simone.jarvismobile.ai.SnapshotContextGate
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -24,4 +26,8 @@ abstract class AiModule {
     @Singleton
     @RemoteEngine
     abstract fun bindRemoteEngine(impl: RemoteAiEngine): AiEngine
+
+    @Binds
+    @Singleton
+    abstract fun bindSnapshotContextGate(impl: DefaultSnapshotContextGate): SnapshotContextGate
 }

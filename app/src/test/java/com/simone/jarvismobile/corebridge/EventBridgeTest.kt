@@ -7,6 +7,7 @@ import com.simone.jarvismobile.core.bridge.JarvisEventType
 import com.simone.jarvismobile.core.bridge.QueuedEvent
 import com.simone.jarvismobile.core.tools.SensitivityLevel
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -21,6 +22,7 @@ import org.junit.Test
  * [FakeGate] keep this fully off the real file system / network — see
  * `EventQueueStore.kt`'s `EventQueue` interface and `EventBridgeGate` for why.
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 class EventBridgeTest {
 
     private fun event(id: String = "evt-1") = JarvisEvent(

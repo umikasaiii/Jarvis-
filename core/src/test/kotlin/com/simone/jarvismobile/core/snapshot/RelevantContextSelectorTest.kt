@@ -1,0 +1,140 @@
+package com.simone.jarvismobile.core.snapshot
+
+import com.simone.jarvismobile.core.ai.AiRequestType
+import java.time.DayOfWeek
+import java.time.Instant
+import java.time.LocalDate
+import java.time.LocalTime
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+
+class RelevantContextSelectorTest {
+
+    private val now = Instant.parse("2026-01-01T10:00:00Z")
+
+    private fun fullSnapshot(): PersonalIntelligenceSnapshot = PersonalIntelligenceSnapshot(
+        snapshotId = "s1",
+        createdAt = now,
+        temporal = TemporalContext(LocalDate.of(2026, 1, 1), LocalTime.of(10, 0), DayOfWeek.THURSDAY, "MATTINA", "Europe/Rome", now),
+        location = LocationContext(PlaceLabel.HOME, "Casa", null, MovementState.STATIONARY, now),
+        agenda = AgendaContext(
+            nextEvent = AgendaItemSummary("a1", "Dentista", "oggi alle 16:00", 360),
+            imminentEvents = listOf(
+                AgendaItemSummary("a1", "Dentista", "oggi alle 16:00", 360),
+                AgendaItemSummary("a2", "Palestra", "domani alle 18:00", 1800),
+            ),
+            openTasksCount = 3,
+            imminentReminders = listOf(AgendaItemSummary("r1", "Comprare il pane", "oggi", 120)),
+            minutesToNextEvent = 360,
+            capturedAt = now,
+        ),
+        driving = DrivingContext(isDriving = true, destination = "Ufficio", etaMinutes = 12, remainingDistanceMeters = 3000, navigationActive = true, relevantDrivingState = "NAVIGATING", capturedAt = now),
+        device = DeviceContext(batteryLevel = 42, isCharging = false, networkType = NetworkType.WIFI, isOnline = true, headphonesConnected = false, carMode = true, capturedAt = now),
+        memory = MemoryContext(items = listOf(MemoryContextItem("Preferisce il caffè senza zucchero"), MemoryContextItem("Ha un cane di nome Fido")), capturedAt = now),
+        recentEvents = RecentEventsContext(events = listOf(com.simone.jarvismobile.core.snapshot.RecentEventSummary("USER_UNLOCKED", now.toEpochMilli(), "NORMAL")), capturedAt = now),
+        task = TaskContext(activeTasks = 5, overdueTasks = 1, upcomingTasks = 4, capturedAt = now),
+        capability = CapabilityContext(localAiAvailable = true, coreAvailable = false, navigationAvailable = true, memoryAvailable = true, agendaAvailable = true, networkAvailable = true, capturedAt = now),
+    )
+
+    @Test
+    fun `driving question selects driving location and temporal`() {
+        val result = RelevantContextSelector.select(fullSnapshot(), AiRequestType.CHAT, "Sto guidando, quanto manca all'ufficio?", now)
+        assertTrue(SelectionCategory.DRIVING in result.selected)
+        assertTrue(SelectionCategory.LOCATION in result.selected)
+        assertTrue(SelectionCategory.TEMPORAL in result.selected)
+        assertFalse(SelectionCategory.DEVICE in result.selected)
+    }
+
+    @Test
+    fun `agenda question selects agenda temporal and location with full detail`() {
+        val result = RelevantContextSelector.select(fullSnapshot(), AiRequestType.CHAT, "Che appuntamenti ho oggi?", now)
+        assertTrue(SelectionCategory.AGENDA in result.selected)
+        assertEquals("Dentista", result.agenda?.nextEvent?.title)
+        assertEquals(2, result.agenda?.imminentEvents?.size)
+    }
+
+    @Test
+    fun `battery question selects only device`() {
+        val result = RelevantContextSelector.select(fullSnapshot(), AiRequestType.CHAT, "Quanta batteria ho?", now)
+        assertTrue(SelectionCategory.DEVICE in result.selected)
+        assertFalse(SelectionCategory.DRIVING in result.selected)
+        assertFalse(SelectionCategory.AGENDA in result.selected)
+    }
+
+    @Test
+    fun `generic chat gets temporal plus a little memory, nothing else`() {
+        val result = RelevantContextSelector.select(fullSnapshot(), AiRequestType.CHAT, "Raccontami una barzelletta", now)
+        assertTrue(SelectionCategory.TEMPORAL in result.selected)
+        assertTrue(SelectionCategory.MEMORY in result.selected)
+        assertFalse(SelectionCategory.AGENDA in result.selected)
+        assertFalse(SelectionCategory.DRIVING in result.selected)
+    }
+
+    @Test
+    fun `complex request gets a broader but still capped context`() {
+        val budget = ContextBudget(maxContextItems = 20) // isolate the "broad" rule from the item cap for this assertion
+        val result = RelevantContextSelector.select(fullSnapshot(), AiRequestType.COMPLEX, "Aiutami a pianificare la giornata", now, budget)
+        assertTrue(SelectionCategory.AGENDA in result.selected)
+        assertTrue(SelectionCategory.MEMORY in result.selected)
+        assertTrue(SelectionCategory.DEVICE in result.selected)
+    }
+
+    @Test
+    fun `maxContextItems caps the number of selected categories, temporal always survives`() {
+        val budget = ContextBudget(maxContextItems = 2)
+        val result = RelevantContextSelector.select(fullSnapshot(), AiRequestType.COMPLEX, "Aiutami a pianificare la giornata", now, budget)
+        assertTrue(result.selected.size <= 2)
+        assertTrue(SelectionCategory.TEMPORAL in result.selected)
+    }
+
+    @Test
+    fun `maxMemoryItems and maxAgendaItems trim list sizes`() {
+        val budget = ContextBudget(maxMemoryItems = 1, maxAgendaItems = 1)
+        val result = RelevantContextSelector.select(fullSnapshot(), AiRequestType.CHAT, "Che impegni ho?", now, budget)
+        assertEquals(1, result.agenda?.imminentEvents?.size)
+    }
+
+    @Test
+    fun `tiny character budget trims list items without truncating any string`() {
+        val budget = ContextBudget(maxSerializedCharacters = 5)
+        val result = RelevantContextSelector.select(fullSnapshot(), AiRequestType.COMPLEX, "Aiutami con tutto", now, budget)
+        // Every remaining string field must be intact (never a partial cut mid-word).
+        result.agenda?.nextEvent?.let { assertTrue(it.title == "Dentista" || it.title.isEmpty()) }
+        result.memory?.items?.forEach { assertTrue(it.summary.isNotBlank()) }
+    }
+
+    @Test
+    fun `privacy minimization drops agenda item detail when agenda is only incidentally included`() {
+        val result = RelevantContextSelector.select(fullSnapshot(), AiRequestType.COMPLEX, "Aiutami a organizzare il pomeriggio", now)
+        // Agenda selected via the "broad" bucket, not a direct agenda question — minutesToNextEvent survives, full titles do not.
+        assertEquals(360L, result.agenda?.minutesToNextEvent)
+        assertNull(result.agenda?.nextEvent)
+        assertTrue(result.agenda?.imminentEvents?.isEmpty() != false)
+    }
+
+    @Test
+    fun `location never carries raw coordinates - the model itself has no such field`() {
+        val result = RelevantContextSelector.select(fullSnapshot(), AiRequestType.CHAT, "Dove sono?", now)
+        // Structural guarantee: LocationContext has currentPlaceLabel/currentPlaceName/movementState only.
+        assertTrue(result.location == null || result.location!!.currentPlaceLabel == PlaceLabel.HOME)
+    }
+
+    @Test
+    fun `stale location is excluded rather than treated as current`() {
+        val stale = fullSnapshot().copy(location = LocationContext(PlaceLabel.HOME, "Casa", null, MovementState.STATIONARY, now.minusSeconds(20 * 60)))
+        val result = RelevantContextSelector.select(stale, AiRequestType.CHAT, "Sto guidando verso casa", now)
+        assertNull(result.location)
+    }
+
+    @Test
+    fun `missing sections never crash selection, they are simply absent`() {
+        val sparse = PersonalIntelligenceSnapshot(snapshotId = "s2", createdAt = now, temporal = TemporalContext(LocalDate.of(2026, 1, 1), LocalTime.of(10, 0), DayOfWeek.THURSDAY, null, null, now))
+        val result = RelevantContextSelector.select(sparse, AiRequestType.CHAT, "Che ore sono?", now)
+        assertTrue(SelectionCategory.TEMPORAL in result.selected)
+        assertNull(result.agenda)
+        assertNull(result.driving)
+    }
+}

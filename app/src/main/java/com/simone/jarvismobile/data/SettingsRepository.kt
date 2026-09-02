@@ -180,6 +180,14 @@ class SettingsRepository @Inject constructor(
         val EVENT_BRIDGE_ENABLED = booleanPreferencesKey("event_bridge_enabled")
         val REMOTE_VOICE_ENABLED = booleanPreferencesKey("remote_voice_enabled")
         val REMOTE_MEMORY_ENABLED = booleanPreferencesKey("remote_memory_enabled")
+
+        // --- Personal Intelligence Snapshot (fase Foundation) ---
+        val JARVIS_PERSONAL_SNAPSHOT_ENABLED = booleanPreferencesKey("jarvis_personal_snapshot_enabled")
+        val SNAPSHOT_MAX_CONTEXT_ITEMS = intPreferencesKey("snapshot_max_context_items")
+        val SNAPSHOT_MAX_RECENT_EVENTS = intPreferencesKey("snapshot_max_recent_events")
+        val SNAPSHOT_MAX_AGENDA_ITEMS = intPreferencesKey("snapshot_max_agenda_items")
+        val SNAPSHOT_MAX_MEMORY_ITEMS = intPreferencesKey("snapshot_max_memory_items")
+        val SNAPSHOT_MAX_SERIALIZED_CHARS = intPreferencesKey("snapshot_max_serialized_chars")
     }
 
     /**
@@ -1235,6 +1243,51 @@ class SettingsRepository @Inject constructor(
         context.settingsDataStore.edit { it[Keys.REMOTE_MEMORY_ENABLED] = value }
     }
 
+    // --- Personal Intelligence Snapshot (fase Foundation, vedi snapshot/) ---
+
+    /** Whether ContextAssembler injects the automatic time/place/agenda/driving/device snapshot into the conversational turn. */
+    val jarvisPersonalSnapshotEnabled: Flow<Boolean> =
+        context.settingsDataStore.data.map { it[Keys.JARVIS_PERSONAL_SNAPSHOT_ENABLED] ?: true }
+
+    suspend fun setJarvisPersonalSnapshotEnabled(value: Boolean) {
+        context.settingsDataStore.edit { it[Keys.JARVIS_PERSONAL_SNAPSHOT_ENABLED] = value }
+    }
+
+    val snapshotMaxContextItems: Flow<Int> =
+        context.settingsDataStore.data.map { (it[Keys.SNAPSHOT_MAX_CONTEXT_ITEMS] ?: DEFAULT_SNAPSHOT_MAX_CONTEXT_ITEMS).coerceIn(1, 9) }
+
+    suspend fun setSnapshotMaxContextItems(value: Int) {
+        context.settingsDataStore.edit { it[Keys.SNAPSHOT_MAX_CONTEXT_ITEMS] = value.coerceIn(1, 9) }
+    }
+
+    val snapshotMaxRecentEvents: Flow<Int> =
+        context.settingsDataStore.data.map { (it[Keys.SNAPSHOT_MAX_RECENT_EVENTS] ?: DEFAULT_SNAPSHOT_MAX_RECENT_EVENTS).coerceAtLeast(0) }
+
+    suspend fun setSnapshotMaxRecentEvents(value: Int) {
+        context.settingsDataStore.edit { it[Keys.SNAPSHOT_MAX_RECENT_EVENTS] = value.coerceAtLeast(0) }
+    }
+
+    val snapshotMaxAgendaItems: Flow<Int> =
+        context.settingsDataStore.data.map { (it[Keys.SNAPSHOT_MAX_AGENDA_ITEMS] ?: DEFAULT_SNAPSHOT_MAX_AGENDA_ITEMS).coerceAtLeast(0) }
+
+    suspend fun setSnapshotMaxAgendaItems(value: Int) {
+        context.settingsDataStore.edit { it[Keys.SNAPSHOT_MAX_AGENDA_ITEMS] = value.coerceAtLeast(0) }
+    }
+
+    val snapshotMaxMemoryItems: Flow<Int> =
+        context.settingsDataStore.data.map { (it[Keys.SNAPSHOT_MAX_MEMORY_ITEMS] ?: DEFAULT_SNAPSHOT_MAX_MEMORY_ITEMS).coerceAtLeast(0) }
+
+    suspend fun setSnapshotMaxMemoryItems(value: Int) {
+        context.settingsDataStore.edit { it[Keys.SNAPSHOT_MAX_MEMORY_ITEMS] = value.coerceAtLeast(0) }
+    }
+
+    val snapshotMaxSerializedChars: Flow<Int> =
+        context.settingsDataStore.data.map { (it[Keys.SNAPSHOT_MAX_SERIALIZED_CHARS] ?: DEFAULT_SNAPSHOT_MAX_SERIALIZED_CHARS).coerceAtLeast(200) }
+
+    suspend fun setSnapshotMaxSerializedChars(value: Int) {
+        context.settingsDataStore.edit { it[Keys.SNAPSHOT_MAX_SERIALIZED_CHARS] = value.coerceAtLeast(200) }
+    }
+
     companion object {
         const val DEFAULT_NAME = "JARVIS"
         /** A deliberately opinionated default so JARVIS has a character out of the box. */
@@ -1266,5 +1319,11 @@ class SettingsRepository @Inject constructor(
         const val DEFAULT_JARVIS_CONTEXT_BUDGET_CHARS = 6000
         const val DEFAULT_CORE_PORT = 8787
         const val DEFAULT_CORE_TIMEOUT_MS = 15_000
+
+        const val DEFAULT_SNAPSHOT_MAX_CONTEXT_ITEMS = 6
+        const val DEFAULT_SNAPSHOT_MAX_RECENT_EVENTS = 3
+        const val DEFAULT_SNAPSHOT_MAX_AGENDA_ITEMS = 3
+        const val DEFAULT_SNAPSHOT_MAX_MEMORY_ITEMS = 2
+        const val DEFAULT_SNAPSHOT_MAX_SERIALIZED_CHARS = 1200
     }
 }

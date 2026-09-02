@@ -5,6 +5,8 @@ import com.simone.jarvismobile.core.ai.AiExecutionTarget
 import com.simone.jarvismobile.core.ai.AiRequestType
 import com.simone.jarvismobile.core.ai.AiRouteDecision
 import com.simone.jarvismobile.core.ai.AiRoutingHeuristic
+import com.simone.jarvismobile.core.snapshot.RelevantContextSelector
+import com.simone.jarvismobile.snapshot.PersonalIntelligenceSnapshotCache
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -38,28 +40,52 @@ class AiRouter @Inject constructor(
     @LocalEngine private val local: AiEngine,
     @RemoteEngine private val remote: AiEngine,
     private val routingContext: AiRoutingContextProvider,
+    private val snapshotCache: PersonalIntelligenceSnapshotCache,
+    private val snapshotGate: SnapshotContextGate,
 ) {
     /** requestId -> which engine actually owns the in-flight call, so [cancel] can target the right one. */
     private val inFlightTarget = ConcurrentHashMap<String, AiExecutionTarget>()
 
     suspend fun generate(request: AiRequest): AiEngineResult {
-        val decision = decide(request.requestType)
+        val enriched = withAutoContext(request)
+        val decision = decide(enriched.requestType)
         return when (decision.target) {
-            AiExecutionTarget.LOCAL -> runLocal(request)
-            AiExecutionTarget.REMOTE_FAST, AiExecutionTarget.REMOTE_BRAIN -> runRemoteWithFallback(request, decision)
+            AiExecutionTarget.LOCAL -> runLocal(enriched)
+            AiExecutionTarget.REMOTE_FAST, AiExecutionTarget.REMOTE_BRAIN -> runRemoteWithFallback(enriched, decision)
         }
     }
 
     /**
-     * Streaming variant of [generate]. Falls back the same way — but since a
-     * stream may already have emitted partial chunks before failing, the
-     * fallback is only attempted when **zero** chunks were emitted yet (a
-     * partial remote answer is never silently discarded and replaced, which
-     * would look like the local engine "correcting" the remote one and could
-     * read as a double/contradictory response — the one thing the fallback
-     * contract explicitly forbids).
+     * The "UserRequest → SnapshotBuilder → Selector → AiRouter" step of the
+     * requested architecture, automatic and additive: a caller that already
+     * attached [AiRequest.relevantContext] is left untouched; otherwise this
+     * builds one from the cached [PersonalIntelligenceSnapshotCache] +
+     * [RelevantContextSelector] — never blocking the turn if that fails (§
+     * richiesta esplicita: "Se la costruzione del contesto fallisce:
+     * continuare normalmente senza snapshot").
+     */
+    private suspend fun withAutoContext(request: AiRequest): AiRequest {
+        if (request.relevantContext != null) return request
+        if (!snapshotGate.enabled()) return request
+        val relevant = runCatching {
+            val snapshot = snapshotCache.get()
+            RelevantContextSelector.select(snapshot, request.requestType, request.text, budget = snapshotGate.budget())
+        }.getOrNull()
+        return if (relevant == null) request else request.copy(relevantContext = relevant)
+    }
+
+    /**
+     * Streaming variant of [generate]. Falls back the same way — remote
+     * chunks are buffered (not emitted live) until the remote stream
+     * completes, so the decision "replay them" vs "fall back to local" can
+     * be made once, correctly: a stream that fails outright (a single bare
+     * error chunk, no real delta) falls back exactly like [generate] does,
+     * while any real content already produced is always replayed in full,
+     * never silently discarded and replaced by the local engine's answer —
+     * the one thing the fallback contract explicitly forbids.
      */
     fun stream(request: AiRequest): Flow<AiStreamChunk> = flow {
+        val request = withAutoContext(request)
         val decision = decide(request.requestType)
         if (decision.target == AiExecutionTarget.LOCAL) {
             Log.i(TAG, "ai_route target=LOCAL type=${request.requestType} reason=${decision.reason}")
@@ -70,19 +96,31 @@ class AiRouter @Inject constructor(
         }
         Log.i(TAG, "ai_route target=${decision.target} type=${request.requestType} reason=${decision.reason}")
         inFlightTarget[request.requestId] = decision.target
-        var emittedAny = false
         val remoteRequest = request.withPreferredModel(decision.target)
-        runCatching {
+        // Buffered rather than emitted live: a chunk that is itself a bare
+        // terminal error (no delta) must not count as "content reached the
+        // caller" — otherwise a stream that fails outright would relay that
+        // one error chunk and skip the local fallback entirely, breaking the
+        // same guarantee generate() gives. Buffering also means this stream
+        // is not truly incremental for the remote path today — an accepted
+        // trade-off given neither engine offers real token-by-token delivery
+        // yet (§ onestà, see LocalAiEngine's own doc comment).
+        val buffered = mutableListOf<AiStreamChunk>()
+        var hasRealContent = false
+        try {
             remote.stream(remoteRequest).collect { chunk ->
-                emittedAny = true
-                emit(chunk)
+                buffered += chunk
+                if (chunk.delta.isNotEmpty() || (chunk.done && chunk.error == null)) hasRealContent = true
             }
-        }.onFailure { e ->
-            if (e is CancellationException) { inFlightTarget.remove(request.requestId); throw e }
+        } catch (e: CancellationException) {
+            inFlightTarget.remove(request.requestId)
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "remote_stream_exception ${e.javaClass.simpleName}")
         }
-        // Only ever falls back when nothing reached the caller yet — a partial
-        // remote stream is never discarded and replaced (§ doc comment above).
-        if (!emittedAny) {
+        if (hasRealContent) {
+            buffered.forEach { emit(it) }
+        } else {
             Log.i(TAG, "ai_route target=REMOTE_FAILED_FALLBACK_LOCAL type=${request.requestType}")
             inFlightTarget[request.requestId] = AiExecutionTarget.LOCAL
             local.stream(request).collect { emit(it) }
