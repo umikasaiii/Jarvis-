@@ -198,7 +198,11 @@ class AiRouterTest {
         var seenContext: com.simone.jarvismobile.core.snapshot.RelevantPersonalContext? = null
         val local = FakeAiEngine(AiExecutionTarget.LOCAL, result = { seenContext = it.relevantContext; AiEngineResult(it.requestId, success = true, text = "ok", target = AiExecutionTarget.LOCAL) })
         val remote = FakeAiEngine(AiExecutionTarget.REMOTE_FAST, resultText = "remota")
-        val now = java.time.Instant.parse("2026-01-01T10:00:00Z")
+        // Real "now": the selector's freshness check (RelevantContextSelector.select's
+        // default `now` parameter) always compares against the real wall clock, since
+        // AiRouter.withAutoContext has no way to inject a fixed clock — a stale fixed
+        // literal here would make this section look expired and silently drop out.
+        val now = java.time.Instant.now()
         val builder = com.simone.jarvismobile.snapshot.PersonalIntelligenceSnapshotBuilder(
             temporal = com.simone.jarvismobile.snapshot.providers.TemporalContextProvider {
                 com.simone.jarvismobile.core.snapshot.TemporalContext(java.time.LocalDate.of(2026, 1, 1), java.time.LocalTime.of(10, 0), java.time.DayOfWeek.THURSDAY, null, null, now)
