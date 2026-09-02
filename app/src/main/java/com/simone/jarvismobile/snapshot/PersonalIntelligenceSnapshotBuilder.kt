@@ -42,7 +42,7 @@ class PersonalIntelligenceSnapshotBuilder @Inject constructor(
         val available = mutableSetOf<String>()
         val missing = mutableSetOf<String>()
 
-        fun <T> section(name: String, block: suspend () -> T?): T? {
+        suspend fun <T> section(name: String, block: suspend () -> T?): T? {
             val result = runCatching { block() }.getOrElse { e ->
                 Log.w(TAG, "snapshot_provider_failed source=$name ${e.javaClass.simpleName}")
                 null

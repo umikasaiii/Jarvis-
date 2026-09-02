@@ -76,8 +76,8 @@ class DefaultTaskContextProvider @Inject constructor(
         val undone = entries.filter { !it.done }
         return TaskContext(
             activeTasks = undone.size,
-            overdueTasks = undone.count { it.date != null && it.date.isBefore(today) },
-            upcomingTasks = undone.count { it.date != null && !it.date.isBefore(today) },
+            overdueTasks = undone.count { val d = it.date; d != null && d.isBefore(today) },
+            upcomingTasks = undone.count { val d = it.date; d != null && !d.isBefore(today) },
             capturedAt = Instant.now(),
         )
     }
