@@ -13,6 +13,7 @@ import com.simone.jarvismobile.data.SettingsRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.first
 import java.time.Duration
+import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
@@ -156,7 +157,7 @@ class HealthConnectManager @Inject constructor(
         val avgSleepPerNight: Duration?,
     )
 
-    /** [daily]: oldest first, 7 entries — yesterday back to 7 days before (§ vedi [fetchDailySeries]). */
+    /** [daily]: oldest first, 8 entries — oggi compreso, fino a 7 giorni prima (§ vedi [fetchDailySeries] — [averages] esclude oggi). */
     data class HealthSnapshot(
         val daily: List<DailyHealthReading>,
         val averages: WeeklyHealthAverages,
@@ -188,14 +189,23 @@ class HealthConnectManager @Inject constructor(
     }
 
     /**
-     * **Finestra "da ieri a 7 giorni prima" (§ richiesta esplicita
-     * dell'utente: "la media la deve calcolare da ieri a 7 giorni prima, non
-     * da lunedì a domenica fisso")**: `end` è la mezzanotte di oggi (quindi
-     * la fine di ieri), non `Instant.now()` — la giornata di oggi è ancora in
-     * corso e mescolarne i dati parziali (specie il sonno di stanotte, non
-     * ancora accaduto) avrebbe sporcato la media. Il range resta comunque
-     * sempre una finestra scorrevole di 7 giorni, mai un lunedì-domenica di
-     * calendario fisso.
+     * **Finestra estesa a "oggi compreso", ma solo nell'elenco — non nella
+     * media (§ richiesta esplicita dell'utente: "permetti al risveglio di
+     * poter visualizzare anche la notte appena passata")**: con la finestra
+     * precedente ("da ieri a 7 giorni prima", `end` fermo alla mezzanotte di
+     * oggi) il sonno della notte appena conclusa — già completo, non più "in
+     * corso" — restava invisibile fino al giorno dopo, proprio quando
+     * l'utente lo vuole controllare appena sveglio. `end` è ora
+     * `Instant.now()`: [readAllRecords] legge quindi anche i record di oggi
+     * già scritti (una sessione di sonno terminata stamattina, eventuali
+     * letture di frequenza a riposo già registrate) — mai dati "futuri" o
+     * inventati, Health Connect non restituisce comunque nulla per un
+     * evento non ancora accaduto. [computeAverages] esclude però
+     * esplicitamente la data odierna dal calcolo (non solo i giorni senza
+     * dato): la giornata di oggi resta genuinamente in corso per il BPM
+     * (letture ancora in arrivo nelle prossime ore), quindi la media dei "7
+     * giorni prima" richiesta dall'utente resta quella — oggi compare
+     * nell'elenco a tocco, mai nella cifra media.
      *
      * **Riscritta da zero, secondo bug reale trovato dal confronto diretto
      * con Honor Health (screenshot dell'utente con le stesse date)**: la
@@ -255,8 +265,8 @@ class HealthConnectManager @Inject constructor(
         val c = client ?: return emptyList()
         val zone = ZoneId.systemDefault()
         val today = LocalDate.now()
-        val end = today.atStartOfDay(zone).toInstant()
-        val start = end.minus(7, ChronoUnit.DAYS)
+        val end = Instant.now()
+        val start = today.atStartOfDay(zone).toInstant().minus(7, ChronoUnit.DAYS)
         val range = TimeRangeFilter.between(start, end)
         return runCatching {
             val restingHeartRateRecords = readAllRecords(c, RestingHeartRateRecord::class, range)
@@ -273,7 +283,7 @@ class HealthConnectManager @Inject constructor(
                 sleepByDate.getOrPut(date) { mutableListOf() }.add(record.sleepStagesDuration())
             }
 
-            (7 downTo 1).map { daysAgo ->
+            (7 downTo 0).map { daysAgo ->
                 val date = today.minusDays(daysAgo.toLong())
                 DailyHealthReading(
                     date = date,
@@ -312,11 +322,15 @@ class HealthConnectManager @Inject constructor(
      * Connect, il risultato era ~2h invece della vera media per notte
      * dormita, coerente con l'1h55m segnalato dall'utente come sbagliato).
      * Un giorno assente ora viene semplicemente escluso dalla media invece
-     * di contare come uno zero implicito.
+     * di contare come uno zero implicito. Esclude anche esplicitamente
+     * [today] (§ [fetchDailySeries]: oggi ora compare nell'elenco a tocco
+     * ma non nella media — resta genuinamente in corso per il BPM, quindi
+     * non è uno dei "7 giorni prima" richiesti dall'utente).
      */
-    private fun computeAverages(daily: List<DailyHealthReading>): WeeklyHealthAverages {
-        val bpmValues = daily.mapNotNull { it.heartRateBpm }
-        val sleepValues = daily.mapNotNull { it.sleepHours }
+    private fun computeAverages(daily: List<DailyHealthReading>, today: LocalDate): WeeklyHealthAverages {
+        val pastDays = daily.filter { it.date != today }
+        val bpmValues = pastDays.mapNotNull { it.heartRateBpm }
+        val sleepValues = pastDays.mapNotNull { it.sleepHours }
         return WeeklyHealthAverages(
             avgHeartRateBpm = if (bpmValues.isNotEmpty()) bpmValues.average().roundToLong() else null,
             avgSleepPerNight = if (sleepValues.isNotEmpty()) Duration.ofMinutes((sleepValues.average() * 60.0).roundToLong()) else null,
@@ -337,7 +351,7 @@ class HealthConnectManager @Inject constructor(
         if (!hasPermissions()) return null
         val daily = fetchDailySeries()
         if (daily.isEmpty()) return null
-        val snapshot = HealthSnapshot(daily, computeAverages(daily))
+        val snapshot = HealthSnapshot(daily, computeAverages(daily, LocalDate.now()))
         runCatching { settings.setHealthDailyCache(snapshot.toCacheJson(System.currentTimeMillis())) }
         return snapshot
     }
