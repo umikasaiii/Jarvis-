@@ -14,9 +14,9 @@ import org.junit.Test
  *
  * The example JSON bodies below are copied verbatim from
  * jarvis-protocol/main v1.0.0 (github.com/umikasaiii/Jarvis-protocol,
- * examples/*.json) — the formalized source of truth for the Android<->Core
- * wire format — so these tests prove conformance against the real,
- * published contract, not an assumption of it.
+ * examples directory, *.json files) — the formalized source of truth for
+ * the Android<->Core wire format — so these tests prove conformance
+ * against the real, published contract, not an assumption of it.
  */
 class JarvisCoreClientImplTest {
 
