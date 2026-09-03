@@ -135,6 +135,8 @@ class JarvisCoreClientImpl @Inject constructor(
                 reachable = true,
                 latencyMs = latency,
                 serverVersion = health?.serverVersion,
+                protocolVersion = health?.protocolVersion,
+                llmAvailable = health?.llmAvailable,
                 // No models-list endpoint in jarvis-protocol/main; capabilities
                 // (fastModel/brainModel booleans) is the closest real signal.
                 capabilities = fetchCapabilities(client, base),

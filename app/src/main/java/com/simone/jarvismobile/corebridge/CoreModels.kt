@@ -168,6 +168,8 @@ data class CoreConnectionTestResult(
     val reachable: Boolean,
     val latencyMs: Long? = null,
     val serverVersion: String? = null,
+    val protocolVersion: String? = null,
+    val llmAvailable: Boolean? = null,
     val availableModels: List<String> = emptyList(),
     val capabilities: List<String> = emptyList(),
     val error: String? = null,

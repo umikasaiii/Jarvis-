@@ -1,6 +1,7 @@
 package com.simone.jarvismobile.corebridge
 
 import android.util.Log
+import com.simone.jarvismobile.core.ai.CoreStateDecision
 import com.simone.jarvismobile.core.ai.JarvisCoreState
 import com.simone.jarvismobile.data.SettingsRepository
 import kotlinx.coroutines.CoroutineScope
@@ -97,14 +98,12 @@ class CoreConnectionManager @Inject constructor(
             if (_state.value == JarvisCoreState.DISABLED) _state.value = JarvisCoreState.CONNECTING
             val result = runCatching { coreClient.healthCheck() }.getOrNull()
             lastCheckAtMs = System.currentTimeMillis()
-            _state.value = when {
-                result == null -> JarvisCoreState.OFFLINE
-                !result.reachable -> JarvisCoreState.OFFLINE
-                result.protocolVersion != null && result.protocolVersion != CORE_PROTOCOL_VERSION ->
-                    JarvisCoreState.DEGRADED
-                result.llmAvailable == false -> JarvisCoreState.DEGRADED
-                else -> JarvisCoreState.ONLINE
-            }
+            _state.value = CoreStateDecision.fromHealthCheck(
+                reachable = result?.reachable ?: false,
+                protocolVersion = result?.protocolVersion,
+                expectedProtocolVersion = CORE_PROTOCOL_VERSION,
+                llmAvailable = result?.llmAvailable,
+            )
             result?.serverVersion?.let { lastKnownServerVersion = it }
             Log.i(TAG, "core_state=${_state.value}")
         }

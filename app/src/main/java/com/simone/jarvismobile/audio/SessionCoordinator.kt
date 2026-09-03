@@ -5,6 +5,12 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.util.Log
 import androidx.core.content.ContextCompat
+import com.simone.jarvismobile.ai.AiRequest
+import com.simone.jarvismobile.ai.AiRoutingContextProvider
+import com.simone.jarvismobile.ai.RemoteAiEngine
+import com.simone.jarvismobile.core.ai.AiExecutionTarget
+import com.simone.jarvismobile.core.ai.AiRequestType
+import com.simone.jarvismobile.core.ai.AiRoutingHeuristic
 import com.simone.jarvismobile.core.agenda.ItalianDateTimeParser
 import com.simone.jarvismobile.core.state.ConversationEvent
 import com.simone.jarvismobile.core.state.ConversationState
@@ -114,6 +120,8 @@ class SessionCoordinator @Inject constructor(
     private val proModeCoordinator: com.simone.jarvismobile.promode.ProModeCoordinator,
     private val engineRouter: com.simone.jarvismobile.engine.JarvisEngineRouter,
     private val conversationalEngine: com.simone.jarvismobile.engine.ConversationalJarvisEngine,
+    private val remoteAiEngine: RemoteAiEngine,
+    private val aiRoutingContextProvider: AiRoutingContextProvider,
 ) {
 
     /** Long-lived scope for fire-and-forget persistence; lives as long as the app. */
@@ -189,6 +197,15 @@ class SessionCoordinator @Inject constructor(
      * "avanzato" still behave like one assistant with one short-term memory.
      */
     @Volatile private var lastConversationSlot: ModelSlot? = null
+
+    /**
+     * The id of a remote (JARVIS Core) chat call currently in flight, if any
+     * — set/cleared only inside [tryRemoteChat]. Plain coroutine cancellation
+     * already stops the suspend call, but [cancelTextGeneration] also needs
+     * to close the underlying HTTP/SSE connection explicitly, which only
+     * [RemoteAiEngine.cancel] does.
+     */
+    @Volatile private var activeRemoteRequestId: String? = null
 
     /**
      * The assistant's configurable name. It was never given to the model, which
@@ -1058,6 +1075,50 @@ class SessionCoordinator @Inject constructor(
     }
 
     /**
+     * Tries JARVIS Core for this turn before the local model below — the
+     * same [AiRoutingHeuristic]/[AiRoutingContextProvider] JARVIS Core's own
+     * AI Router already uses, called directly rather than through
+     * `AiRouter.generate()` itself: that method's own local fallback goes
+     * through [com.simone.jarvismobile.ai.LocalAiEngine]'s single-shot
+     * `LlmRouter.chat(...)`, which would skip [chatReply]'s system-prompt
+     * caching, injected-context dedup and KV-cache-corruption retry below —
+     * real behaviour this integration must not touch (§ "NON creare una
+     * seconda pipeline chat"). So this only ever *replaces* the outcome when
+     * remote succeeds; on any failure it returns `null` and [chatReply]
+     * falls through to its existing, completely unmodified local block.
+     * With `coreEnabled`/`remoteAiEnabled` off (the default) this always
+     * returns `null` immediately — the local path is then byte-for-byte
+     * what it was before this integration.
+     */
+    private suspend fun tryRemoteChat(message: String, system: String, needsReasoning: Boolean): String? {
+        val requestType = if (needsReasoning) AiRequestType.COMPLEX else AiRequestType.CHAT
+        val decision = AiRoutingHeuristic.decide(requestType, aiRoutingContextProvider.preferencesFor(requestType))
+        if (decision.target == AiExecutionTarget.LOCAL) return null
+
+        _diagnostic.value = "JARVIS Core…"
+        val requestId = java.util.UUID.randomUUID().toString()
+        val request = AiRequest(
+            requestId = requestId,
+            text = message,
+            systemPrompt = system,
+            requestType = requestType,
+            preferredModel = if (decision.target == AiExecutionTarget.REMOTE_BRAIN) "brain" else null,
+        )
+        activeRemoteRequestId = requestId
+        val result = try {
+            runCancellable { remoteAiEngine.generate(request) }.getOrNull()
+        } finally {
+            // Must clear even when a CancellationException propagates through
+            // runCancellable — otherwise a cancelled remote call would leave
+            // activeRemoteRequestId dangling and a later cancelTextGeneration()
+            // would try to cancel a request that already unwound.
+            activeRemoteRequestId = null
+        }
+        if (result == null || !result.success) return null
+        return result.text?.let(AssistantReplyCleaner::clean)?.ifBlank { null }
+    }
+
+    /**
      * Ordinary conversation with the model. The user's words go through VERBATIM;
      * context is never wrapped into a "Contesto … Domanda:" template, because that
      * invites a small model to CONTINUE the template instead of answering it.
@@ -1145,6 +1206,8 @@ class SessionCoordinator @Inject constructor(
             }
             append(transcript)
         }
+
+        tryRemoteChat(message, system, needsReasoning)?.let { return it }
 
         val brain = if (slot == ModelSlot.ADVANCED) "avanzato" else "rapido"
         _diagnostic.value = if (retrieved.isEmpty()) {
@@ -2046,9 +2109,10 @@ class SessionCoordinator @Inject constructor(
         machine.dispatch(ConversationEvent.CancelRequested)
     }
 
-    /** Stops only the active written-answer inference. */
+    /** Stops only the active written-answer inference — local or, if one is in flight, remote (§ tryRemoteChat). */
     fun cancelTextGeneration() {
         router.cancel()
+        activeRemoteRequestId?.let { remoteAiEngine.cancel(it) }
         _diagnostic.value = "annullamento risposta…"
     }
 

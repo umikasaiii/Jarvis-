@@ -50,6 +50,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.simone.jarvismobile.core.ai.JarvisCoreState
 import com.simone.jarvismobile.core.engine.JarvisEngineMode
 import com.simone.jarvismobile.core.engine.ReasoningMode
 import com.simone.jarvismobile.data.SettingsRepository
@@ -757,6 +758,10 @@ fun SettingsScreen(
         EngineSettingsSection()
         }
 
+        CollapsibleSection("JARVIS Core (PC)") {
+        CoreSettingsSection()
+        }
+
         CollapsibleSection("Proattività") {
         ProactiveSettingsSection()
         }
@@ -1079,6 +1084,139 @@ private fun EngineSettingsSection(
             }
         }
     }
+}
+
+/**
+ * «JARVIS Core (PC)»: il compagno opzionale su PC — un secondo cervello più
+ * potente raggiunto in rete locale, mai obbligatorio (§ richiesta esplicita:
+ * "niente dipendenza obbligatoria dal PC"). Spento di default; con
+ * "Instrada le richieste al PC" spento (comportamento predefinito) l'app
+ * resta identica a oggi, modello locale su ogni turno. Self-contained (its
+ * own ViewModel), stesso pattern di [EngineSettingsSection].
+ */
+@Composable
+private fun CoreSettingsSection(
+    viewModel: CoreSettingsViewModel = hiltViewModel(),
+) {
+    val coreEnabled by viewModel.coreEnabled.collectAsStateWithLifecycle()
+    val coreHost by viewModel.coreHost.collectAsStateWithLifecycle()
+    val corePort by viewModel.corePort.collectAsStateWithLifecycle()
+    val coreHttps by viewModel.coreHttps.collectAsStateWithLifecycle()
+    val coreTimeoutMs by viewModel.coreTimeoutMs.collectAsStateWithLifecycle()
+    val corePreferRemote by viewModel.corePreferRemote.collectAsStateWithLifecycle()
+    val remoteAiEnabled by viewModel.remoteAiEnabled.collectAsStateWithLifecycle()
+    val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
+    val testing by viewModel.testing.collectAsStateWithLifecycle()
+    val testResult by viewModel.testResult.collectAsStateWithLifecycle()
+
+    // Locali, salvate esplicitamente (§ stesso pattern di "Nome" sopra: non
+    // scrivere su DataStore a ogni carattere digitato) — riseminate solo
+    // quando il valore persistito cambia da altrove (`key = coreHost` ecc.),
+    // mai sovrascritte mentre l'utente sta ancora scrivendo.
+    var hostField by remember(coreHost) { mutableStateOf(coreHost) }
+    var portField by remember(corePort) { mutableStateOf(corePort.toString()) }
+    var timeoutField by remember(coreTimeoutMs) { mutableStateOf(coreTimeoutMs.toString()) }
+
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            SwitchRow("Abilita Core", coreEnabled, viewModel::setCoreEnabled)
+            Text(
+                "Un JARVIS Core acceso sulla stessa rete locale può rispondere al posto del " +
+                    "modello del telefono per le richieste ordinarie. Spento: JARVIS resta " +
+                    "esattamente come oggi, sempre e solo locale.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Text(
+                "Stato: ${connectionState.italianLabel()}",
+                style = MaterialTheme.typography.bodySmall,
+                color = if (connectionState.remoteUsable) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            HorizontalDivider()
+            OutlinedTextField(
+                value = hostField,
+                onValueChange = { hostField = it },
+                label = { Text("Host / IP") },
+                placeholder = { Text("es. 192.168.1.50") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = portField,
+                onValueChange = { portField = it.filter(Char::isDigit) },
+                label = { Text("Porta") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            SwitchRow("HTTPS", coreHttps, viewModel::setCoreHttps)
+            OutlinedTextField(
+                value = timeoutField,
+                onValueChange = { timeoutField = it.filter(Char::isDigit) },
+                label = { Text("Timeout (ms)") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedButton(
+                onClick = {
+                    viewModel.setCoreHost(hostField)
+                    portField.toIntOrNull()?.let(viewModel::setCorePort)
+                    timeoutField.toIntOrNull()?.let(viewModel::setCoreTimeoutMs)
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Salva configurazione")
+            }
+
+            HorizontalDivider()
+            SwitchRow("Preferisci il PC quando disponibile", corePreferRemote, viewModel::setCorePreferRemote)
+            Text(
+                "Facoltativo: tenere Core configurato ma temporaneamente in pausa, senza " +
+                    "cancellare host/porta.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            SwitchRow("Instrada le richieste al PC", remoteAiEnabled, viewModel::setRemoteAiEnabled)
+            Text(
+                "L'interruttore che conta davvero: acceso, le conversazioni ordinarie provano " +
+                    "prima Core (quando online) e ricadono subito sul modello locale se non " +
+                    "risponde. Spento (predefinito): comportamento identico a oggi, sempre locale.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+
+            HorizontalDivider()
+            OutlinedButton(
+                onClick = viewModel::testConnection,
+                enabled = !testing,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(if (testing) "Test in corso…" else "Testa connessione")
+            }
+            testResult?.let { result ->
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        if (result.reachable) "Online" else "Offline" + (result.error?.let { " ($it)" } ?: ""),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (result.reachable) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                    )
+                    result.latencyMs?.let { Text("Latenza: ${it} ms", style = MaterialTheme.typography.bodySmall) }
+                    result.protocolVersion?.let { Text("protocolVersion: $it", style = MaterialTheme.typography.bodySmall) }
+                    result.serverVersion?.let { Text("Server: $it", style = MaterialTheme.typography.bodySmall) }
+                    result.llmAvailable?.let { Text("Modello LLM: ${if (it) "disponibile" else "non disponibile"}", style = MaterialTheme.typography.bodySmall) }
+                    if (result.capabilities.isNotEmpty()) {
+                        Text("Capacità: ${result.capabilities.joinToString()}", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun JarvisCoreState.italianLabel(): String = when (this) {
+    JarvisCoreState.DISABLED -> "disattivato"
+    JarvisCoreState.CONNECTING -> "connessione in corso…"
+    JarvisCoreState.ONLINE -> "online"
+    JarvisCoreState.DEGRADED -> "online (limitato)"
+    JarvisCoreState.OFFLINE -> "offline"
+    JarvisCoreState.ERROR -> "errore"
 }
 
 /**
