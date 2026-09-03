@@ -178,6 +178,9 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.okhttp)
     implementation(libs.okhttp.logging)
+    // Real Server-Sent Events parsing for JARVIS Core's POST /v1/ai/stream
+    // (jarvis-protocol/main v1.0.0) — replaces the previous NDJSON-guess parsing.
+    implementation(libs.okhttp.sse)
 
     // On-device LLM (Phase 3, LiteRT-LM) + SAF document access for model import.
     implementation(libs.litertlm.android)

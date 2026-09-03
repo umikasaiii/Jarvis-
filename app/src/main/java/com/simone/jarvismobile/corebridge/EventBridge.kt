@@ -83,6 +83,16 @@ class EventBridge @Inject constructor(
 
     /** Best-effort delivery of whatever is currently queued — never throws, never blocks a caller since it only runs on [scope]. */
     suspend fun flushIfOnline() {
+        // jarvis-protocol/main v1.0.0 (the source of truth for Android<->Core)
+        // defines no event-ingestion endpoint - verified directly against
+        // jarvis-core's real routes (health/capabilities/models/chat/ai
+        // request/ai stream only, no /v1/events). Remote delivery is disabled
+        // here at the transport level until the protocol defines one; local
+        // queuing (publish() -> EventQueueStore, above) stays fully intact so
+        // nothing queued today is lost once it does. Flip this back on then -
+        // do not invent /v1/events, and do not change jarvis-protocol/
+        // jarvis-core to fit this Android-side implementation.
+        if (!REMOTE_TRANSPORT_ENABLED) return
         if (!gate.enabled()) return
         val state = gate.coreState()
         if (!state.remoteUsable) return
@@ -101,5 +111,6 @@ class EventBridge @Inject constructor(
 
     private companion object {
         const val TAG = "EventBridge"
+        const val REMOTE_TRANSPORT_ENABLED = false
     }
 }

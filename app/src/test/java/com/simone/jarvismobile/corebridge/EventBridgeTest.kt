@@ -48,15 +48,20 @@ class EventBridgeTest {
     }
 
     @Test
-    fun `publish with core online enqueues then delivers and removes from the queue`() = runTest {
+    fun `publish with core online still only enqueues - remote transport is disabled`() = runTest {
+        // jarvis-protocol/main v1.0.0 defines no event-ingestion endpoint
+        // (no POST /v1/events on real jarvis-core) — EventBridge.flushIfOnline()
+        // is gated off at the transport level until the protocol defines one,
+        // regardless of Core being reachable. Local queuing (this test) stays
+        // fully intact; see EventBridge.REMOTE_TRANSPORT_ENABLED.
         val queue = FakeEventQueue()
         val client = FakeCoreClient(alwaysSucceeds = true)
         val bridge = EventBridge(FakeGate(enabled = true, state = JarvisCoreState.ONLINE), queue, client, CoroutineScope(UnconfinedTestDispatcher()))
 
         bridge.publish(event("evt-online"))
 
-        assertTrue("evt-online" in client.publishedIds)
-        assertTrue(queue.contents.isEmpty()) // delivered, so removed
+        assertTrue(client.publishedIds.isEmpty()) // never delivered - remote transport disabled
+        assertEquals(1, queue.contents.size) // still queued, waiting for a real endpoint
     }
 
     @Test
@@ -72,7 +77,7 @@ class EventBridgeTest {
     }
 
     @Test
-    fun `flush delivers only what core actually confirms, leaving failed ones queued`() = runTest {
+    fun `flush never attempts delivery while remote transport is disabled - everything stays queued`() = runTest {
         val queue = FakeEventQueue()
         queue.contents += QueuedEvent(event("ok"), enqueuedAtMs = 0L)
         queue.contents += QueuedEvent(event("fails"), enqueuedAtMs = 0L)
@@ -81,7 +86,8 @@ class EventBridgeTest {
 
         bridge.flushIfOnline()
 
-        assertTrue("ok" !in queue.contents.map { it.event.id })
+        assertFalse(client.flushAttempted)
+        assertTrue("ok" in queue.contents.map { it.event.id })
         assertTrue("fails" in queue.contents.map { it.event.id })
     }
 

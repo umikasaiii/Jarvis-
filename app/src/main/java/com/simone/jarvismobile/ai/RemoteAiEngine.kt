@@ -6,6 +6,7 @@ import com.simone.jarvismobile.core.ai.AiFailureReason
 import com.simone.jarvismobile.core.ai.AiRequestType
 import com.simone.jarvismobile.core.snapshot.RelevantContextRenderer
 import com.simone.jarvismobile.corebridge.CoreClient
+import com.simone.jarvismobile.corebridge.CoreExecutionTarget
 import com.simone.jarvismobile.corebridge.CoreRequestType
 import com.simone.jarvismobile.corebridge.CoreResponseStatus
 import com.simone.jarvismobile.corebridge.JarvisCoreRequest
@@ -43,11 +44,10 @@ class RemoteAiEngine @Inject constructor(
         val coreRequest = JarvisCoreRequest(
             requestId = request.requestId,
             conversationId = request.conversationId,
-            timestamp = System.currentTimeMillis(),
             requestType = request.requestType.toCoreType(),
             text = request.text,
             context = contextMapFor(request),
-            preferredModel = request.preferredModel,
+            preferredTarget = request.toCoreExecutionTarget(),
             allowFallback = true,
         )
         return try {
@@ -76,11 +76,10 @@ class RemoteAiEngine @Inject constructor(
         val coreRequest = JarvisCoreRequest(
             requestId = request.requestId,
             conversationId = request.conversationId,
-            timestamp = System.currentTimeMillis(),
             requestType = request.requestType.toCoreType(),
             text = request.text,
             context = contextMapFor(request),
-            preferredModel = request.preferredModel,
+            preferredTarget = request.toCoreExecutionTarget(),
             allowFallback = true,
         )
         return coreClient.stream(coreRequest)
@@ -116,6 +115,17 @@ class RemoteAiEngine @Inject constructor(
         if (fromSnapshot.isEmpty()) return request.context
         return request.context + fromSnapshot.mapKeys { (k, _) -> "snapshot_$k" }
     }
+
+    /**
+     * [AiRouter] only ever calls [RemoteAiEngine] once it has already decided
+     * REMOTE_FAST or REMOTE_BRAIN — it threads which one through
+     * [AiRequest.preferredModel] (`"brain"` or null, see
+     * [AiRouter.withPreferredModel]). Maps that into the real wire
+     * `preferredTarget` (jarvis-protocol/main) so Core actually honors the
+     * client-side routing decision instead of silently re-deciding via AUTO.
+     */
+    private fun AiRequest.toCoreExecutionTarget(): CoreExecutionTarget =
+        if (preferredModel == "brain") CoreExecutionTarget.BRAIN else CoreExecutionTarget.FAST
 
     private fun AiRequestType.toCoreType(): CoreRequestType = when (this) {
         AiRequestType.COMMAND -> CoreRequestType.COMMAND

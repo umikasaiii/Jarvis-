@@ -23,7 +23,7 @@ data class AiRequest(
     val conversationId: String? = null,
     val context: Map<String, String> = emptyMap(),
     val timeoutSeconds: Long = 60,
-    /** Set by [AiRouter] when its routing decision picked [AiExecutionTarget.REMOTE_BRAIN] — threaded to `JarvisCoreRequest.preferredModel`, ignored by [LocalAiEngine]. */
+    /** Set by [AiRouter] when its routing decision picked [AiExecutionTarget.REMOTE_BRAIN] — threaded to `JarvisCoreRequest.preferredTarget`, ignored by [LocalAiEngine]. */
     val preferredModel: String? = null,
     /**
      * Already trimmed/budget-enforced/privacy-minimized (§ Personal

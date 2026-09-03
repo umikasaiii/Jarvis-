@@ -100,8 +100,9 @@ class CoreConnectionManager @Inject constructor(
             _state.value = when {
                 result == null -> JarvisCoreState.OFFLINE
                 !result.reachable -> JarvisCoreState.OFFLINE
-                result.protocolVersion != null && result.protocolVersion != com.simone.jarvismobile.corebridge.CORE_PROTOCOL_VERSION ->
+                result.protocolVersion != null && result.protocolVersion != CORE_PROTOCOL_VERSION ->
                     JarvisCoreState.DEGRADED
+                result.llmAvailable == false -> JarvisCoreState.DEGRADED
                 else -> JarvisCoreState.ONLINE
             }
             result?.serverVersion?.let { lastKnownServerVersion = it }
