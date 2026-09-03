@@ -40,6 +40,27 @@ class ProactiveTest {
         assertEquals("quiet_hours", (d as ProactiveDecision.Skip).reason)
     }
 
+    @Test fun morningDigestIsNeverSilencedByDefaultQuietHours() {
+        // Bug reale segnalato dall'utente: "non è arrivato briefing" — con le
+        // ore silenziose predefinite (22:00→08:00) un vero sblocco delle 6:30
+        // cade dentro la finestra silenziosa, ma il digest mattutino è
+        // contenuto esplicitamente richiesto dall'utente, non un consiglio
+        // facoltativo, quindi deve arrivare comunque.
+        val earlyUnlock = LocalDateTime.of(today, LocalTime.of(6, 30))
+        val d = ProactiveGovernor.decide(listOf(digest), on(), freshState(), earlyUnlock)
+        val deliver = assertIs<ProactiveDecision.Deliver>(d)
+        assertEquals(ProactiveKind.MORNING_DIGEST, deliver.suggestion.kind)
+    }
+
+    @Test fun optionalSuggestionsStayInsideQuietHoursWhileDigestIsExempt() {
+        // Same early-morning moment: a genuinely optional suggestion
+        // (BATTERY_BEFORE_ALARM) still yields to quiet hours — only the
+        // digest is exempt, not every candidate.
+        val earlyUnlock = LocalDateTime.of(today, LocalTime.of(6, 30))
+        val d = ProactiveGovernor.decide(listOf(battery), on(), freshState(), earlyUnlock)
+        assertEquals("quiet_hours", (d as ProactiveDecision.Skip).reason)
+    }
+
     @Test fun deliversHighestPriorityAndUpdatesState() {
         val d = ProactiveGovernor.decide(listOf(digest, battery), on(), freshState(), morning)
         val deliver = assertIs<ProactiveDecision.Deliver>(d)
