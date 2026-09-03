@@ -56,5 +56,6 @@ fun healthSnapshotFromCacheJson(raw: String): HealthConnectManager.HealthSnapsho
             avgHeartRateBpm = cached.avgHeartRateBpm,
             avgSleepPerNight = cached.avgSleepMinutes?.let { Duration.ofMinutes(it) },
         ),
+        updatedAtMs = cached.cachedAtEpochMs,
     )
 }

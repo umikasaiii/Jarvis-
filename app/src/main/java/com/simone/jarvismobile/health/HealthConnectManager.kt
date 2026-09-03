@@ -2,6 +2,7 @@ package com.simone.jarvismobile.health
 
 import android.content.Context
 import android.content.Intent
+import android.util.Log
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.Record
@@ -104,7 +105,7 @@ class HealthConnectManager @Inject constructor(
         val c = client ?: return false
         return runCatching {
             c.permissionController.getGrantedPermissions().containsAll(permissions)
-        }.getOrDefault(false)
+        }.onFailure { e -> Log.w(TAG, "has_permissions_check_failed ${e.javaClass.simpleName}") }.getOrDefault(false)
     }
 
     /**
@@ -157,10 +158,20 @@ class HealthConnectManager @Inject constructor(
         val avgSleepPerNight: Duration?,
     )
 
-    /** [daily]: oldest first, 8 entries — oggi compreso, fino a 7 giorni prima (§ vedi [fetchDailySeries] — [averages] esclude oggi). */
+    /**
+     * [daily]: oldest first, 8 entries — oggi compreso, fino a 7 giorni prima
+     * (§ vedi [fetchDailySeries] — [averages] esclude oggi). [updatedAtMs] è
+     * il momento della lettura Health Connect riuscita più recente dietro
+     * questo snapshot — mai il momento in cui lo schermo l'ha semplicemente
+     * riletto dalla cache, così l'utente può distinguere un dato di oggi da
+     * uno vecchio senza dover chiedere (§ bug reale segnalato: nessun
+     * segnale di freschezza esisteva prima, un fallimento silenzioso di
+     * `refresh()` lasciava la card con numeri vecchi senza alcuna traccia).
+     */
     data class HealthSnapshot(
         val daily: List<DailyHealthReading>,
         val averages: WeeklyHealthAverages,
+        val updatedAtMs: Long,
     )
 
     /**
@@ -291,7 +302,7 @@ class HealthConnectManager @Inject constructor(
                     sleepHours = sleepByDate[date]?.let { sessions -> sessions.sumOf { it.toMinutes() } / 60.0 },
                 )
             }
-        }.getOrDefault(emptyList())
+        }.onFailure { e -> Log.w(TAG, "fetch_daily_series_failed ${e.javaClass.simpleName}") }.getOrDefault(emptyList())
     }
 
     /**
@@ -350,12 +361,21 @@ class HealthConnectManager @Inject constructor(
     suspend fun refresh(): HealthSnapshot? {
         if (!hasPermissions()) return null
         val daily = fetchDailySeries()
-        if (daily.isEmpty()) return null
-        val snapshot = HealthSnapshot(daily, computeAverages(daily, LocalDate.now()))
-        runCatching { settings.setHealthDailyCache(snapshot.toCacheJson(System.currentTimeMillis())) }
+        if (daily.isEmpty()) {
+            Log.w(TAG, "refresh_empty_daily_series")
+            return null
+        }
+        val nowMs = System.currentTimeMillis()
+        val snapshot = HealthSnapshot(daily, computeAverages(daily, LocalDate.now()), updatedAtMs = nowMs)
+        runCatching { settings.setHealthDailyCache(snapshot.toCacheJson(nowMs)) }
+            .onFailure { e -> Log.w(TAG, "health_cache_write_failed ${e.javaClass.simpleName}") }
         return snapshot
     }
 
     /** Ultimo snapshot salvato — istantaneo, nessuna lettura da Health Connect (§ stesso pattern di [com.simone.jarvismobile.weather.WeatherManager.cachedOutlook]). */
     suspend fun cachedSnapshot(): HealthSnapshot? = healthSnapshotFromCacheJson(settings.healthDailyCache.first())
+
+    private companion object {
+        const val TAG = "HealthConnectManager"
+    }
 }

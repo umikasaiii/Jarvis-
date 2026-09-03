@@ -1693,6 +1693,7 @@ internal fun AresHomeScreen(
     val healthGranted by aresViewModel.healthGranted.collectAsStateWithLifecycle()
     val healthAverages by aresViewModel.healthAverages.collectAsStateWithLifecycle()
     val healthDaily by aresViewModel.healthDaily.collectAsStateWithLifecycle()
+    val healthUpdatedAtMs by aresViewModel.healthUpdatedAtMs.collectAsStateWithLifecycle()
     val healthPermissionsDiagnostic by aresViewModel.healthPermissionsDiagnostic.collectAsStateWithLifecycle()
     val healthContext = LocalContext.current
     // Il dialogo di consenso in-app (PermissionController.createRequestPermissionResultContract,
@@ -1899,7 +1900,12 @@ internal fun AresHomeScreen(
                 }
             }
             healthDetail?.let { kind ->
-                AresHealthDetailDialog(kind = kind, daily = healthDaily, onDismiss = { healthDetail = null })
+                AresHealthDetailDialog(
+                    kind = kind,
+                    daily = healthDaily,
+                    updatedAtMs = healthUpdatedAtMs,
+                    onDismiss = { healthDetail = null },
+                )
             }
             if (hourlyDayIndex != null) {
                 val hourly by aresViewModel.hourly.collectAsStateWithLifecycle()
@@ -2357,16 +2363,17 @@ private fun Sparkline(values: List<Float?>, color: Color, modifier: Modifier = M
 private fun AresHealthDetailDialog(
     kind: HealthDetailKind,
     daily: List<HealthConnectManager.DailyHealthReading>,
+    updatedAtMs: Long?,
     onDismiss: () -> Unit,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (kind == HealthDetailKind.BPM) "BPM medi per giorno" else "Sonno per notte") },
         text = {
-            if (daily.isEmpty()) {
-                Text("Nessun dato disponibile.", color = Muted)
-            } else {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (daily.isEmpty()) {
+                    Text("Nessun dato disponibile.", color = Muted)
+                } else {
                     daily.forEach { day ->
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text(
@@ -2385,10 +2392,31 @@ private fun AresHealthDetailDialog(
                         }
                     }
                 }
+                // Freschezza del dato mostrato (§ bug reale segnalato:
+                // "oggi non si aggiorna biometria" — prima non c'era alcun
+                // modo di vedere se questi numeri fossero letti da Health
+                // Connect ora o giorni fa senza controllare i log).
+                Text(
+                    text = healthFreshnessLabel(updatedAtMs),
+                    color = Muted,
+                    fontSize = 11.sp,
+                )
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Chiudi") } },
     )
+}
+
+/** "Aggiornato pochi minuti fa" / "Aggiornato 3h fa" / mai letto con successo. */
+private fun healthFreshnessLabel(updatedAtMs: Long?): String {
+    if (updatedAtMs == null || updatedAtMs <= 0L) return "Mai letto da Health Connect con successo."
+    val ageMinutes = (System.currentTimeMillis() - updatedAtMs) / 60_000L
+    return when {
+        ageMinutes < 1 -> "Aggiornato pochi istanti fa."
+        ageMinutes < 60 -> "Aggiornato $ageMinutes min fa."
+        ageMinutes < 24 * 60 -> "Aggiornato ${ageMinutes / 60}h fa."
+        else -> "Aggiornato ${ageMinutes / (24 * 60)} giorni fa."
+    }
 }
 
 /**

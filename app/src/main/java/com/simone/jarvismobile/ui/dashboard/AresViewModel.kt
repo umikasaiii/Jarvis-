@@ -44,6 +44,16 @@ class AresViewModel @Inject constructor(
     private val _healthDaily = MutableStateFlow<List<HealthConnectManager.DailyHealthReading>>(emptyList())
     val healthDaily: StateFlow<List<HealthConnectManager.DailyHealthReading>> = _healthDaily.asStateFlow()
 
+    /**
+     * Quando i numeri mostrati sono stati letti davvero da Health Connect
+     * l'ultima volta — mai il momento in cui lo schermo li ha solo riletti
+     * dalla cache (§ bug reale segnalato: "oggi non si aggiorna biometria",
+     * nessun segnale di freschezza esisteva prima per distinguere un dato
+     * di oggi da uno vecchio senza chiederlo).
+     */
+    private val _healthUpdatedAtMs = MutableStateFlow<Long?>(null)
+    val healthUpdatedAtMs: StateFlow<Long?> = _healthUpdatedAtMs.asStateFlow()
+
     val healthAvailable: Boolean get() = health.isAvailable
     /** Apre le impostazioni di Health Connect (§ richiesta esplicita: "aprire la pagina... ed io posso metterlo manualmente"). */
     fun healthSettingsIntent() = health.settingsIntent()
@@ -95,6 +105,7 @@ class AresViewModel @Inject constructor(
     private fun applySnapshot(snapshot: HealthConnectManager.HealthSnapshot) {
         _healthAverages.value = snapshot.averages
         _healthDaily.value = snapshot.daily
+        _healthUpdatedAtMs.value = snapshot.updatedAtMs
     }
 
     /**
@@ -112,6 +123,7 @@ class AresViewModel @Inject constructor(
             if (!granted) {
                 _healthAverages.value = null
                 _healthDaily.value = emptyList()
+                _healthUpdatedAtMs.value = null
                 _healthPermissionsDiagnostic.value = health.permissionsDiagnostic()
                 return@launch
             }
