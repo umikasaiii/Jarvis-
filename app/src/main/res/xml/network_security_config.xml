@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  JARVIS Core (PC) è un compagno opzionale su rete locale (§ SettingsRepository
+  coreEnabled/coreHost, sezione Impostazioni "JARVIS Core (PC)") che oggi
+  parla HTTP semplice per costruzione — vedi jarvis-core/README.md § "Security
+  (LAN)": "Plain HTTP is acceptable for local development on a trusted LAN
+  only... True remote access will be added later via VPN/TLS, not by exposing
+  this server directly". Dalla API 28 Android blocca di default il traffico
+  cleartext verso QUALUNQUE host — senza questo file ogni tentativo di
+  raggiungere Core (host/porta scelti dall'utente in Impostazioni) fallisce
+  con UnknownServiceException prima ancora di uscire dal telefono, il bug
+  reale segnalato dall'utente. cleartextTrafficPermitted vale per l'intera
+  app (Android non supporta un filtro per intervallo di IP privati nello
+  schema del Network Security Config, solo per nome di dominio — e l'host
+  Core è scelto liberamente dall'utente, non un dominio fisso) — nessun altro
+  client HTTP in questo progetto parla mai in chiaro con l'esterno: ogni
+  altra integrazione online (TomTom, Open-Meteo, Google Drive, ML Kit) usa
+  già HTTPS per costruzione. Quando l'utente configura TLS sul proprio Core
+  (§ SettingsRepository.coreHttps), questa concessione smette semplicemente
+  di essere usata per quella connessione, senza bisogno di rimuoverla.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>
