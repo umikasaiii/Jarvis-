@@ -15,10 +15,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -35,10 +38,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.simone.jarvismobile.core.remote.CoreConnectionState
 import com.simone.jarvismobile.data.SettingsRepository
 
 /**
@@ -70,6 +76,18 @@ fun SettingsScreen(
     val ttsRate by viewModel.ttsSpeechRate.collectAsStateWithLifecycle()
     val ttsPitch by viewModel.ttsPitch.collectAsStateWithLifecycle()
     val speakBackground by viewModel.speakBackgroundResponses.collectAsStateWithLifecycle()
+
+    val coreEnabled by viewModel.coreEnabled.collectAsStateWithLifecycle()
+    val coreHost by viewModel.coreHost.collectAsStateWithLifecycle()
+    val corePort by viewModel.corePort.collectAsStateWithLifecycle()
+    val coreUseHttps by viewModel.coreUseHttps.collectAsStateWithLifecycle()
+    val coreApiToken by viewModel.coreApiToken.collectAsStateWithLifecycle()
+    val coreState by viewModel.coreState.collectAsStateWithLifecycle()
+    val coreLastCheck by viewModel.coreLastCheck.collectAsStateWithLifecycle()
+    val coreTesting by viewModel.coreTesting.collectAsStateWithLifecycle()
+    var coreHostField by remember(coreHost) { mutableStateOf(coreHost) }
+    var corePortField by remember(corePort) { mutableStateOf(corePort.toString()) }
+    var coreTokenField by remember(coreApiToken) { mutableStateOf(coreApiToken) }
 
     var nameField by remember(name) { mutableStateOf(name) }
     var sliderValue by remember(seconds) { mutableStateOf(seconds.toFloat()) }
@@ -436,11 +454,91 @@ fun SettingsScreen(
             }
         }
 
+        // --- JARVIS Core (PC companion) --------------------------------------
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                ) {
+                    Text("JARVIS Core (PC)", style = MaterialTheme.typography.titleMedium)
+                    Switch(checked = coreEnabled, onCheckedChange = viewModel::setCoreEnabled)
+                }
+                Text(
+                    "Disattivato per impostazione predefinita: nessun PC viene mai contattato finché " +
+                        "non lo attivi qui e non imposti l'indirizzo. Se il PC è spento, la rete manca " +
+                        "o l'IP è sbagliato, JARVIS continua a rispondere con il modello locale.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                OutlinedTextField(
+                    value = coreHostField,
+                    onValueChange = { coreHostField = it },
+                    label = { Text("Indirizzo IP / host del PC") },
+                    placeholder = { Text("es. 192.168.1.50") },
+                    singleLine = true,
+                    enabled = coreEnabled,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = corePortField,
+                        onValueChange = { corePortField = it.filter(Char::isDigit).take(5) },
+                        label = { Text("Porta") },
+                        singleLine = true,
+                        enabled = coreEnabled,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f),
+                    )
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
+                        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                            Text("HTTPS", style = MaterialTheme.typography.bodyMedium)
+                            Switch(checked = coreUseHttps, onCheckedChange = viewModel::setCoreUseHttps, enabled = coreEnabled)
+                        }
+                    }
+                }
+                OutlinedTextField(
+                    value = coreTokenField,
+                    onValueChange = { coreTokenField = it },
+                    label = { Text("Token (opzionale)") },
+                    singleLine = true,
+                    enabled = coreEnabled,
+                    visualTransformation = PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedButton(
+                    onClick = {
+                        viewModel.setCoreHost(coreHostField)
+                        corePortField.toIntOrNull()?.let(viewModel::setCorePort)
+                        viewModel.setCoreApiToken(coreTokenField)
+                    },
+                    enabled = coreEnabled,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Salva configurazione")
+                }
+                OutlinedButton(
+                    onClick = viewModel::testCoreConnection,
+                    enabled = coreEnabled && !coreTesting,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    if (coreTesting) {
+                        CircularProgressIndicator(modifier = Modifier.height(16.dp))
+                    } else {
+                        Text("Testa connessione")
+                    }
+                }
+                Text(
+                    coreStatusLine(coreEnabled, coreState, coreLastCheck),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("In arrivo (fasi successive)", style = MaterialTheme.typography.titleMedium)
                 PlaceholderRow("Home Assistant", "Fase 7")
-                PlaceholderRow("Companion PC", "Fase 8")
             }
         }
 
@@ -469,6 +567,30 @@ fun SettingsScreen(
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth(),
         )
+    }
+}
+
+/** Human-readable summary of [com.simone.jarvismobile.remote.CoreConnectionRepository]'s last check. */
+private fun coreStatusLine(
+    enabled: Boolean,
+    state: CoreConnectionState,
+    lastCheck: com.simone.jarvismobile.core.remote.CoreConnectionCheck?,
+): String {
+    if (!enabled) return "Disattivato: JARVIS risponde solo con il modello locale."
+    return when (state) {
+        CoreConnectionState.DISABLED -> "Imposta l'indirizzo e salva per poter testare la connessione."
+        CoreConnectionState.CONNECTING -> "Connessione in corso…"
+        CoreConnectionState.ONLINE -> {
+            val latency = lastCheck?.latencyMs?.let { " · ${it} ms" } ?: ""
+            val version = lastCheck?.serverVersion?.let { " · v$it" } ?: ""
+            "Online$latency$version"
+        }
+        CoreConnectionState.DEGRADED ->
+            "Raggiungibile ma non compatibile" +
+                (lastCheck?.protocolVersion?.let { " (protocolVersion server: $it)" } ?: "") +
+                " — JARVIS resta sul modello locale finché non è allineato."
+        CoreConnectionState.OFFLINE -> "Non raggiungibile: verifica che il PC sia acceso e sulla stessa rete."
+        CoreConnectionState.ERROR -> "Errore: ${lastCheck?.error ?: "risposta non valida dal server"}."
     }
 }
 

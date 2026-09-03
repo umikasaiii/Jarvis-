@@ -2,6 +2,8 @@ package com.simone.jarvismobile.ui.settings
 
 import kotlinx.coroutines.flow.MutableStateFlow
 import com.simone.jarvismobile.knowledge.KnowledgeRepository
+import com.simone.jarvismobile.core.remote.CoreConnectionCheck
+import com.simone.jarvismobile.core.remote.CoreConnectionState
 import com.simone.jarvismobile.core.speech.SpeechStyle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -9,6 +11,7 @@ import com.simone.jarvismobile.audio.SessionCoordinator
 import com.simone.jarvismobile.audio.TtsVoiceOption
 import com.simone.jarvismobile.agenda.AgendaRepository
 import com.simone.jarvismobile.data.SettingsRepository
+import com.simone.jarvismobile.remote.CoreConnectionRepository
 import com.simone.jarvismobile.tts.NeuralTtsEngine
 import com.simone.jarvismobile.tts.NeuralTtsRepository
 import com.simone.jarvismobile.tts.NeuralTtsState
@@ -30,6 +33,7 @@ class SettingsViewModel @Inject constructor(
     private val agenda: AgendaRepository,
     private val knowledge: KnowledgeRepository,
     private val neural: NeuralTtsRepository,
+    private val coreConnection: CoreConnectionRepository,
 ) : ViewModel() {
 
     val assistantName: StateFlow<String> = settings.assistantName
@@ -274,5 +278,46 @@ class SettingsViewModel @Inject constructor(
         _ttsMessage.value = if (neural.ensureLoaded() != null) "Modello caricato." else "Caricamento fallito."
         neural.refresh()
         _ttsBusy.value = false
+    }
+
+    // --- JARVIS Core (PC companion) -----------------------------------------
+    //
+    // Off by default; nothing is contacted until the user enables it AND sets
+    // a host. AiRouter (core/remote/AiRouter.kt) reads coreConnection.state
+    // directly — this screen is only where the user configures/tests it.
+
+    val coreEnabled: StateFlow<Boolean> = settings.coreEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    val coreHost: StateFlow<String> = settings.coreHost
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
+
+    val corePort: StateFlow<Int> = settings.corePort
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsRepository.DEFAULT_CORE_PORT)
+
+    val coreUseHttps: StateFlow<Boolean> = settings.coreUseHttps
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    val coreApiToken: StateFlow<String> = settings.coreApiToken
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
+
+    /** Centralized Core state (task §8) — read here for display, decided for real in AiRouter. */
+    val coreState: StateFlow<CoreConnectionState> = coreConnection.state
+    val coreLastCheck: StateFlow<CoreConnectionCheck?> = coreConnection.lastCheck
+
+    private val _coreTesting = MutableStateFlow(false)
+    val coreTesting: StateFlow<Boolean> = _coreTesting
+
+    fun setCoreEnabled(value: Boolean) = viewModelScope.launch { settings.setCoreEnabled(value) }
+    fun setCoreHost(value: String) = viewModelScope.launch { settings.setCoreHost(value) }
+    fun setCorePort(value: Int) = viewModelScope.launch { settings.setCorePort(value) }
+    fun setCoreUseHttps(value: Boolean) = viewModelScope.launch { settings.setCoreUseHttps(value) }
+    fun setCoreApiToken(value: String) = viewModelScope.launch { settings.setCoreApiToken(value) }
+
+    /** "Testa connessione": a real GET /v1/health (+/v1/capabilities), never a hardcoded IP. */
+    fun testCoreConnection() = viewModelScope.launch {
+        _coreTesting.value = true
+        coreConnection.testConnection()
+        _coreTesting.value = false
     }
 }

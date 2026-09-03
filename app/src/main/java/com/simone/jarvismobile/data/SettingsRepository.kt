@@ -8,8 +8,11 @@ import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -56,6 +59,14 @@ class SettingsRepository @Inject constructor(
         val TTS_VOLUME = floatPreferencesKey("tts_volume")
         val TTS_SPEECH_ENABLED = booleanPreferencesKey("tts_speech_enabled")
         val TTS_STREAMING = booleanPreferencesKey("tts_streaming")
+
+        // --- JARVIS Core (PC companion) --------------------------------
+        val CORE_ENABLED = booleanPreferencesKey("core_enabled")
+        val CORE_HOST = stringPreferencesKey("core_host")
+        val CORE_PORT = intPreferencesKey("core_port")
+        val CORE_USE_HTTPS = booleanPreferencesKey("core_use_https")
+        val CORE_TIMEOUT_MS = intPreferencesKey("core_timeout_ms")
+        val CORE_API_TOKEN = stringPreferencesKey("core_api_token")
     }
 
     /**
@@ -356,6 +367,77 @@ class SettingsRepository @Inject constructor(
         context.settingsDataStore.edit { it[Keys.SPEAK_BACKGROUND_RESPONSES] = value }
     }
 
+    // --- JARVIS Core (PC companion, optional) ---------------------------
+    //
+    // Host/port/https/timeout/enabled are plain config, so they live in the
+    // same DataStore as everything else. The API token is the one genuine
+    // secret among them (docs/SECURITY.md §21: "Secrets only in Android
+    // Keystore") and is stored separately in Keystore-backed
+    // EncryptedSharedPreferences, never in the plain DataStore file.
+
+    /** Whether JARVIS Core is enabled at all. Off by default: no PC is contacted unless the user opts in. */
+    val coreEnabled: Flow<Boolean> = context.settingsDataStore.data.map { it[Keys.CORE_ENABLED] ?: false }
+
+    /** LAN host/IP of the PC running JARVIS Core. Empty means "not configured" — never a hardcoded default. */
+    val coreHost: Flow<String> = context.settingsDataStore.data.map { it[Keys.CORE_HOST] ?: "" }
+
+    val corePort: Flow<Int> = context.settingsDataStore.data.map { it[Keys.CORE_PORT] ?: DEFAULT_CORE_PORT }
+
+    /** Plain HTTP by default — jarvis-core's own README documents plain HTTP as acceptable on a trusted LAN. */
+    val coreUseHttps: Flow<Boolean> = context.settingsDataStore.data.map { it[Keys.CORE_USE_HTTPS] ?: false }
+
+    val coreTimeoutMs: Flow<Long> = context.settingsDataStore.data.map {
+        (it[Keys.CORE_TIMEOUT_MS] ?: DEFAULT_CORE_TIMEOUT_MS).toLong()
+    }
+
+    suspend fun setCoreEnabled(value: Boolean) {
+        context.settingsDataStore.edit { it[Keys.CORE_ENABLED] = value }
+    }
+
+    suspend fun setCoreHost(value: String) {
+        context.settingsDataStore.edit { it[Keys.CORE_HOST] = value.trim() }
+    }
+
+    suspend fun setCorePort(value: Int) {
+        context.settingsDataStore.edit { it[Keys.CORE_PORT] = value.coerceIn(1, 65_535) }
+    }
+
+    suspend fun setCoreUseHttps(value: Boolean) {
+        context.settingsDataStore.edit { it[Keys.CORE_USE_HTTPS] = value }
+    }
+
+    suspend fun setCoreTimeoutMs(value: Long) {
+        context.settingsDataStore.edit {
+            it[Keys.CORE_TIMEOUT_MS] = value.coerceIn(1_000L, 120_000L).toInt()
+        }
+    }
+
+    private val encryptedPrefs by lazy {
+        val masterKey = MasterKey.Builder(context)
+            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+            .build()
+        EncryptedSharedPreferences.create(
+            context,
+            "jarvis_secure_settings",
+            masterKey,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+        )
+    }
+
+    private val _coreApiToken by lazy {
+        MutableStateFlow(encryptedPrefs.getString(CORE_API_TOKEN_KEY, "") ?: "")
+    }
+
+    /** Optional bearer token for Core's `Authorization` header. Empty = no token sent (LAN-trust default). */
+    val coreApiToken: Flow<String> get() = _coreApiToken
+
+    suspend fun setCoreApiToken(value: String) {
+        val trimmed = value.trim()
+        encryptedPrefs.edit().putString(CORE_API_TOKEN_KEY, trimmed).apply()
+        _coreApiToken.value = trimmed
+    }
+
     companion object {
         const val DEFAULT_NAME = "JARVIS"
         const val DEFAULT_RECORD_SECONDS = 3
@@ -368,5 +450,10 @@ class SettingsRepository @Inject constructor(
         const val MAX_TTS_RATE = 1.4f
         const val MIN_TTS_PITCH = 0.7f
         const val MAX_TTS_PITCH = 1.3f
+
+        /** jarvis-core's own default (core/config.py Settings.server_port). Not a live address, just a common default to prefill. */
+        const val DEFAULT_CORE_PORT = 8000
+        const val DEFAULT_CORE_TIMEOUT_MS = 10_000
+        private const val CORE_API_TOKEN_KEY = "core_api_token"
     }
 }

@@ -14,6 +14,13 @@ import com.simone.jarvismobile.core.routing.AssistantReplyCleaner
 import com.simone.jarvismobile.core.routing.ComplexityHeuristic
 import com.simone.jarvismobile.core.routing.ToolIntentGate
 import com.simone.jarvismobile.core.routing.TurnPlanner
+import com.simone.jarvismobile.core.remote.AiRouter
+import com.simone.jarvismobile.core.remote.AiRoutingInput
+import com.simone.jarvismobile.core.remote.AiTarget
+import com.simone.jarvismobile.core.remote.CoreConnectionState
+import com.simone.jarvismobile.remote.CoreConnectionRepository
+import com.simone.jarvismobile.remote.RemoteAiEngine
+import com.simone.jarvismobile.remote.RemoteChatOutcome
 import com.simone.jarvismobile.data.ChatStore
 import com.simone.jarvismobile.data.SettingsRepository
 import com.simone.jarvismobile.data.StoredMessage
@@ -89,6 +96,8 @@ class SessionCoordinator @Inject constructor(
     private val agenda: com.simone.jarvismobile.agenda.AgendaRepository,
     private val automations: AutomationRepository,
     private val conversationMemory: ConversationMemoryStore,
+    private val coreConnection: CoreConnectionRepository,
+    private val remoteAiEngine: RemoteAiEngine,
 ) {
 
     /** Long-lived scope for fire-and-forget persistence; lives as long as the app. */
@@ -767,13 +776,26 @@ class SessionCoordinator @Inject constructor(
             "memoria: ${retrieved.size} frammenti · $brain"
         }
         lastConversationSlot = slot
-        val firstReply = try {
-            router.chat(message, system, slot)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: LlmGenerationTimeoutException) {
-            _diagnostic.value = "risposta fermata: tempo massimo"
-            return TIMEOUT_REPLY
+
+        // AiRouter (core/remote): LOCAL unless JARVIS Core is enabled, reachable
+        // and ONLINE — deterministic, no second LLM call to decide. A remote
+        // failure here falls back to the SAME local call below within this one
+        // turn, so the user only ever gets one final answer (task §6).
+        val aiTarget = resolveAiTarget(needsReasoning)
+        val firstReply = if (aiTarget == AiTarget.LOCAL) {
+            localGenerate(message, system, slot)
+        } else {
+            when (val outcome = remoteAiEngine.chat(message, aiTarget)) {
+                is RemoteChatOutcome.Answered -> {
+                    _diagnostic.value = "Core (${if (aiTarget == AiTarget.REMOTE_BRAIN) "brain" else "fast"})"
+                    outcome.text
+                }
+                is RemoteChatOutcome.Failed -> {
+                    Log.w(TAG, "remote_chat_failed reason=${outcome.reason}, falling back to local")
+                    _diagnostic.value = "Core non disponibile, rispondo in locale"
+                    localGenerate(message, system, slot)
+                }
+            }
         }
         firstReply?.let(AssistantReplyCleaner::clean)?.ifBlank { null }?.let { return it }
 
@@ -805,6 +827,35 @@ class SessionCoordinator @Inject constructor(
         return "Il modello non è riuscito a rispondere. Prova «Nuova conversazione», " +
             "o ricarica il modello dalla schermata Modelli."
     }
+
+    /**
+     * Decides LOCAL vs REMOTE_FAST vs REMOTE_BRAIN for one conversational turn
+     * (task §5, AiRouter — core/remote/AiRouter.kt). Deterministic, no second
+     * LLM call. [needsReasoning] is the SAME signal already used to pick the
+     * local FAST/ADVANCED slot just above, reused here rather than duplicated.
+     */
+    private suspend fun resolveAiTarget(needsReasoning: Boolean): AiTarget {
+        val coreState = coreConnection.ensureFreshState()
+        return AiRouter.decide(
+            AiRoutingInput(
+                coreEnabled = coreState != CoreConnectionState.DISABLED,
+                coreState = coreState,
+                networkAvailable = coreConnection.networkAvailable,
+                needsReasoning = needsReasoning,
+            ),
+        )
+    }
+
+    /** The local-model call exactly as it always was — extracted so both the LOCAL path and the remote-failure fallback share it. */
+    private suspend fun localGenerate(message: String, system: String, slot: ModelSlot): String? =
+        try {
+            router.chat(message, system, slot)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: LlmGenerationTimeoutException) {
+            _diagnostic.value = "risposta fermata: tempo massimo"
+            TIMEOUT_REPLY
+        }
 
     /**
      * Seeds a conversation: who JARVIS is, what day it is, the notes known now,
@@ -1251,12 +1302,14 @@ class SessionCoordinator @Inject constructor(
         audioCapture.cancel()
         tts.stop()
         router.cancel()
+        remoteAiEngine.cancel()
         machine.dispatch(ConversationEvent.CancelRequested)
     }
 
     /** Stops only the active written-answer inference. */
     fun cancelTextGeneration() {
         router.cancel()
+        remoteAiEngine.cancel()
         _diagnostic.value = "annullamento risposta…"
     }
 
