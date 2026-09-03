@@ -10,17 +10,22 @@ import androidx.health.connect.client.records.RestingHeartRateRecord
 import androidx.health.connect.client.records.SleepSessionRecord
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
+import com.simone.jarvismobile.core.health.HealthDailySeries
+import com.simone.jarvismobile.core.health.HeartRateSample
+import com.simone.jarvismobile.core.health.SleepSessionSpan
+import com.simone.jarvismobile.core.health.SleepStageSpan
 import com.simone.jarvismobile.data.SettingsRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
-import java.time.temporal.ChronoUnit
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlin.math.roundToLong
 import kotlin.reflect.KClass
 
 /**
@@ -175,6 +180,44 @@ class HealthConnectManager @Inject constructor(
     )
 
     /**
+     * Diagnostica non invasiva per distinguere le cinque cause possibili di
+     * "i dati non si aggiornano" richieste esplicitamente dall'utente:
+     * (1) Health Connect non contiene il dato → [restingHeartRateRecordCount]/
+     * [sleepSessionRecordCount] a zero nella finestra mostrata da
+     * [queriedRangeStart]/[queriedRangeEnd] (confrontabile a mano con quanto
+     * mostra l'app Health Connect stessa per lo stesso intervallo);
+     * (2) JARVIS non lo legge → un'eccezione reale finisce in [lastErrorType]
+     * invece di sparire dentro un `runCatching` silenzioso;
+     * (3) JARVIS lo scarta nell'aggregazione → conteggi grezzi qui sopra
+     * diversi dal numero di giorni con un valore non-null nel dialog di
+     * dettaglio rivelano un bug di bucketing;
+     * (4) JARVIS lo salva ma usa una cache vecchia → [refreshAttemptedAtMs]
+     * (ogni tentativo, riuscito o no) contro [refreshSucceededAtMs] (solo
+     * l'ultimo davvero scritto) separa "non ho più provato" da "ho provato
+     * ma è fallito";
+     * (5) arriva al repository ma la UI non si aggiorna → non osservabile da
+     * qui (serve confrontare questo pannello con quanto mostra la card) ma
+     * questo pannello dà il dato di riferimento per farlo. Mai un valore
+     * bpm/sonno qui dentro — solo conteggi e istanti, per restare nei limiti
+     * di "senza esporre dati personali" richiesti esplicitamente.
+     */
+    data class DiagnosticSnapshot(
+        val queriedRangeStart: Instant,
+        val queriedRangeEnd: Instant,
+        val restingHeartRateRecordCount: Int,
+        val sleepSessionRecordCount: Int,
+        val lastHeartRateSampleAt: Instant?,
+        val lastSleepSessionEndAt: Instant?,
+        val refreshAttemptedAtMs: Long,
+        val refreshSucceededAtMs: Long?,
+        val lastErrorType: String?,
+    )
+
+    private val _diagnostic = MutableStateFlow<DiagnosticSnapshot?>(null)
+    /** Popolata a ogni [refresh] reale (mai a un semplice rilettura di cache) — vedi [DiagnosticSnapshot]. */
+    val diagnostic: StateFlow<DiagnosticSnapshot?> = _diagnostic.asStateFlow()
+
+    /**
      * Legge tutte le pagine di [type] nella finestra [range] (§ `readRecords`
      * pagina i risultati, `pageSize` di default 1000 — con campionamento
      * continuo del battito questo si esaurisce facilmente su 7 giorni,
@@ -200,152 +243,106 @@ class HealthConnectManager @Inject constructor(
     }
 
     /**
-     * **Finestra estesa a "oggi compreso", ma solo nell'elenco — non nella
-     * media (§ richiesta esplicita dell'utente: "permetti al risveglio di
-     * poter visualizzare anche la notte appena passata")**: con la finestra
-     * precedente ("da ieri a 7 giorni prima", `end` fermo alla mezzanotte di
-     * oggi) il sonno della notte appena conclusa — già completo, non più "in
-     * corso" — restava invisibile fino al giorno dopo, proprio quando
-     * l'utente lo vuole controllare appena sveglio. `end` è ora
-     * `Instant.now()`: [readAllRecords] legge quindi anche i record di oggi
-     * già scritti (una sessione di sonno terminata stamattina, eventuali
-     * letture di frequenza a riposo già registrate) — mai dati "futuri" o
-     * inventati, Health Connect non restituisce comunque nulla per un
-     * evento non ancora accaduto. [computeAverages] esclude però
-     * esplicitamente la data odierna dal calcolo (non solo i giorni senza
-     * dato): la giornata di oggi resta genuinamente in corso per il BPM
-     * (letture ancora in arrivo nelle prossime ore), quindi la media dei "7
-     * giorni prima" richiesta dall'utente resta quella — oggi compare
-     * nell'elenco a tocco, mai nella cifra media.
-     *
-     * **Riscritta da zero, secondo bug reale trovato dal confronto diretto
-     * con Honor Health (screenshot dell'utente con le stesse date)**: la
-     * versione precedente usava `aggregateGroupByPeriod` (bucket giornalieri
-     * pronti dalla libreria) e correggeva un bug di allineamento per
-     * posizione con la data reale del bucket (`startTime`) — ma un confronto
-     * diretto con Honor Health ha mostrato un caso concreto ancora sbagliato:
-     * una sessione di sonno interamente nel 30 agosto (00:18–10:21, nessun
-     * attraversamento di mezzanotte) veniva mostrata sotto "29 agosto" —
-     * uno spostamento di un giorno che nessuna assunzione sulla posizione
-     * poteva più spiegare. Causa più probabile: la libreria alpha non
-     * documenta quale fuso orario usi internamente per affettare i bucket
-     * giornalieri di `aggregateGroupByPeriod` (nessuna documentazione
-     * raggiungibile in questo ambiente per verificarlo), quindi qualunque
-     * comportamento — inclusa una conversione in UTC invece del fuso del
-     * dispositivo — resta un'ipotesi non verificabile da qui.
-     *
-     * Invece di continuare a rincorrere il comportamento interno di
-     * un'API opaca, questa versione legge i record **grezzi**
-     * (`readRecords`, l'API Health Connect più fondamentale e documentata)
-     * e fa **lei stessa** ogni conversione di fuso orario con
-     * `ZoneId.systemDefault()` — lo stesso fuso del dispositivo, mai UTC —
-     * così la data di ogni lettura è sotto il nostro controllo diretto,
-     * non quello di un bucket interno non ispezionabile:
-     * - **BPM**: media aritmetica di **ogni lettura di frequenza cardiaca a
-     *   riposo** (`RestingHeartRateRecord`, § richiesta esplicita
-     *   dell'utente: "vorrei che per bpm si riporti la media dei battiti a
-     *   riposo") loggata quel giorno locale — un tipo di record Health
-     *   Connect distinto dal flusso continuo `HeartRateRecord` usato
-     *   in precedenza, e concettualmente lo stesso dato che Honor Health
-     *   mostra come sua cifra principale ("Frequenza cardiaca a riposo").
-     * - **Sonno**: ogni sessione è attribuita alla data locale del suo
-     *   **risveglio** (`endTime`), non dell'inizio — la stessa convenzione
-     *   che usa Honor Health stesso (una sessione 28→29 agosto compare lì
-     *   sotto "29 ago", non "28 ago"), quindi il confronto diretto fra le
-     *   due app torna ad avere senso. Più sessioni nello stesso giorno
-     *   (es. sonno notturno + un pisolino finito lo stesso giorno) sommano
-     *   le rispettive durate. La durata di ciascuna sessione è la somma
-     *   delle sole fasi di sonno vero (`sleepStagesDuration`, sotto), non
-     *   l'intervallo grezzo `startTime`-`endTime` — § bug reale segnalato
-     *   dall'utente da un confronto diretto con Honor Health: una sessione
-     *   con 5 risvegli notturni (fasi "Sveglio" visibili nell'ipnogramma)
-     *   mostrava 10h9m su JARVIS contro i 9h26m di "Riposo notturno" su
-     *   Honor Health — la differenza è esattamente il tempo passato sveglio
-     *   dentro la sessione, mai sottratto dal calcolo precedente.
-     *
-     * **Onestà, limite non risolto da questa correzione**: se Honor Health
-     * mostra dati per una notte che qui resta "—", non è (più) un bug di
-     * lettura — è che quella sessione non è mai stata sincronizzata da
-     * Honor Health a Health Connect (due archivi distinti, § nota generale
-     * di questo file), un gap che nessun codice lato JARVIS può colmare.
-     * Stessa cosa se manca la frequenza a riposo: dipende da cosa Honor
-     * Health ha scritto (o non scritto) in Health Connect quel giorno, non
-     * da come JARVIS lo legge.
+     * Storia della finestra temporale, per chi tocca questo file dopo un
+     * ennesimo report "manca ieri"/"manca il sonno della notte scorsa":
+     * `end` è `Instant.now()` (non la mezzanotte di oggi), così una sessione
+     * di sonno già conclusa stamattina o una lettura BPM di poco fa non
+     * restano invisibili fino a domani — [computeAverages] esclude comunque
+     * esplicitamente la data odierna dalla media (la giornata è ancora in
+     * corso), ma non dall'elenco/sparkline. Il bucketing usa `readRecords`
+     * grezzi con `ZoneId.systemDefault()` calcolato da JARVIS stesso, non
+     * `aggregateGroupByPeriod` (il bucket-per-giorno della libreria, il cui
+     * fuso interno non è mai stato documentabile in questo ambiente e ha
+     * già prodotto uno spostamento di un giorno osservato su dispositivo).
+     * Il sonno è attribuito al giorno del **risveglio** (`endTime`), la
+     * stessa convenzione di Honor Health. Ogni singolo caso di questa storia
+     * (mezzanotte attraversata, notte appena conclusa, fasi di veglia
+     * escluse dalla durata, cambio DST) è ora pinnato da un test JVM reale
+     * in `core/health/HealthDailySeriesTest.kt` — se un futuro cambiamento
+     * rompe uno di questi casi, fallisce lì, non a un dodicesimo screenshot
+     * dell'utente.
+     */
+    private val awakeStageTypes = setOf(
+        SleepSessionRecord.STAGE_TYPE_AWAKE,
+        SleepSessionRecord.STAGE_TYPE_AWAKE_IN_BED,
+        SleepSessionRecord.STAGE_TYPE_OUT_OF_BED,
+    )
+
+    /**
+     * La sola parte Android di questa funzione è il fetch stesso — ogni
+     * conversione di fuso/data/aggregazione è delegata a
+     * [HealthDailySeries] (`:core`, JVM puro), coperta da una suite di test
+     * eseguibile per davvero in questo repository (§ nessuna infrastruttura
+     * Robolectric/instrumented esiste qui, quindi qualunque logica rimasta
+     * dietro un tipo Android può solo essere riletta a occhio, mai provata
+     * da un test in esecuzione) — incluso il caso specifico segnalato
+     * dall'utente (sonno che attraversa la mezzanotte, notte appena
+     * trascorsa, un giorno senza dato). [DiagnosticSnapshot] è scritta qui,
+     * subito dopo il fetch grezzo e prima di qualunque bucketing, così un
+     * conteggio zero o un'eccezione reale sono visibili anche se il resto
+     * della funzione fallisse in modo inatteso.
      */
     private suspend fun fetchDailySeries(): List<DailyHealthReading> {
         val c = client ?: return emptyList()
         val zone = ZoneId.systemDefault()
         val today = LocalDate.now()
-        val end = Instant.now()
-        val start = today.atStartOfDay(zone).toInstant().minus(7, ChronoUnit.DAYS)
-        val range = TimeRangeFilter.between(start, end)
+        val range = HealthDailySeries.queryRange(today, zone, Instant.now())
+        val hcRange = TimeRangeFilter.between(range.start, range.endInclusive)
         return runCatching {
-            val restingHeartRateRecords = readAllRecords(c, RestingHeartRateRecord::class, range)
-            val sleepRecords = readAllRecords(c, SleepSessionRecord::class, range)
+            val restingHeartRateRecords = readAllRecords(c, RestingHeartRateRecord::class, hcRange)
+            val sleepRecords = readAllRecords(c, SleepSessionRecord::class, hcRange)
 
-            val bpmByDate = mutableMapOf<LocalDate, MutableList<Long>>()
-            restingHeartRateRecords.forEach { record ->
-                val date = record.time.atZone(zone).toLocalDate()
-                bpmByDate.getOrPut(date) { mutableListOf() }.add(record.beatsPerMinute)
-            }
-            val sleepByDate = mutableMapOf<LocalDate, MutableList<Duration>>()
-            sleepRecords.forEach { record ->
-                val date = record.endTime.atZone(zone).toLocalDate()
-                sleepByDate.getOrPut(date) { mutableListOf() }.add(record.sleepStagesDuration())
-            }
+            _diagnostic.value = DiagnosticSnapshot(
+                queriedRangeStart = range.start,
+                queriedRangeEnd = range.endInclusive,
+                restingHeartRateRecordCount = restingHeartRateRecords.size,
+                sleepSessionRecordCount = sleepRecords.size,
+                lastHeartRateSampleAt = restingHeartRateRecords.maxOfOrNull { it.time },
+                lastSleepSessionEndAt = sleepRecords.maxOfOrNull { it.endTime },
+                refreshAttemptedAtMs = System.currentTimeMillis(),
+                refreshSucceededAtMs = _diagnostic.value?.refreshSucceededAtMs,
+                lastErrorType = null,
+            )
+            Log.d(
+                TAG,
+                "fetch_daily_series hr_records=${restingHeartRateRecords.size} sleep_records=${sleepRecords.size}",
+            )
 
-            (7 downTo 0).map { daysAgo ->
-                val date = today.minusDays(daysAgo.toLong())
-                DailyHealthReading(
-                    date = date,
-                    heartRateBpm = bpmByDate[date]?.let { it.average().roundToLong() },
-                    sleepHours = sleepByDate[date]?.let { sessions -> sessions.sumOf { it.toMinutes() } / 60.0 },
+            val heartRateSamples = restingHeartRateRecords.map { HeartRateSample(it.time, it.beatsPerMinute) }
+            val sleepSessions = sleepRecords.map { record ->
+                SleepSessionSpan(
+                    startTime = record.startTime,
+                    endTime = record.endTime,
+                    stages = record.stages.map { stage ->
+                        SleepStageSpan(awake = stage.stage in awakeStageTypes, start = stage.startTime, end = stage.endTime)
+                    },
                 )
             }
-        }.onFailure { e -> Log.w(TAG, "fetch_daily_series_failed ${e.javaClass.simpleName}") }.getOrDefault(emptyList())
+            HealthDailySeries.dailySeries(heartRateSamples, sleepSessions, zone, today)
+                .map { DailyHealthReading(it.date, it.heartRateBpm, it.sleepHours) }
+        }.onFailure { e ->
+            Log.w(TAG, "fetch_daily_series_failed ${e.javaClass.simpleName}")
+            _diagnostic.value = _diagnostic.value?.copy(
+                refreshAttemptedAtMs = System.currentTimeMillis(),
+                lastErrorType = e.javaClass.simpleName,
+            ) ?: DiagnosticSnapshot(
+                queriedRangeStart = range.start,
+                queriedRangeEnd = range.endInclusive,
+                restingHeartRateRecordCount = 0,
+                sleepSessionRecordCount = 0,
+                lastHeartRateSampleAt = null,
+                lastSleepSessionEndAt = null,
+                refreshAttemptedAtMs = System.currentTimeMillis(),
+                refreshSucceededAtMs = null,
+                lastErrorType = e.javaClass.simpleName,
+            )
+        }.getOrDefault(emptyList())
     }
 
-    /**
-     * Durata reale del sonno, escludendo le fasi di veglia dentro la
-     * sessione (§ bug reale: `Duration.between(startTime, endTime)` conta
-     * l'intera sessione, addormentarsi-risveglio finale, comprese le fasi
-     * "Sveglio" nel mezzo — Honor Health le esclude dal suo "Riposo
-     * notturno"). Senza fasi dettagliate (`stages` vuoto — non tutte le
-     * fonti le scrivono) ricade sull'intervallo grezzo, l'unico dato
-     * disponibile in quel caso.
-     */
-    private fun SleepSessionRecord.sleepStagesDuration(): Duration {
-        if (stages.isEmpty()) return Duration.between(startTime, endTime)
-        val awake = setOf(
-            SleepSessionRecord.STAGE_TYPE_AWAKE,
-            SleepSessionRecord.STAGE_TYPE_AWAKE_IN_BED,
-            SleepSessionRecord.STAGE_TYPE_OUT_OF_BED,
-        )
-        return stages
-            .filterNot { it.stage in awake }
-            .fold(Duration.ZERO) { acc, stage -> acc + Duration.between(stage.startTime, stage.endTime) }
-    }
-
-    /**
-     * Media dei soli giorni con un dato reale, non della finestra intera
-     * (§ bug reale trovato: il calcolo precedente divideva il sonno totale
-     * per 7 fisso — con solo 2 notti effettivamente sincronizzate su Health
-     * Connect, il risultato era ~2h invece della vera media per notte
-     * dormita, coerente con l'1h55m segnalato dall'utente come sbagliato).
-     * Un giorno assente ora viene semplicemente escluso dalla media invece
-     * di contare come uno zero implicito. Esclude anche esplicitamente
-     * [today] (§ [fetchDailySeries]: oggi ora compare nell'elenco a tocco
-     * ma non nella media — resta genuinamente in corso per il BPM, quindi
-     * non è uno dei "7 giorni prima" richiesti dall'utente).
-     */
     private fun computeAverages(daily: List<DailyHealthReading>, today: LocalDate): WeeklyHealthAverages {
-        val pastDays = daily.filter { it.date != today }
-        val bpmValues = pastDays.mapNotNull { it.heartRateBpm }
-        val sleepValues = pastDays.mapNotNull { it.sleepHours }
-        return WeeklyHealthAverages(
-            avgHeartRateBpm = if (bpmValues.isNotEmpty()) bpmValues.average().roundToLong() else null,
-            avgSleepPerNight = if (sleepValues.isNotEmpty()) Duration.ofMinutes((sleepValues.average() * 60.0).roundToLong()) else null,
-        )
+        val coreDaily = daily.map { com.simone.jarvismobile.core.health.DailyHealthReading(it.date, it.heartRateBpm, it.sleepHours) }
+        val averages = HealthDailySeries.computeAverages(coreDaily, today)
+        return WeeklyHealthAverages(averages.avgHeartRateBpm, averages.avgSleepPerNight)
     }
 
     /**
@@ -367,6 +364,7 @@ class HealthConnectManager @Inject constructor(
         }
         val nowMs = System.currentTimeMillis()
         val snapshot = HealthSnapshot(daily, computeAverages(daily, LocalDate.now()), updatedAtMs = nowMs)
+        _diagnostic.value = _diagnostic.value?.copy(refreshSucceededAtMs = nowMs)
         runCatching { settings.setHealthDailyCache(snapshot.toCacheJson(nowMs)) }
             .onFailure { e -> Log.w(TAG, "health_cache_write_failed ${e.javaClass.simpleName}") }
         return snapshot

@@ -56,6 +56,7 @@ fun DiagnosticsScreen(
     val sttPartial by viewModel.sttPartial.collectAsStateWithLifecycle()
     val drivingNavigationMode by viewModel.drivingNavigationMode.collectAsStateWithLifecycle()
     val weatherStatus by viewModel.weatherStatus.collectAsStateWithLifecycle()
+    val healthStatus by viewModel.healthStatus.collectAsStateWithLifecycle()
     val perms = viewModel.permissions()
     val context = LocalContext.current
 
@@ -295,6 +296,23 @@ fun DiagnosticsScreen(
                 }
                 if (weatherStatus.isNotEmpty()) {
                     Text(weatherStatus, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+
+        // § "BPM non si aggiorna, manca ieri, manca il sonno della notte
+        // appena trascorsa" — stesso principio della card Meteo sopra:
+        // forza un refresh reale e mostra conteggi/range/tentato-vs-riuscito
+        // grezzi invece di indovinare a quale stadio della pipeline si è
+        // fermato (mai un valore bpm/sonno qui, solo conteggi e istanti).
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Salute (Health Connect)", style = MaterialTheme.typography.titleMedium)
+                Button(onClick = viewModel::refreshHealthDiagnostics, modifier = Modifier.fillMaxWidth()) {
+                    Text("Controlla adesso")
+                }
+                if (healthStatus.isNotEmpty()) {
+                    Text(healthStatus, style = MaterialTheme.typography.bodySmall)
                 }
             }
         }

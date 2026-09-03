@@ -20,6 +20,7 @@ import com.simone.jarvismobile.core.navigation.GpxReplayRoute
 import com.simone.jarvismobile.core.tts.SupertonicQuality
 import com.simone.jarvismobile.data.SettingsRepository
 import com.simone.jarvismobile.engine.ConversationalJarvisEngine
+import com.simone.jarvismobile.health.HealthConnectManager
 import com.simone.jarvismobile.navigation.debug.DebugGpsSimulator
 import com.simone.jarvismobile.tts.AudioFocusGate
 import com.simone.jarvismobile.tts.PcmPlayer
@@ -54,6 +55,7 @@ class DiagnosticsViewModel @Inject constructor(
     private val conversationalEngine: ConversationalJarvisEngine,
     private val weather: WeatherManager,
     private val contextEngine: ContextEngine,
+    private val health: HealthConnectManager,
 ) : AndroidViewModel(application) {
 
     /**
@@ -86,6 +88,46 @@ class DiagnosticsViewModel @Inject constructor(
                 append(" coord=")
                 append(if (point != null) "%.2f,%.2f".format(point.first, point.second) else "nessuna")
                 append("\n").append(contextEngine.describe())
+            }
+        }
+    }
+
+    /**
+     * "Non ho i dati" vs "ho i dati ma qualcosa lì in mezzo li scarta" vs
+     * "sono a posto ma sono vecchi" — le cinque categorie richieste
+     * esplicitamente dall'utente per il bug "BPM/sonno non si aggiornano,
+     * manca ieri, manca il sonno della notte appena trascorsa": forza un
+     * refresh reale e mostra i conteggi grezzi restituiti da Health Connect
+     * (mai i valori bpm/sonno stessi — solo quanti record e quando), il
+     * range interrogato e la distinzione tentato/riuscito, invece di
+     * indovinare di nuovo su quale stadio della pipeline si è fermato.
+     */
+    private val _healthStatus = MutableStateFlow("")
+    val healthStatus: StateFlow<String> = _healthStatus.asStateFlow()
+
+    fun refreshHealthDiagnostics() {
+        viewModelScope.launch {
+            if (!health.isAvailable) {
+                _healthStatus.value = "Health Connect non disponibile su questo dispositivo."
+                return@launch
+            }
+            health.refresh()
+            val d = health.diagnostic.value
+            if (d == null) {
+                _healthStatus.value = "Nessun tentativo di lettura ancora registrato."
+                return@launch
+            }
+            val fmt = java.time.format.DateTimeFormatter.ofPattern("d MMM HH:mm").withZone(java.time.ZoneId.systemDefault())
+            _healthStatus.value = buildString {
+                append("range=").append(fmt.format(d.queriedRangeStart)).append(" .. ").append(fmt.format(d.queriedRangeEnd))
+                append("\nfrequenza a riposo: ").append(d.restingHeartRateRecordCount).append(" record")
+                d.lastHeartRateSampleAt?.let { append(" (ultimo ").append(fmt.format(it)).append(")") }
+                append("\nsessioni sonno: ").append(d.sleepSessionRecordCount).append(" record")
+                d.lastSleepSessionEndAt?.let { append(" (ultima svegliata ").append(fmt.format(it)).append(")") }
+                append("\ntentato: ").append(fmt.format(java.time.Instant.ofEpochMilli(d.refreshAttemptedAtMs)))
+                append(" · riuscito: ")
+                append(d.refreshSucceededAtMs?.let { fmt.format(java.time.Instant.ofEpochMilli(it)) } ?: "mai")
+                d.lastErrorType?.let { append("\nultimo errore: ").append(it) }
             }
         }
     }
