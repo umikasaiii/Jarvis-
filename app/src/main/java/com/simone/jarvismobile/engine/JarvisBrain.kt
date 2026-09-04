@@ -19,6 +19,7 @@ import com.simone.jarvismobile.core.protocol.AssistantResponse
 import com.simone.jarvismobile.core.protocol.ParseResult
 import com.simone.jarvismobile.core.protocol.ResponseParser
 import com.simone.jarvismobile.core.routing.ComplexityHeuristic
+import com.simone.jarvismobile.core.tools.RelevantToolSelector
 import com.simone.jarvismobile.data.SettingsRepository
 import com.simone.jarvismobile.llm.DEFAULT_GENERATION_TIMEOUT_SECONDS
 import com.simone.jarvismobile.llm.LlmRouter
@@ -61,8 +62,9 @@ import javax.inject.Singleton
  * `RequestOrchestrator` now forwards it to the resolved provider instead of
  * its own fixed default, and [RemoteAiEngine] threads
  * [AiRequest.systemPrompt] through to it — so [tryRemoteReply] can hand
- * Core the EXACT SAME [systemPrompt] (persona + protocol block + tool
- * catalog) the local model gets, and [parser] parses whichever one answered
+ * Core the EXACT SAME [systemPromptFor] result (persona + protocol block +
+ * whichever tools that turn selected — see its own doc comment, § FASE
+ * 2A.2) the local model gets, and [parser] parses whichever one answered
  * identically. [reply] tries Core first via [tryRemoteReply] on every call —
  * i.e. every round of a multi-round tool loop independently, not just the
  * first — reusing the exact same [AiRoutingHeuristic]/[AiRoutingContextProvider]/
@@ -123,10 +125,11 @@ class JarvisBrain @Inject constructor(
         // raggiunto davvero per questo turno, prima di qualunque altra cosa.
         Log.i(TAG, "BRAIN_REPLY_ENTER slot=$slot")
         val prompt = if (contextBlock.isBlank()) userText else "$contextBlock\n\n$userText"
-        val remote = tryRemoteReply(prompt, slot, timeoutSeconds)
+        val turnSystemPrompt = systemPromptFor(userText)
+        val remote = tryRemoteReply(prompt, turnSystemPrompt, slot, timeoutSeconds)
         if (remote == null) Log.i(TAG, "BRAIN_FALLBACK_LOCAL")
         val raw = remote
-            ?: router.chat(prompt, systemPrompt, slot, timeoutSeconds)
+            ?: router.chat(prompt, turnSystemPrompt, slot, timeoutSeconds)
             ?: return BrainReply.Unavailable
         return when (val parsed = parser.parse(raw)) {
             is ParseResult.Valid -> BrainReply.Ready(parsed.response, parsedCleanly = true)
@@ -151,7 +154,12 @@ class JarvisBrain @Inject constructor(
      * — never [AssistantReplyCleaner]-style cleanup, which is specific to
      * Classico's plain human-facing text, not this brain's JSON contract.
      */
-    private suspend fun tryRemoteReply(prompt: String, slot: ModelSlot, timeoutSeconds: Long): String? {
+    private suspend fun tryRemoteReply(
+        prompt: String,
+        systemPromptText: String,
+        slot: ModelSlot,
+        timeoutSeconds: Long,
+    ): String? {
         Log.i(TAG, "BRAIN_TRY_REMOTE_ENTER")
         val requestType = if (slot == ModelSlot.ADVANCED) AiRequestType.COMPLEX else AiRequestType.CHAT
         val prefs = routingContext.preferencesFor(requestType)
@@ -197,7 +205,7 @@ class JarvisBrain @Inject constructor(
         val request = AiRequest(
             requestId = requestId,
             text = prompt,
-            systemPrompt = systemPrompt,
+            systemPrompt = systemPromptText,
             requestType = requestType,
             timeoutSeconds = timeoutSeconds,
             preferredModel = if (decision.target == AiExecutionTarget.REMOTE_BRAIN) "brain" else null,
@@ -246,26 +254,55 @@ class JarvisBrain @Inject constructor(
 
     /**
      * Built once per process, like `ProModeCoordinator.systemPrompt`: the same
-     * persona asset plus a protocol block and the live tool catalog, so a tool
-     * registered in `ToolsModule` is automatically available here too — with
-     * no separate prompt to keep in sync. Distinct instructions from Pro
-     * mode's block: this brain is expected to hold multi-turn state and ask
-     * clarifying questions ([AssistantResponse.followUpExpected]), which Pro
-     * mode's single-shot protocol never uses.
+     * persona asset plus a protocol block, cached — only the tool catalog
+     * appended after it varies per turn (see [systemPromptFor]). Distinct
+     * instructions from Pro mode's block: this brain is expected to hold
+     * multi-turn state and ask clarifying questions
+     * ([AssistantResponse.followUpExpected]), which Pro mode's single-shot
+     * protocol never uses.
      */
-    private val systemPrompt: String by lazy {
+    private val personaAndProtocol: String by lazy {
         val persona = runCatching {
             context.assets.open("prompts/jarvis_system_it.md").bufferedReader().use { it.readText() }
         }.getOrDefault("Sei JARVIS, un assistente personale offline. Rispondi in italiano, breve e naturale.")
-        val catalog = tools.available().joinToString("\n") { (name, description) -> "- $name: $description" }
-        Log.i(TAG, "conversational_prompt_built tools=${tools.available().size}")
         buildString {
             append(persona.trim())
             append("\n\n")
             append(PROTOCOL_BLOCK)
-            append("\n\nStrumenti disponibili (usa ESATTAMENTE questi nomi, mai altri):\n")
-            append(catalog)
         }
+    }
+
+    /**
+     * § FASE 2A.2 — root cause of the ~72s/~26s FAST latencies measured in
+     * FASE 2A.1: this catalog used to embed all ~53 registered tools
+     * unconditionally on every turn, pushing the system prompt past
+     * `jarvis-protocol`'s 8000-char wire limit and forcing Ollama to
+     * re-evaluate ~2000+ prompt tokens even for a plain "Ciao". Now
+     * [RelevantToolSelector] decides — deterministically, no second LLM —
+     * which of [ToolRunner.available]'s live tools are plausibly relevant to
+     * [userText] before this prompt is built, so a simple conversational turn
+     * gets none of them and a "torcia"/"agenda"/"memoria"-shaped turn gets
+     * only its own family. [ToolRegistry] itself, tool execution and
+     * argument validation are entirely untouched — this only decides what
+     * the model is TOLD about, never what it may actually call.
+     */
+    private fun systemPromptFor(userText: String): String {
+        val available = tools.available()
+        val selected = RelevantToolSelector.select(available, userText)
+        val built = if (selected.isEmpty()) {
+            personaAndProtocol + "\n\nNessuno strumento è necessario per questa richiesta: lascia \"tool_calls\" vuoto."
+        } else {
+            val catalog = selected.joinToString("\n") { (name, description) -> "- $name: $description" }
+            personaAndProtocol + "\n\nStrumenti disponibili (usa ESATTAMENTE questi nomi, mai altri):\n" + catalog
+        }
+        // § diagnostica non sensibile richiesta esplicitamente: solo dimensioni/conteggi,
+        // mai il contenuto del prompt/dei nomi/descrizioni degli strumenti selezionati.
+        Log.i(
+            TAG,
+            "conversational_prompt_built systemPromptChars=${built.length} " +
+                "availableToolCount=${available.size} selectedToolCount=${selected.size}",
+        )
+        return built
     }
 
     private companion object {
