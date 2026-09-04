@@ -317,6 +317,20 @@ class SessionCoordinator @Inject constructor(
     private val _diagnostic = MutableStateFlow("")
     val diagnostic: StateFlow<String> = _diagnostic.asStateFlow()
 
+    /**
+     * "Si collega con Core ma non sembra usare il modello AI" — segnalazione
+     * dell'utente dopo un test reale ("Rispondi solo: TEST CORE" due volte,
+     * risposte non pertinenti entrambe le volte). `_diagnostic` sopra è
+     * transiente e condiviso da decine di stati diversi (STT, tool, ecc.),
+     * quindi non basta a rispondere con certezza "quella risposta specifica
+     * è arrivata da Core o dal locale?" — questo campo, aggiornato **solo**
+     * da [tryRemoteChat] a ogni suo esito, resta leggibile finché non arriva
+     * il turno successivo, ed è ciò che [chatReply] userà davvero come
+     * risposta finale: nessun'altra ipotesi in Diagnostica dopo questa.
+     */
+    private val _lastChatRoute = MutableStateFlow<String?>(null)
+    val lastChatRoute: StateFlow<String?> = _lastChatRoute.asStateFlow()
+
     /** True while a typed (written-chat) message is being answered. */
     private val _sending = MutableStateFlow(false)
     val sending: StateFlow<Boolean> = _sending.asStateFlow()
@@ -597,12 +611,21 @@ class SessionCoordinator @Inject constructor(
      * LLM-first orchestrator. Neither knows about the other directly — the
      * router is the only place that chooses.
      */
-    private suspend fun generateAnswer(transcript: String): String =
-        engineRouter.route(
+    private suspend fun generateAnswer(transcript: String): String {
+        // Marker azzerato a ogni turno: se resta questo valore alla fine (mai
+        // sovrascritto da tryRemoteChat, raggiungibile solo dal ramo
+        // Classico) significa che questo turno è passato dal Motore
+        // Conversazionale, dove Core non è mai tentato per costruzione
+        // (§ JarvisBrain — nessun canale per il system prompt/catalogo
+        // strumenti nel protocollo) — mai una lettura "CORE FAST" residua di
+        // un turno precedente spacciata per quella di questo.
+        _lastChatRoute.value = "LOCAL (motore conversazionale, Core non applicabile)"
+        return engineRouter.route(
             transcript,
             classic = com.simone.jarvismobile.engine.ClassicJarvisEngine { classicAnswer(it) },
             conversational = conversationalEngine,
         )
+    }
 
     /**
      * Classic mode's entire turn-dispatch behaviour (deterministic command
@@ -1104,6 +1127,7 @@ class SessionCoordinator @Inject constructor(
             // logs message content, only the routing reason (§ "non loggare
             // dati personali").
             Log.i(TAG, "CHAT -> LOCAL (reason=${decision.reason})")
+            _lastChatRoute.value = "LOCAL (${decision.reason})"
             return null
         }
 
@@ -1128,15 +1152,19 @@ class SessionCoordinator @Inject constructor(
             activeRemoteRequestId = null
         }
         if (result == null || !result.success) {
-            Log.i(TAG, "CORE FAILED -> LOCAL FALLBACK (reason=${result?.failureReason ?: "cancelled_or_null"})")
+            val reason = result?.failureReason ?: "cancelled_or_null"
+            Log.i(TAG, "CORE FAILED -> LOCAL FALLBACK (reason=$reason)")
+            _lastChatRoute.value = "LOCAL (fallback dopo Core: $reason)"
             return null
         }
         val cleaned = result.text?.let(AssistantReplyCleaner::clean)?.ifBlank { null }
         if (cleaned == null) {
             Log.i(TAG, "CORE FAILED -> LOCAL FALLBACK (reason=empty_reply)")
+            _lastChatRoute.value = "LOCAL (fallback dopo Core: empty_reply)"
             return null
         }
         Log.i(TAG, "CHAT -> $targetLabel")
+        _lastChatRoute.value = targetLabel
         return cleaned
     }
 

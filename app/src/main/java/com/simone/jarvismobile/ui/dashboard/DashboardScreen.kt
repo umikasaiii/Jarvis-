@@ -2320,6 +2320,16 @@ private fun AresBpmSonnoCard(
  * (nessuna lacuna in mezzo) è disegnato come una curva a sé: un giorno senza
  * dato interrompe il bagliore invece di farlo attraversare da una linea che
  * inventerebbe un valore intermedio.
+ *
+ * **Rifinita su richiesta esplicita ("prendi spunto dallo Shadow Protocol",
+ * riferimento visivo fornito solo per lo stile — un pannello grande con
+ * assi/etichette, non da copiare 1:1 dato che qui deve restare "sempre
+ * piccolo")**: presa la parte trasferibile a un formato mini — linea nitida
+ * e sottile invece di un bagliore spesso a 4 passate, marker pieni a un solo
+ * cerchio (non più doppio-cerchio sfocato), e due sottili linee guida
+ * orizzontali (min/max) che ancorano visivamente la curva come le griglie
+ * del riferimento, senza aggiungere etichette numeriche che non ci
+ * starebbero in uno spazio così piccolo.
  */
 @Composable
 private fun Sparkline(values: List<Float?>, color: Color, modifier: Modifier = Modifier) {
@@ -2330,7 +2340,7 @@ private fun Sparkline(values: List<Float?>, color: Color, modifier: Modifier = M
             .clip(RoundedCornerShape(8.dp))
             .background(color.copy(alpha = 0.08f))
             .border(1.dp, color.copy(alpha = 0.28f), RoundedCornerShape(8.dp))
-            .padding(10.dp),
+            .padding(horizontal = 10.dp, vertical = 8.dp),
     ) {
         val real = last7.filterNotNull()
         val minV = real.min()
@@ -2340,6 +2350,11 @@ private fun Sparkline(values: List<Float?>, color: Color, modifier: Modifier = M
         val stepX = if (slotCount > 1) size.width / (slotCount - 1) else 0f
         fun yFor(value: Float): Float =
             (size.height - ((value - minV) / range) * size.height).coerceIn(0f, size.height)
+
+        // Due guide orizzontali sottili (massimo/minimo), come le griglie
+        // del riferimento ma senza etichette — non ci starebbero qui.
+        drawLine(color.copy(alpha = 0.15f), Offset(0f, 0f), Offset(size.width, 0f), 1.dp.toPx())
+        drawLine(color.copy(alpha = 0.15f), Offset(0f, size.height), Offset(size.width, size.height), 1.dp.toPx())
 
         // Segmenta per lacune: ogni tratto continuo (nessun giorno mancante
         // al suo interno) diventa una curva propria, alla sua posizione
@@ -2365,23 +2380,17 @@ private fun Sparkline(values: List<Float?>, color: Color, modifier: Modifier = M
             return path
         }
 
-        // Alone largo e tenue -> tratto centrale pieno, quattro passate.
-        val glowPasses = listOf(10.dp.toPx() to 0.12f, 6.dp.toPx() to 0.22f, 3.dp.toPx() to 0.55f, 1.6.dp.toPx() to 1f)
+        // Un alone soffuso dietro un tratto centrale nitido — lo stesso
+        // linguaggio "neon" di prima ma più vicino alla linea pulita e
+        // sottile del riferimento, non un bagliore spesso.
         runs.filter { it.size >= 2 }.forEach { run ->
             val path = smoothPath(run)
-            glowPasses.forEach { (width, alpha) ->
-                drawPath(
-                    path = path,
-                    color = color.copy(alpha = alpha),
-                    style = Stroke(width = width, cap = StrokeCap.Round, join = StrokeJoin.Round),
-                )
-            }
+            drawPath(path, color.copy(alpha = 0.20f), style = Stroke(width = 5.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+            drawPath(path, color, style = Stroke(width = 1.4.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
         }
         last7.forEachIndexed { i, v ->
             if (v == null) return@forEachIndexed
-            val p = Offset(i * stepX, yFor(v))
-            drawCircle(color = color.copy(alpha = 0.35f), radius = 6.dp.toPx(), center = p)
-            drawCircle(color = color, radius = 3.dp.toPx(), center = p)
+            drawCircle(color = color, radius = 2.6.dp.toPx(), center = Offset(i * stepX, yFor(v)))
         }
     }
 }

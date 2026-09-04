@@ -18,10 +18,18 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Posts a proactive suggestion as one discreet "Suggerimenti" notification with a
- * "Non avvisarmi più di questo" action, so the user can keep what they like and
- * mute a category straight from the message (spec). One id per kind, so muting or
- * a repeat replaces rather than stacks.
+ * Posts a proactive suggestion as one discreet "Suggerimenti" notification. One
+ * id per kind, so muting or a repeat replaces rather than stacks.
+ *
+ * **"Non avvisarmi più di questo" rimossa dal briefing, richiesto esplicitamente
+ * dall'utente**: un digest (mattutino/serale) è contenuto che l'utente ha
+ * esplicitamente scelto di ricevere (§ commento su [isDigest] qui sotto, già
+ * per questo esente dalle ore silenziose) — un tap distratto su quel pulsante
+ * lo avrebbe silenziato per sempre senza passare da Impostazioni. Il pulsante
+ * resta solo sui veri suggerimenti facoltativi (es. `BATTERY_BEFORE_ALARM`),
+ * dove è ancora la scorciatoia giusta; disattivare il briefing resta possibile
+ * da Impostazioni › Proattività › «Tipi di intervento», il controllo reale e
+ * completo (non solo un mute silenzioso), come richiesto esplicitamente.
  */
 @Singleton
 class ProactiveNotifier @Inject constructor(
@@ -57,7 +65,7 @@ class ProactiveNotifier @Inject constructor(
         // kinds stay on.
         val isDigest = suggestion.kind == ProactiveKind.MORNING_DIGEST ||
             suggestion.kind == ProactiveKind.EVENING_DIGEST
-        val notification = JarvisNotifications.styled(
+        val builder = JarvisNotifications.styled(
             context = context,
             channelId = if (isDigest) JarvisNotifications.CHANNEL_REMINDERS else JarvisNotifications.CHANNEL_SUGGESTIONS,
             title = "JARVIS",
@@ -65,11 +73,11 @@ class ProactiveNotifier @Inject constructor(
             contentIntent = open,
             expandableText = suggestion.message,
         )
-            .addAction(0, "Non avvisarmi più di questo", mute)
             .setPriority(if (isDigest) NotificationCompat.PRIORITY_DEFAULT else NotificationCompat.PRIORITY_LOW)
             .setCategory(NotificationCompat.CATEGORY_RECOMMENDATION)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
-            .build()
+        if (!isDigest) builder.addAction(0, "Non avvisarmi più di questo", mute)
+        val notification = builder.build()
         runCatching {
             NotificationManagerCompat.from(context).notify(notificationId(suggestion.kind), notification)
         }

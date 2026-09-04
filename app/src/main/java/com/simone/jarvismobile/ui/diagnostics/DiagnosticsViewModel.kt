@@ -230,6 +230,16 @@ class DiagnosticsViewModel @Inject constructor(
         _gpxStatus.value = ""
     }
 
+    /**
+     * "Si collega con Core ma non usa il modello AI" — chi ha risposto
+     * davvero all'ultimo messaggio di chat: `CORE FAST`/`CORE BRAIN`, o
+     * `LOCAL (motivo)` — mai un'ipotesi, il valore reale scritto da
+     * `SessionCoordinator.tryRemoteChat()` allo stesso istante in cui decide
+     * cosa restituire. `null` prima del primo messaggio di questa sessione
+     * dell'app.
+     */
+    val lastChatRoute: StateFlow<String?> = coordinator.lastChatRoute
+
     val routeState: StateFlow<AudioRouteState> = coordinator.routeState
     val ttsState: StateFlow<TtsState> = coordinator.ttsState
     val selectedVoiceName: StateFlow<String?> = coordinator.selectedVoiceName

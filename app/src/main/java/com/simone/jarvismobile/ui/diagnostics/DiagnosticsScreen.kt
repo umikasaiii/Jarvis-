@@ -58,6 +58,7 @@ fun DiagnosticsScreen(
     val weatherStatus by viewModel.weatherStatus.collectAsStateWithLifecycle()
     val healthStatus by viewModel.healthStatus.collectAsStateWithLifecycle()
     val proactiveStatus by viewModel.proactiveStatus.collectAsStateWithLifecycle()
+    val lastChatRoute by viewModel.lastChatRoute.collectAsStateWithLifecycle()
     val perms = viewModel.permissions()
     val context = LocalContext.current
 
@@ -280,6 +281,20 @@ fun DiagnosticsScreen(
                         Text(gpxStatus, style = MaterialTheme.typography.bodySmall)
                     }
                 }
+            }
+        }
+
+        // § "si collega con Core ma non usa il modello AI" — nessun modo
+        // prima d'ora di sapere con certezza chi ha risposto all'ultimo
+        // messaggio (Core o il modello locale) senza Logcat. Sempre visibile,
+        // nessun pulsante: si aggiorna da sola a ogni messaggio di chat.
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Ultima risposta chat", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    lastChatRoute ?: "Nessun messaggio inviato in questa sessione dell'app.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
             }
         }
 
