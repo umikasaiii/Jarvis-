@@ -1,6 +1,7 @@
 package com.simone.jarvismobile.engine
 
 import android.util.Log
+import com.simone.jarvismobile.ai.RemoteChatState
 import com.simone.jarvismobile.core.engine.BrainReply
 import com.simone.jarvismobile.core.engine.EngineTurnDiagnostics
 import com.simone.jarvismobile.core.engine.JarvisEngineMode
@@ -50,6 +51,7 @@ class ConversationalJarvisEngine @Inject constructor(
     private val brain: JarvisBrain,
     private val toolRouter: ToolRouter,
     private val conversationManager: ConversationManager,
+    private val remoteChatState: RemoteChatState,
 ) : JarvisEngine {
 
     /** A tool call this engine itself is waiting on the user to confirm/deny. */
@@ -95,6 +97,17 @@ class ConversationalJarvisEngine @Inject constructor(
     /** If this engine itself is waiting on a yes/no, resolve it before anything else. */
     private suspend fun handlePendingConfirmation(transcript: String, turn: TurnState): String? {
         val call = pendingConfirmation ?: return null
+        // § logging temporaneo obbligatorio, audit "Conversational mode non
+        // tenta più Core" — se questo compare per un messaggio che non è una
+        // risposta sì/no reale (es. "Ciao"), un turno precedente ha lasciato
+        // una conferma sospesa che intercetta ogni messaggio successivo
+        // PRIMA che raggiunga fast-path/structured-path/runBrainLoop.
+        Log.i(TAG, "ENGINE_BRANCH=pending_confirmation call=${call.name}")
+        // Visibile anche in Diagnostica › "Ultima risposta chat" (§ stesso
+        // pattern già in uso in JarvisBrain), non solo in Logcat — l'utente
+        // può verificare senza adb se un turno è stato intercettato qui
+        // invece di raggiungere mai runBrainLoop/tryRemoteReply.
+        remoteChatState.setLastRoute("LOCAL (bypass: conferma sospesa)")
         pendingConfirmation = null
         if (IntentAliases.isCancellationOfPendingAction(transcript) || IntentAliases.isNegative(transcript)) {
             return "Va bene, annullato."
@@ -109,6 +122,13 @@ class ConversationalJarvisEngine @Inject constructor(
     /** If JARVIS just asked "which one did you mean?", this message answers it. */
     private suspend fun handlePendingDisambiguation(transcript: String, turn: TurnState): String? {
         val pending = pendingDisambiguation ?: return null
+        // § logging temporaneo obbligatorio, audit "Conversational mode non
+        // tenta più Core" — stesso principio di ENGINE_BRANCH=pending_confirmation
+        // sopra: se compare per un messaggio come "Ciao" (non una risposta
+        // reale alla disambiguazione), questo turno non raggiunge mai
+        // fast-path/structured-path/runBrainLoop/JarvisBrain.tryRemoteReply.
+        Log.i(TAG, "ENGINE_BRANCH=pending_disambiguation candidates=${pending.candidateIds.size}")
+        remoteChatState.setLastRoute("LOCAL (bypass: disambiguazione sospesa)")
         pendingDisambiguation = null
         if (IntentAliases.isCancellationOfPendingAction(transcript) || IntentAliases.isNegative(transcript)) {
             return "Va bene, lascio stare."
@@ -118,6 +138,11 @@ class ConversationalJarvisEngine @Inject constructor(
         ) {
             is AgendaRouting.Call -> executeAndTrack(resolved.call, turn, confirmed = false)
             is AgendaRouting.Disambiguate -> {
+                // Il caso "trappola": non riconosciuto come risposta valida,
+                // quindi si ri-arma per il turno SUCCESSIVO — se il prossimo
+                // messaggio dell'utente è una domanda qualunque non correlata,
+                // verrà intercettato di nuovo qui, non da runBrainLoop.
+                Log.i(TAG, "ENGINE_DISAMBIGUATION_STUCK candidates=${resolved.candidateIds.size}")
                 pendingDisambiguation = PendingDisambiguation(resolved.candidateIds, resolved.pending)
                 resolved.question
             }
@@ -127,6 +152,8 @@ class ConversationalJarvisEngine @Inject constructor(
 
     private suspend fun runFastPath(transcript: String, turn: TurnState): String? {
         val match = fastPath.tryFastPath(transcript, conversationManager.snapshotText()) ?: return null
+        Log.i(TAG, "ENGINE_BRANCH=fast_path tool=${match.call.name}")
+        remoteChatState.setLastRoute("LOCAL (bypass: comando deterministico)")
         turn.fastPathHit = true
         return executeAndTrack(match.call, turn, confirmed = false)
     }
@@ -171,8 +198,14 @@ class ConversationalJarvisEngine @Inject constructor(
         }.getOrNull() ?: return null
 
         return when (routing) {
-            is AgendaRouting.Call -> executeAndTrack(routing.call, turn, confirmed = false)
+            is AgendaRouting.Call -> {
+                Log.i(TAG, "ENGINE_BRANCH=structured_path tool=${routing.call.name}")
+                remoteChatState.setLastRoute("LOCAL (bypass: comando agenda)")
+                executeAndTrack(routing.call, turn, confirmed = false)
+            }
             is AgendaRouting.Disambiguate -> {
+                Log.i(TAG, "ENGINE_BRANCH=structured_path (disambiguate, candidates=${routing.candidateIds.size})")
+                remoteChatState.setLastRoute("LOCAL (bypass: disambiguazione agenda)")
                 pendingDisambiguation = PendingDisambiguation(routing.candidateIds, routing.pending)
                 routing.question
             }
@@ -213,6 +246,11 @@ class ConversationalJarvisEngine @Inject constructor(
      * 90s, which is what used to make a bad multi-round turn take minutes.
      */
     private suspend fun runBrainLoop(transcript: String, turn: TurnState): String {
+        // § logging temporaneo obbligatorio, audit "Conversational mode non
+        // tenta più Core" — se questo NON compare per un messaggio inviato
+        // davvero, il turno è stato intercettato prima (vedi i vari
+        // ENGINE_BRANCH= sopra), mai da un problema dentro JarvisBrain stesso.
+        Log.i(TAG, "ENGINE_BRANCH=brain_loop")
         val reasoningMode = settings.jarvisReasoningMode.first()
         val slot = brain.resolveSlot(reasoningMode, transcript)
         val assembled = contextAssembler.assemble(transcript, conversationManager.snapshotText())
