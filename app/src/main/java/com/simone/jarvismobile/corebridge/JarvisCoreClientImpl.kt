@@ -168,23 +168,60 @@ class JarvisCoreClientImpl @Inject constructor(
         }
     }.getOrDefault(emptyList())
 
+    /**
+     * § audit "ENGINE_ERROR non mostra la causa reale": each phase (JSON
+     * encode, `Request` build, the actual OkHttp call, response decode) is
+     * now wrapped in its OWN try/catch instead of one blanket `runCatching`
+     * around everything — a `runCatching` that wide can tell you *that*
+     * something threw but not *where*, which is exactly what made every
+     * failure before the server ever saw the request indistinguishable from
+     * one it rejected. [errorResponse] tags every synthesized failure with
+     * the phase it happened in, the real exception class/message when there
+     * is one, and the endpoint/path actually targeted — carried verbatim in
+     * [JarvisCoreResponse.error] up to [com.simone.jarvismobile.ai.RemoteAiEngine]
+     * (see `AiEngineResult.errorDetail` in `com.simone.jarvismobile.ai.AiEngine`),
+     * instead of collapsing to the bare [CoreResponseStatus.ERROR] enum.
+     */
     override suspend fun send(request: JarvisCoreRequest): JarvisCoreResponse = withContext(Dispatchers.IO) {
-        runCatching {
-            val client = clientFor()
-            val body = json.encodeToString(JarvisCoreRequest.serializer(), request)
-                .toRequestBody(JSON_MEDIA_TYPE)
-            val httpRequest = Request.Builder().url("${baseUrl()}/v1/chat").post(body).build()
-            executeCancellable(client, httpRequest, request.requestId).use { r ->
-                val text = r.body?.string()
-                    ?: return@withContext errorResponse(request.requestId, "empty_body")
-                if (!r.isSuccessful) return@withContext errorResponse(request.requestId, "http_${r.code}")
-                runCatching { json.decodeFromString(JarvisCoreResponse.serializer(), text) }
-                    .getOrElse { errorResponse(request.requestId, "decode_failed") }
+        val base = baseUrl()
+        val path = "/v1/chat"
+
+        val body = try {
+            json.encodeToString(JarvisCoreRequest.serializer(), request).toRequestBody(JSON_MEDIA_TYPE)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            return@withContext errorResponse(request.requestId, "serialization", e, base, path)
+        }
+
+        val client = clientFor()
+        val httpRequest = try {
+            Request.Builder().url("$base$path").post(body).build()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            return@withContext errorResponse(request.requestId, "request_creation", e, base, path)
+        }
+
+        val response = try {
+            executeCancellable(client, httpRequest, request.requestId)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            return@withContext errorResponse(request.requestId, "http", e, base, path)
+        }
+
+        response.use { r ->
+            val text = r.body?.string()
+                ?: return@withContext errorResponse(request.requestId, "response_parsing", "empty_body", base, path)
+            if (!r.isSuccessful) return@withContext errorResponse(request.requestId, "http", "http_${r.code}", base, path)
+            try {
+                json.decodeFromString(JarvisCoreResponse.serializer(), text)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                errorResponse(request.requestId, "response_parsing", e, base, path)
             }
-        }.getOrElse { e ->
-            if (e is CancellationException) throw e
-            Log.w(TAG, "core_send_failed ${e.javaClass.simpleName}")
-            errorResponse(request.requestId, e.javaClass.simpleName)
         }
     }
 
@@ -206,8 +243,25 @@ class JarvisCoreClientImpl @Inject constructor(
             })
         }
 
-    private fun errorResponse(requestId: String, reason: String) =
-        JarvisCoreResponse(requestId = requestId, status = CoreResponseStatus.ERROR, error = reason)
+    /** A non-exception failure (bad HTTP status, empty body, …) — [reason] is a short fixed code, e.g. `"http_502"`. */
+    private fun errorResponse(requestId: String, phase: String, reason: String, base: String, path: String): JarvisCoreResponse {
+        Log.w(TAG, "core_send_failed phase=$phase reason=$reason")
+        return JarvisCoreResponse(
+            requestId = requestId,
+            status = CoreResponseStatus.ERROR,
+            error = "$phase:$reason @ $base$path",
+        )
+    }
+
+    /** A real thrown exception — keeps its class AND message, never just the enum-shaped [AiFailureReason.ENGINE_ERROR] downstream. */
+    private fun errorResponse(requestId: String, phase: String, e: Throwable, base: String, path: String): JarvisCoreResponse {
+        Log.w(TAG, "core_send_failed phase=$phase ${e.javaClass.simpleName}: ${e.message}")
+        return JarvisCoreResponse(
+            requestId = requestId,
+            status = CoreResponseStatus.ERROR,
+            error = "$phase:${e.javaClass.simpleName}: ${e.message} @ $base$path",
+        )
+    }
 
     /**
      * `POST /v1/ai/stream` — real SSE via okhttp-sse. Translates Core's real

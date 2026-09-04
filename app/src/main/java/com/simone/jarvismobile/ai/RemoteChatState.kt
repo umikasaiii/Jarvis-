@@ -80,5 +80,7 @@ data class LastRemoteAttempt(
     val outcome: RemoteAttemptOutcome,
     val failureReason: String? = null,
     val endpoint: String? = null,
+    /** `/v1/chat` today — [com.simone.jarvismobile.corebridge.JarvisCoreClientImpl.send]'s one hardcoded path; kept as its own field even though [failureReason] also embeds it (§ richiesta esplicita: "endpoint path" come campo a sé). */
+    val endpointPath: String? = null,
     val atMs: Long = System.currentTimeMillis(),
 )

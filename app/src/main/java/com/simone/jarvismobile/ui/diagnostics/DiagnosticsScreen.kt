@@ -313,7 +313,8 @@ fun DiagnosticsScreen(
                     Text(
                         "esito=${attempt.outcome}" +
                             (attempt.failureReason?.let { " failureReason=$it" } ?: "") +
-                            (attempt.endpoint?.let { " endpoint=$it" } ?: ""),
+                            (attempt.endpoint?.let { " endpoint=$it" } ?: "") +
+                            (attempt.endpointPath?.let { " path=$it" } ?: ""),
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }

@@ -44,6 +44,17 @@ data class AiEngineResult(
     val failureReason: AiFailureReason? = null,
     /** True only when this result is the product of a fallback after a remote failure (§ log label REMOTE_FAILED_FALLBACK_LOCAL). */
     val wasFallback: Boolean = false,
+    /**
+     * Free-text detail behind [failureReason] (§ audit "ENGINE_ERROR non
+     * mostra la causa reale"): for [RemoteAiEngine], this is
+     * `JarvisCoreResponse.error` verbatim — already phase-tagged by
+     * [com.simone.jarvismobile.corebridge.JarvisCoreClientImpl] as
+     * `"<phase>:<exceptionClass>: <message> @ <endpoint><path>"` or
+     * `"<phase>:<reason> @ <endpoint><path>"` for a non-exception failure
+     * (bad HTTP status, empty body, decode failure). `null` for
+     * [LocalAiEngine] (no such detail exists) and for a successful result.
+     */
+    val errorDetail: String? = null,
 )
 
 /** One streamed chunk — see [LocalAiEngine.stream] for why local streaming is honestly a single terminal chunk today. */

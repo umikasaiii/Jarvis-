@@ -101,6 +101,50 @@ class RemoteAiEngineTest {
         assertEquals(AiFailureReason.ENGINE_ERROR, result.failureReason)
     }
 
+    /**
+     * § audit "tryRemoteReply produce ENGINE_ERROR ma il terminale FastAPI non
+     * vede alcuna POST": `JarvisCoreClientImpl.send()` now tags every
+     * synthesized [CoreResponseStatus.ERROR] with the real phase/exception
+     * that produced it (e.g. `"http:ConnectException: Connection refused @
+     * http://192.168.1.10:8000/v1/chat"` for a failure BEFORE the server ever
+     * saw the request) in [JarvisCoreResponse.error] — this pins that
+     * [RemoteAiEngine.generate] actually forwards that string into
+     * [AiEngineResult.errorDetail] instead of discarding it down to the bare
+     * `ENGINE_ERROR` enum name, which is exactly what made every pre-HTTP
+     * failure indistinguishable from a real server-side error before this
+     * fix.
+     */
+    @Test
+    fun `a phase-tagged ERROR detail from the client survives into errorDetail, not just the bare enum`() = runTest {
+        val detail = "http:ConnectException: Connection refused @ http://192.168.1.10:8000/v1/chat"
+        val client = FakeCoreClient(
+            sendResult = { req ->
+                JarvisCoreResponse(requestId = req.requestId, status = CoreResponseStatus.ERROR, error = detail)
+            },
+        )
+        val engine = RemoteAiEngine(client)
+
+        val result = engine.generate(request())
+
+        assertFalse(result.success)
+        assertEquals(AiFailureReason.ENGINE_ERROR, result.failureReason)
+        assertEquals(detail, result.errorDetail)
+    }
+
+    @Test
+    fun `a server ERROR with no detail leaves errorDetail null, never a fabricated string`() = runTest {
+        val client = FakeCoreClient(
+            sendResult = { req ->
+                JarvisCoreResponse(requestId = req.requestId, status = CoreResponseStatus.ERROR, error = null)
+            },
+        )
+        val engine = RemoteAiEngine(client)
+
+        val result = engine.generate(request())
+
+        assertNull(result.errorDetail)
+    }
+
     private fun okResponse(requestId: String, text: String = "ok") =
         JarvisCoreResponse(requestId = requestId, status = CoreResponseStatus.OK, text = text)
 

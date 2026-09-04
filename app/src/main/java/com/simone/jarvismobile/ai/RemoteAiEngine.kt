@@ -57,7 +57,16 @@ class RemoteAiEngine @Inject constructor(
                 CoreResponseStatus.OK, CoreResponseStatus.PARTIAL ->
                     AiEngineResult(request.requestId, success = true, text = response.text, target = target)
                 CoreResponseStatus.ERROR ->
-                    AiEngineResult(request.requestId, success = false, target = target, failureReason = AiFailureReason.ENGINE_ERROR)
+                    AiEngineResult(
+                        request.requestId,
+                        success = false,
+                        target = target,
+                        failureReason = AiFailureReason.ENGINE_ERROR,
+                        // § audit "ENGINE_ERROR non mostra la causa reale": carries
+                        // JarvisCoreClientImpl's phase-tagged detail verbatim instead
+                        // of discarding it — this is the ONE place it was being lost.
+                        errorDetail = response.error,
+                    )
             }
         } catch (e: TimeoutCancellationException) {
             Log.w(TAG, "remote_generate_timeout")

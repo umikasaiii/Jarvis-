@@ -1118,6 +1118,7 @@ class SessionCoordinator @Inject constructor(
                     outcome = outcome,
                     failureReason = failureReason,
                     endpoint = endpointNow,
+                    endpointPath = "/v1/chat",
                 ),
             )
         }
@@ -1161,9 +1162,14 @@ class SessionCoordinator @Inject constructor(
             remoteChatState.activeRequestId = null
         }
         if (result == null || !result.success) {
-            val reason = result?.failureReason ?: "cancelled_or_null"
+            // § audit "ENGINE_ERROR non mostra la causa reale" (JarvisBrain,
+            // stessa correzione qui): appende result.errorDetail — il dettaglio
+            // fase/eccezione reale che JarvisCoreClientImpl ora conserva —
+            // invece di fermarsi al solo nome dell'enum AiFailureReason.
+            val reason = (result?.failureReason?.name ?: "cancelled_or_null") +
+                (result?.errorDetail?.let { ": $it" } ?: "")
             Log.i(TAG, "CORE FAILED -> LOCAL FALLBACK (reason=$reason)")
-            record(com.simone.jarvismobile.ai.RemoteAttemptOutcome.FAILED, failureReason = reason.toString())
+            record(com.simone.jarvismobile.ai.RemoteAttemptOutcome.FAILED, failureReason = reason)
             remoteChatState.setLastRoute("LOCAL (fallback dopo Core: $reason)")
             return null
         }

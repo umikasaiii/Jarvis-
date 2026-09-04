@@ -180,6 +180,7 @@ class JarvisBrain @Inject constructor(
                     outcome = outcome,
                     failureReason = failureReason,
                     endpoint = endpointNow,
+                    endpointPath = "/v1/chat",
                 ),
             )
         }
@@ -210,10 +211,18 @@ class JarvisBrain @Inject constructor(
             remoteChatState.activeRequestId = null
         }
         if (result == null || !result.success) {
-            val reason = result?.failureReason ?: "cancelled_or_null"
+            // § audit "ENGINE_ERROR non mostra la causa reale": the bare
+            // AiFailureReason enum (e.g. "ENGINE_ERROR") never said WHERE a
+            // failure happened before the request even reached Core — append
+            // result.errorDetail (JarvisCoreClientImpl's phase-tagged real
+            // exception class/message/endpoint) whenever present, so this
+            // reads like "ENGINE_ERROR: http:ConnectException: ... @ ..."
+            // instead of stopping at the enum name.
+            val reason = (result?.failureReason?.name ?: "cancelled_or_null") +
+                (result?.errorDetail?.let { ": $it" } ?: "")
             Log.i(TAG, "BRAIN_REMOTE_FAIL reason=$reason")
             Log.i(TAG, "CORE FAILED -> LOCAL FALLBACK (reason=$reason, engine=conversazionale)")
-            record(RemoteAttemptOutcome.FAILED, failureReason = reason.toString())
+            record(RemoteAttemptOutcome.FAILED, failureReason = reason)
             remoteChatState.setLastRoute("LOCAL (fallback dopo Core: $reason)")
             return null
         }
