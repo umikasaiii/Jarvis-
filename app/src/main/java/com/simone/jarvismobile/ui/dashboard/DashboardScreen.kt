@@ -95,7 +95,9 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -2293,62 +2295,93 @@ private fun AresBpmSonnoCard(
  * linea che varia in base all'andamento dei numeri", riferimento visivo
  * fornito dall'utente solo per capire cosa si intende — non un asset o uno
  * stile da copiare 1:1). Ogni voce di [values] è un giorno (più vecchio a
- * sinistra); `null` (nessun dato quel giorno, mai un valore inventato) è
- * semplicemente escluso. Con meno di due punti reali non c'è un andamento da
+ * sinistra, oggi ultimo); `null` (nessun dato quel giorno, mai un valore
+ * inventato) è un vero vuoto, mai collegato con una linea agli estremi che
+ * lo circondano. Con meno di due punti reali non c'è un andamento da
  * disegnare, quindi non si disegna nulla piuttosto che un'unica linea piatta
  * priva di senso.
  *
- * **Due correzioni, bug reale segnalato dall'utente ("grafico si vede
- * malissimo")**: *(1)* prima non aveva alcun pannello dietro — un tratto
- * nudo disegnato direttamente sullo sfondo scuro dell'app, senza bordo né
- * riempimento, sembrava un glitch fluttuante scollegato dalle due card
- * invece di un elemento grafico intenzionale; ora un riquadro arrotondato
- * con bordo/riempimento tenue nello stesso colore della linea lo ancora
- * visivamente. *(2)* prima posizionava ogni punto alla sua posizione
- * assoluta di giorno su 7 (`index` nell'intera finestra) — con un
- * dispositivo che ha sincronizzato solo gli ultimi 2-3 giorni, tutti i punti
- * reali finivano compressi in un angolo stretto invece di usare la
- * larghezza intera. Ora i punti nulli vengono scartati **prima** di
- * calcolare le posizioni (`values.mapNotNull`), quindi i soli punti reali si
- * distribuiscono sull'intera larghezza disponibile — **onestà, un
- * compromesso deliberato**: la spaziatura orizzontale non rappresenta più il
- * vero intervallo di giorni fra un punto e l'altro (una lacuna di 3 giorni
- * appare larga uguale a una di 1 giorno), ma resta l'unica scelta che rende
- * il grafico leggibile quando la copertura dati è ancora scarsa, invece di
- * un frammento illeggibile schiacciato in un angolo.
+ * **Ristrutturato su richiesta esplicita dell'utente ("linea neon anche un
+ * po' arrotondata... ultimi 7 dati... attento a non uscire dallo schermo")**:
+ * *(1)* [values] è troncato a [takeLast] 7 — sempre esattamente 7 posizioni
+ * fisse sull'asse orizzontale (`stepX` deriva da uno slot count costante),
+ * mai più larghe della card che le contiene e mai una larghezza che cresce
+ * con più dati disponibili; una lacuna resta nella sua posizione reale
+ * (indice nello slot fisso) invece di essere compattata verso i punti reali
+ * come nella versione precedente — onesto sull'intervallo reale fra i
+ * giorni, non solo leggibile con pochi dati. *(2)* la linea non è più una
+ * sequenza di segmenti dritti ma una curva liscia (un quadratico per coppia
+ * di punti, passante per il loro punto medio — "arrotondata" senza
+ * dipendenze grafiche esterne) con `StrokeJoin.Round`/`StrokeCap.Round`.
+ * *(3)* l'effetto "neon" è quattro passate dello stesso tratto via via più
+ * sottili e più opache sopra un alone largo e tenue — un bagliore a basso
+ * costo che non dipende da `BlurEffect` (richiede API 31+, questa app
+ * supporta versioni precedenti). *(4)* ogni **run** di punti consecutivi
+ * (nessuna lacuna in mezzo) è disegnato come una curva a sé: un giorno senza
+ * dato interrompe il bagliore invece di farlo attraversare da una linea che
+ * inventerebbe un valore intermedio.
  */
 @Composable
 private fun Sparkline(values: List<Float?>, color: Color, modifier: Modifier = Modifier) {
-    val points = values.mapNotNull { it }
-    if (points.size < 2) return
+    val last7 = values.takeLast(7)
+    if (last7.count { it != null } < 2) return
     Canvas(
         modifier
             .clip(RoundedCornerShape(8.dp))
             .background(color.copy(alpha = 0.08f))
             .border(1.dp, color.copy(alpha = 0.28f), RoundedCornerShape(8.dp))
-            .padding(6.dp),
+            .padding(10.dp),
     ) {
-        val minV = points.min()
-        val maxV = points.max()
+        val real = last7.filterNotNull()
+        val minV = real.min()
+        val maxV = real.max()
         val range = (maxV - minV).takeIf { it > 0f } ?: 1f
-        val stepX = if (points.size > 1) size.width / (points.size - 1) else size.width
-        fun offsetFor(index: Int, value: Float): Offset {
-            val x = index * stepX
-            val y = size.height - ((value - minV) / range) * size.height
-            return Offset(x, y.coerceIn(0f, size.height))
+        val slotCount = last7.size
+        val stepX = if (slotCount > 1) size.width / (slotCount - 1) else 0f
+        fun yFor(value: Float): Float =
+            (size.height - ((value - minV) / range) * size.height).coerceIn(0f, size.height)
+
+        // Segmenta per lacune: ogni tratto continuo (nessun giorno mancante
+        // al suo interno) diventa una curva propria, alla sua posizione
+        // fissa nello slot a 7 — mai un punto reale spostato per "riempire"
+        // un buco lasciato da un giorno senza dato.
+        val runs = mutableListOf<MutableList<Offset>>()
+        var previousIndex = -2
+        last7.forEachIndexed { i, v ->
+            if (v == null) return@forEachIndexed
+            val p = Offset(i * stepX, yFor(v))
+            if (i == previousIndex + 1 && runs.isNotEmpty()) runs.last() += p else runs += mutableListOf(p)
+            previousIndex = i
         }
-        val strokeWidth = 1.6.dp.toPx()
-        for (i in 0 until points.size - 1) {
-            drawLine(
-                color = color,
-                start = offsetFor(i, points[i]),
-                end = offsetFor(i + 1, points[i + 1]),
-                strokeWidth = strokeWidth,
-                cap = StrokeCap.Round,
-            )
+
+        fun smoothPath(pts: List<Offset>): Path {
+            val path = Path()
+            path.moveTo(pts.first().x, pts.first().y)
+            for (i in 0 until pts.size - 1) {
+                val mid = Offset((pts[i].x + pts[i + 1].x) / 2f, (pts[i].y + pts[i + 1].y) / 2f)
+                path.quadraticTo(pts[i].x, pts[i].y, mid.x, mid.y)
+            }
+            path.lineTo(pts.last().x, pts.last().y)
+            return path
         }
-        points.forEachIndexed { i, v ->
-            drawCircle(color = color, radius = strokeWidth * 1.3f, center = offsetFor(i, v))
+
+        // Alone largo e tenue -> tratto centrale pieno, quattro passate.
+        val glowPasses = listOf(10.dp.toPx() to 0.12f, 6.dp.toPx() to 0.22f, 3.dp.toPx() to 0.55f, 1.6.dp.toPx() to 1f)
+        runs.filter { it.size >= 2 }.forEach { run ->
+            val path = smoothPath(run)
+            glowPasses.forEach { (width, alpha) ->
+                drawPath(
+                    path = path,
+                    color = color.copy(alpha = alpha),
+                    style = Stroke(width = width, cap = StrokeCap.Round, join = StrokeJoin.Round),
+                )
+            }
+        }
+        last7.forEachIndexed { i, v ->
+            if (v == null) return@forEachIndexed
+            val p = Offset(i * stepX, yFor(v))
+            drawCircle(color = color.copy(alpha = 0.35f), radius = 6.dp.toPx(), center = p)
+            drawCircle(color = color, radius = 3.dp.toPx(), center = p)
         }
     }
 }

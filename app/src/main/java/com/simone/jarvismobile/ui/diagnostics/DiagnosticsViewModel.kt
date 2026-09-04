@@ -22,6 +22,7 @@ import com.simone.jarvismobile.data.SettingsRepository
 import com.simone.jarvismobile.engine.ConversationalJarvisEngine
 import com.simone.jarvismobile.health.HealthConnectManager
 import com.simone.jarvismobile.navigation.debug.DebugGpsSimulator
+import com.simone.jarvismobile.proactive.ProactiveManager
 import com.simone.jarvismobile.tts.AudioFocusGate
 import com.simone.jarvismobile.tts.PcmPlayer
 import com.simone.jarvismobile.tts.SupertonicTtsEngine
@@ -56,6 +57,7 @@ class DiagnosticsViewModel @Inject constructor(
     private val weather: WeatherManager,
     private val contextEngine: ContextEngine,
     private val health: HealthConnectManager,
+    private val proactive: ProactiveManager,
 ) : AndroidViewModel(application) {
 
     /**
@@ -128,6 +130,46 @@ class DiagnosticsViewModel @Inject constructor(
                 append(" · riuscito: ")
                 append(d.refreshSucceededAtMs?.let { fmt.format(java.time.Instant.ofEpochMilli(it)) } ?: "mai")
                 d.lastErrorType?.let { append("\nultimo errore: ").append(it) }
+            }
+        }
+    }
+
+    /**
+     * "Il briefing mattutino non è proprio arrivato" — dopo tre round di fix
+     * reali su tempistica/ore-silenziose/dedup (§ `ProactiveManager`/
+     * `ProactiveGovernor`), forza una valutazione vera adesso e mostra
+     * esattamente cosa ha deciso e perché — mai chiamato / disattivato /
+     * nessun candidato a quest'ora (es. prima delle 5) / ore silenziose /
+     * budget giornaliero esaurito / consegnato — invece di un'altra ipotesi
+     * alla cieca sullo stesso codice già riletto tre volte.
+     */
+    private val _proactiveStatus = MutableStateFlow("")
+    val proactiveStatus: StateFlow<String> = _proactiveStatus.asStateFlow()
+
+    fun refreshProactiveDiagnostics() {
+        viewModelScope.launch {
+            // evaluateOnUnlock(), non evaluate(): con "Automazioni in
+            // background" attivo, candidatesFor() offre il digest mattutino
+            // SOLO sul percorso di sblocco reale (§ fix "arriva prima/dopo
+            // lo sblocco" qui sopra in ProactiveManager) — usare evaluate()
+            // qui mostrerebbe sempre "nessun candidato", anche a percorso
+            // perfettamente funzionante, perché quel percorso lo esclude di
+            // proposito. Questo pulsante simula esattamente "come se avessi
+            // appena sbloccato il telefono ora", il vero test che conta.
+            proactive.evaluateOnUnlock()
+            val d = proactive.lastRun.value
+            if (d == null) {
+                _proactiveStatus.value = "Nessuna valutazione ancora registrata (anomalo appena premuto il pulsante)."
+                return@launch
+            }
+            val fmt = java.time.format.DateTimeFormatter.ofPattern("d MMM HH:mm").withZone(java.time.ZoneId.systemDefault())
+            _proactiveStatus.value = buildString {
+                append("proattività=").append(if (d.enabled) "attiva" else "SPENTA")
+                append(" · automazioni in background=").append(if (d.automationServiceEnabled) "attive" else "spente")
+                append("\nultima valutazione: ").append(fmt.format(java.time.Instant.ofEpochMilli(d.ranAtMs)))
+                append(" (ore=").append(d.hour).append(", sblocco reale=").append(d.isRealUnlock).append(")")
+                append("\ncandidati trovati: ").append(d.candidateCount)
+                append("\nesito: ").append(d.outcome)
             }
         }
     }

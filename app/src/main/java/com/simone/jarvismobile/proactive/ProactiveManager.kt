@@ -20,6 +20,9 @@ import com.simone.jarvismobile.data.SettingsRepository
 import com.simone.jarvismobile.health.HealthConnectManager
 import com.simone.jarvismobile.weather.WeatherManager
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import java.time.Instant
 import java.time.LocalDate
@@ -65,12 +68,43 @@ class ProactiveManager @Inject constructor(
      */
     suspend fun evaluateOnUnlock(now: LocalDateTime = LocalDateTime.now()) = run(now, isRealUnlock = true)
 
+    /**
+     * "Il briefing non è proprio arrivato" (non solo in ritardo, § segnalazioni
+     * precedenti già corrette in questa stessa classe) — dopo tre round di fix
+     * reali su tempistica/ore-silenziose/dedup senza un modo per l'utente di
+     * vedere cosa succede davvero a un dato tentativo, questo registra l'esito
+     * di **ogni** chiamata a [run] — inclusi gli early-return prima ancora di
+     * costruire i candidati — così un futuro "non arriva" mostra un dato reale
+     * (mai chiamato / disabilitato / nessun candidato all'ora X / ore silenziose /
+     * budget esaurito / consegnato) invece di un'altra ipotesi. Mai il testo del
+     * messaggio consegnato, solo il tipo e l'esito (§ "non loggare dati personali").
+     */
+    data class RunDiagnostic(
+        val ranAtMs: Long,
+        val isRealUnlock: Boolean,
+        val enabled: Boolean,
+        val automationServiceEnabled: Boolean,
+        val hour: Int,
+        val candidateCount: Int,
+        val outcome: String,
+    )
+
+    private val _lastRun = MutableStateFlow<RunDiagnostic?>(null)
+    val lastRun: StateFlow<RunDiagnostic?> = _lastRun.asStateFlow()
+
     private suspend fun run(now: LocalDateTime, isRealUnlock: Boolean) {
         val config = readSettings()
-        if (!config.enabled) return
+        val automationEnabled = settings.automationServiceEnabled.first()
+        if (!config.enabled) {
+            recordRun(now, isRealUnlock, config.enabled, automationEnabled, candidateCount = 0, outcome = "proactivity_disabled")
+            return
+        }
         val today = now.toLocalDate()
         val candidates = candidatesFor(now, snapshot(today, now), today, isRealUnlock)
-        if (candidates.isEmpty()) return
+        if (candidates.isEmpty()) {
+            recordRun(now, isRealUnlock, config.enabled, automationEnabled, candidateCount = 0, outcome = "no_candidate_this_hour")
+            return
+        }
         val state = store.load().rolledTo(today)
         when (val decision = ProactiveGovernor.decide(candidates, config, state, now)) {
             is ProactiveDecision.Deliver -> {
@@ -80,9 +114,32 @@ class ProactiveManager @Inject constructor(
                 // adaptive briefing that only JARVIS reads silently isn't a briefing.
                 runCatching { coordinator.speakBackgroundResponse(decision.suggestion.message) }
                 Log.i(TAG, "proactive_deliver ${decision.suggestion.kind}")
+                recordRun(now, isRealUnlock, config.enabled, automationEnabled, candidates.size, "delivered:${decision.suggestion.kind}")
             }
-            is ProactiveDecision.Skip -> Log.i(TAG, "proactive_skip ${decision.reason}")
+            is ProactiveDecision.Skip -> {
+                Log.i(TAG, "proactive_skip ${decision.reason}")
+                recordRun(now, isRealUnlock, config.enabled, automationEnabled, candidates.size, "skip:${decision.reason}")
+            }
         }
+    }
+
+    private fun recordRun(
+        now: LocalDateTime,
+        isRealUnlock: Boolean,
+        enabled: Boolean,
+        automationEnabled: Boolean,
+        candidateCount: Int,
+        outcome: String,
+    ) {
+        _lastRun.value = RunDiagnostic(
+            ranAtMs = System.currentTimeMillis(),
+            isRealUnlock = isRealUnlock,
+            enabled = enabled,
+            automationServiceEnabled = automationEnabled,
+            hour = now.hour,
+            candidateCount = candidateCount,
+            outcome = outcome,
+        )
     }
 
     /**

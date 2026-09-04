@@ -57,6 +57,7 @@ fun DiagnosticsScreen(
     val drivingNavigationMode by viewModel.drivingNavigationMode.collectAsStateWithLifecycle()
     val weatherStatus by viewModel.weatherStatus.collectAsStateWithLifecycle()
     val healthStatus by viewModel.healthStatus.collectAsStateWithLifecycle()
+    val proactiveStatus by viewModel.proactiveStatus.collectAsStateWithLifecycle()
     val perms = viewModel.permissions()
     val context = LocalContext.current
 
@@ -313,6 +314,23 @@ fun DiagnosticsScreen(
                 }
                 if (healthStatus.isNotEmpty()) {
                     Text(healthStatus, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+
+        // § "il briefing mattutino non è proprio arrivato" — stesso principio
+        // delle due card sopra: forza una valutazione vera e mostra l'esito
+        // esatto (disattivo/nessun candidato a quest'ora/ore silenziose/
+        // budget esaurito/consegnato) invece di indovinare ancora sullo
+        // stesso codice già corretto tre volte in passato.
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Proattività (briefing)", style = MaterialTheme.typography.titleMedium)
+                Button(onClick = viewModel::refreshProactiveDiagnostics, modifier = Modifier.fillMaxWidth()) {
+                    Text("Controlla adesso")
+                }
+                if (proactiveStatus.isNotEmpty()) {
+                    Text(proactiveStatus, style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
