@@ -8,6 +8,7 @@ import com.simone.jarvismobile.archive.ArchiveListRepository
 import com.simone.jarvismobile.archive.ArchiveRepository
 import com.simone.jarvismobile.archive.PersonalArchiveSearch
 import com.simone.jarvismobile.document.DocumentImportManager
+import com.simone.jarvismobile.health.HealthConnectManager
 import com.simone.jarvismobile.knowledge.KnowledgeRepository
 import com.simone.jarvismobile.memory.MemoryIndex
 import com.simone.jarvismobile.memory.VaultRepository
@@ -20,6 +21,8 @@ import com.simone.jarvismobile.tools.CreateArchiveItemTool
 import com.simone.jarvismobile.tools.CreateListTool
 import com.simone.jarvismobile.tools.DeleteArchiveItemTool
 import com.simone.jarvismobile.tools.FlashlightTool
+import com.simone.jarvismobile.tools.GetHealthSummaryTool
+import com.simone.jarvismobile.tools.GetWeatherTool
 import com.simone.jarvismobile.tools.ListAgendaTool
 import com.simone.jarvismobile.tools.ForgetMemoryTool
 import com.simone.jarvismobile.tools.ListItemsTool
@@ -65,6 +68,7 @@ import com.simone.jarvismobile.tools.StartDrivingRouteTool
 import com.simone.jarvismobile.tools.StopDrivingModeTool
 import com.simone.jarvismobile.driving.DrivingModeManager
 import com.simone.jarvismobile.driving.DrivingNotificationController
+import com.simone.jarvismobile.weather.WeatherManager
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -95,6 +99,8 @@ object ToolsModule {
         documents: DocumentImportManager,
         drivingMode: DrivingModeManager,
         drivingNotifications: DrivingNotificationController,
+        weather: WeatherManager,
+        health: HealthConnectManager,
     ): ToolRegistry = ToolRegistry(
         listOf(
             TimeTool(),
@@ -150,6 +156,8 @@ object ToolsModule {
             ShowDrivingPanelTool(drivingMode),
             HideDrivingPanelTool(drivingMode),
             ReplyMessageTool(drivingNotifications),
+            GetWeatherTool(weather),
+            GetHealthSummaryTool(health),
         ),
     )
 }

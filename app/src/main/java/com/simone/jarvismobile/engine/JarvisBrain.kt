@@ -13,6 +13,7 @@ import com.simone.jarvismobile.core.ai.AiRequestType
 import com.simone.jarvismobile.core.ai.AiRoutingHeuristic
 import com.simone.jarvismobile.core.engine.BrainEvent
 import com.simone.jarvismobile.core.engine.BrainReply
+import com.simone.jarvismobile.core.engine.ParseOutcome
 import com.simone.jarvismobile.core.engine.PromptDiagnostics
 import com.simone.jarvismobile.core.engine.ReasoningMode
 import com.simone.jarvismobile.core.engine.SentenceStream
@@ -180,14 +181,26 @@ class JarvisBrain @Inject constructor(
             }
             ?: return BrainReply.Unavailable
         return when (val parsed = parser.parse(raw)) {
-            is ParseResult.Valid -> BrainReply.Ready(parsed.response, parsedCleanly = true)
-            is ParseResult.Repaired -> BrainReply.Ready(parsed.response, parsedCleanly = true)
+            is ParseResult.Valid -> BrainReply.Ready(
+                parsed.response,
+                parsedCleanly = true,
+                parseOutcome = ParseOutcome.VALID,
+            )
+            is ParseResult.Repaired -> BrainReply.Ready(
+                parsed.response,
+                parsedCleanly = true,
+                parseOutcome = ParseOutcome.REPAIRED,
+            )
             // Never treated as tool calls — ResponseParser's contract already
             // guarantees invalid/unrepairable JSON never reaches a caller as
-            // anything but plain text.
+            // anything but plain text. § FASE 2A.5-bis: `looksLikeAttemptedJson`
+            // tells apart a genuine parse failure (MALFORMED_JSON, worth
+            // flagging) from the model correctly answering in plain text
+            // because no tool was needed (PLAIN_TEXT, not an error at all).
             is ParseResult.PlainText -> BrainReply.Ready(
                 AssistantResponse(assistantText = parsed.rawText.trim()),
                 parsedCleanly = false,
+                parseOutcome = ParseOutcome.fromParseResult(parsed),
             )
         }
     }

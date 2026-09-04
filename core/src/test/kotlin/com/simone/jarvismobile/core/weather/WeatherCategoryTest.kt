@@ -3,6 +3,7 @@ package com.simone.jarvismobile.core.weather
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class WeatherCategoryTest {
 
@@ -46,5 +47,17 @@ class WeatherCategoryTest {
         assertEquals(WeatherCategory.THUNDERSTORM, WeatherCategory.fromWmoCode(95))
         assertEquals(WeatherCategory.THUNDERSTORM, WeatherCategory.fromWmoCode(96))
         assertEquals(WeatherCategory.THUNDERSTORM, WeatherCategory.fromWmoCode(99))
+    }
+
+    // --- § FASE 2A.5-bis — italianLabel, used by GetWeatherTool's spoken text ---
+
+    @Test fun `every category has a distinct, non-blank Italian label`() {
+        val labels = WeatherCategory.entries.map { it.italianLabel }
+        assertEquals(WeatherCategory.entries.size, labels.toSet().size)
+        assertTrue(labels.all { it.isNotBlank() })
+    }
+
+    @Test fun `clear reads as sereno`() {
+        assertEquals("sereno", WeatherCategory.CLEAR.italianLabel)
     }
 }

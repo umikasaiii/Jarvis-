@@ -16,8 +16,19 @@ sealed interface ParseResult {
      * Could not be parsed as protocol JSON even after one repair attempt.
      * Per docs/MODELS.md the caller MUST treat [rawText] as a plain spoken
      * reply and MUST NOT execute any tools.
+     *
+     * [looksLikeAttemptedJson] (§ FASE 2A.5-bis audit "parseError=true") is
+     * the difference between two very different situations a caller-side
+     * diagnostic must not conflate: the protocol's own contract lets the
+     * model answer in plain text on purpose whenever it decides no tool is
+     * needed (the common case — most turns), which is NOT a parse failure at
+     * all; a genuine failure is when the model DID try to produce JSON (a
+     * `{...}`-shaped fragment is present in [rawText]) and it still could not
+     * be decoded even after [extractJsonObject]'s repair. True when [rawText]
+     * contains both `{` and `}` — a cheap, general heuristic, not a check for
+     * any specific test phrase.
      */
-    data class PlainText(val rawText: String) : ParseResult
+    data class PlainText(val rawText: String, val looksLikeAttemptedJson: Boolean = false) : ParseResult
 }
 
 /**
@@ -43,7 +54,8 @@ class ResponseParser(
         if (repaired != null && repaired != trimmed) {
             decodeOrNull(repaired)?.let { return ParseResult.Repaired(it) }
         }
-        return ParseResult.PlainText(trimmed)
+        val attemptedJson = trimmed.contains('{') && trimmed.contains('}')
+        return ParseResult.PlainText(trimmed, looksLikeAttemptedJson = attemptedJson)
     }
 
     private fun decodeOrNull(candidate: String): AssistantResponse? =

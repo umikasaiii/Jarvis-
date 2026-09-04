@@ -51,3 +51,19 @@ enum class WeatherCategory {
         }
     }
 }
+
+/**
+ * Short, spoken-friendly Italian label (§ FASE 2A.5-bis, `get_weather` tool)
+ * — shares the same five buckets [DashboardScreen.weatherCategoryLabel]
+ * already renders in the Ares theme, kept as a small, separate mapping here
+ * (pure `:core`, testable) instead of reaching into a Compose UI file from a
+ * [com.simone.jarvismobile.core.tools.Tool] implementation.
+ */
+val WeatherCategory.italianLabel: String
+    get() = when (this) {
+        WeatherCategory.CLEAR -> "sereno"
+        WeatherCategory.PARTLY_CLOUDY -> "parzialmente nuvoloso"
+        WeatherCategory.CLOUDY -> "nuvoloso"
+        WeatherCategory.RAIN -> "pioggia"
+        WeatherCategory.THUNDERSTORM -> "temporale"
+    }

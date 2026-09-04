@@ -65,6 +65,8 @@ class RelevantToolSelectorTest {
         "start_driving_route" to "Avvia il percorso in Modalità Guida.",
         "show_driving_panel" to "Mostra un pannello della Modalità Guida.",
         "hide_driving_panel" to "Nasconde un pannello della Modalità Guida.",
+        "get_weather" to "Meteo reale di oggi o dei prossimi giorni.",
+        "get_health_summary" to "Riepilogo settimanale di sonno e frequenza cardiaca da Health Connect.",
     )
 
     // --- 1. chat semplice -----------------------------------------------------------
@@ -146,6 +148,41 @@ class RelevantToolSelectorTest {
         assertTrue(selected.isNotEmpty())
     }
 
+    // --- § FASE 2A.5-bis — meteo/salute, capabilities that existed in the app but were
+    // never exposed as tools to the conversational engine (root cause of
+    // "Che tempo fa domani?"/"Quante ore ho dormito questa settimana?"
+    // reaching the model with toolDisponibili=0/53, famiglie=--). -----------------------
+
+    @Test
+    fun `a weather question surfaces only the weather tool`() {
+        val selected = RelevantToolSelector.select(allTools, "Che tempo fa domani?")
+        val names = selected.map { it.first }
+        assertTrue("get_weather" in names)
+        assertFalse("list_agenda" in names)
+        assertFalse("get_health_summary" in names)
+    }
+
+    @Test
+    fun `a sleep question surfaces only the health tool`() {
+        val selected = RelevantToolSelector.select(allTools, "Quante ore ho dormito questa settimana?")
+        val names = selected.map { it.first }
+        assertTrue("get_health_summary" in names)
+        assertFalse("get_weather" in names)
+        assertFalse("flashlight" in names)
+    }
+
+    @Test
+    fun `a weather question is selected even though it is not tool-shaped by ToolIntentGate`() {
+        // § root cause: "Che tempo fa domani?" is a plain question, not a
+        // command — it never matched ToolIntentGate's action/device-question
+        // signals, so the old gate-first order silently zeroed the catalog
+        // before any family keyword was even checked. A specific family
+        // match must win regardless of that coarser gate.
+        assertFalse(com.simone.jarvismobile.core.routing.ToolIntentGate.shouldClassify("Che tempo fa domani?"))
+        val selected = RelevantToolSelector.select(allTools, "Che tempo fa domani?")
+        assertTrue(selected.isNotEmpty())
+    }
+
     // --- structural invariants -----------------------------------------------------------
 
     @Test
@@ -161,9 +198,9 @@ class RelevantToolSelectorTest {
             "open_app", "open_settings", "prepare_call", "compose_sms", "reply_message",
             "navigate", "play_media", "media_control", "list_notifications", "calculate",
             "start_driving_mode", "stop_driving_mode", "set_driving_navigation", "start_driving_route",
-            "show_driving_panel", "hide_driving_panel",
+            "show_driving_panel", "hide_driving_panel", "get_weather", "get_health_summary",
         )
-        assertEquals(53, toolNames.size)
+        assertEquals(55, toolNames.size)
         val ambiguousResult = RelevantToolSelector.select(
             toolNames.map { it to "d" },
             "Attivalo per favore, è urgente",
@@ -205,6 +242,23 @@ class RelevantToolSelectorTest {
         val selected = RelevantToolSelector.select(allTools, "Accendi la torcia")
         val families = RelevantToolSelector.familiesOf(selected)
         assertEquals(setOf(ToolFamily.DEVICE), families)
+    }
+
+    // --- § FASE 2A.5-bis §3 — grounding policy, generalizable across families -----------
+
+    @Test
+    fun `weather and health are grounded families - never answerable from the model's own knowledge`() {
+        assertTrue(ToolFamily.WEATHER in GROUNDED_FAMILIES)
+        assertTrue(ToolFamily.HEALTH in GROUNDED_FAMILIES)
+        assertTrue(ToolFamily.AGENDA in GROUNDED_FAMILIES)
+        assertTrue(ToolFamily.MEMORY in GROUNDED_FAMILIES)
+        assertTrue(ToolFamily.ARCHIVE in GROUNDED_FAMILIES)
+    }
+
+    @Test
+    fun `families with no runtime-personal data are not grounded`() {
+        assertFalse(ToolFamily.UTILITY in GROUNDED_FAMILIES)
+        assertFalse(ToolFamily.KNOWLEDGE in GROUNDED_FAMILIES)
     }
 
     // --- § FASE 2A.4 — sequential turns, not just isolated calls ------------------------
@@ -254,5 +308,58 @@ class RelevantToolSelectorTest {
         assertFalse("list_agenda" in names1)
         assertTrue("list_agenda" in names2)
         assertFalse("flashlight" in names2)
+    }
+
+    // --- § FASE 2A.5-bis §6 — cross-turn contamination, extended to the two new families --
+
+    @Test
+    fun `a device command then a sleep question - selection never leaks between them`() {
+        val turn1 = RelevantToolSelector.select(allTools, "Accendi la torcia")
+        val turn2 = RelevantToolSelector.select(allTools, "Quante ore ho dormito questa settimana?")
+        assertTrue("flashlight" in turn1.map { it.first })
+        assertFalse("get_health_summary" in turn1.map { it.first })
+        assertTrue("get_health_summary" in turn2.map { it.first })
+        assertFalse("flashlight" in turn2.map { it.first })
+    }
+
+    @Test
+    fun `a sleep question then a device command - selection never leaks between them`() {
+        val turn1 = RelevantToolSelector.select(allTools, "Quante ore ho dormito questa settimana?")
+        val turn2 = RelevantToolSelector.select(allTools, "Accendi la torcia")
+        assertTrue("get_health_summary" in turn1.map { it.first })
+        assertFalse("flashlight" in turn1.map { it.first })
+        assertTrue("flashlight" in turn2.map { it.first })
+        assertFalse("get_health_summary" in turn2.map { it.first })
+    }
+
+    @Test
+    fun `a weather question then a sleep question - selection never leaks between them`() {
+        val turn1 = RelevantToolSelector.select(allTools, "Che tempo fa domani?")
+        val turn2 = RelevantToolSelector.select(allTools, "Quante ore ho dormito questa settimana?")
+        assertTrue("get_weather" in turn1.map { it.first })
+        assertFalse("get_health_summary" in turn1.map { it.first })
+        assertTrue("get_health_summary" in turn2.map { it.first })
+        assertFalse("get_weather" in turn2.map { it.first })
+    }
+
+    @Test
+    fun `an agenda question then a weather question - selection never leaks between them`() {
+        val turn1 = RelevantToolSelector.select(allTools, "Che impegni ho domani?")
+        val turn2 = RelevantToolSelector.select(allTools, "Che tempo fa domani?")
+        assertTrue("list_agenda" in turn1.map { it.first })
+        assertFalse("get_weather" in turn1.map { it.first })
+        assertTrue("get_weather" in turn2.map { it.first })
+        assertFalse("list_agenda" in turn2.map { it.first })
+    }
+
+    @Test
+    fun `TEST CORE then a sleep question - selection never leaks between them`() {
+        val turn1 = RelevantToolSelector.select(allTools, "Rispondi solo: TEST CORE")
+        val turn2 = RelevantToolSelector.select(allTools, "Quante ore ho dormito questa settimana?")
+        assertTrue(turn1.isEmpty())
+        assertTrue("get_health_summary" in turn2.map { it.first })
+        // Calling it a second time in isolation must give the exact same result.
+        val turn2Isolated = RelevantToolSelector.select(allTools, "Quante ore ho dormito questa settimana?")
+        assertEquals(turn2, turn2Isolated)
     }
 }

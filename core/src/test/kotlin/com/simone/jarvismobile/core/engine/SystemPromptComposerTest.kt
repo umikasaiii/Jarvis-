@@ -105,6 +105,17 @@ class SystemPromptComposerTest {
         assertTrue("non hai verificato" in built)
     }
 
+    // --- § FASE 2A.5-bis: the grounding clause now names the two capabilities
+    // that used to be entirely missing from the registry (weather, Health
+    // Connect) alongside the ones already covered, not a per-example patch.
+
+    @Test
+    fun `the grounding clause names weather and health explicitly as real data`() {
+        val built = SystemPromptComposer.compose(SystemPromptComposer.Tier.FAST, richPersona, someTools)
+        assertTrue("meteo" in built)
+        assertTrue("sonno" in built)
+    }
+
     @Test
     fun `FAST no-tool prompt has no grounding clause to keep the common case compact`() {
         val built = SystemPromptComposer.compose(SystemPromptComposer.Tier.FAST, richPersona, emptyList())

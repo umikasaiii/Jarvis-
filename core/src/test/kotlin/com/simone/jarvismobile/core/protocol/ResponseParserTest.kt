@@ -2,6 +2,7 @@ package com.simone.jarvismobile.core.protocol
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class ResponseParserTest {
@@ -87,6 +88,37 @@ class ResponseParserTest {
         val result = parser.parse("   ")
         assertTrue(result is ParseResult.PlainText)
         assertEquals("", (result as ParseResult.PlainText).rawText)
+    }
+
+    // --- § FASE 2A.5-bis AUDIT PARSE ERROR — looksLikeAttemptedJson ------------------
+    // A caller needs to tell apart "the model correctly answered in plain
+    // text because no tool was needed" (the common, non-error case) from
+    // "the model tried to produce JSON and it came out malformed" (a real
+    // protocol-following failure). These pin the general heuristic — never a
+    // specific test phrase.
+
+    @Test
+    fun `ordinary conversational text is not flagged as an attempted JSON`() {
+        val result = parser.parse("Ciao Simone, come stai oggi?")
+        assertTrue(result is ParseResult.PlainText)
+        assertFalse((result as ParseResult.PlainText).looksLikeAttemptedJson)
+    }
+
+    @Test
+    fun `a brace-shaped fragment that still fails to decode is flagged as an attempted JSON`() {
+        // Missing closing quote makes this genuinely unparsable, unlike the
+        // repairable cases above (fences/prose around valid JSON).
+        val raw = """{"assistant_text: "rotto", "tool_calls": []}"""
+        val result = parser.parse(raw)
+        assertTrue(result is ParseResult.PlainText)
+        assertTrue((result as ParseResult.PlainText).looksLikeAttemptedJson)
+    }
+
+    @Test
+    fun `a bare unmatched opening brace in prose is not flagged as an attempted JSON`() {
+        val result = parser.parse("Il valore x { non è definito qui, chiedimi altro.")
+        assertTrue(result is ParseResult.PlainText)
+        assertFalse((result as ParseResult.PlainText).looksLikeAttemptedJson)
     }
 
     @Test

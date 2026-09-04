@@ -219,6 +219,15 @@ fun DiagnosticsScreen(
                                     "round=${turn.rounds} · contextChars=${turn.contextBlockChars}",
                                 style = MaterialTheme.typography.bodySmall,
                             )
+                            // § FASE 2A.5-bis diagnostica richiesta esplicitamente — la CAUSA
+                            // del parse (non solo il booleano parseError) più se questo turno
+                            // richiedeva dati reali e se li ha ottenuti davvero.
+                            Text(
+                                "parseCausa=${turn.parseOutcome} · " +
+                                    "groundingRichiesto=${turn.groundingRequired} · " +
+                                    "groundingSoddisfatto=${turn.groundingSatisfied}",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
                         }
                     }
                 }

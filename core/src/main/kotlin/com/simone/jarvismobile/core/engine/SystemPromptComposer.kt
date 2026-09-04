@@ -161,13 +161,21 @@ object SystemPromptComposer {
      * hardcoded case) and pairs with the persona's existing "never invent a
      * tool result" rule to also cover "never skip the tool and guess".
      */
+    // § FASE 2A.5-bis — the grounded-data list is now the same one
+    // `GROUNDED_FAMILIES` (`core/tools/RelevantToolSelector.kt`) uses for
+    // diagnostics, extended with the two capabilities added this phase
+    // (meteo/get_weather, sonno-salute/get_health_summary) that were
+    // previously missing from the registry entirely — not a hardcoded
+    // per-example fix, the same general clause as before, just naming the
+    // two new grounded domains explicitly for a small model's benefit.
     const val FAST_TOOL_PROTOCOL_HEADER = "Se ti serve una di queste operazioni, rispondi in puro JSON " +
         "(nessun testo fuori dalle graffe): " +
         "{\"assistant_text\":\"...\",\"tool_calls\":[{\"id\":\"1\",\"name\":\"NOME_ESATTO\",\"arguments\":{...}}]}. " +
         "Usa solo i nomi esatti elencati sotto; prendi gli argomenti solo da quanto detto da Simone, mai " +
-        "inventati. Se la domanda richiede dati reali (agenda, memoria, notifiche, dispositivo, archivio), " +
-        "usa SEMPRE lo strumento pertinente prima di rispondere: non affermare mai un dato che non hai " +
-        "verificato, e se lo strumento non è disponibile o fallisce dillo invece di inventare la risposta. " +
+        "inventati. Se la domanda richiede dati reali (agenda, memoria, notifiche, dispositivo, archivio, " +
+        "meteo, sonno o altri dati di salute), usa SEMPRE lo strumento pertinente prima di rispondere: non " +
+        "affermare mai un dato che non hai verificato, e se lo strumento non è disponibile o fallisce dillo " +
+        "invece di inventare la risposta. " +
         "Se non ti serve alcuno strumento, rispondi in testo semplice, senza JSON.\n\n" +
         "Strumenti disponibili:\n"
 

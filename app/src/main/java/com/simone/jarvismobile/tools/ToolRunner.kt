@@ -135,6 +135,14 @@ class ToolRunner @Inject constructor(
         "notification_listener_unavailable" ->
             "L'accesso alle notifiche è abilitato ma non ancora pronto. Riapri JARVIS e riprova."
         "no_active_media" -> "Non c'è una riproduzione multimediale attiva da controllare."
+        // § FASE 2A.5-bis — grounding obbligatorio: mai un dato inventato, mai
+        // un silenzio; queste sono le uniche risposte oneste quando il meteo
+        // reale o Health Connect non sono davvero raggiungibili in questo momento.
+        "weather_unavailable" -> "Non riesco ad accedere ai dati meteo in questo momento."
+        "health_unavailable" -> "Non riesco ad accedere a Health Connect in questo momento."
+        "health_permission_missing" ->
+            "Non ho ancora il permesso per leggere i dati di Health Connect. Puoi concederlo in Impostazioni."
+        "health_no_data" -> "Health Connect non ha ancora nessun dato reale per questo periodo."
         else -> "Non sono riuscito a completare: $tool."
     }
 

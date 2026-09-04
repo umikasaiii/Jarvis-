@@ -39,4 +39,13 @@ data class EngineTurnDiagnostics(
     val rounds: Int = 1,
     /** `contextBlock`'s length in characters for this turn's first round — a size, never its content. */
     val contextBlockChars: Int = 0,
+    // § FASE 2A.5-bis diagnostica richiesta esplicitamente ("parse error con
+    // CAUSA, non solo boolean"; "groundingRequired"/"groundingSatisfied") —
+    // additive, default to the previous no-op values.
+    /** [ParseOutcome]'s name for the LAST round of this turn — the real cause behind [parseError], never just a boolean. */
+    val parseOutcome: String = ParseOutcome.VALID.name,
+    /** True when this turn's intent plausibly needed real/personal data (a [com.simone.jarvismobile.core.tools.ToolFamily] in `GROUNDED_FAMILIES` was offered, or a deterministic fast/structured path handled it). */
+    val groundingRequired: Boolean = false,
+    /** True when grounding was not required, or was required AND at least one tool actually ran this turn. False means the model likely answered a data question without checking anything. */
+    val groundingSatisfied: Boolean = true,
 )

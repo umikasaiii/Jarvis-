@@ -2,12 +2,15 @@ package com.simone.jarvismobile.engine
 
 import android.util.Log
 import com.simone.jarvismobile.ai.RemoteChatState
+import com.simone.jarvismobile.context.ContextEngine
 import com.simone.jarvismobile.core.engine.BrainReply
 import com.simone.jarvismobile.core.engine.EngineTurnDiagnostics
 import com.simone.jarvismobile.core.engine.JarvisEngineMode
+import com.simone.jarvismobile.core.engine.ParseOutcome
 import com.simone.jarvismobile.core.engine.ToolCallBudget
 import com.simone.jarvismobile.core.intent.IntentAliases
 import com.simone.jarvismobile.core.protocol.ToolCall
+import com.simone.jarvismobile.core.tools.GROUNDED_FAMILIES
 import com.simone.jarvismobile.data.SettingsRepository
 import com.simone.jarvismobile.llm.DEFAULT_GENERATION_TIMEOUT_SECONDS
 import com.simone.jarvismobile.tools.AgendaIntentRouter
@@ -52,7 +55,27 @@ class ConversationalJarvisEngine @Inject constructor(
     private val toolRouter: ToolRouter,
     private val conversationManager: ConversationManager,
     private val remoteChatState: RemoteChatState,
+    private val contextEngine: ContextEngine,
 ) : JarvisEngine {
+
+    /**
+     * § FASE 2A.5-bis root cause (audit "AUDIT TOOL DISPONIBILI" — why a
+     * network-requiring tool like `get_weather` could never succeed even
+     * with real connectivity): every call site in this engine used to pass
+     * the `online` parameter's default, `false`, to `ToolRouter.execute`/
+     * `ToolRunner.run` — a network-requiring [com.simone.jarvismobile.core.tools.Tool]
+     * (`ToolRegistry.resolve`) is rejected outright whenever `online` is
+     * false, regardless of whether the device is actually connected. No
+     * tool in the registry needed network before this phase (an offline-
+     * first, deliberate choice — see `CLAUDE.md`), so the bug was latent:
+     * adding a real weather tool would have made it always fail, online or
+     * not. [ContextEngine.state]'s `networkAvailable` is the same live
+     * signal `WeatherManager`/other providers already read (§ one-shot,
+     * already-existing state, no new polling) — `== true` so an unknown
+     * network state (`null`) is treated as offline, not silently assumed
+     * connected.
+     */
+    private fun isOnline(): Boolean = contextEngine.state.value.networkAvailable == true
 
     /** A tool call this engine itself is waiting on the user to confirm/deny. */
     @Volatile private var pendingConfirmation: ToolCall? = null
@@ -219,7 +242,7 @@ class ConversationalJarvisEngine @Inject constructor(
     /** Runs [call] through [ToolRouter], tracks it for [ConversationManager], and turns the outcome into speech. */
     private suspend fun executeAndTrack(call: ToolCall, turn: TurnState, confirmed: Boolean): String {
         turn.toolsRequested += call.name
-        val outcome = toolRouter.execute(call, turn.budget, online = false, confirmed = confirmed)
+        val outcome = toolRouter.execute(call, turn.budget, online = isOnline(), confirmed = confirmed)
         conversationManager.onToolExecuted(call, outcome)
         return when (outcome) {
             is ToolOutcome.Done -> { turn.toolsExecuted += call.name; outcome.spoken }
@@ -305,7 +328,12 @@ class ConversationalJarvisEngine @Inject constructor(
                 return CANNED_ERROR
             }
             val ready = reply as BrainReply.Ready
-            if (!ready.parsedCleanly) turn.parseError = true
+            // § FASE 2A.5-bis: only a genuine MALFORMED_JSON round counts as
+            // a real parse error — PLAIN_TEXT is the model correctly
+            // answering without JSON because no tool was needed, the common
+            // case, not a failure (see ParseOutcome's own doc comment).
+            if (ready.parseOutcome == ParseOutcome.MALFORMED_JSON) turn.parseError = true
+            turn.parseOutcome = ready.parseOutcome.name
             if (turn.firstEmitAt == null) turn.firstEmitAt = System.currentTimeMillis()
 
             val response = ready.response
@@ -321,7 +349,7 @@ class ConversationalJarvisEngine @Inject constructor(
                     toolResults.append("Ho eseguito il numero massimo di operazioni per questo turno.\n")
                     break
                 }
-                when (val outcome = toolRouter.execute(call, turn.budget, online = false, confirmed = false)) {
+                when (val outcome = toolRouter.execute(call, turn.budget, online = isOnline(), confirmed = false)) {
                     is ToolOutcome.Done -> {
                         turn.toolsExecuted += call.name
                         conversationManager.onToolExecuted(call, outcome)
@@ -374,6 +402,8 @@ class ConversationalJarvisEngine @Inject constructor(
         var selectedToolCount = 0
         var rounds = 1
         var contextBlockChars = 0
+        // § FASE 2A.5-bis diagnostica richiesta esplicitamente — see EngineTurnDiagnostics' own doc comment.
+        var parseOutcome: String = ParseOutcome.VALID.name
 
         /** Set by [runStructuredPath] on a lexical miss, read by [runBrainLoop]. */
         var structuredMissHint: String? = null
@@ -381,6 +411,17 @@ class ConversationalJarvisEngine @Inject constructor(
         /** Never includes the reply text itself — only counts/booleans, per [EngineTurnDiagnostics]'s contract. */
         fun toDiagnostics(): EngineTurnDiagnostics {
             val now = System.currentTimeMillis()
+            // § FASE 2A.5-bis diagnostica richiesta esplicitamente
+            // ("groundingRequired=true/false, groundingSatisfied=true/false").
+            // A deterministic fast/structured-path hit is itself grounded by
+            // construction (it always executes exactly one real tool, see
+            // `runFastPath`/`runStructuredPath`), so it counts as grounding
+            // required-and-satisfied without needing a selected tool family.
+            // Otherwise: required when the model was offered any tool from a
+            // `GROUNDED_FAMILIES` family this turn; satisfied when either
+            // grounding was not required, or at least one tool actually ran.
+            val groundingRequired = fastPathHit || toolFamiliesSelected.any { it in GROUNDED_FAMILY_NAMES }
+            val groundingSatisfied = !groundingRequired || toolsExecuted.isNotEmpty()
             return EngineTurnDiagnostics(
                 engine = JarvisEngineMode.CONVERSAZIONALE,
                 fastPathHit = fastPathHit,
@@ -398,6 +439,9 @@ class ConversationalJarvisEngine @Inject constructor(
                 toolsFailed = toolsFailed,
                 rounds = rounds,
                 contextBlockChars = contextBlockChars,
+                parseOutcome = parseOutcome,
+                groundingRequired = groundingRequired,
+                groundingSatisfied = groundingSatisfied,
             )
         }
     }
@@ -417,5 +461,8 @@ class ConversationalJarvisEngine @Inject constructor(
         const val MAX_DIAGNOSTICS_HISTORY = 20
         const val CANNED_ERROR =
             "Non sono riuscito a completare la richiesta in modalità conversazionale. Riprova, per favore."
+
+        /** [GROUNDED_FAMILIES]' names, precomputed once — `toolFamiliesSelected` is already a `List<String>`. */
+        val GROUNDED_FAMILY_NAMES: Set<String> = GROUNDED_FAMILIES.map { it.name }.toSet()
     }
 }

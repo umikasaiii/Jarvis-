@@ -11,8 +11,28 @@ import com.simone.jarvismobile.core.routing.ToolIntentGate
  * authority for that.
  */
 enum class ToolFamily {
-    TIME, DEVICE, AGENDA, MEMORY, KNOWLEDGE, ARCHIVE, SYSTEM_APP, COMMUNICATION, MEDIA, DRIVING, UTILITY
+    TIME, DEVICE, AGENDA, MEMORY, KNOWLEDGE, ARCHIVE, SYSTEM_APP, COMMUNICATION, MEDIA, DRIVING, UTILITY,
+    // § FASE 2A.5-bis — two families new tools grounding real runtime/personal
+    // data (weather, Health Connect sleep/heart-rate) belong to; see
+    // GROUNDED_FAMILIES below for why they, and several families above, are
+    // never allowed to be answered from the model's own "knowledge".
+    WEATHER, HEALTH,
 }
+
+/**
+ * Families whose tools answer runtime/personal data that the model must
+ * never fabricate (§ FASE 2A.5-bis §3, "grounding obbligatorio") — weather,
+ * calendar/reminders/tasks, personal memory, the local archive (including
+ * the shopping list), device/notification state, and health data. A turn
+ * whose selected catalog includes one of these families is expected to
+ * actually call a tool before answering; [EngineTurnDiagnostics] uses this
+ * set (by name) to compute `groundingRequired`/`groundingSatisfied` without
+ * a second, parallel classification.
+ */
+val GROUNDED_FAMILIES: Set<ToolFamily> = setOf(
+    ToolFamily.WEATHER, ToolFamily.AGENDA, ToolFamily.MEMORY, ToolFamily.ARCHIVE,
+    ToolFamily.HEALTH, ToolFamily.DEVICE, ToolFamily.SYSTEM_APP,
+)
 
 /**
  * Deterministic, keyword-based selection of which registered tools are
@@ -66,6 +86,13 @@ object RelevantToolSelector {
             "start_driving_route", "show_driving_panel", "hide_driving_panel",
         ).forEach { put(it, ToolFamily.DRIVING) }
         put("calculate", ToolFamily.UTILITY)
+        // § FASE 2A.5-bis — capabilities that already exist in the app
+        // (WeatherManager, HealthConnectManager) but were never exposed as
+        // tools to the conversational engine, the real root cause behind
+        // "Che tempo fa domani?"/"Quante ore ho dormito questa settimana?"
+        // being answered from the model's own guess instead of real data.
+        put("get_weather", ToolFamily.WEATHER)
+        put("get_health_summary", ToolFamily.HEALTH)
     }
 
     private val TIME_KEYWORDS = setOf(
@@ -104,6 +131,19 @@ object RelevantToolSelector {
         "strada", "parcheggio", "modalita guida", "traffico", "autostrada",
     )
     private val UTILITY_KEYWORDS = setOf("calcola", "quanto fa", "quanto e", "somma", "diviso", "moltiplica")
+    // § FASE 2A.5-bis — deliberately general Italian phrasing for "what's the
+    // weather" in any tense/form, not the literal test phrases from the bug
+    // report (e.g. "che tempo fa domani" is covered by "che tempo"/"domani"
+    // is NOT itself a weather keyword — "domani" alone is far too broad and
+    // belongs to no family here).
+    private val WEATHER_KEYWORDS = setOf(
+        "meteo", "che tempo", "previsioni", "piove", "pioggia", "piovera", "nuvoloso", "sereno",
+        "temperatura", "gradi fuori", "che caldo", "che freddo", "vento", "ombrello", "temporale",
+    )
+    private val HEALTH_KEYWORDS = setOf(
+        "dormito", "dormire", "sonno", "ore di sonno", "battito", "bpm", "frequenza cardiaca",
+        "salute", "health connect", "riposo notturno",
+    )
 
     private val FAMILY_KEYWORDS: Map<ToolFamily, Set<String>> = mapOf(
         ToolFamily.TIME to TIME_KEYWORDS,
@@ -117,6 +157,8 @@ object RelevantToolSelector {
         ToolFamily.MEDIA to MEDIA_KEYWORDS,
         ToolFamily.DRIVING to DRIVING_KEYWORDS,
         ToolFamily.UTILITY to UTILITY_KEYWORDS,
+        ToolFamily.WEATHER to WEATHER_KEYWORDS,
+        ToolFamily.HEALTH to HEALTH_KEYWORDS,
     )
 
     /**
@@ -125,29 +167,39 @@ object RelevantToolSelector {
      * unconditionally, never a second registry. Returns the subset plausibly
      * relevant to [userText], preserving [availableTools]' original order:
      *
-     *  - [userText] has no tool-shaped signal at all ([ToolIntentGate] says
-     *    so) → empty: a plain "Ciao, come stai?" needs no tool catalog.
      *  - One or more [ToolFamily] keyword sets match → only tools in those
      *    families, plus any tool [FAMILY_BY_TOOL_NAME] does not yet classify
-     *    (see the class doc comment on why those are never dropped).
-     *  - [ToolIntentGate] says a tool is plausibly needed but no specific
-     *    family matched (a genuinely ambiguous request, e.g. "Attivalo per
+     *    (see the class doc comment on why those are never dropped). Checked
+     *    FIRST, regardless of [ToolIntentGate] (§ FASE 2A.5-bis root cause: a
+     *    factual question like "Che tempo fa domani?" does not match
+     *    [ToolIntentGate]'s action/device-question signals at all — it is a
+     *    plain question, not a command — so gating on that check first, as
+     *    an earlier phase did, silently starved every such family of any
+     *    chance to be selected. A specific family-keyword match is a
+     *    stronger, more targeted signal than the coarser intent gate, so it
+     *    is checked independently instead of behind it).
+     *  - No family matched, but [ToolIntentGate] says a tool is plausibly
+     *    needed anyway (a genuinely ambiguous request, e.g. "Attivalo per
      *    favore") → every tool: the conservative fallback that never costs
      *    capability. The existing wire-level truncation is what keeps this
      *    within the protocol limit on that rarer path, not this function.
+     *  - Neither matched → empty: a plain "Ciao, come stai?" needs no tool
+     *    catalog.
      */
     fun select(availableTools: List<Pair<String, String>>, userText: String): List<Pair<String, String>> {
-        if (!ToolIntentGate.shouldClassify(userText)) return emptyList()
-
         val normalized = normalize(userText)
         val matchedFamilies = FAMILY_KEYWORDS.filterValues { keywords -> keywords.any(normalized::contains) }.keys
 
-        if (matchedFamilies.isEmpty()) return availableTools
-
-        return availableTools.filter { (name, _) ->
-            val family = FAMILY_BY_TOOL_NAME[name]
-            family == null || family in matchedFamilies
+        if (matchedFamilies.isNotEmpty()) {
+            return availableTools.filter { (name, _) ->
+                val family = FAMILY_BY_TOOL_NAME[name]
+                family == null || family in matchedFamilies
+            }
         }
+
+        if (!ToolIntentGate.shouldClassify(userText)) return emptyList()
+
+        return availableTools
     }
 
     /**
