@@ -104,6 +104,9 @@ class RemoteAiEngine @Inject constructor(
         coreClient.cancel(requestId)
     }
 
+    /** Pass-through to [CoreClient.describeEndpoint] — diagnostics only, see there. */
+    suspend fun describeEndpoint(): String = coreClient.describeEndpoint()
+
     /**
      * Merges the caller's own [AiRequest.context] with a minimized snapshot
      * projection (§ richiesta esplicita: "NON inviare automaticamente Raw

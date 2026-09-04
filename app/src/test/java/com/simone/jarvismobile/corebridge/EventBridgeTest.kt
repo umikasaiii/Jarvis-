@@ -138,6 +138,7 @@ class EventBridgeTest {
             JarvisCoreResponse(requestId = request.requestId, status = CoreResponseStatus.OK)
         override fun stream(request: JarvisCoreRequest) = kotlinx.coroutines.flow.emptyFlow<JarvisCoreStreamChunk>()
         override fun cancel(requestId: String) = Unit
+        override suspend fun describeEndpoint(): String = "http://fake:0"
 
         override suspend fun publishEvent(event: JarvisEvent): Boolean {
             flushAttempted = true

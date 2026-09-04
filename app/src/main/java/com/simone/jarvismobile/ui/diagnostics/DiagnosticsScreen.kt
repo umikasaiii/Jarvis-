@@ -59,6 +59,8 @@ fun DiagnosticsScreen(
     val healthStatus by viewModel.healthStatus.collectAsStateWithLifecycle()
     val proactiveStatus by viewModel.proactiveStatus.collectAsStateWithLifecycle()
     val lastChatRoute by viewModel.lastChatRoute.collectAsStateWithLifecycle()
+    val lastRemoteAttempt by viewModel.lastRemoteAttempt.collectAsStateWithLifecycle()
+    val buildId = viewModel.buildId
     val perms = viewModel.permissions()
     val context = LocalContext.current
 
@@ -284,10 +286,11 @@ fun DiagnosticsScreen(
             }
         }
 
-        // § "si collega con Core ma non usa il modello AI" — nessun modo
-        // prima d'ora di sapere con certezza chi ha risposto all'ultimo
-        // messaggio (Core o il modello locale) senza Logcat. Sempre visibile,
-        // nessun pulsante: si aggiorna da sola a ogni messaggio di chat.
+        // § "si collega con Core ma non usa il modello AI" / "tryRemoteReply
+        // non arriva alla chiamata HTTP" — nessun modo prima d'ora di sapere
+        // con certezza chi ha risposto all'ultimo messaggio, cosa ha deciso
+        // il router e perché, e da quale build reale gira il codice. Sempre
+        // visibile, nessun pulsante: si aggiorna da sola a ogni messaggio.
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("Ultima risposta chat", style = MaterialTheme.typography.titleMedium)
@@ -295,6 +298,26 @@ fun DiagnosticsScreen(
                     lastChatRoute ?: "Nessun messaggio inviato in questa sessione dell'app.",
                     style = MaterialTheme.typography.bodySmall,
                 )
+                val attempt = lastRemoteAttempt
+                if (attempt != null) {
+                    Text(
+                        "motore=${attempt.engine} requestType=${attempt.requestType} " +
+                            "target=${attempt.target} reason=${attempt.reason}",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Text(
+                        "coreState=${attempt.coreState} coreEnabled=${attempt.coreEnabled} " +
+                            "remoteAiEnabled=${attempt.remoteAiEnabled} preferredRemote=${attempt.preferredRemote}",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Text(
+                        "esito=${attempt.outcome}" +
+                            (attempt.failureReason?.let { " failureReason=$it" } ?: "") +
+                            (attempt.endpoint?.let { " endpoint=$it" } ?: ""),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                Text("Build in esecuzione: $buildId", style = MaterialTheme.typography.bodySmall)
             }
         }
 

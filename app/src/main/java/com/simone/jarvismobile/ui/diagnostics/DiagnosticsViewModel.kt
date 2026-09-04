@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.simone.jarvismobile.ai.RemoteChatState
 import com.simone.jarvismobile.audio.AudioRouteState
 import com.simone.jarvismobile.audio.CaptureResult
 import com.simone.jarvismobile.audio.SessionCoordinator
@@ -58,6 +59,7 @@ class DiagnosticsViewModel @Inject constructor(
     private val contextEngine: ContextEngine,
     private val health: HealthConnectManager,
     private val proactive: ProactiveManager,
+    private val remoteChatState: RemoteChatState,
 ) : AndroidViewModel(application) {
 
     /**
@@ -239,6 +241,27 @@ class DiagnosticsViewModel @Inject constructor(
      * dell'app.
      */
     val lastChatRoute: StateFlow<String?> = coordinator.lastChatRoute
+
+    /**
+     * The structured counterpart to [lastChatRoute] — every field the
+     * "tryRemoteReply non arriva alla chiamata HTTP" audit asked to see:
+     * which engine ran, the routing decision and the raw toggles it came
+     * from, whether a remote call was even attempted, and (on failure) why.
+     * `null` before the first chat turn of this app session.
+     */
+    val lastRemoteAttempt: StateFlow<com.simone.jarvismobile.ai.LastRemoteAttempt?> = remoteChatState.lastAttempt
+
+    /**
+     * Which commit this exact running APK was built from — `BuildConfig.BUILD_ID`
+     * already existed (set from `GITHUB_SHA` in CI) but was never shown anywhere.
+     * § audit: the CI workflow only publishes to the `latest-debug` release
+     * `if: success()` — a commit whose tests fail leaves that release on the
+     * PREVIOUS good build, so "the device is on commit X" can be wrong even
+     * right after installing the "latest" download if X's own CI run failed.
+     * This settles that with certainty instead of trusting which commit was
+     * last pushed.
+     */
+    val buildId: String = BuildConfig.BUILD_ID
 
     val routeState: StateFlow<AudioRouteState> = coordinator.routeState
     val ttsState: StateFlow<TtsState> = coordinator.ttsState

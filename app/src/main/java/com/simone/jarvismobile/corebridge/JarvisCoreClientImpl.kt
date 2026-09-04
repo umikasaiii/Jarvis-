@@ -262,6 +262,8 @@ class JarvisCoreClientImpl @Inject constructor(
         activeEventSources.remove(requestId)?.cancel()
     }
 
+    override suspend fun describeEndpoint(): String = baseUrl()
+
     override suspend fun publishEvent(event: com.simone.jarvismobile.core.bridge.JarvisEvent): Boolean = withContext(Dispatchers.IO) {
         // jarvis-protocol/main defines no event-ingestion endpoint (verified
         // against jarvis-core's real routes: health/capabilities/models/chat/

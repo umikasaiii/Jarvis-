@@ -4,7 +4,9 @@ import android.content.Context
 import android.util.Log
 import com.simone.jarvismobile.ai.AiRequest
 import com.simone.jarvismobile.ai.AiRoutingContextProvider
+import com.simone.jarvismobile.ai.LastRemoteAttempt
 import com.simone.jarvismobile.ai.RemoteAiEngine
+import com.simone.jarvismobile.ai.RemoteAttemptOutcome
 import com.simone.jarvismobile.ai.RemoteChatState
 import com.simone.jarvismobile.core.ai.AiExecutionTarget
 import com.simone.jarvismobile.core.ai.AiRequestType
@@ -17,12 +19,14 @@ import com.simone.jarvismobile.core.protocol.AssistantResponse
 import com.simone.jarvismobile.core.protocol.ParseResult
 import com.simone.jarvismobile.core.protocol.ResponseParser
 import com.simone.jarvismobile.core.routing.ComplexityHeuristic
+import com.simone.jarvismobile.data.SettingsRepository
 import com.simone.jarvismobile.llm.DEFAULT_GENERATION_TIMEOUT_SECONDS
 import com.simone.jarvismobile.llm.LlmRouter
 import com.simone.jarvismobile.llm.ModelSlot
 import com.simone.jarvismobile.tools.ToolRunner
 import com.simone.jarvismobile.util.runCancellable
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -85,6 +89,7 @@ class JarvisBrain @Inject constructor(
     private val remoteAiEngine: RemoteAiEngine,
     private val routingContext: AiRoutingContextProvider,
     private val remoteChatState: RemoteChatState,
+    private val settings: SettingsRepository,
 ) {
     private val parser = ResponseParser()
 
@@ -147,12 +152,41 @@ class JarvisBrain @Inject constructor(
      * Classico's plain human-facing text, not this brain's JSON contract.
      */
     private suspend fun tryRemoteReply(prompt: String, slot: ModelSlot, timeoutSeconds: Long): String? {
-        Log.i(TAG, "BRAIN_TRY_REMOTE")
+        Log.i(TAG, "BRAIN_TRY_REMOTE_ENTER")
         val requestType = if (slot == ModelSlot.ADVANCED) AiRequestType.COMPLEX else AiRequestType.CHAT
-        val decision = AiRoutingHeuristic.decide(requestType, routingContext.preferencesFor(requestType))
-        Log.i(TAG, "BRAIN_ROUTE_DECISION target=${decision.target} reason=${decision.reason}")
+        val prefs = routingContext.preferencesFor(requestType)
+        val decision = AiRoutingHeuristic.decide(requestType, prefs)
+        Log.i(TAG, "BRAIN_ROUTE target=${decision.target} reason=${decision.reason}")
+
+        // § audit "tryRemoteReply non arriva alla chiamata HTTP": snapshot the
+        // raw toggles/endpoint alongside the derived decision — settling
+        // whether coreEnabled/remoteAiEnabled genuinely came from the same
+        // SettingsRepository the UI reads (they do: same instance, same
+        // DataStore keys) is then a read of this state, not another guess.
+        val coreEnabledNow = settings.coreEnabled.first()
+        val preferredRemoteNow = settings.corePreferRemote.first()
+        val endpointNow = runCatching { remoteAiEngine.describeEndpoint() }.getOrNull()
+        fun record(outcome: RemoteAttemptOutcome, failureReason: String? = null) {
+            remoteChatState.recordAttempt(
+                LastRemoteAttempt(
+                    engine = "Conversazionale",
+                    requestType = requestType.name,
+                    target = decision.target.name,
+                    reason = decision.reason,
+                    coreState = prefs.coreState.name,
+                    coreEnabled = coreEnabledNow,
+                    remoteAiEnabled = prefs.remoteAiEnabled,
+                    preferredRemote = preferredRemoteNow,
+                    outcome = outcome,
+                    failureReason = failureReason,
+                    endpoint = endpointNow,
+                ),
+            )
+        }
+
         if (decision.target == AiExecutionTarget.LOCAL) {
             Log.i(TAG, "CHAT -> LOCAL (reason=${decision.reason}, engine=conversazionale)")
+            record(RemoteAttemptOutcome.NOT_ATTEMPTED)
             remoteChatState.setLastRoute("LOCAL (${decision.reason})")
             return null
         }
@@ -168,7 +202,8 @@ class JarvisBrain @Inject constructor(
             preferredModel = if (decision.target == AiExecutionTarget.REMOTE_BRAIN) "brain" else null,
         )
         remoteChatState.activeRequestId = requestId
-        Log.i(TAG, "BRAIN_REMOTE_CALL_START requestId=$requestId target=${decision.target}")
+        Log.i(TAG, "BRAIN_REMOTE_START requestId=$requestId target=${decision.target}")
+        record(RemoteAttemptOutcome.STARTED)
         val result = try {
             runCancellable { remoteAiEngine.generate(request) }.getOrNull()
         } finally {
@@ -178,6 +213,7 @@ class JarvisBrain @Inject constructor(
             val reason = result?.failureReason ?: "cancelled_or_null"
             Log.i(TAG, "BRAIN_REMOTE_FAIL reason=$reason")
             Log.i(TAG, "CORE FAILED -> LOCAL FALLBACK (reason=$reason, engine=conversazionale)")
+            record(RemoteAttemptOutcome.FAILED, failureReason = reason.toString())
             remoteChatState.setLastRoute("LOCAL (fallback dopo Core: $reason)")
             return null
         }
@@ -185,10 +221,12 @@ class JarvisBrain @Inject constructor(
         if (text == null) {
             Log.i(TAG, "BRAIN_REMOTE_FAIL reason=empty_reply")
             Log.i(TAG, "CORE FAILED -> LOCAL FALLBACK (reason=empty_reply, engine=conversazionale)")
+            record(RemoteAttemptOutcome.FAILED, failureReason = "empty_reply")
             remoteChatState.setLastRoute("LOCAL (fallback dopo Core: empty_reply)")
             return null
         }
         Log.i(TAG, "BRAIN_REMOTE_SUCCESS target=${decision.target}")
+        record(RemoteAttemptOutcome.SUCCESS)
         Log.i(TAG, "CHAT -> $targetLabel (engine=conversazionale)")
         remoteChatState.setLastRoute(targetLabel)
         return text

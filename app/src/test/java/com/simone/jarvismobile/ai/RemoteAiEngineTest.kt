@@ -120,5 +120,6 @@ class RemoteAiEngineTest {
         override fun stream(request: JarvisCoreRequest): Flow<JarvisCoreStreamChunk> = flow {}
         override fun cancel(requestId: String) = Unit
         override suspend fun publishEvent(event: JarvisEvent): Boolean = true
+        override suspend fun describeEndpoint(): String = "http://fake:0"
     }
 }

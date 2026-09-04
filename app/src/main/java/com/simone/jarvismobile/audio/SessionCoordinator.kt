@@ -1094,7 +1094,34 @@ class SessionCoordinator @Inject constructor(
      */
     private suspend fun tryRemoteChat(message: String, system: String, needsReasoning: Boolean): String? {
         val requestType = if (needsReasoning) AiRequestType.COMPLEX else AiRequestType.CHAT
-        val decision = AiRoutingHeuristic.decide(requestType, aiRoutingContextProvider.preferencesFor(requestType))
+        val prefs = aiRoutingContextProvider.preferencesFor(requestType)
+        val decision = AiRoutingHeuristic.decide(requestType, prefs)
+
+        // § audit "tryRemoteReply non arriva alla chiamata HTTP" (JarvisBrain):
+        // stessa struttura registrata qui per il Motore Classico, cosicché il
+        // pannello Diagnostica dica sempre quale motore ha risposto davvero,
+        // non solo quello Conversazionale.
+        val coreEnabledNow = settings.coreEnabled.first()
+        val preferredRemoteNow = settings.corePreferRemote.first()
+        val endpointNow = runCatching { remoteAiEngine.describeEndpoint() }.getOrNull()
+        fun record(outcome: com.simone.jarvismobile.ai.RemoteAttemptOutcome, failureReason: String? = null) {
+            remoteChatState.recordAttempt(
+                com.simone.jarvismobile.ai.LastRemoteAttempt(
+                    engine = "Classico",
+                    requestType = requestType.name,
+                    target = decision.target.name,
+                    reason = decision.reason,
+                    coreState = prefs.coreState.name,
+                    coreEnabled = coreEnabledNow,
+                    remoteAiEnabled = prefs.remoteAiEnabled,
+                    preferredRemote = preferredRemoteNow,
+                    outcome = outcome,
+                    failureReason = failureReason,
+                    endpoint = endpointNow,
+                ),
+            )
+        }
+
         if (decision.target == AiExecutionTarget.LOCAL) {
             // Distinguishes, at a glance in Logcat, every reason an "ordinary
             // chat" turn never left the device: toggles genuinely off
@@ -1106,6 +1133,7 @@ class SessionCoordinator @Inject constructor(
             // logs message content, only the routing reason (§ "non loggare
             // dati personali").
             Log.i(TAG, "CHAT -> LOCAL (reason=${decision.reason})")
+            record(com.simone.jarvismobile.ai.RemoteAttemptOutcome.NOT_ATTEMPTED)
             remoteChatState.setLastRoute("LOCAL (${decision.reason})")
             return null
         }
@@ -1121,6 +1149,7 @@ class SessionCoordinator @Inject constructor(
             preferredModel = if (decision.target == AiExecutionTarget.REMOTE_BRAIN) "brain" else null,
         )
         remoteChatState.activeRequestId = requestId
+        record(com.simone.jarvismobile.ai.RemoteAttemptOutcome.STARTED)
         val result = try {
             runCancellable { remoteAiEngine.generate(request) }.getOrNull()
         } finally {
@@ -1134,16 +1163,19 @@ class SessionCoordinator @Inject constructor(
         if (result == null || !result.success) {
             val reason = result?.failureReason ?: "cancelled_or_null"
             Log.i(TAG, "CORE FAILED -> LOCAL FALLBACK (reason=$reason)")
+            record(com.simone.jarvismobile.ai.RemoteAttemptOutcome.FAILED, failureReason = reason.toString())
             remoteChatState.setLastRoute("LOCAL (fallback dopo Core: $reason)")
             return null
         }
         val cleaned = result.text?.let(AssistantReplyCleaner::clean)?.ifBlank { null }
         if (cleaned == null) {
             Log.i(TAG, "CORE FAILED -> LOCAL FALLBACK (reason=empty_reply)")
+            record(com.simone.jarvismobile.ai.RemoteAttemptOutcome.FAILED, failureReason = "empty_reply")
             remoteChatState.setLastRoute("LOCAL (fallback dopo Core: empty_reply)")
             return null
         }
         Log.i(TAG, "CHAT -> $targetLabel")
+        record(com.simone.jarvismobile.ai.RemoteAttemptOutcome.SUCCESS)
         remoteChatState.setLastRoute(targetLabel)
         return cleaned
     }

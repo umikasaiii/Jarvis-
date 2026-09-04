@@ -43,4 +43,42 @@ class RemoteChatState @Inject constructor() {
     fun setLastRoute(value: String) {
         _lastRoute.value = value
     }
+
+    /**
+     * Written **only** by [recordAttempt], called from the same two call
+     * sites as [setLastRoute] above ([com.simone.jarvismobile.engine.JarvisBrain.tryRemoteReply]
+     * and `SessionCoordinator.tryRemoteChat`) — a structured counterpart to
+     * [lastRoute]'s human-readable string, for the exact fields requested by
+     * the "tryRemoteReply non arriva alla chiamata HTTP" audit: which engine
+     * ran, what the routing decision actually was and why, the raw toggles
+     * it was computed from, and whether a remote call was even attempted
+     * before falling back. `null` means no chat turn has run this session —
+     * distinct from [RemoteAttemptOutcome.NOT_ATTEMPTED], which means a turn
+     * ran but routing chose LOCAL before ever reaching [RemoteAiEngine].
+     */
+    private val _lastAttempt = MutableStateFlow<LastRemoteAttempt?>(null)
+    val lastAttempt: StateFlow<LastRemoteAttempt?> = _lastAttempt.asStateFlow()
+
+    fun recordAttempt(attempt: LastRemoteAttempt) {
+        _lastAttempt.value = attempt
+    }
 }
+
+/** See [RemoteChatState.lastAttempt]. */
+enum class RemoteAttemptOutcome { NOT_ATTEMPTED, STARTED, SUCCESS, FAILED }
+
+/** See [RemoteChatState.lastAttempt]. */
+data class LastRemoteAttempt(
+    val engine: String,
+    val requestType: String,
+    val target: String,
+    val reason: String,
+    val coreState: String,
+    val coreEnabled: Boolean,
+    val remoteAiEnabled: Boolean,
+    val preferredRemote: Boolean,
+    val outcome: RemoteAttemptOutcome,
+    val failureReason: String? = null,
+    val endpoint: String? = null,
+    val atMs: Long = System.currentTimeMillis(),
+)

@@ -28,6 +28,16 @@ interface CoreClient {
     fun cancel(requestId: String)
 
     /**
+     * The base URL ([send]/[stream]/[healthCheck] would all resolve against
+     * this right now, read fresh from [com.simone.jarvismobile.data.SettingsRepository])
+     * — diagnostics only, never used to build a request itself. § audit
+     * "tryRemoteReply non arriva alla chiamata HTTP": surfaces which
+     * host/port/scheme the client would actually hit, so a wrong/blank
+     * setting is visible without guessing from the routing decision alone.
+     */
+    suspend fun describeEndpoint(): String
+
+    /**
      * `POST /v1/events` — delivers one already-queued [JarvisEvent] to Core.
      * Returns `true` only on a confirmed (2xx) delivery, so [EventBridge] knows
      * it is safe to drop the event from its retry queue; any failure (network,
