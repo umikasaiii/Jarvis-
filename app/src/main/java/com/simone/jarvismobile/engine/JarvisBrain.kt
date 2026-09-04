@@ -13,6 +13,7 @@ import com.simone.jarvismobile.core.ai.AiRequestType
 import com.simone.jarvismobile.core.ai.AiRoutingHeuristic
 import com.simone.jarvismobile.core.engine.BrainEvent
 import com.simone.jarvismobile.core.engine.BrainReply
+import com.simone.jarvismobile.core.engine.PromptDiagnostics
 import com.simone.jarvismobile.core.engine.ReasoningMode
 import com.simone.jarvismobile.core.engine.SentenceStream
 import com.simone.jarvismobile.core.engine.SystemPromptComposer
@@ -96,6 +97,10 @@ class JarvisBrain @Inject constructor(
     private val settings: SettingsRepository,
 ) {
     private val parser = ResponseParser()
+
+    /** Set by the last [systemPromptFor] call — § FASE 2A.5 diagnostica richiesta esplicitamente, see [PromptDiagnostics]. */
+    @Volatile var lastPromptDiagnostics: PromptDiagnostics? = null
+        private set
 
     /** Resolves which model slot answers this turn, from the reasoning-mode setting. */
     fun resolveSlot(mode: ReasoningMode, text: String): ModelSlot = when (mode) {
@@ -326,12 +331,28 @@ class JarvisBrain @Inject constructor(
         val available = tools.available()
         val selected = RelevantToolSelector.select(available, toolSelectionText)
         val built = SystemPromptComposer.compose(tier, richPersona, selected)
+        val families = RelevantToolSelector.familiesOf(selected).map { it.name }
+        // § FASE 2A.5 diagnostica richiesta esplicitamente: tool family
+        // selezionata, tool disponibili al modello, tier — mai contenuto del
+        // prompt o argomenti. Set by the last systemPromptFor() call, mirroring
+        // the existing `lastNeedsReasoning`/`lastLoadDetail` "set by the last
+        // call" convention already used elsewhere in this codebase (e.g.
+        // LlmIntentClassifier), so ConversationalJarvisEngine can read it
+        // right after each reply() without a second parallel return channel.
+        lastPromptDiagnostics = PromptDiagnostics(
+            tier = tier,
+            availableToolCount = available.size,
+            selectedToolCount = selected.size,
+            toolFamilies = families,
+            systemPromptChars = built.length,
+        )
         // § diagnostica non sensibile richiesta esplicitamente: solo dimensioni/conteggi,
         // mai il contenuto del prompt/dei nomi/descrizioni degli strumenti selezionati.
         Log.i(
             TAG,
             "conversational_prompt_built tier=$tier systemPromptChars=${built.length} " +
-                "availableToolCount=${available.size} selectedToolCount=${selected.size}",
+                "availableToolCount=${available.size} selectedToolCount=${selected.size} " +
+                "toolFamilies=$families",
         )
         return built
     }

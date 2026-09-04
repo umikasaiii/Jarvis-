@@ -17,7 +17,18 @@ import kotlin.test.assertTrue
  */
 class SystemPromptComposerTest {
 
-    private val richPersona = "Sei JARVIS, l'assistente personale di Simone. Parli italiano.\n\nRegola: mai inventare."
+    // § FASE 2A.5: sized closer to the real asset (jarvis_system_it.md, ~3247
+    // chars) than the earlier ~90-char stub — the FAST-vs-RICH size
+    // comparisons below are only meaningful against a realistic RICH
+    // baseline; a toy-sized stub made them fragile against small, correct
+    // FAST-side additions (like FASE 2A.5's grounding sentence) that have
+    // nothing to do with real-world prompt size ordering.
+    private val richPersona = (1..12).joinToString("\n\n") {
+        "Sei JARVIS, l'assistente personale di Simone. Parli italiano, sei diretto e non inventi mai " +
+            "fatti su Simone o sul mondo. Paragrafo di esempio numero $it per simulare la lunghezza reale " +
+            "della persona ricca usata da Modalità Classica e da BRAIN, con regole più estese di quelle " +
+            "del prompt compatto FAST."
+    }
     private val someTools = listOf(
         "add_reminder" to "Aggiunge un promemoria in agenda.",
         "list_agenda" to "Elenca gli impegni.",
@@ -77,6 +88,38 @@ class SystemPromptComposerTest {
         val fast = SystemPromptComposer.compose(SystemPromptComposer.Tier.FAST, richPersona, someTools)
         val rich = SystemPromptComposer.compose(SystemPromptComposer.Tier.RICH, richPersona, someTools)
         assertTrue(fast.length < rich.length)
+    }
+
+    // --- § FASE 2A.5 Problema 2: tool grounding ------------------------------------------
+
+    @Test
+    fun `FAST tool-bearing prompt forbids answering a real-data question without checking`() {
+        // § root cause audit "Che impegni ho oggi?" -> "Non hai impegni": for
+        // THAT exact phrasing the answer was already grounded deterministically
+        // (CommandMatcher.AGENDA_RE, FastPathRouter runs before this brain is
+        // ever reached) - but nothing stopped a request that DOES reach this
+        // prompt from skipping tool_calls and guessing anyway. General wording
+        // (any real personal data), not a hardcoded "agenda" special case.
+        val built = SystemPromptComposer.compose(SystemPromptComposer.Tier.FAST, richPersona, someTools)
+        assertTrue("dati reali" in built)
+        assertTrue("non hai verificato" in built)
+    }
+
+    @Test
+    fun `FAST no-tool prompt has no grounding clause to keep the common case compact`() {
+        val built = SystemPromptComposer.compose(SystemPromptComposer.Tier.FAST, richPersona, emptyList())
+        assertFalse("dati reali" in built)
+    }
+
+    // --- § FASE 2A.5 Problema 3: tono ----------------------------------------------------
+
+    @Test
+    fun `FAST persona forbids the generic assistant greeting`() {
+        // § root cause of "Come stai?" -> "Ciao Simone! Come posso aiutarti
+        // oggi in modo utile?": nothing told the model to actually answer
+        // instead of defaulting to a templated greeting.
+        assertTrue("Come posso aiutarti" in SystemPromptComposer.FAST_COMPACT_PERSONA)
+        assertTrue("Rispondi davvero" in SystemPromptComposer.FAST_COMPACT_PERSONA)
     }
 
     // --- 4. persona JARVIS preservata --------------------------------------------------

@@ -106,16 +106,26 @@ object SystemPromptComposer {
      * it forbids introductions/commentary whenever Simone specifies the
      * exact output, which is what a literal-echo request always is, without
      * hardcoding the words "TEST CORE" anywhere.
+     *
+     * § FASE 2A.5 — a NEW sentence added first: device-tested, "Come stai?"
+     * got `Ciao Simone! Come posso aiutarti oggi in modo utile?` — a
+     * templated customer-service greeting instead of an actual answer.
+     * Nothing in this persona ever said "answer for real, skip the
+     * pleasantries" — the compactness itself wasn't the problem (the rich
+     * persona asset has the same gap: docs/CONVERSATIONAL_ENGINE territory,
+     * not touched here per this phase's scope), the missing rule was.
      */
     const val FAST_COMPACT_PERSONA = "Sei JARVIS, l'assistente personale di Simone. Rispondi sempre in italiano, " +
-        "con uno stile breve e diretto: la risposta viene spesso letta ad alta voce.\n" +
+        "con uno stile breve, diretto e naturale: la risposta viene spesso letta ad alta voce.\n" +
+        "Rispondi davvero a quello che dice o chiede Simone: niente saluti di cortesia o formule di " +
+        "servizio ripetitive come \"Come posso aiutarti?\", a meno che la conversazione lo richieda davvero.\n" +
         "Segui l'istruzione più recente di Simone così com'è, anche alla lettera se te lo chiede " +
         "esplicitamente (es. \"rispondi solo con: ...\"): non sostituirla mai con una risposta generica " +
         "o di cortesia.\n" +
         "Se Simone specifica il formato o il contenuto esatto della risposta, produci SOLO quel contenuto: " +
         "nessuna introduzione, nessun commento prima o dopo, nessuna spiegazione di cosa stai facendo.\n" +
-        "Non inventare mai fatti, dati o risultati di uno strumento: se non lo sai o non l'hai davvero " +
-        "eseguito, dillo."
+        "Non inventare mai fatti, dati, informazioni personali o risultati di uno strumento: se non lo sai " +
+        "o non l'hai davvero eseguito, dillo."
 
     const val FAST_NO_TOOL_LINE =
         "Nessuno strumento è necessario in questo turno: rispondi direttamente in testo semplice, senza JSON."
@@ -137,11 +147,28 @@ object SystemPromptComposer {
     const val FAST_BUDGET_LINE =
         "Sii sintetico: 1-2 frasi brevi (circa 40 parole), a meno che Simone chieda esplicitamente più dettaglio."
 
+    /**
+     * § FASE 2A.5 — audited whether "Che impegni ho oggi?" -> "Non hai
+     * impegni in agenda per oggi" was actually grounded in the real
+     * `list_agenda` tool: for that exact phrasing yes, deterministically —
+     * it matches `CommandMatcher.AGENDA_RE`, so `FastPathRouter` answers it
+     * before this brain (or any LLM) is ever reached. But nothing prevented
+     * a request that DOES reach this prompt (offered tools, selectedTools
+     * non-empty) from answering a data question in `assistant_text` without
+     * ever populating `tool_calls` — the model taking a shortcut instead of
+     * actually checking. The added sentence is general (any real personal
+     * data: agenda, memoria, notifiche, dispositivo, archivio — not a
+     * hardcoded case) and pairs with the persona's existing "never invent a
+     * tool result" rule to also cover "never skip the tool and guess".
+     */
     const val FAST_TOOL_PROTOCOL_HEADER = "Se ti serve una di queste operazioni, rispondi in puro JSON " +
         "(nessun testo fuori dalle graffe): " +
         "{\"assistant_text\":\"...\",\"tool_calls\":[{\"id\":\"1\",\"name\":\"NOME_ESATTO\",\"arguments\":{...}}]}. " +
         "Usa solo i nomi esatti elencati sotto; prendi gli argomenti solo da quanto detto da Simone, mai " +
-        "inventati. Se non ti serve alcuno strumento, rispondi in testo semplice, senza JSON.\n\n" +
+        "inventati. Se la domanda richiede dati reali (agenda, memoria, notifiche, dispositivo, archivio), " +
+        "usa SEMPRE lo strumento pertinente prima di rispondere: non affermare mai un dato che non hai " +
+        "verificato, e se lo strumento non è disponibile o fallisce dillo invece di inventare la risposta. " +
+        "Se non ti serve alcuno strumento, rispondi in testo semplice, senza JSON.\n\n" +
         "Strumenti disponibili:\n"
 
     // --- RICH tier — byte-for-byte what FASE 2A.2 already sent ----------------------------

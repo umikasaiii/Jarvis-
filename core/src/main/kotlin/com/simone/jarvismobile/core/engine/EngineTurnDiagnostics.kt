@@ -25,4 +25,18 @@ data class EngineTurnDiagnostics(
     val fallbackOccurred: Boolean,
     val parseError: Boolean,
     val timestamp: Long,
+    // § FASE 2A.5 diagnostica richiesta esplicitamente — additive, default
+    // to the previous no-op values so no other constructor call site breaks.
+    /** [com.simone.jarvismobile.core.tools.ToolFamily] names offered to the model this turn, e.g. `["AGENDA"]`. */
+    val toolFamiliesSelected: List<String> = emptyList(),
+    /** How many of `ToolRunner.available()`'s tools existed at all this turn — for context, never personal. */
+    val availableToolCount: Int = 0,
+    /** How many of those were actually shown to the model (`RelevantToolSelector`'s output size). */
+    val selectedToolCount: Int = 0,
+    /** Names the model requested that did NOT come back `ToolOutcome.Done` — the "successo/fallimento" signal. */
+    val toolsFailed: List<String> = emptyList(),
+    /** How many `JarvisBrain.reply()` rounds this turn actually used (1 = no follow-up round). */
+    val rounds: Int = 1,
+    /** `contextBlock`'s length in characters for this turn's first round — a size, never its content. */
+    val contextBlockChars: Int = 0,
 )

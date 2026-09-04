@@ -223,7 +223,7 @@ class ConversationalJarvisEngine @Inject constructor(
         conversationManager.onToolExecuted(call, outcome)
         return when (outcome) {
             is ToolOutcome.Done -> { turn.toolsExecuted += call.name; outcome.spoken }
-            is ToolOutcome.Failed -> outcome.spoken
+            is ToolOutcome.Failed -> { turn.toolsFailed += call.name; outcome.spoken }
             is ToolOutcome.NeedsConfirmation -> {
                 pendingConfirmation = outcome.call
                 outcome.prompt
@@ -255,6 +255,9 @@ class ConversationalJarvisEngine @Inject constructor(
         val slot = brain.resolveSlot(reasoningMode, transcript)
         val assembled = contextAssembler.assemble(transcript, conversationManager.snapshotText())
         turn.memoriesRetrieved = assembled.memoriesRetrieved
+        // § FASE 2A.5 diagnostica richiesta esplicitamente ("quantità... di
+        // history/context inserita") — a size only, never the text itself.
+        turn.contextBlockChars = assembled.text.length
         var contextBlock = assembled.text
         // The structured path already tried a literal name match against the
         // calendar and missed — a real entry may still exist under different
@@ -272,6 +275,7 @@ class ConversationalJarvisEngine @Inject constructor(
 
         while (true) {
             rounds++
+            turn.rounds = rounds
             if (rounds > MAX_BRAIN_ROUNDS) return CANNED_ERROR
             val timeoutSeconds = if (rounds == 1) DEFAULT_GENERATION_TIMEOUT_SECONDS else FOLLOWUP_TIMEOUT_SECONDS
 
@@ -282,6 +286,17 @@ class ConversationalJarvisEngine @Inject constructor(
             // comment for why selecting from that text instead would starve
             // a later round of tools the original request might still need.
             val reply = brain.reply(currentText, contextBlock, slot, timeoutSeconds, toolSelectionText = transcript)
+            // § FASE 2A.5 diagnostica richiesta esplicitamente ("tool family
+            // selezionata", "tool disponibili al modello") — read right after
+            // the call it describes, same "set by the last call" convention
+            // JarvisBrain already uses (see PromptDiagnostics' doc comment).
+            // Stable across rounds by construction (same toolSelectionText
+            // every round, § FASE 2A.4), so overwriting each round is harmless.
+            brain.lastPromptDiagnostics?.let { diag ->
+                turn.toolFamiliesSelected = diag.toolFamilies
+                turn.availableToolCount = diag.availableToolCount
+                turn.selectedToolCount = diag.selectedToolCount
+            }
             if (reply is BrainReply.Unavailable) {
                 // JarvisEngineRouter is expected to have already kept us from being
                 // called at all in this case; this is the honest fallback if the
@@ -312,7 +327,10 @@ class ConversationalJarvisEngine @Inject constructor(
                         conversationManager.onToolExecuted(call, outcome)
                         toolResults.append(outcome.spoken).append('\n')
                     }
-                    is ToolOutcome.Failed -> toolResults.append(outcome.spoken).append('\n')
+                    is ToolOutcome.Failed -> {
+                        turn.toolsFailed += call.name
+                        toolResults.append(outcome.spoken).append('\n')
+                    }
                     is ToolOutcome.NeedsConfirmation -> {
                         pendingConfirmation = outcome.call
                         confirmationPrompt = outcome.prompt
@@ -349,6 +367,14 @@ class ConversationalJarvisEngine @Inject constructor(
         var firstEmitAt: Long? = null
         var memoriesRetrieved = 0
 
+        // § FASE 2A.5 diagnostica richiesta esplicitamente — see EngineTurnDiagnostics' own doc comment.
+        val toolsFailed = ArrayList<String>()
+        var toolFamiliesSelected: List<String> = emptyList()
+        var availableToolCount = 0
+        var selectedToolCount = 0
+        var rounds = 1
+        var contextBlockChars = 0
+
         /** Set by [runStructuredPath] on a lexical miss, read by [runBrainLoop]. */
         var structuredMissHint: String? = null
 
@@ -366,6 +392,12 @@ class ConversationalJarvisEngine @Inject constructor(
                 fallbackOccurred = fallbackOccurred,
                 parseError = parseError,
                 timestamp = startedAt,
+                toolFamiliesSelected = toolFamiliesSelected,
+                availableToolCount = availableToolCount,
+                selectedToolCount = selectedToolCount,
+                toolsFailed = toolsFailed,
+                rounds = rounds,
+                contextBlockChars = contextBlockChars,
             )
         }
     }

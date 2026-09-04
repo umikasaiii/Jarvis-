@@ -130,6 +130,22 @@ class RelevantToolSelectorTest {
         assertEquals(allTools, selected)
     }
 
+    @Test
+    fun `a personal-task phrasing with no agenda keyword still reaches list_agenda - FASE 2A5`() {
+        // § root cause: this phrase used to be gated to empty by
+        // ToolIntentGate.shouldClassify() alone (fixed there, not here) - once
+        // that gate says "tool-shaped", this object correctly has no specific
+        // FAMILY_KEYWORDS match for it either (no literal "agenda"/"impegni"),
+        // so it lands in the conservative full-catalog fallback, which DOES
+        // include list_agenda/add_task - the model can now actually choose to
+        // check, instead of being told upfront that no tool applies at all.
+        val selected = RelevantToolSelector.select(allTools, "Settimana prossima devo comprare qualcosa?")
+        val names = selected.map { it.first }
+        assertTrue("list_agenda" in names)
+        assertTrue("add_task" in names)
+        assertTrue(selected.isNotEmpty())
+    }
+
     // --- structural invariants -----------------------------------------------------------
 
     @Test
@@ -173,6 +189,22 @@ class RelevantToolSelectorTest {
         val selected = RelevantToolSelector.select(allTools, "Che impegni ho oggi in agenda?")
         val expectedOrder = allTools.map { it.first }.filter { it in selected.map { p -> p.first } }
         assertEquals(expectedOrder, selected.map { it.first })
+    }
+
+    // --- § FASE 2A.5 diagnostica: familyOf/familiesOf ------------------------------------
+
+    @Test
+    fun `familyOf reports the classified family, null for an unknown tool`() {
+        assertEquals(ToolFamily.AGENDA, RelevantToolSelector.familyOf("list_agenda"))
+        assertEquals(ToolFamily.DEVICE, RelevantToolSelector.familyOf("flashlight"))
+        assertEquals(null, RelevantToolSelector.familyOf("brand_new_tool"))
+    }
+
+    @Test
+    fun `familiesOf collapses a selection into its distinct families, for diagnostics only`() {
+        val selected = RelevantToolSelector.select(allTools, "Accendi la torcia")
+        val families = RelevantToolSelector.familiesOf(selected)
+        assertEquals(setOf(ToolFamily.DEVICE), families)
     }
 
     // --- § FASE 2A.4 — sequential turns, not just isolated calls ------------------------

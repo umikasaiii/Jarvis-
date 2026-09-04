@@ -157,7 +157,16 @@ object ToolIntentGate {
             """svegli\w*|dest\w*|temporizz\w*|timer|sveglia|torcia|agenda|""" +
             """appuntament\w*|impegn\w*|promemoria|programm\w*|previst\w*|calcol\w*|""" +
             """apri\w*|lancia\w*|chiama\w*|telefon\w*|sms|messagg\w*|navig\w*|""" +
-            """portami|guidami|riproduc\w*|musica|brano|notific\w*|vault|file)\b""",
+            // § FASE 2A.5 — "devo" (first person present, "I need/must to…")
+            // is the standard Italian way to state a personal task/obligation
+            // ("devo comprare il latte", "devo chiamare il dentista"), the
+            // same shape as an agenda/reminder check even without the words
+            // "agenda"/"impegno" ever appearing. Deliberately not "dovrei"/
+            // "dovevo" (conditional/past) - those read as advice-seeking
+            // ("che attrezzi dovrei usare?") rather than a task statement, and
+            // must keep skipping the classifier per the existing test for
+            // ordinary reasoning questions.
+            """portami|guidami|riproduc\w*|musica|brano|notific\w*|vault|file|devo)\b""",
     )
     private val deviceQuestionSignals = Regex(
         """(?i)\b(?:batteria|caric\w*|percentuale|ora|orario|data)\b""",

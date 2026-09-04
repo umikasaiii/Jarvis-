@@ -65,12 +65,48 @@ class RelevantContextSelectorTest {
     }
 
     @Test
-    fun `generic chat gets temporal plus a little memory, nothing else`() {
+    fun `generic chat with no memory-shaped signal gets temporal only - FASE 2A5`() {
+        // § FASE 2A.5 root cause of stale, unrelated memory content bleeding
+        // into a brand new question: this used to unconditionally add MEMORY
+        // for any uncategorized message (an earlier, explicit design choice,
+        // now reverted by real-device evidence it was wrong) - a plain chat
+        // message with no memory-related language must not pull in the
+        // snapshot's un-filtered "10 most recent records" section at all.
         val result = RelevantContextSelector.select(fullSnapshot(), AiRequestType.CHAT, "Raccontami una barzelletta", now)
         assertTrue(SelectionCategory.TEMPORAL in result.selected)
-        assertTrue(SelectionCategory.MEMORY in result.selected)
+        assertFalse(SelectionCategory.MEMORY in result.selected)
         assertFalse(SelectionCategory.AGENDA in result.selected)
         assertFalse(SelectionCategory.DRIVING in result.selected)
+    }
+
+    @Test
+    fun `a memory-shaped question does select memory - FASE 2A5`() {
+        val result = RelevantContextSelector.select(fullSnapshot(), AiRequestType.CHAT, "Cosa ho scritto nei miei appunti?", now)
+        assertTrue(SelectionCategory.MEMORY in result.selected)
+    }
+
+    @Test
+    fun `come stai gets no unsolicited memory dump - FASE 2A5`() {
+        // § root cause of "Come stai?" -> a templated greeting: not this
+        // selector's fault by itself, but a generic chat message must not
+        // drag in the snapshot's un-filtered "10 most recent memories"
+        // section either, which was the earlier (now reverted) behavior.
+        val result = RelevantContextSelector.select(fullSnapshot(), AiRequestType.CHAT, "Come stai?", now)
+        assertFalse(SelectionCategory.MEMORY in result.selected)
+    }
+
+    @Test
+    fun `sequential turns - a debug chat message then an unrelated real question - memory never bleeds through - FASE 2A5`() {
+        // § root cause of "Settimana prossima devo comprare qualcosa?"
+        // answering with a previous turn's "TEST CORE"/lights content: this
+        // object is a stateless singleton (no field carries anything between
+        // select() calls), so proving turn 2 is unaffected by turn 1 pins the
+        // guarantee explicitly rather than only by code inspection - same
+        // pattern as FASE 2A.4's RelevantToolSelector sequential tests.
+        val turn1 = RelevantContextSelector.select(fullSnapshot(), AiRequestType.CHAT, "Rispondi solo: TEST CORE", now)
+        val turn2 = RelevantContextSelector.select(fullSnapshot(), AiRequestType.CHAT, "Settimana prossima devo comprare qualcosa?", now)
+        assertFalse(SelectionCategory.MEMORY in turn1.selected)
+        assertFalse(SelectionCategory.MEMORY in turn2.selected)
     }
 
     @Test

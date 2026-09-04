@@ -85,6 +85,29 @@ class UtteranceAnalysisTest {
     }
 
     @Test
+    fun `a personal-task statement without agenda words is still tool-shaped - FASE 2A5`() {
+        // § root cause of "Settimana prossima devo comprare qualcosa?" never
+        // reaching any tool: RelevantToolSelector's first gate is this same
+        // shouldClassify() - it returned false for this phrase (no keyword
+        // matched at all), so the FAST prompt told the model NO tool was
+        // needed, foreclosing list_agenda/add_task before the model could
+        // even try. "devo" (first person, present - "I need/must to…") is
+        // the standard Italian way to state a personal task, the same shape
+        // as an agenda/reminder check even without the words agenda/impegno.
+        assertTrue(ToolIntentGate.shouldClassify("Settimana prossima devo comprare qualcosa?"))
+        assertTrue(ToolIntentGate.shouldClassify("Devo chiamare il dentista domani."))
+    }
+
+    @Test
+    fun `an advice-seeking conditional question still skips the classifier - FASE 2A5`() {
+        // "dovrei"/"dovevo" (conditional/past) read as advice-seeking, not a
+        // task statement - must NOT be swept in by the "devo" fix above, or
+        // this pins that the existing multi-question reasoning test above
+        // would have broken.
+        assertFalse(ToolIntentGate.shouldClassify("Cosa dovrei fare per rilassarmi?"))
+    }
+
+    @Test
     fun `reply cleaner removes role prefixes and generated user continuation`() {
         assertEquals(
             "Ti serve un tagliaerba.",

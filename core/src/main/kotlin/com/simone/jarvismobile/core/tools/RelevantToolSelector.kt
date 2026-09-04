@@ -79,7 +79,12 @@ object RelevantToolSelector {
         "appuntamento", "appuntamenti", "impegno", "impegni", "agenda", "riunione", "riunioni",
         "promemoria", "evento", "eventi", "calendario", "scadenza", "scadenze", "attivita", "task",
     )
-    private val MEMORY_KEYWORDS = setOf(
+    // internal, not private: § FASE 2A.5 — shared verbatim with
+    // `RelevantContextSelector` (a different concern, same "is this
+    // memory-shaped language" signal) so the two selectors can never drift
+    // out of sync on what counts as a memory-related request — one source
+    // of truth instead of two keyword lists to keep aligned by hand.
+    internal val MEMORY_KEYWORDS = setOf(
         "ricorda", "ricordami", "ricordati", "memoria", "appunto", "appunti", "dimentica", "annota",
     )
     private val KNOWLEDGE_KEYWORDS = setOf(
@@ -144,6 +149,19 @@ object RelevantToolSelector {
             family == null || family in matchedFamilies
         }
     }
+
+    /**
+     * § FASE 2A.5 diagnostica richiesta esplicitamente ("tool family
+     * selezionata") — privacy-safe by construction: a [ToolFamily] name is
+     * never personal content, only a coarse capability label. `null` for a
+     * tool [FAMILY_BY_TOOL_NAME] does not yet classify (see [select]'s doc
+     * comment on why those are never dropped from a selection either).
+     */
+    fun familyOf(toolName: String): ToolFamily? = FAMILY_BY_TOOL_NAME[toolName]
+
+    /** The distinct, non-null families represented in [selectedTools] — for diagnostics only. */
+    fun familiesOf(selectedTools: List<Pair<String, String>>): Set<ToolFamily> =
+        selectedTools.mapNotNull { (name, _) -> familyOf(name) }.toSet()
 
     private fun normalize(text: String): String = text.lowercase()
         .replace('à', 'a').replace('è', 'e').replace('é', 'e')

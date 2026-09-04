@@ -1,6 +1,7 @@
 package com.simone.jarvismobile.core.snapshot
 
 import com.simone.jarvismobile.core.ai.AiRequestType
+import com.simone.jarvismobile.core.tools.RelevantToolSelector
 import java.time.Instant
 
 /**
@@ -29,6 +30,8 @@ object RelevantContextSelector {
         "batteria", "carica", "caricando", "telefono", "dispositivo", "connessione",
         "wifi", "rete", "cuffie", "bluetooth",
     )
+    /** § FASE 2A.5 — shared with [RelevantToolSelector.MEMORY_KEYWORDS], see its own doc comment. */
+    private val MEMORY_KEYWORDS = RelevantToolSelector.MEMORY_KEYWORDS
 
     /** Drop order when [ContextBudget.maxContextItems] is exceeded — least essential first, [SelectionCategory.TEMPORAL] never dropped. */
     private val DROP_PRIORITY = listOf(
@@ -53,12 +56,26 @@ object RelevantContextSelector {
         val drivingMatch = DRIVING_KEYWORDS.any { normalized.contains(it) }
         val agendaMatch = AGENDA_KEYWORDS.any { normalized.contains(it) }
         val deviceMatch = DEVICE_KEYWORDS.any { normalized.contains(it) }
+        val memoryMatch = MEMORY_KEYWORDS.any { normalized.contains(it) }
         val broad = requestType == AiRequestType.COMPLEX || requestType == AiRequestType.MEMORY
 
         val wanted = mutableSetOf(SelectionCategory.TEMPORAL, SelectionCategory.CAPABILITY)
         if (drivingMatch) wanted += setOf(SelectionCategory.DRIVING, SelectionCategory.LOCATION)
         if (agendaMatch) wanted += setOf(SelectionCategory.AGENDA, SelectionCategory.LOCATION, SelectionCategory.TASK)
         if (deviceMatch) wanted += SelectionCategory.DEVICE
+        // § FASE 2A.5 root cause of "Settimana prossima devo comprare qualcosa?"
+        // answering with a previous, unrelated turn's memory content: this used
+        // to be an unconditional `else` branch — ANY generic message with no
+        // other category match got the snapshot's MEMORY section (up to 10
+        // most-recently-stored records via `DefaultMemoryContextProvider`,
+        // itself deliberately NOT query-filtered, § its own doc comment) added
+        // regardless of relevance. That was a genuine explicit request from an
+        // earlier phase ("temporal + a little relevant context" for otherwise
+        // uncategorized chat) — this phase's real-device testing showed it
+        // actively leaking old, unrelated memory content into brand new,
+        // unrelated questions, so it is now gated on an actual signal like
+        // every other category, never a blind default.
+        if (memoryMatch) wanted += SelectionCategory.MEMORY
         if (broad) {
             wanted += setOf(
                 SelectionCategory.AGENDA, SelectionCategory.LOCATION, SelectionCategory.MEMORY,
@@ -66,8 +83,6 @@ object RelevantContextSelector {
             )
             if (snapshot.driving?.isDriving == true) wanted += SelectionCategory.DRIVING
         }
-        // Generic conversational request with no matched category: temporal + a little relevant context (§ esempio esplicito).
-        if (!drivingMatch && !agendaMatch && !deviceMatch && !broad) wanted += SelectionCategory.MEMORY
 
         // Full agenda detail only when the user is genuinely asking about it — otherwise minimized (§ §17 esempio).
         val agendaDetailed = agendaMatch

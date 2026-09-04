@@ -206,8 +206,17 @@ fun DiagnosticsScreen(
                             Text(
                                 "fastPath=${turn.fastPathHit} · fallback=${turn.fallbackOccurred} · " +
                                     "parseError=${turn.parseError} · memorie=${turn.memoriesRetrieved} · " +
-                                    "tool=${turn.toolsExecuted.size}/${turn.toolsRequested.size} · " +
+                                    "tool=${turn.toolsExecuted.size}/${turn.toolsRequested.size} " +
+                                    "(falliti=${turn.toolsFailed.size}) · " +
                                     "primo=${turn.timeToFirstEmitMs}ms · totale=${turn.totalTurnMs}ms",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            // § FASE 2A.5 diagnostica richiesta esplicitamente — family/conteggi
+                            // tool e dimensione del contesto inserito, mai il contenuto.
+                            Text(
+                                "famiglie=${turn.toolFamiliesSelected.joinToString(",").ifEmpty { "-" }} · " +
+                                    "toolDisponibili=${turn.selectedToolCount}/${turn.availableToolCount} · " +
+                                    "round=${turn.rounds} · contextChars=${turn.contextBlockChars}",
                                 style = MaterialTheme.typography.bodySmall,
                             )
                         }
