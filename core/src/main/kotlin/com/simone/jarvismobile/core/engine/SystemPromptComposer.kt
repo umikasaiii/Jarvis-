@@ -81,26 +81,39 @@ object SystemPromptComposer {
 
     /**
      * Keeps exactly the elements requested: JARVIS identity, Italian as the
-     * default language, concise style, and — new, § root cause of "Rispondi
-     * solo: TEST CORE" -> "Ciao!" found by this same phase's audit — an
-     * explicit priority rule for the user's current literal instruction. The
-     * shared rich persona asset (`jarvis_system_it.md`) tells the model to
-     * "always answer in your own words, never just repeat back" — sound
-     * advice for ordinary conversation, but with nothing carving out "unless
-     * Simone is explicitly asking you to output specific text", a small FAST
-     * model can read a literal-echo instruction as just another question to
+     * default language, concise style, and an explicit priority rule for the
+     * user's current literal instruction (§ root cause of "Rispondi solo:
+     * TEST CORE" -> "Ciao!", found in FASE 2A.3's audit). The shared rich
+     * persona asset (`jarvis_system_it.md`) tells the model to "always
+     * answer in your own words, never just repeat back" — sound advice for
+     * ordinary conversation, but with nothing carving out "unless Simone is
+     * explicitly asking you to output specific text", a small FAST model can
+     * read a literal-echo instruction as just another question to
      * paraphrase, producing a generic pleasantry instead of complying. This
      * rule is deliberately added ONLY here (the FAST compact persona), not
      * to the shared asset: the same failure has not been observed/measured
      * on Classic mode or BRAIN, and editing a persona several other
      * surfaces already depend on is a larger, riskier change than this
      * phase's explicit scope justifies.
+     *
+     * § FASE 2A.4 — the 2A.3 wording fixed the ECHO but not the WRAPPER:
+     * device-tested output was `Nessun testo necessario. La risposta
+     * diretta è: TEST CORE` — the model obeyed literally in substance but
+     * still framed it with its own explanatory preamble, because nothing
+     * told it that "obey the instruction" also means "and don't narrate
+     * that you're doing it." The added sentence below is general (any
+     * explicit output-format/content instruction, not this one phrase) —
+     * it forbids introductions/commentary whenever Simone specifies the
+     * exact output, which is what a literal-echo request always is, without
+     * hardcoding the words "TEST CORE" anywhere.
      */
     const val FAST_COMPACT_PERSONA = "Sei JARVIS, l'assistente personale di Simone. Rispondi sempre in italiano, " +
         "con uno stile breve e diretto: la risposta viene spesso letta ad alta voce.\n" +
         "Segui l'istruzione più recente di Simone così com'è, anche alla lettera se te lo chiede " +
         "esplicitamente (es. \"rispondi solo con: ...\"): non sostituirla mai con una risposta generica " +
         "o di cortesia.\n" +
+        "Se Simone specifica il formato o il contenuto esatto della risposta, produci SOLO quel contenuto: " +
+        "nessuna introduzione, nessun commento prima o dopo, nessuna spiegazione di cosa stai facendo.\n" +
         "Non inventare mai fatti, dati o risultati di uno strumento: se non lo sai o non l'hai davvero " +
         "eseguito, dillo."
 

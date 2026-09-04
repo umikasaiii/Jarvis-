@@ -146,7 +146,33 @@ class JarvisBrain @Inject constructor(
         val remote = tryRemoteReply(prompt, turnSystemPrompt, slot, timeoutSeconds)
         if (remote == null) Log.i(TAG, "BRAIN_FALLBACK_LOCAL")
         val raw = remote
-            ?: router.chat(prompt, turnSystemPrompt, slot, timeoutSeconds)
+            ?: run {
+                // § FASE 2A.4 root cause of "Accendi la luce della camera" ->
+                // "'TEST CORE' è stato eseguito correttamente": `LitertLmEngine.chat()`
+                // deliberately reuses one native `Conversation` (KV cache) across
+                // calls to the same slot and, by design (see its own doc comment),
+                // does NOT re-seed it when the incoming systemPrompt differs from
+                // the one it was seeded with — a fix for Classic mode's own turns,
+                // where re-seeding on every per-turn-varying system prompt was
+                // destroying ITS chat memory. FASE 2A.2/2A.3 made this brain's own
+                // systemPrompt vary turn-to-turn too (selected tools, FAST/RICH
+                // tier) — so a local-fallback turn silently inherited a PRIOR,
+                // unrelated turn's live conversation: the model never even saw
+                // this turn's real system prompt (tool catalog included), and its
+                // native history still held the old exchange, verbatim explaining
+                // the observed contamination. This brain was never designed to
+                // rely on that native memory in the first place — every piece of
+                // cross-turn continuity it wants is already explicit
+                // (`ConversationManager`/`ContextAssembler`), never implicit model
+                // memory — so forcing a fresh, correctly-seeded conversation here
+                // costs nothing intentional. Classic mode's own `SessionCoordinator`
+                // calls into the very same shared `LlmRouter`/`LitertLmEngine`
+                // instances and is deliberately left untouched (no reset added
+                // there): this fix is scoped to the one call site that was
+                // actually measured to cause the bug.
+                router.resetConversation(slot)
+                router.chat(prompt, turnSystemPrompt, slot, timeoutSeconds)
+            }
             ?: return BrainReply.Unavailable
         return when (val parsed = parser.parse(raw)) {
             is ParseResult.Valid -> BrainReply.Ready(parsed.response, parsedCleanly = true)

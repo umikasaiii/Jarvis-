@@ -174,4 +174,53 @@ class RelevantToolSelectorTest {
         val expectedOrder = allTools.map { it.first }.filter { it in selected.map { p -> p.first } }
         assertEquals(expectedOrder, selected.map { it.first })
     }
+
+    // --- § FASE 2A.4 — sequential turns, not just isolated calls ------------------------
+
+    @Test
+    fun `TEST CORE then a device command, back to back - selection never leaks between them`() {
+        // § root cause audit for "Accendi la luce della camera" -> "'TEST CORE'
+        // è stato eseguito correttamente": this object is a stateless singleton
+        // (no var/mutable field anywhere in it) so it CANNOT itself carry state
+        // from one select() call to the next - this test pins that guarantee
+        // explicitly rather than only asserting it by code inspection. The real
+        // bug lived one layer down, in the native model's own conversation
+        // object (LitertLmEngine) - fixed in JarvisBrain, not here; see the
+        // phase report for why this layer was never actually the culprit.
+        val turn1 = RelevantToolSelector.select(allTools, "Rispondi solo: TEST CORE")
+        val turn2 = RelevantToolSelector.select(allTools, "Accendi la luce della camera")
+        assertTrue(turn1.isEmpty())
+        val names2 = turn2.map { it.first }
+        assertTrue("flashlight" in names2)
+        assertTrue("battery_status" in names2)
+        assertFalse(names2.any { it.contains("agenda") })
+        // Calling it a second time in isolation (no turn 1 before it) must
+        // produce the exact same result - proof the first call left no trace.
+        val turn2Isolated = RelevantToolSelector.select(allTools, "Accendi la luce della camera")
+        assertEquals(turn2, turn2Isolated)
+    }
+
+    @Test
+    fun `an agenda question then a device command, back to back - selection never leaks between them`() {
+        val turn1 = RelevantToolSelector.select(allTools, "Che impegni ho oggi?")
+        val turn2 = RelevantToolSelector.select(allTools, "Accendi la luce della camera")
+        val names1 = turn1.map { it.first }
+        val names2 = turn2.map { it.first }
+        assertTrue("list_agenda" in names1)
+        assertFalse("flashlight" in names1)
+        assertTrue("flashlight" in names2)
+        assertFalse("list_agenda" in names2)
+    }
+
+    @Test
+    fun `the reverse order - device command then an agenda question - is equally isolated`() {
+        val turn1 = RelevantToolSelector.select(allTools, "Accendi la luce della camera")
+        val turn2 = RelevantToolSelector.select(allTools, "Che impegni ho oggi?")
+        val names1 = turn1.map { it.first }
+        val names2 = turn2.map { it.first }
+        assertTrue("flashlight" in names1)
+        assertFalse("list_agenda" in names1)
+        assertTrue("list_agenda" in names2)
+        assertFalse("flashlight" in names2)
+    }
 }

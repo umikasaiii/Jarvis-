@@ -1,10 +1,12 @@
 package com.simone.jarvismobile.core.engine
 
 import com.simone.jarvismobile.core.protocol.AssistantResponse
+import com.simone.jarvismobile.core.tools.RelevantToolSelector
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 /**
@@ -99,6 +101,16 @@ class SystemPromptComposerTest {
         // it "should" be there.
         assertTrue("istruzione più recente" in SystemPromptComposer.FAST_COMPACT_PERSONA)
         assertTrue("alla lettera" in SystemPromptComposer.FAST_COMPACT_PERSONA)
+    }
+
+    @Test
+    fun `FAST persona forbids preamble-commentary when the user specifies exact output - FASE 2A4`() {
+        // § root cause of the wrapper still measured after the 2A.3 fix
+        // ("Nessun testo necessario. La risposta diretta è: TEST CORE"): the
+        // instruction to obey literally didn't also say "and don't narrate
+        // that you're doing it." General wording, no hardcoded phrase.
+        assertTrue("nessuna introduzione" in SystemPromptComposer.FAST_COMPACT_PERSONA)
+        assertFalse("TEST CORE" in SystemPromptComposer.FAST_COMPACT_PERSONA)
     }
 
     // --- 6. tool JSON/parsing invariati --------------------------------------------------
@@ -196,5 +208,46 @@ class SystemPromptComposerTest {
         val fast = SystemPromptComposer.compose(SystemPromptComposer.Tier.FAST, richPersona, fiftyThreeTools)
         val rich = SystemPromptComposer.compose(SystemPromptComposer.Tier.RICH, richPersona, fiftyThreeTools)
         assertTrue(fast.length < rich.length)
+    }
+
+    // --- § FASE 2A.4 — sequential turns through the real selector+composer pipeline -----
+
+    private val realisticCatalog = listOf(
+        "flashlight" to "Accende o spegne la torcia.",
+        "battery_status" to "Stato della batteria.",
+        "list_agenda" to "Elenca gli impegni.",
+        "add_reminder" to "Aggiunge un promemoria in agenda.",
+        "remember" to "Salva un appunto in memoria.",
+    )
+
+    /** Mirrors exactly what `JarvisBrain.systemPromptFor()` does: select, then compose. */
+    private fun composeForTurn(userText: String, tier: SystemPromptComposer.Tier) =
+        SystemPromptComposer.compose(tier, richPersona, RelevantToolSelector.select(realisticCatalog, userText))
+
+    @Test
+    fun `sequential pipeline - TEST CORE then a device command - turn 2's prompt never contains turn 1's literal text`() {
+        val turn1 = composeForTurn("Rispondi solo: TEST CORE", SystemPromptComposer.Tier.FAST)
+        val turn2 = composeForTurn("Accendi la luce della camera", SystemPromptComposer.Tier.FAST)
+        assertFalse("TEST CORE" in turn2)
+        assertTrue("flashlight" in turn2)
+        assertNotEquals(turn1, turn2)
+    }
+
+    @Test
+    fun `sequential pipeline - an agenda question then a device command - turn 2 carries only device tools`() {
+        val turn1 = composeForTurn("Che impegni ho oggi?", SystemPromptComposer.Tier.FAST)
+        val turn2 = composeForTurn("Accendi la luce della camera", SystemPromptComposer.Tier.FAST)
+        assertTrue("list_agenda" in turn1)
+        assertFalse("list_agenda" in turn2)
+        assertTrue("flashlight" in turn2)
+    }
+
+    @Test
+    fun `sequential pipeline - reverse order - device command then an agenda question - is equally isolated`() {
+        val turn1 = composeForTurn("Accendi la luce della camera", SystemPromptComposer.Tier.FAST)
+        val turn2 = composeForTurn("Che impegni ho oggi?", SystemPromptComposer.Tier.FAST)
+        assertTrue("flashlight" in turn1)
+        assertFalse("flashlight" in turn2)
+        assertTrue("list_agenda" in turn2)
     }
 }
