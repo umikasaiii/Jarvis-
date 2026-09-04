@@ -122,6 +122,7 @@ class SessionCoordinator @Inject constructor(
     private val conversationalEngine: com.simone.jarvismobile.engine.ConversationalJarvisEngine,
     private val remoteAiEngine: RemoteAiEngine,
     private val aiRoutingContextProvider: AiRoutingContextProvider,
+    private val remoteChatState: com.simone.jarvismobile.ai.RemoteChatState,
 ) {
 
     /** Long-lived scope for fire-and-forget persistence; lives as long as the app. */
@@ -197,15 +198,6 @@ class SessionCoordinator @Inject constructor(
      * "avanzato" still behave like one assistant with one short-term memory.
      */
     @Volatile private var lastConversationSlot: ModelSlot? = null
-
-    /**
-     * The id of a remote (JARVIS Core) chat call currently in flight, if any
-     * — set/cleared only inside [tryRemoteChat]. Plain coroutine cancellation
-     * already stops the suspend call, but [cancelTextGeneration] also needs
-     * to close the underlying HTTP/SSE connection explicitly, which only
-     * [RemoteAiEngine.cancel] does.
-     */
-    @Volatile private var activeRemoteRequestId: String? = null
 
     /**
      * The assistant's configurable name. It was never given to the model, which
@@ -318,18 +310,14 @@ class SessionCoordinator @Inject constructor(
     val diagnostic: StateFlow<String> = _diagnostic.asStateFlow()
 
     /**
-     * "Si collega con Core ma non sembra usare il modello AI" — segnalazione
-     * dell'utente dopo un test reale ("Rispondi solo: TEST CORE" due volte,
-     * risposte non pertinenti entrambe le volte). `_diagnostic` sopra è
-     * transiente e condiviso da decine di stati diversi (STT, tool, ecc.),
-     * quindi non basta a rispondere con certezza "quella risposta specifica
-     * è arrivata da Core o dal locale?" — questo campo, aggiornato **solo**
-     * da [tryRemoteChat] a ogni suo esito, resta leggibile finché non arriva
-     * il turno successivo, ed è ciò che [chatReply] userà davvero come
-     * risposta finale: nessun'altra ipotesi in Diagnostica dopo questa.
+     * "Chi ha risposto davvero all'ultimo messaggio?" — vedi
+     * [com.simone.jarvismobile.ai.RemoteChatState]'s own doc comment. Written
+     * by [tryRemoteChat] (Motore Classico) AND by `JarvisBrain.tryRemoteReply`
+     * (Motore Conversazionale) into the SAME shared state, so this one
+     * pass-through reflects whichever engine actually ran the last turn —
+     * never a stale reading from the other engine.
      */
-    private val _lastChatRoute = MutableStateFlow<String?>(null)
-    val lastChatRoute: StateFlow<String?> = _lastChatRoute.asStateFlow()
+    val lastChatRoute: StateFlow<String?> = remoteChatState.lastRoute
 
     /** True while a typed (written-chat) message is being answered. */
     private val _sending = MutableStateFlow(false)
@@ -611,21 +599,12 @@ class SessionCoordinator @Inject constructor(
      * LLM-first orchestrator. Neither knows about the other directly — the
      * router is the only place that chooses.
      */
-    private suspend fun generateAnswer(transcript: String): String {
-        // Marker azzerato a ogni turno: se resta questo valore alla fine (mai
-        // sovrascritto da tryRemoteChat, raggiungibile solo dal ramo
-        // Classico) significa che questo turno è passato dal Motore
-        // Conversazionale, dove Core non è mai tentato per costruzione
-        // (§ JarvisBrain — nessun canale per il system prompt/catalogo
-        // strumenti nel protocollo) — mai una lettura "CORE FAST" residua di
-        // un turno precedente spacciata per quella di questo.
-        _lastChatRoute.value = "LOCAL (motore conversazionale, Core non applicabile)"
-        return engineRouter.route(
+    private suspend fun generateAnswer(transcript: String): String =
+        engineRouter.route(
             transcript,
             classic = com.simone.jarvismobile.engine.ClassicJarvisEngine { classicAnswer(it) },
             conversational = conversationalEngine,
         )
-    }
 
     /**
      * Classic mode's entire turn-dispatch behaviour (deterministic command
@@ -1127,7 +1106,7 @@ class SessionCoordinator @Inject constructor(
             // logs message content, only the routing reason (§ "non loggare
             // dati personali").
             Log.i(TAG, "CHAT -> LOCAL (reason=${decision.reason})")
-            _lastChatRoute.value = "LOCAL (${decision.reason})"
+            remoteChatState.setLastRoute("LOCAL (${decision.reason})")
             return null
         }
 
@@ -1141,30 +1120,31 @@ class SessionCoordinator @Inject constructor(
             requestType = requestType,
             preferredModel = if (decision.target == AiExecutionTarget.REMOTE_BRAIN) "brain" else null,
         )
-        activeRemoteRequestId = requestId
+        remoteChatState.activeRequestId = requestId
         val result = try {
             runCancellable { remoteAiEngine.generate(request) }.getOrNull()
         } finally {
             // Must clear even when a CancellationException propagates through
             // runCancellable — otherwise a cancelled remote call would leave
-            // activeRemoteRequestId dangling and a later cancelTextGeneration()
-            // would try to cancel a request that already unwound.
-            activeRemoteRequestId = null
+            // the shared active-request id dangling and a later
+            // cancelTextGeneration() would try to cancel a request that
+            // already unwound.
+            remoteChatState.activeRequestId = null
         }
         if (result == null || !result.success) {
             val reason = result?.failureReason ?: "cancelled_or_null"
             Log.i(TAG, "CORE FAILED -> LOCAL FALLBACK (reason=$reason)")
-            _lastChatRoute.value = "LOCAL (fallback dopo Core: $reason)"
+            remoteChatState.setLastRoute("LOCAL (fallback dopo Core: $reason)")
             return null
         }
         val cleaned = result.text?.let(AssistantReplyCleaner::clean)?.ifBlank { null }
         if (cleaned == null) {
             Log.i(TAG, "CORE FAILED -> LOCAL FALLBACK (reason=empty_reply)")
-            _lastChatRoute.value = "LOCAL (fallback dopo Core: empty_reply)"
+            remoteChatState.setLastRoute("LOCAL (fallback dopo Core: empty_reply)")
             return null
         }
         Log.i(TAG, "CHAT -> $targetLabel")
-        _lastChatRoute.value = targetLabel
+        remoteChatState.setLastRoute(targetLabel)
         return cleaned
     }
 
@@ -2162,7 +2142,7 @@ class SessionCoordinator @Inject constructor(
     /** Stops only the active written-answer inference — local or, if one is in flight, remote (§ tryRemoteChat). */
     fun cancelTextGeneration() {
         router.cancel()
-        activeRemoteRequestId?.let { remoteAiEngine.cancel(it) }
+        remoteChatState.activeRequestId?.let { remoteAiEngine.cancel(it) }
         _diagnostic.value = "annullamento risposta…"
     }
 

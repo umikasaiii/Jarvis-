@@ -46,6 +46,31 @@ class JarvisCoreClientImplTest {
         assertTrue("\"preferredTarget\":\"BRAIN\"" in brain)
     }
 
+    /**
+     * jarvis-protocol/main v1.1.0 (§ FASE SUCCESSIVA — integrazione Motore
+     * Conversazionale): `systemPrompt` must round-trip verbatim when set, so
+     * `JarvisBrain`'s persona/protocol-block/tool-catalog actually reaches
+     * Core instead of being silently dropped the way it always was before
+     * this field existed.
+     */
+    @Test
+    fun `systemPrompt encodes verbatim when present`() {
+        val request = JarvisCoreRequest(
+            requestId = "r1",
+            requestType = CoreRequestType.CHAT,
+            text = "ciao",
+            systemPrompt = "Sei JARVIS. Rispondi solo in JSON.",
+        )
+        val encoded = json.encodeToString(JarvisCoreRequest.serializer(), request)
+        assertTrue("\"systemPrompt\":\"Sei JARVIS. Rispondi solo in JSON.\"" in encoded)
+    }
+
+    @Test
+    fun `systemPrompt absent by default, matching pre-1_1_0 clients`() {
+        val request = JarvisCoreRequest(requestId = "r1", requestType = CoreRequestType.CHAT, text = "ciao")
+        assertNull(request.systemPrompt)
+    }
+
     // --- real jarvis-protocol/main examples --------------------------------
 
     // examples/chat-response.json

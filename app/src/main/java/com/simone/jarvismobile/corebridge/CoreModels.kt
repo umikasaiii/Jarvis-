@@ -5,12 +5,15 @@ import kotlinx.serialization.Serializable
 
 /**
  * Versioned wire models for JARVIS Core, matching jarvis-protocol/main
- * v1.0.0 (https://github.com/umikasaiii/Jarvis-protocol) field-for-field —
+ * v1.1.0 (https://github.com/umikasaiii/Jarvis-protocol) field-for-field —
  * schemas/jarvis-request.schema.json, jarvis-response.schema.json,
  * stream-event.schema.json, health.schema.json, common.schema.json.
- * jarvis-protocol/main is the source of truth and is treated as immutable
- * from this repository: nothing here adds a field, endpoint or enum value
- * the protocol does not already declare.
+ * jarvis-protocol/main is the source of truth: nothing here adds a field,
+ * endpoint or enum value the protocol does not already declare — v1.1.0's
+ * one addition (`JarvisRequest.systemPrompt`) was proposed from a real,
+ * demonstrated gap (see that repo's CHANGELOG and `JarvisBrain.kt`'s own
+ * doc comment), added there first, then mirrored here — never invented
+ * client-side ahead of the schema.
  *
  * A real JARVIS Core server (github.com/umikasaiii/Jarvis-core) exists and
  * was audited directly to produce jarvis-protocol/main; these shapes are
@@ -48,6 +51,17 @@ data class JarvisCoreRequest(
     val context: Map<String, String> = emptyMap(),
     val preferredTarget: CoreExecutionTarget = CoreExecutionTarget.AUTO,
     val allowFallback: Boolean = true,
+    /**
+     * `jarvis-protocol/main` v1.1.0 (was v1.0.0 when this file's header
+     * comment above was written — see CHANGELOG there): optional per-request
+     * persona/tool-catalog override. Added specifically because [text]-only
+     * requests reach Core with Core's own unrelated default system prompt,
+     * which made `JarvisBrain`'s structured JSON tool-calling protocol
+     * unusable over Core (Core never saw the instruction to answer that way)
+     * — see `engine/JarvisBrain.kt`'s own doc comment. `null`/blank behaves
+     * exactly as before this field existed (Core's own default persona).
+     */
+    val systemPrompt: String? = null,
 )
 
 @Serializable

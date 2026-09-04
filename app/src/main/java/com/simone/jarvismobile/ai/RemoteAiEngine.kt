@@ -49,6 +49,7 @@ class RemoteAiEngine @Inject constructor(
             context = contextMapFor(request),
             preferredTarget = request.toCoreExecutionTarget(),
             allowFallback = true,
+            systemPrompt = request.systemPrompt.takeIf { it.isNotBlank() },
         )
         return try {
             val response = withTimeout(request.timeoutSeconds * 1000) { coreClient.send(coreRequest) }
@@ -81,6 +82,7 @@ class RemoteAiEngine @Inject constructor(
             context = contextMapFor(request),
             preferredTarget = request.toCoreExecutionTarget(),
             allowFallback = true,
+            systemPrompt = request.systemPrompt.takeIf { it.isNotBlank() },
         )
         return coreClient.stream(coreRequest)
             .map { chunk ->
