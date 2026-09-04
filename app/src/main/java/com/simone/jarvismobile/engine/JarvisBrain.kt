@@ -15,6 +15,7 @@ import com.simone.jarvismobile.core.engine.BrainEvent
 import com.simone.jarvismobile.core.engine.BrainReply
 import com.simone.jarvismobile.core.engine.ReasoningMode
 import com.simone.jarvismobile.core.engine.SentenceStream
+import com.simone.jarvismobile.core.engine.SystemPromptComposer
 import com.simone.jarvismobile.core.protocol.AssistantResponse
 import com.simone.jarvismobile.core.protocol.ParseResult
 import com.simone.jarvismobile.core.protocol.ResponseParser
@@ -54,7 +55,7 @@ import javax.inject.Singleton
  * brain to Core, because `jarvis-protocol/main` v1.0.0's `JarvisCoreRequest`
  * had no field Core actually read for a per-request system prompt — Core
  * would answer with its own unrelated default persona, never seeing
- * [PROTOCOL_BLOCK] or the live tool catalog, so [ResponseParser] would treat
+ * [SystemPromptComposer.RICH_PROTOCOL_BLOCK] or the live tool catalog, so [ResponseParser] would treat
  * every Core reply as [ParseResult.PlainText] and tool-calling would go
  * silently dark for any turn Core happened to answer. That gap is now
  * closed: `jarvis-protocol/main` v1.1.0 added `JarvisRequest.systemPrompt`
@@ -62,9 +63,10 @@ import javax.inject.Singleton
  * `RequestOrchestrator` now forwards it to the resolved provider instead of
  * its own fixed default, and [RemoteAiEngine] threads
  * [AiRequest.systemPrompt] through to it — so [tryRemoteReply] can hand
- * Core the EXACT SAME [systemPromptFor] result (persona + protocol block +
- * whichever tools that turn selected — see its own doc comment, § FASE
- * 2A.2) the local model gets, and [parser] parses whichever one answered
+ * Core the EXACT SAME [systemPromptFor] result (§ FASE 2A.3: a compact
+ * [SystemPromptComposer.Tier.FAST] prompt for a FAST-slot turn, the full
+ * [SystemPromptComposer.Tier.RICH] one otherwise — see that class' own doc
+ * comment) the local model gets, and [parser] parses whichever one answered
  * identically. [reply] tries Core first via [tryRemoteReply] on every call —
  * i.e. every round of a multi-round tool loop independently, not just the
  * first — reusing the exact same [AiRoutingHeuristic]/[AiRoutingContextProvider]/
@@ -76,8 +78,8 @@ import javax.inject.Singleton
  * — with `remoteAiEnabled=false` (default) [tryRemoteReply] always returns
  * `null` immediately, so local-only behaviour is unchanged from before this
  * round. **Honest limit, not fixable without a real remote model to test
- * against**: whether Core's chosen model actually FOLLOWS [PROTOCOL_BLOCK]'s
- * strict-JSON instruction is a property of that model, not of this wiring —
+ * against**: whether Core's chosen model actually FOLLOWS the active
+ * protocol block's strict-JSON instruction is a property of that model, not of this wiring —
  * a Core answer that ignores it still degrades gracefully to plain
  * `assistant_text` (never a crash), it just means tool-calling doesn't fire
  * for that specific round, exactly as an unparsable local reply already
@@ -119,13 +121,28 @@ class JarvisBrain @Inject constructor(
         contextBlock: String,
         slot: ModelSlot,
         timeoutSeconds: Long = DEFAULT_GENERATION_TIMEOUT_SECONDS,
+        // § FASE 2A.3 bugfix found during this phase's own audit: inside a
+        // multi-round tool loop, `ConversationalJarvisEngine.runBrainLoop`
+        // calls `reply()` again with `userText` replaced by a synthetic
+        // "Risultato degli strumenti eseguiti: ..." follow-up — that text
+        // has no tool-shaped keywords of its own, so selecting tools from IT
+        // (as FASE 2A.2 did, unconditionally) would silently starve round 2+
+        // of every tool the ORIGINAL request might still need, even though
+        // the follow-up text itself invites the model to request another one
+        // ("Se serve un altro strumento richiedilo in tool_calls"). Tool
+        // relevance is a property of what Simone actually asked, not of this
+        // loop's internal continuation text — [toolSelectionText] defaults to
+        // [userText] for a normal single-shot turn, and the caller passes the
+        // turn's original transcript explicitly across every round instead.
+        toolSelectionText: String = userText,
     ): BrainReply {
         // § logging temporaneo obbligatorio, audit "Conversational mode non
         // tenta più Core dopo integrazione" — prova che reply() sia stato
         // raggiunto davvero per questo turno, prima di qualunque altra cosa.
         Log.i(TAG, "BRAIN_REPLY_ENTER slot=$slot")
         val prompt = if (contextBlock.isBlank()) userText else "$contextBlock\n\n$userText"
-        val turnSystemPrompt = systemPromptFor(userText)
+        val tier = if (slot == ModelSlot.ADVANCED) SystemPromptComposer.Tier.RICH else SystemPromptComposer.Tier.FAST
+        val turnSystemPrompt = systemPromptFor(toolSelectionText, tier)
         val remote = tryRemoteReply(prompt, turnSystemPrompt, slot, timeoutSeconds)
         if (remote == null) Log.i(TAG, "BRAIN_FALLBACK_LOCAL")
         val raw = remote
@@ -253,53 +270,41 @@ class JarvisBrain @Inject constructor(
     fun replyEvents(response: AssistantResponse): List<BrainEvent> = SentenceStream.from(response)
 
     /**
-     * Built once per process, like `ProModeCoordinator.systemPrompt`: the same
-     * persona asset plus a protocol block, cached — only the tool catalog
-     * appended after it varies per turn (see [systemPromptFor]). Distinct
-     * instructions from Pro mode's block: this brain is expected to hold
-     * multi-turn state and ask clarifying questions
-     * ([AssistantResponse.followUpExpected]), which Pro mode's single-shot
-     * protocol never uses.
+     * The rich (BRAIN/local-tier) persona text, loaded once per process from
+     * the shared asset — unmodified, trimmed. [systemPromptFor] hands this to
+     * [SystemPromptComposer] only for [SystemPromptComposer.Tier.RICH]; the
+     * [SystemPromptComposer.Tier.FAST] tier uses its own compact, built-in
+     * persona instead (§ FASE 2A.3 — see that class' doc comment for why).
      */
-    private val personaAndProtocol: String by lazy {
-        val persona = runCatching {
+    private val richPersona: String by lazy {
+        runCatching {
             context.assets.open("prompts/jarvis_system_it.md").bufferedReader().use { it.readText() }
         }.getOrDefault("Sei JARVIS, un assistente personale offline. Rispondi in italiano, breve e naturale.")
-        buildString {
-            append(persona.trim())
-            append("\n\n")
-            append(PROTOCOL_BLOCK)
-        }
     }
 
     /**
-     * § FASE 2A.2 — root cause of the ~72s/~26s FAST latencies measured in
-     * FASE 2A.1: this catalog used to embed all ~53 registered tools
-     * unconditionally on every turn, pushing the system prompt past
-     * `jarvis-protocol`'s 8000-char wire limit and forcing Ollama to
-     * re-evaluate ~2000+ prompt tokens even for a plain "Ciao". Now
-     * [RelevantToolSelector] decides — deterministically, no second LLM —
-     * which of [ToolRunner.available]'s live tools are plausibly relevant to
-     * [userText] before this prompt is built, so a simple conversational turn
-     * gets none of them and a "torcia"/"agenda"/"memoria"-shaped turn gets
-     * only its own family. [ToolRegistry] itself, tool execution and
-     * argument validation are entirely untouched — this only decides what
-     * the model is TOLD about, never what it may actually call.
+     * § FASE 2A.2/2A.3 — root cause of the ~72s/~26s FAST latencies measured
+     * in FASE 2A.1: this used to embed all ~53 registered tools AND the full
+     * ~4600-char persona+protocol unconditionally on every turn, regardless
+     * of target. [RelevantToolSelector] (FASE 2A.2) decides — deterministically,
+     * no second LLM — which of [ToolRunner.available]'s live tools are
+     * plausibly relevant to [toolSelectionText]; [SystemPromptComposer]
+     * (FASE 2A.3) then builds either the compact FAST-tier prompt (measured:
+     * ~665 chars for the common no-tool case, vs. the ~4650 FASE 2A.2 already
+     * sent for the same turn) or the unconstrained rich tier, per [tier].
+     * [ToolRegistry] itself, tool execution and argument validation are
+     * entirely untouched — this only decides what the model is TOLD about,
+     * never what it may actually call.
      */
-    private fun systemPromptFor(userText: String): String {
+    private fun systemPromptFor(toolSelectionText: String, tier: SystemPromptComposer.Tier): String {
         val available = tools.available()
-        val selected = RelevantToolSelector.select(available, userText)
-        val built = if (selected.isEmpty()) {
-            personaAndProtocol + "\n\nNessuno strumento è necessario per questa richiesta: lascia \"tool_calls\" vuoto."
-        } else {
-            val catalog = selected.joinToString("\n") { (name, description) -> "- $name: $description" }
-            personaAndProtocol + "\n\nStrumenti disponibili (usa ESATTAMENTE questi nomi, mai altri):\n" + catalog
-        }
+        val selected = RelevantToolSelector.select(available, toolSelectionText)
+        val built = SystemPromptComposer.compose(tier, richPersona, selected)
         // § diagnostica non sensibile richiesta esplicitamente: solo dimensioni/conteggi,
         // mai il contenuto del prompt/dei nomi/descrizioni degli strumenti selezionati.
         Log.i(
             TAG,
-            "conversational_prompt_built systemPromptChars=${built.length} " +
+            "conversational_prompt_built tier=$tier systemPromptChars=${built.length} " +
                 "availableToolCount=${available.size} selectedToolCount=${selected.size}",
         )
         return built
@@ -307,29 +312,5 @@ class JarvisBrain @Inject constructor(
 
     private companion object {
         const val TAG = "JarvisBrain"
-
-        val PROTOCOL_BLOCK = """
-            Sei in MODALITÀ CONVERSAZIONALE. Rispondi SEMPRE e SOLO con un
-            oggetto JSON, in questa forma esatta, senza testo prima o dopo:
-            {"assistant_text": "...", "tool_calls": [], "memory_proposal": null, "follow_up_expected": false}
-
-            - "assistant_text": quello che vuoi dire a Simone, in italiano naturale.
-              Se non hai bisogno di uno strumento, usa solo questo campo.
-            - "tool_calls": se un'operazione richiede uno strumento, aggiungi un
-              oggetto {"id": "un id qualsiasi", "name": "nome_esatto_dello_strumento",
-              "arguments": {...}}. Gli argomenti vanno presi SOLO da quello che
-              Simone ha detto o dal contesto fornito, mai inventati. Usa solo nomi
-              di strumenti presenti nell'elenco qui sotto.
-            - Se il contesto indica un'operazione già in corso (es. un impegno
-              appena creato) e Simone la corregge o la completa senza rinominarla
-              di nuovo ("anzi, alle 18"), usa l'id indicato nel contesto invece di
-              chiedere a quale impegno si riferisce.
-            - Se ti mancano informazioni per procedere e non puoi ragionevolmente
-              assumerle, lascia tool_calls vuoto, fai la domanda in assistant_text
-              e imposta "follow_up_expected": true.
-            - Non lasciare mai "assistant_text" vuoto se tool_calls è vuoto.
-            - Ignora "memory_proposal" (lascialo null): per salvare qualcosa nella
-              memoria personale usa uno strumento di memoria, non questo campo.
-        """.trimIndent()
     }
 }

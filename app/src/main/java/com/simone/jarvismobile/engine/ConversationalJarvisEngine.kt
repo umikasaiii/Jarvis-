@@ -275,7 +275,13 @@ class ConversationalJarvisEngine @Inject constructor(
             if (rounds > MAX_BRAIN_ROUNDS) return CANNED_ERROR
             val timeoutSeconds = if (rounds == 1) DEFAULT_GENERATION_TIMEOUT_SECONDS else FOLLOWUP_TIMEOUT_SECONDS
 
-            val reply = brain.reply(currentText, contextBlock, slot, timeoutSeconds)
+            // § FASE 2A.3: tool relevance is decided from the turn's ORIGINAL
+            // `transcript`, never from `currentText` once it becomes a
+            // synthetic "Risultato degli strumenti eseguiti: ..." follow-up
+            // (round 2+) — see `JarvisBrain.reply`'s `toolSelectionText` doc
+            // comment for why selecting from that text instead would starve
+            // a later round of tools the original request might still need.
+            val reply = brain.reply(currentText, contextBlock, slot, timeoutSeconds, toolSelectionText = transcript)
             if (reply is BrainReply.Unavailable) {
                 // JarvisEngineRouter is expected to have already kept us from being
                 // called at all in this case; this is the honest fallback if the
