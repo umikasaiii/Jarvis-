@@ -63,6 +63,58 @@ class RemoteAiEngineTest {
         assertNull(seen?.systemPrompt)
     }
 
+    /**
+     * § audit "ENGINE_ERROR: http:http_422": `jarvis-protocol/main`'s
+     * `systemPrompt` has `maxLength: 8000` — `JarvisBrain`'s real system
+     * prompt (persona + protocol block + the ~53-tool catalog) runs past
+     * that on this device and jarvis-core rejects the whole request with a
+     * plain 422, which is exactly what made every Conversational-engine
+     * remote turn fail with zero visible cause before this round's
+     * ENGINE_ERROR-detail fix surfaced it. This pins the actual fix: the
+     * WIRE copy never exceeds the protocol limit.
+     */
+    @Test
+    fun `a systemPrompt over the protocol's 8000-char limit is truncated on the wire`() = runTest {
+        var seen: JarvisCoreRequest? = null
+        val client = FakeCoreClient(sendResult = { req -> seen = req; okResponse(req.requestId) })
+        val engine = RemoteAiEngine(client)
+        val huge = "x".repeat(9000)
+
+        engine.generate(request(systemPrompt = huge))
+
+        assertTrue("wire systemPrompt must never exceed the protocol limit", (seen?.systemPrompt?.length ?: 0) <= 8000)
+        assertTrue("truncation must actually shorten it, not just pass it through", (seen?.systemPrompt?.length ?: 0) < huge.length)
+    }
+
+    @Test
+    fun `truncation lands on a full line, never a tool description cut off mid-word`() = runTest {
+        var seen: JarvisCoreRequest? = null
+        val client = FakeCoreClient(sendResult = { req -> seen = req; okResponse(req.requestId) })
+        val engine = RemoteAiEngine(client)
+        // 200 complete "- toolN: description\n" lines, each well past the 8000-char budget combined.
+        val catalog = (1..500).joinToString("") { "- tool$it: a reasonably long description of tool number $it\n" }
+
+        engine.generate(request(systemPrompt = catalog))
+
+        val wire = seen?.systemPrompt ?: ""
+        assertTrue(wire.length <= 8000)
+        assertTrue("the wire copy must be a verbatim prefix of the real catalog", catalog.startsWith(wire))
+        val nextChar = catalog.getOrNull(wire.length)
+        assertTrue("the cut must land right before a newline, never mid-tool-description", nextChar == null || nextChar == '\n')
+    }
+
+    @Test
+    fun `a systemPrompt within the limit reaches Core byte-for-byte, no truncation`() = runTest {
+        var seen: JarvisCoreRequest? = null
+        val client = FakeCoreClient(sendResult = { req -> seen = req; okResponse(req.requestId) })
+        val engine = RemoteAiEngine(client)
+        val normal = "x".repeat(7999)
+
+        engine.generate(request(systemPrompt = normal))
+
+        assertEquals(normal, seen?.systemPrompt)
+    }
+
     @Test
     fun `successful reply is reported as success with the reply text`() = runTest {
         val client = FakeCoreClient(sendResult = { req -> okResponse(req.requestId, text = "TEST CORE") })

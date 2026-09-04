@@ -23,6 +23,16 @@ import kotlinx.serialization.Serializable
 /** The one supported wire-protocol identifier today. A STRING, not a number. */
 const val CORE_PROTOCOL_VERSION: String = "1"
 
+/**
+ * `jarvis-protocol/main`'s `JarvisRequest.systemPrompt` has `maxLength: 8000`
+ * (schemas/jarvis-request.schema.json) — jarvis-core rejects anything longer
+ * with a plain HTTP 422 before the request ever reaches the model (§ audit
+ * "ENGINE_ERROR: http:http_422" — `JarvisBrain`'s persona + protocol block +
+ * full ~53-tool catalog runs to roughly 8700 characters today, comfortably
+ * over). [RemoteAiEngine] is the one place this is enforced client-side.
+ */
+const val CORE_SYSTEM_PROMPT_MAX_LENGTH: Int = 8000
+
 @Serializable
 enum class CoreRequestType { COMMAND, CHAT, COMPLEX, MEMORY, TOOL, PROACTIVE }
 

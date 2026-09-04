@@ -5,6 +5,7 @@ import com.simone.jarvismobile.core.ai.AiExecutionTarget
 import com.simone.jarvismobile.core.ai.AiFailureReason
 import com.simone.jarvismobile.core.ai.AiRequestType
 import com.simone.jarvismobile.core.snapshot.RelevantContextRenderer
+import com.simone.jarvismobile.corebridge.CORE_SYSTEM_PROMPT_MAX_LENGTH
 import com.simone.jarvismobile.corebridge.CoreClient
 import com.simone.jarvismobile.corebridge.CoreExecutionTarget
 import com.simone.jarvismobile.corebridge.CoreRequestType
@@ -49,7 +50,7 @@ class RemoteAiEngine @Inject constructor(
             context = contextMapFor(request),
             preferredTarget = request.toCoreExecutionTarget(),
             allowFallback = true,
-            systemPrompt = request.systemPrompt.takeIf { it.isNotBlank() },
+            systemPrompt = request.systemPrompt.takeIf { it.isNotBlank() }?.let(::truncateSystemPromptForWire),
         )
         return try {
             val response = withTimeout(request.timeoutSeconds * 1000) { coreClient.send(coreRequest) }
@@ -91,7 +92,7 @@ class RemoteAiEngine @Inject constructor(
             context = contextMapFor(request),
             preferredTarget = request.toCoreExecutionTarget(),
             allowFallback = true,
-            systemPrompt = request.systemPrompt.takeIf { it.isNotBlank() },
+            systemPrompt = request.systemPrompt.takeIf { it.isNotBlank() }?.let(::truncateSystemPromptForWire),
         )
         return coreClient.stream(coreRequest)
             .map { chunk ->
@@ -115,6 +116,33 @@ class RemoteAiEngine @Inject constructor(
 
     /** Pass-through to [CoreClient.describeEndpoint] — diagnostics only, see there. */
     suspend fun describeEndpoint(): String = coreClient.describeEndpoint()
+
+    /**
+     * § audit "ENGINE_ERROR: http:http_422": `jarvis-protocol/main`'s
+     * `systemPrompt` has `maxLength: 8000` ([CORE_SYSTEM_PROMPT_MAX_LENGTH])
+     * — jarvis-core rejects anything longer outright, before the request
+     * ever reaches the model, with a plain HTTP 422 and no other signal.
+     * `JarvisBrain.systemPrompt` (persona + protocol block + the full
+     * ~53-tool catalog) regularly runs past that on this device — this is
+     * the ONE place [JarvisCoreRequest.systemPrompt] is actually built for
+     * the wire, so it is the one place this is enforced, for both callers
+     * ([com.simone.jarvismobile.engine.JarvisBrain.tryRemoteReply] and
+     * `SessionCoordinator.tryRemoteChat`) at once. Only the WIRE copy is
+     * ever shortened — the caller's own `systemPrompt` (used for the local
+     * model when this falls back) is never touched, so local behaviour is
+     * unaffected. A hard `take()` is safe on a plain-text instruction (not
+     * itself JSON), and the persona + protocol block always come first in
+     * `JarvisBrain.systemPrompt` (well under the limit on their own), so a
+     * cut only ever lands inside the trailing tool catalog — [substringBeforeLast]
+     * then drops back to the last complete line instead of leaving one tool's
+     * description cut off mid-word.
+     */
+    private fun truncateSystemPromptForWire(text: String): String {
+        if (text.length <= CORE_SYSTEM_PROMPT_MAX_LENGTH) return text
+        Log.w(TAG, "remote_system_prompt_truncated original=${text.length} max=$CORE_SYSTEM_PROMPT_MAX_LENGTH")
+        val cut = text.take(CORE_SYSTEM_PROMPT_MAX_LENGTH)
+        return cut.substringBeforeLast('\n', cut)
+    }
 
     /**
      * Merges the caller's own [AiRequest.context] with a minimized snapshot
