@@ -1106,6 +1106,7 @@ private fun CoreSettingsSection(
     val corePreferRemote by viewModel.corePreferRemote.collectAsStateWithLifecycle()
     val remoteAiEnabled by viewModel.remoteAiEnabled.collectAsStateWithLifecycle()
     val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
+    val liveRoutingPreview by viewModel.liveRoutingPreview.collectAsStateWithLifecycle()
     val testing by viewModel.testing.collectAsStateWithLifecycle()
     val testResult by viewModel.testResult.collectAsStateWithLifecycle()
 
@@ -1180,6 +1181,15 @@ private fun CoreSettingsSection(
                     "prima Core (quando online) e ricadono subito sul modello locale se non " +
                     "risponde. Spento (predefinito): comportamento identico a oggi, sempre locale.",
                 style = MaterialTheme.typography.bodySmall,
+            )
+            Text(
+                liveRoutingPreview,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (liveRoutingPreview.startsWith("Ora: JARVIS Core")) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
             )
 
             HorizontalDivider()

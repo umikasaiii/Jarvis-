@@ -1093,8 +1093,21 @@ class SessionCoordinator @Inject constructor(
     private suspend fun tryRemoteChat(message: String, system: String, needsReasoning: Boolean): String? {
         val requestType = if (needsReasoning) AiRequestType.COMPLEX else AiRequestType.CHAT
         val decision = AiRoutingHeuristic.decide(requestType, aiRoutingContextProvider.preferencesFor(requestType))
-        if (decision.target == AiExecutionTarget.LOCAL) return null
+        if (decision.target == AiExecutionTarget.LOCAL) {
+            // Distinguishes, at a glance in Logcat, every reason an "ordinary
+            // chat" turn never left the device: toggles genuinely off
+            // (remote_ai_disabled/caller_forbids_remote) vs. Core reachable
+            // by "Testa connessione" (which probes independently of
+            // `coreEnabled`) but the actual routing gate — `coreEnabled`
+            // itself — still off (core_disabled), or Core reachable but
+            // offline/degraded-without-brain (core_offline/core_error). Never
+            // logs message content, only the routing reason (§ "non loggare
+            // dati personali").
+            Log.i(TAG, "CHAT -> LOCAL (reason=${decision.reason})")
+            return null
+        }
 
+        val targetLabel = if (decision.target == AiExecutionTarget.REMOTE_BRAIN) "CORE BRAIN" else "CORE FAST"
         _diagnostic.value = "JARVIS Core…"
         val requestId = java.util.UUID.randomUUID().toString()
         val request = AiRequest(
@@ -1114,8 +1127,17 @@ class SessionCoordinator @Inject constructor(
             // would try to cancel a request that already unwound.
             activeRemoteRequestId = null
         }
-        if (result == null || !result.success) return null
-        return result.text?.let(AssistantReplyCleaner::clean)?.ifBlank { null }
+        if (result == null || !result.success) {
+            Log.i(TAG, "CORE FAILED -> LOCAL FALLBACK (reason=${result?.failureReason ?: "cancelled_or_null"})")
+            return null
+        }
+        val cleaned = result.text?.let(AssistantReplyCleaner::clean)?.ifBlank { null }
+        if (cleaned == null) {
+            Log.i(TAG, "CORE FAILED -> LOCAL FALLBACK (reason=empty_reply)")
+            return null
+        }
+        Log.i(TAG, "CHAT -> $targetLabel")
+        return cleaned
     }
 
     /**

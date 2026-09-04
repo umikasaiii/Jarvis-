@@ -49,6 +49,24 @@ class AiRoutingHeuristicTest {
         assertEquals(AiExecutionTarget.REMOTE_FAST, AiRoutingHeuristic.decide(AiRequestType.CHAT, prefs()).target)
     }
 
+    /**
+     * Pins a real, easy-to-hit misconfiguration: "Instrada le richieste al
+     * PC" (`remoteAiEnabled`) on, "Testa connessione" reporting Online (a
+     * one-off probe independent of `coreEnabled`, see `CoreClient.testConnection`),
+     * but "Abilita Core" (`coreEnabled`) itself still off — `CoreConnectionManager`
+     * then never leaves [JarvisCoreState.DISABLED] (its heartbeat/`ensureFresh`
+     * both gate on `coreEnabled` first), so ordinary chat silently stays local
+     * with zero requests ever reaching Core, despite both settings screen
+     * toggles the user actually flips reading as "on".
+     */
+    @Test
+    fun `remoteAiEnabled on but Core state still disabled stays local with a distinct reason`() {
+        val instradaOnButCoreOff = prefs(remoteAiEnabled = true, coreState = JarvisCoreState.DISABLED)
+        val decision = AiRoutingHeuristic.decide(AiRequestType.CHAT, instradaOnButCoreOff)
+        assertEquals(AiExecutionTarget.LOCAL, decision.target)
+        assertEquals("core_disabled", decision.reason)
+    }
+
     @Test
     fun `tool routes to remote fast when Core online`() {
         assertEquals(AiExecutionTarget.REMOTE_FAST, AiRoutingHeuristic.decide(AiRequestType.TOOL, prefs()).target)

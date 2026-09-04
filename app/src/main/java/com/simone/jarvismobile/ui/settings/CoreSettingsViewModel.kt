@@ -2,6 +2,10 @@ package com.simone.jarvismobile.ui.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.simone.jarvismobile.ai.AiRoutingContextProvider
+import com.simone.jarvismobile.core.ai.AiExecutionTarget
+import com.simone.jarvismobile.core.ai.AiRequestType
+import com.simone.jarvismobile.core.ai.AiRoutingHeuristic
 import com.simone.jarvismobile.core.ai.JarvisCoreState
 import com.simone.jarvismobile.corebridge.CoreClient
 import com.simone.jarvismobile.corebridge.CoreConnectionManager
@@ -12,6 +16,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -28,6 +33,7 @@ class CoreSettingsViewModel @Inject constructor(
     private val settings: SettingsRepository,
     private val coreClient: CoreClient,
     private val connectionManager: CoreConnectionManager,
+    private val routingContext: AiRoutingContextProvider,
 ) : ViewModel() {
 
     val coreEnabled: StateFlow<Boolean> =
@@ -54,6 +60,42 @@ class CoreSettingsViewModel @Inject constructor(
 
     /** Live heartbeat state — the same one [com.simone.jarvismobile.audio.SessionCoordinator]'s routing decision reads. */
     val connectionState: StateFlow<JarvisCoreState> = connectionManager.state
+
+    /**
+     * "Se mandassi ora un messaggio ordinario, dove andrebbe?" — computed with
+     * the exact same [AiRoutingHeuristic]/[AiRoutingContextProvider] the live
+     * chat turn uses (§ richiesta esplicita: "verifica che i toggle siano
+     * realmente letti dal router della chat"), recomputed whenever any input
+     * changes. Exists because "Testa connessione" probes Core directly and
+     * can report Online **independently of `coreEnabled`** (see
+     * [CoreClient.testConnection]) — a real, easy-to-hit trap where that
+     * button shows success while ordinary chat still never leaves the
+     * device, because `coreEnabled` off keeps [CoreConnectionManager.state]
+     * at [JarvisCoreState.DISABLED] regardless. This line makes the two
+     * signals impossible to confuse instead of relying on Logcat.
+     */
+    val liveRoutingPreview: StateFlow<String> = combine(
+        settings.coreEnabled,
+        settings.remoteAiEnabled,
+        connectionManager.state,
+    ) { _, _, _ ->
+        val decision = AiRoutingHeuristic.decide(AiRequestType.CHAT, routingContext.preferencesFor(AiRequestType.CHAT))
+        when (decision.target) {
+            AiExecutionTarget.REMOTE_FAST -> "Ora: JARVIS Core (rapido)"
+            AiExecutionTarget.REMOTE_BRAIN -> "Ora: JARVIS Core (avanzato)"
+            AiExecutionTarget.LOCAL -> "Ora: modello locale — ${localReasonLabel(decision.reason)}"
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "Ora: —")
+
+    private fun localReasonLabel(reason: String): String = when (reason) {
+        "remote_ai_disabled" -> "\"Instrada le richieste al PC\" è spento"
+        "core_disabled" -> "\"Abilita Core\" è spento (la connessione riuscita di \"Testa connessione\" non basta da sola)"
+        "core_offline" -> "Core non raggiungibile"
+        "core_connecting" -> "connessione a Core in corso"
+        "core_error" -> "Core in errore"
+        "caller_forbids_remote" -> "instradamento remoto non permesso in questo contesto"
+        else -> reason
+    }
 
     fun setCoreEnabled(value: Boolean) = viewModelScope.launch { settings.setCoreEnabled(value) }
     fun setCoreHost(value: String) = viewModelScope.launch { settings.setCoreHost(value) }

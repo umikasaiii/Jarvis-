@@ -34,6 +34,22 @@ import javax.inject.Singleton
  * API (see `BrainEvent`'s doc comment) — [reply] is a single blocking call;
  * [replyEvents] is the honest, already-real post-hoc chunking of a completed
  * reply into incremental UI/TTS-ready events.
+ *
+ * **Deliberately never tries JARVIS Core (§ audit "chat ordinaria non
+ * produce nessuna POST verso Core", Motore = Conversazionale case)**:
+ * `jarvis-protocol/main v1.0.0`'s `JarvisCoreRequest` (see `CoreModels.kt`)
+ * has no field to carry [systemPrompt] at all — only `text`/`context` — so
+ * Core would never see [PROTOCOL_BLOCK] or the live tool catalog appended
+ * below. Routing this brain's calls there would silently degrade every
+ * `ParseResult.Valid`/`Repaired` response to `ParseResult.PlainText`
+ * (technically safe — [ResponseParser] already handles it — but it would
+ * quietly turn off tool-calling for any turn Core happened to answer,
+ * without the user ever choosing that). `SessionCoordinator.tryRemoteChat`
+ * (Motore = Classico) is the one place Core routing is safe today, because
+ * that path is already a plain user-text-in/assistant-text-out exchange
+ * with no JSON contract to lose — see its own doc comment. Extending the
+ * protocol to carry a system/tool channel is out of scope here (§ "NON
+ * modificare jarvis-protocol").
  */
 @Singleton
 class JarvisBrain @Inject constructor(
