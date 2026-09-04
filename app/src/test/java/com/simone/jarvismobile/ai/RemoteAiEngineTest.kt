@@ -105,7 +105,7 @@ class RemoteAiEngineTest {
         JarvisCoreResponse(requestId = requestId, status = CoreResponseStatus.OK, text = text)
 
     /** Minimal fake — only [send] is exercised by [RemoteAiEngine.generate], the only method under test here. */
-    private class FakeCoreClient(
+    private inner class FakeCoreClient(
         private val sendResult: ((JarvisCoreRequest) -> JarvisCoreResponse)? = null,
         private val sendThrows: Throwable? = null,
     ) : CoreClient {
