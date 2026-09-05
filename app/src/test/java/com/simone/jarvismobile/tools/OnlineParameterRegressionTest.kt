@@ -1,8 +1,8 @@
 package com.simone.jarvismobile.tools
 
+import org.junit.Assert.assertTrue
+import org.junit.Test
 import java.io.File
-import kotlin.test.Test
-import kotlin.test.assertTrue
 
 /**
  * § FASE 2A.7 RELEASE GATE 15 — a real regression class hit twice already:
@@ -33,12 +33,12 @@ class OnlineParameterRegressionTest {
             .toList()
 
         assertTrue(
-            offenders.isEmpty(),
             "Found hardcoded `online = false` at a tool-execution call site " +
                 "(this always rejects a real network-requiring tool regardless of " +
                 "actual connectivity — read the live network state instead, e.g. " +
                 "via ContextEngine, exactly as ConversationalJarvisEngine/" +
                 "ProModeCoordinator already do):\n" + offenders.joinToString("\n"),
+            offenders.isEmpty(),
         )
     }
 
