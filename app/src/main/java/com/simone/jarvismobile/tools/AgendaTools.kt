@@ -157,6 +157,12 @@ class ListAgendaTool(private val agenda: AgendaRepository) : Tool {
         arguments.text("day")?.let {
             runCatching { LocalDate.parse(it) }.getOrNull() ?: return "giorno non valido"
         }
+        // § FASE 2A.9 — an inclusive range end, e.g. for "tutta la settimana
+        // prossima"; ignored by execute() unless "day" (the range start) is
+        // also present, exactly like Agenda.filter's own contract.
+        arguments.text("to")?.let {
+            runCatching { LocalDate.parse(it) }.getOrNull() ?: return "data finale non valida"
+        }
         arguments.text("period")?.let { p ->
             if (DayPeriod.entries.none { it.name.equals(p, ignoreCase = true) }) return "periodo non valido"
         }
@@ -166,12 +172,17 @@ class ListAgendaTool(private val agenda: AgendaRepository) : Tool {
     override suspend fun execute(arguments: JsonObject): ToolResult {
         val today = LocalDate.now()
         val day = arguments.text("day")?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+        val to = arguments.text("to")?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
         val period = arguments.text("period")
             ?.let { p -> DayPeriod.entries.firstOrNull { it.name.equals(p, ignoreCase = true) } }
 
-        val items = runCatching { agenda.query(today, day, period) }.getOrDefault(emptyList())
+        val items = runCatching { agenda.query(today, day, period, toDay = to) }.getOrDefault(emptyList())
         val scope = buildString {
-            if (day != null) append(" per ").append(Agenda.humanDate(day, today))
+            if (day != null && to != null) {
+                append(" dal ").append(Agenda.humanDate(day, today)).append(" al ").append(Agenda.humanDate(to, today))
+            } else if (day != null) {
+                append(" per ").append(Agenda.humanDate(day, today))
+            }
             if (period != null) append(if (day != null) " " else " per ").append(period.name.lowercase())
         }
 

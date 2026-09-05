@@ -27,6 +27,27 @@ class AgendaTest {
     }
 
     @Test
+    fun `toDay filters an inclusive date range instead of one exact day`() {
+        val entries = listOf(
+            AgendaEntry(today, null, "oggi"),
+            AgendaEntry(today.plusDays(3), null, "tra 3 giorni"),
+            AgendaEntry(today.plusDays(6), null, "tra 6 giorni"),
+            AgendaEntry(today.plusDays(9), null, "tra 9 giorni, fuori range"),
+            AgendaEntry(null, null, "senza data"),
+        )
+        val result = Agenda.filter(entries, today, day = today, toDay = today.plusDays(6))
+        assertEquals(listOf("oggi", "tra 3 giorni", "tra 6 giorni"), result.map { it.text })
+    }
+
+    @Test
+    fun `toDay is ignored without day, matching the previous single-day behavior`() {
+        val entries = listOf(AgendaEntry(today, null, "oggi"))
+        // day == null: toDay alone must never activate range mode.
+        val result = Agenda.filter(entries, today, day = null, toDay = today.plusDays(6))
+        assertEquals(1, result.size)
+    }
+
+    @Test
     fun `prose around the entries is ignored`() {
         val text = """
             # Agenda di JARVIS

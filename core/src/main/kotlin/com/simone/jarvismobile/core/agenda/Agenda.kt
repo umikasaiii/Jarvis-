@@ -50,9 +50,13 @@ object Agenda {
         )
 
     /**
-     * The entries to read out: optionally restricted to one [day] and one part of
-     * the day ([period]). With no day, everything from [today] onwards, so past
-     * items stop being announced.
+     * The entries to read out: optionally restricted to one [day] (or, when
+     * [toDay] is also given, an inclusive date RANGE [day, toDay] — § FASE
+     * 2A.9, added for "E durante tutta la settimana prossima?"-style
+     * requests that `DayPeriod`, a time-of-day-only concept, cannot express)
+     * and one part of the day ([period]). With no [day], everything from
+     * [today] onwards, so past items stop being announced. [toDay] is
+     * ignored unless [day] is also set — a range needs both ends.
      */
     fun filter(
         entries: List<AgendaEntry>,
@@ -60,12 +64,18 @@ object Agenda {
         day: LocalDate? = null,
         period: DayPeriod? = null,
         includeDone: Boolean = false,
+        toDay: LocalDate? = null,
     ): List<AgendaEntry> = sorted(
         entries.filter { e ->
             if (!includeDone && e.done) return@filter false
             // An undated task belongs to no specific day and isn't "past".
-            if (day != null && e.date != day) return@filter false
-            if (day == null && e.date != null && e.date.isBefore(today)) return@filter false
+            if (day != null && toDay != null) {
+                val d = e.date ?: return@filter false
+                if (d.isBefore(day) || d.isAfter(toDay)) return@filter false
+            } else {
+                if (day != null && e.date != day) return@filter false
+                if (day == null && e.date != null && e.date.isBefore(today)) return@filter false
+            }
             if (period != null) {
                 val t = e.time ?: return@filter false
                 if (!period.contains(t)) return@filter false

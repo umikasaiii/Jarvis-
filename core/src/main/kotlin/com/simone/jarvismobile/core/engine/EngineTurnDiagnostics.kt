@@ -80,4 +80,32 @@ data class EngineTurnDiagnostics(
     val toolFailureCodes: List<String> = emptyList(),
     /** Live connectivity this turn read for gating a `requiresNetwork` tool — `null` when never checked (no network-requiring tool was ever offered/attempted). */
     val networkAvailable: Boolean? = null,
+    // § FASE 2A.9 SEMANTIC UNDERSTANDING LAYER diagnostica richiesta
+    // esplicitamente (§15) — additive, default to previous no-op values so
+    // no other constructor call site breaks. Never full message content,
+    // sensitive arguments, personal Health values, or the model prompt.
+    /** Whether a [com.simone.jarvismobile.core.semantic.SemanticInterpreter] was even attempted this turn. */
+    val semanticEnabled: Boolean = false,
+    /** [com.simone.jarvismobile.core.semantic.SemanticSource] name — which mechanism actually resolved this turn's meaning. */
+    val semanticSource: String? = null,
+    /** [com.simone.jarvismobile.core.semantic.SemanticIntent] name of the resolved (post-merge) frame, if any. */
+    val semanticIntent: String? = null,
+    /** [com.simone.jarvismobile.core.tools.ToolFamily] names of the resolved frame's domains. */
+    val semanticDomains: List<String> = emptyList(),
+    /** [com.simone.jarvismobile.core.semantic.SemanticOperation] name of the resolved frame, if any. */
+    val semanticOperation: String? = null,
+    /** [com.simone.jarvismobile.core.semantic.SemanticSlot] names the CURRENT turn's own words established. */
+    val explicitSlots: List<String> = emptyList(),
+    /** [com.simone.jarvismobile.core.semantic.SemanticSlot] names filled in from the previous frame by [com.simone.jarvismobile.core.semantic.SemanticFrameMerger]. */
+    val inheritedSlots: List<String> = emptyList(),
+    /** True when this turn's explicit domain took precedence over a different previous-turn domain (the §"permanent architectural rule" firing for real). */
+    val currentOverridesPrevious: Boolean = false,
+    /** True when the interpreter's output passed [com.simone.jarvismobile.core.semantic.SemanticFrameValidator]. */
+    val semanticValid: Boolean = false,
+    /** The interpreter's own reported confidence for this turn, or null if never attempted. */
+    val semanticConfidence: Double? = null,
+    /** Non-null only when [semanticValid] is false or the interpreter itself failed/timed out — the technical reason, never the raw model text. */
+    val semanticFailureReason: String? = null,
+    /** How long the semantic-interpreter call itself took, measured separately from tool/answer latency (§18). */
+    val semanticLatencyMs: Long? = null,
 )

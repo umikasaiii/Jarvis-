@@ -4,6 +4,7 @@ import com.simone.jarvismobile.agenda.AgendaRepository
 import com.simone.jarvismobile.core.memory.MemoryEntry
 import com.simone.jarvismobile.core.memory.MemoryTier
 import com.simone.jarvismobile.core.protocol.ToolCall
+import com.simone.jarvismobile.core.semantic.SemanticFrame
 import com.simone.jarvismobile.core.tools.ToolFamily
 import com.simone.jarvismobile.tools.ToolOutcome
 import com.simone.jarvismobile.util.runCancellable
@@ -118,6 +119,35 @@ class ConversationManager @Inject constructor(
 
     fun noteKnowledgeTopic(topic: String) {
         lastKnowledgeTopic = LastKnowledgeTopic(topic, System.currentTimeMillis())
+    }
+
+    /**
+     * § FASE 2A.9 — the ONE piece of semantic dialogue state this project
+     * needs (spec §5: "store one or a few resolved previous SemanticFrames,
+     * not just a WEATHER/HEALTH/AGENDA string"). Deliberately a SINGLE
+     * remembered frame, not a full stack: every merge rule in
+     * `core/semantic/SemanticFrameMerger.kt` only ever needs "what was the
+     * last resolved meaning", never a longer history, and a stack would be
+     * unbounded state with no proven need. Same short idle window as
+     * [currentCapabilityTopic] — a semantic follow-up is a tight
+     * conversational move, not a slow multi-minute exchange.
+     */
+    private data class LastSemanticFrame(val frame: SemanticFrame, val touchedAtMs: Long)
+
+    @Volatile private var lastSemanticFrame: LastSemanticFrame? = null
+
+    /** The last successfully validated+merged [SemanticFrame], or null if none/gone stale. */
+    fun currentSemanticFrame(): SemanticFrame? {
+        val f = lastSemanticFrame ?: return null
+        if (System.currentTimeMillis() - f.touchedAtMs > TOPIC_IDLE_TIMEOUT_MS) {
+            lastSemanticFrame = null
+            return null
+        }
+        return f.frame
+    }
+
+    fun noteSemanticFrame(frame: SemanticFrame) {
+        lastSemanticFrame = LastSemanticFrame(frame, System.currentTimeMillis())
     }
 
     /** What `ContextAssembler` includes in the prompt for the next turn. */

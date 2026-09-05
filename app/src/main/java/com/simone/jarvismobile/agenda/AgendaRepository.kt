@@ -179,12 +179,19 @@ class AgendaRepository @Inject constructor(
         updatedEntry
     }
 
-    /** What is on for a given day / part of the day; everything upcoming by default. */
+    /**
+     * What is on for a given day / part of the day; everything upcoming by
+     * default. [toDay], when given alongside [day], turns this into an
+     * inclusive date-RANGE query (§ FASE 2A.9 — "durante tutta la settimana
+     * prossima") instead of one exact day; see [Agenda.filter]'s own doc
+     * comment.
+     */
     suspend fun query(
         today: LocalDate,
         day: LocalDate? = null,
         period: DayPeriod? = null,
-    ): List<AgendaEntry> = Agenda.filter(reload(), today, day, period)
+        toDay: LocalDate? = null,
+    ): List<AgendaEntry> = Agenda.filter(reload(), today, day, period, toDay = toDay)
 
     // --- storage ---------------------------------------------------------
 

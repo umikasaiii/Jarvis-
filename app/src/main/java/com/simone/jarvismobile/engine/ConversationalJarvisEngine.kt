@@ -16,6 +16,16 @@ import com.simone.jarvismobile.core.health.HealthQueryParser
 import com.simone.jarvismobile.core.health.HealthRange
 import com.simone.jarvismobile.core.intent.IntentAliases
 import com.simone.jarvismobile.core.protocol.ToolCall
+import com.simone.jarvismobile.core.agenda.AgendaWeekRange
+import com.simone.jarvismobile.core.semantic.READ_ONLY_OPERATIONS
+import com.simone.jarvismobile.core.semantic.SemanticDialogueContext
+import com.simone.jarvismobile.core.semantic.SemanticFrame
+import com.simone.jarvismobile.core.semantic.SemanticFrameMerger
+import com.simone.jarvismobile.core.semantic.SemanticInterpretation
+import com.simone.jarvismobile.core.semantic.SemanticInterpreter
+import com.simone.jarvismobile.core.semantic.SemanticIntent
+import com.simone.jarvismobile.core.semantic.SemanticOperation
+import com.simone.jarvismobile.core.semantic.SemanticSource
 import com.simone.jarvismobile.core.tools.DeviceInfoFollowUp
 import com.simone.jarvismobile.core.tools.GROUNDED_FAMILIES
 import com.simone.jarvismobile.core.tools.HomeControlDetector
@@ -74,6 +84,7 @@ class ConversationalJarvisEngine @Inject constructor(
     private val conversationManager: ConversationManager,
     private val remoteChatState: RemoteChatState,
     private val contextEngine: ContextEngine,
+    private val semanticInterpreter: SemanticInterpreter,
 ) : JarvisEngine {
 
     /**
@@ -127,6 +138,15 @@ class ConversationalJarvisEngine @Inject constructor(
                 ?: runFastPath(transcript, turn)
                 ?: runStructuredPath(transcript, turn)
                 ?: runHomeControlGuard(transcript, turn)
+                // § FASE 2A.9 SEMANTIC UNDERSTANDING LAYER — inserted between
+                // the HARD deterministic guards above (still checked first:
+                // an unambiguous safe command never needs a model call at
+                // all) and the old keyword/topic paths below (now demoted to
+                // LEGACY_FALLBACK, reached only when the interpreter itself
+                // fails/produces an invalid frame — see runSemanticPath's own
+                // doc comment for why, and CLAUDE.md/the FASE 2A.9 report for
+                // the root cause this replaces).
+                ?: runSemanticPath(transcript, turn)
                 ?: runCapabilityFastPath(transcript, turn)
                 ?: runFollowUpFastPath(transcript, turn)
                 ?: runBrainLoop(transcript, turn)
@@ -139,8 +159,215 @@ class ConversationalJarvisEngine @Inject constructor(
             CANNED_ERROR
         }
 
+        // § FASE 2A.9 §15 — a turn resolved by a HARD deterministic guard
+        // above never calls the interpreter at all (semanticEnabled stays
+        // false); one resolved by the legacy keyword paths or the full
+        // reasoning loop still gets an honest semanticSource label instead
+        // of null, without runSemanticPath itself having to know which
+        // branch will eventually answer.
+        if (turn.semanticSource == null) {
+            turn.semanticSource = when (turn.routingPath) {
+                "FAST_PATH", "STRUCTURED_AGENDA", "HOME_CONTROL_UNSUPPORTED",
+                "PENDING_CONFIRMATION", "PENDING_DISAMBIGUATION",
+                -> SemanticSource.HARD_DETERMINISTIC.name
+                "CAPABILITY_FAST_PATH" -> SemanticSource.LEGACY_FALLBACK.name
+                "LLM_LOOP" -> SemanticSource.LLM_FALLBACK.name
+                else -> null
+            }
+        }
+
         recordDiagnostics(turn.toDiagnostics())
         return spoken
+    }
+
+    /**
+     * § FASE 2A.9 — USER TEXT → [SemanticInterpreter] → [SemanticFrame] →
+     * this router. Root cause this replaces: the OLD `runFollowUpFastPath`
+     * decided "same capability as last time" purely from "no keyword in this
+     * turn" + "a leftover topic exists" + "the text looks date-shaped" — with
+     * ZERO check that the current turn's own words are consistent with that
+     * topic, so "Domani farà caldo?" after a HEALTH turn answered from Health
+     * Connect. Here the CURRENT turn is interpreted on its own merit FIRST
+     * ([semanticInterpreter.interpret]); [SemanticFrameMerger] then fills in
+     * ONLY the slots the current turn left unestablished, from the last
+     * resolved frame — never the other way around (§ permanent architectural
+     * rule: `SIGNIFICATO ESPLICITO DEL TURNO ATTUALE > CONTESTO PRECEDENTE`).
+     *
+     * Returns null (falling through to the legacy keyword paths, then the
+     * full reasoning loop) whenever: the interpreter is unavailable/fails
+     * ([SemanticSource.LEGACY_FALLBACK]); its output doesn't validate
+     * ([SemanticSource.LEGACY_FALLBACK]); or it validates but describes
+     * something this router deliberately never resolves on its own —
+     * MULTI_SOURCE_REASONING (handed to [runBrainLoop] as a grounding
+     * requirement instead, §10), KNOWLEDGE_QUERY/CONVERSATION/CLARIFICATION/
+     * UNKNOWN, a non-read-only operation (§12 — this router NEVER authorizes
+     * a side effect; CONTROL/CREATE/UPDATE/DELETE always fall through to the
+     * existing deterministic/tool-call paths, which enforce
+     * confirmation/security independently), or an ambiguous/empty domain set
+     * (all [SemanticSource.LLM_FALLBACK] — a genuinely valid frame that
+     * simply isn't this router's job).
+     */
+    private suspend fun runSemanticPath(transcript: String, turn: TurnState): String? {
+        val previousFrame = conversationManager.currentSemanticFrame()
+        turn.semanticEnabled = true
+        val startedAt = System.currentTimeMillis()
+        val interpretation = runCancellable {
+            semanticInterpreter.interpret(transcript, SemanticDialogueContext(previousFrame))
+        }.getOrNull()
+        turn.semanticLatencyMs = System.currentTimeMillis() - startedAt
+
+        val rawFrame = when (interpretation) {
+            null -> {
+                turn.semanticSource = SemanticSource.LEGACY_FALLBACK.name
+                turn.semanticFailureReason = "interpreter_unavailable_or_threw"
+                return null
+            }
+            is SemanticInterpretation.Invalid -> {
+                turn.semanticSource = SemanticSource.LEGACY_FALLBACK.name
+                turn.semanticFailureReason = interpretation.reason
+                return null
+            }
+            is SemanticInterpretation.Valid -> interpretation.frame
+        }
+
+        val merge = SemanticFrameMerger.merge(rawFrame, previousFrame)
+        val frame = merge.frame
+        turn.semanticValid = true
+        turn.semanticIntent = frame.intent.name
+        turn.semanticDomains = frame.domains.map { it.name }
+        turn.semanticOperation = frame.operation.name
+        turn.explicitSlots = frame.explicitSlots.map { it.name }
+        turn.inheritedSlots = merge.inheritedSlots.map { it.name }
+        turn.currentOverridesPrevious = merge.currentOverridesPrevious
+        turn.semanticConfidence = frame.confidence
+        conversationManager.noteSemanticFrame(frame)
+
+        if (frame.intent == SemanticIntent.MULTI_SOURCE_REASONING) {
+            // § FASE 2A.9 §10 — never builds its own synthesis pipeline: seeds
+            // runBrainLoop's EXISTING multi-round tool-calling loop with the
+            // domains this turn actually named, so grounding enforcement
+            // (GroundingGate) requires a real tool call for EACH of them
+            // before any answer is allowed, instead of relying on
+            // RelevantToolSelector's keyword match to have found them too.
+            turn.semanticMultiSourceDomains = frame.domains.filter { it in GROUNDED_FAMILIES }.toSet()
+            turn.semanticSource = SemanticSource.LLM_FALLBACK.name
+            return null
+        }
+        if (frame.intent != SemanticIntent.CAPABILITY_QUERY) {
+            turn.semanticSource = SemanticSource.LLM_FALLBACK.name
+            return null
+        }
+        if (frame.operation != SemanticOperation.UNKNOWN && frame.operation !in READ_ONLY_OPERATIONS) {
+            turn.semanticSource = SemanticSource.LLM_FALLBACK.name
+            return null
+        }
+        val domain = frame.domains.singleOrNull()
+        if (domain == null) {
+            turn.semanticSource = SemanticSource.LLM_FALLBACK.name
+            return null
+        }
+
+        val routed = routeSemanticCapability(domain, transcript, frame, previousFrame, LocalDateTime.now(), turn)
+        turn.semanticSource = if (routed != null) SemanticSource.LOCAL_INTERPRETER.name else SemanticSource.LLM_FALLBACK.name
+        return routed
+    }
+
+    /**
+     * Executes the ONE grounded capability [frame]'s domain names, reusing
+     * exactly the same builders [runCapabilityFastPath] uses — never a
+     * second `get_weather`/`get_health_summary`/`get_device_info` call
+     * shape. Returns null (never a guess) when the domain isn't one this
+     * router resolves directly, or when a domain-specific resolution (e.g.
+     * an unanswerable DEVICE_INFO metric) fails.
+     */
+    private suspend fun routeSemanticCapability(
+        domain: ToolFamily,
+        transcript: String,
+        frame: SemanticFrame,
+        previousFrame: SemanticFrame?,
+        now: LocalDateTime,
+        turn: TurnState,
+    ): String? {
+        turn.routingPath = "SEMANTIC_CAPABILITY"
+        turn.modelRounds = 0
+        return when (domain) {
+            ToolFamily.WEATHER -> when (val plan = weatherCall(transcript)) {
+                is WeatherCapabilityPlan.OutOfRange -> {
+                    Log.i(TAG, "ENGINE_BRANCH=semantic_path weather_out_of_range")
+                    remoteChatState.setLastRoute("LOCAL (bypass: semantic capability, fuori intervallo)")
+                    WEATHER_OUT_OF_RANGE_MESSAGE
+                }
+                is WeatherCapabilityPlan.Call -> {
+                    Log.i(TAG, "ENGINE_BRANCH=semantic_path tool=${plan.call.name}")
+                    remoteChatState.setLastRoute("LOCAL (bypass: semantic capability)")
+                    executeAndTrack(plan.call, turn, confirmed = false)
+                }
+            }
+            ToolFamily.HEALTH -> {
+                val call = healthCall(transcript)
+                Log.i(TAG, "ENGINE_BRANCH=semantic_path tool=${call.name}")
+                remoteChatState.setLastRoute("LOCAL (bypass: semantic capability)")
+                executeAndTrack(call, turn, confirmed = false)
+            }
+            ToolFamily.AGENDA -> {
+                val call = agendaCallFromFrame(transcript, frame, now) ?: return null
+                Log.i(TAG, "ENGINE_BRANCH=semantic_path tool=${call.name}")
+                remoteChatState.setLastRoute("LOCAL (bypass: semantic capability)")
+                executeAndTrack(call, turn, confirmed = false)
+            }
+            ToolFamily.DEVICE_INFO -> {
+                // § FASE 2A.9 §8 — a metric explicit THIS turn wins; only a
+                // bare partitive follow-up (no metric of its own) may resolve
+                // via a PREVIOUS *KNOWLEDGE* frame's metric — a genuinely
+                // cross-domain anaphora `SemanticFrameMerger` deliberately
+                // never bridges on its own (different domains), the same
+                // resolution `DeviceInfoFollowUp` already proved safe for the
+                // legacy path — never substituting RAM for an unanswerable
+                // VRAM/other metric.
+                val rawTopic = frame.metric
+                    ?: previousFrame?.takeIf { ToolFamily.KNOWLEDGE in it.domains }?.metric
+                val topic = rawTopic?.let { DeviceInfoFollowUp.extractTopic(it) ?: it.trim().lowercase() }
+                val metric = topic?.let { DeviceInfoFollowUp.resolveDeviceInfoMetric(it) } ?: return null
+                val call = ToolCall(
+                    id = UUID.randomUUID().toString(),
+                    name = "get_device_info",
+                    arguments = JsonObject(mapOf("metric" to JsonPrimitive(metric))),
+                    requiresConfirmation = false,
+                )
+                Log.i(TAG, "ENGINE_BRANCH=semantic_path tool=${call.name}")
+                remoteChatState.setLastRoute("LOCAL (bypass: semantic capability)")
+                executeAndTrack(call, turn, confirmed = false)
+            }
+            else -> null
+        }
+    }
+
+    /**
+     * § FASE 2A.9 — "E durante tutta la settimana prossima?": neither
+     * `ItalianDateTimeParser` nor `DayPeriod` had any week-range concept
+     * before this phase (see [AgendaWeekRange]'s own doc comment) — resolved
+     * FIRST against a week phrase (the frame's own [SemanticFrame.temporalExpression],
+     * falling back to the raw [transcript] in case it was empty), then the
+     * existing single-day [CommandMatcher.agendaCall] builder, exactly like
+     * [runFollowUpFastPath] already reuses it for a single-day follow-up.
+     */
+    private fun agendaCallFromFrame(transcript: String, frame: SemanticFrame, now: LocalDateTime): ToolCall? {
+        val weekRange = frame.temporalExpression?.let { AgendaWeekRange.resolve(it, now) }
+            ?: AgendaWeekRange.resolve(transcript, now)
+        if (weekRange != null) {
+            return ToolCall(
+                id = UUID.randomUUID().toString(),
+                name = "list_agenda",
+                arguments = JsonObject(
+                    mapOf(
+                        "day" to JsonPrimitive(weekRange.start.toString()),
+                        "to" to JsonPrimitive(weekRange.endInclusive.toString()),
+                    ),
+                ),
+                requiresConfirmation = false,
+            )
+        }
+        return (CommandMatcher.agendaCall(transcript, now) as? Match.Run)?.call
     }
 
     /** If this engine itself is waiting on a yes/no, resolve it before anything else. */
@@ -617,10 +844,18 @@ class ConversationalJarvisEngine @Inject constructor(
                 // families the request SPECIFICALLY named (never the
                 // ambiguous-fallback whole catalog) become "required".
                 if (rounds == 1) {
-                    turn.requiredGroundingFamilies = diag.specificFamilies
+                    val fromKeywords = diag.specificFamilies
                         .mapNotNull { name -> ToolFamily.entries.find { it.name == name } }
                         .filter { it in GROUNDED_FAMILIES }
                         .toSet()
+                    // § FASE 2A.9 §10 — union, never overwrite: a
+                    // MULTI_SOURCE_REASONING frame from runSemanticPath may
+                    // already have seeded `semanticMultiSourceDomains` (e.g.
+                    // "come ho dormito e gli impegni di domani" — HEALTH may
+                    // carry no literal keyword `RelevantToolSelector` itself
+                    // would catch) — both sources of truth are required,
+                    // neither alone is allowed to shrink the other's demand.
+                    turn.requiredGroundingFamilies = turn.requiredGroundingFamilies + fromKeywords + turn.semanticMultiSourceDomains
                 }
             }
             if (reply is BrainReply.Unavailable) {
@@ -767,6 +1002,24 @@ class ConversationalJarvisEngine @Inject constructor(
         val toolFailureCodes = ArrayList<String>()
         var networkAvailable: Boolean? = null
 
+        // § FASE 2A.9 §15 diagnostica richiesta esplicitamente — see
+        // EngineTurnDiagnostics' own doc comment for the privacy contract
+        // (counts/enum names only, never message content or the prompt).
+        var semanticEnabled = false
+        var semanticSource: String? = null
+        var semanticIntent: String? = null
+        var semanticDomains: List<String> = emptyList()
+        var semanticOperation: String? = null
+        var explicitSlots: List<String> = emptyList()
+        var inheritedSlots: List<String> = emptyList()
+        var currentOverridesPrevious = false
+        var semanticValid = false
+        var semanticConfidence: Double? = null
+        var semanticFailureReason: String? = null
+        var semanticLatencyMs: Long? = null
+        /** Set by [runSemanticPath] for a MULTI_SOURCE_REASONING frame — read once by [runBrainLoop]'s round 1. */
+        var semanticMultiSourceDomains: Set<ToolFamily> = emptySet()
+
         /** Never includes the reply text itself — only counts/booleans, per [EngineTurnDiagnostics]'s contract. */
         fun toDiagnostics(): EngineTurnDiagnostics {
             val now = System.currentTimeMillis()
@@ -805,6 +1058,18 @@ class ConversationalJarvisEngine @Inject constructor(
                 groundingBlockReason = groundingBlockReason,
                 toolFailureCodes = toolFailureCodes,
                 networkAvailable = networkAvailable,
+                semanticEnabled = semanticEnabled,
+                semanticSource = semanticSource,
+                semanticIntent = semanticIntent,
+                semanticDomains = semanticDomains,
+                semanticOperation = semanticOperation,
+                explicitSlots = explicitSlots,
+                inheritedSlots = inheritedSlots,
+                currentOverridesPrevious = currentOverridesPrevious,
+                semanticValid = semanticValid,
+                semanticConfidence = semanticConfidence,
+                semanticFailureReason = semanticFailureReason,
+                semanticLatencyMs = semanticLatencyMs,
             )
         }
     }
