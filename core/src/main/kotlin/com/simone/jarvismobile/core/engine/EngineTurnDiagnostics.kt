@@ -48,4 +48,28 @@ data class EngineTurnDiagnostics(
     val groundingRequired: Boolean = false,
     /** True when grounding was not required, or was required AND at least one tool actually ran this turn. False means the model likely answered a data question without checking anything. */
     val groundingSatisfied: Boolean = true,
+    // § FASE 2A.6 diagnostica v2 richiesta esplicitamente — additive, default
+    // to previous no-op values so no other constructor call site breaks.
+    /**
+     * Which branch of `ConversationalJarvisEngine.handle()` actually produced
+     * this turn's reply — e.g. `PENDING_CONFIRMATION`, `PENDING_DISAMBIGUATION`,
+     * `FAST_PATH`, `STRUCTURED_AGENDA`, `HOME_CONTROL_UNSUPPORTED`,
+     * `CAPABILITY_FAST_PATH`, `BRAIN`, `ERROR`. Never personal content, a
+     * fixed vocabulary of route names.
+     */
+    val routingPath: String = "BRAIN",
+    /** How many `JarvisBrain.reply()` rounds actually ran the model (0 for any deterministic/capability path that never reaches it). */
+    val modelRounds: Int = 0,
+    /** [ParseOutcome] name per round the model actually ran, in order — a size/enum list, never the text itself. */
+    val parseOutcomesByRound: List<String> = emptyList(),
+    /** [com.simone.jarvismobile.core.tools.ToolFamily] names this turn's intent SPECIFICALLY required real data for (`RelevantToolSelector.matchedFamilies` ∩ `GROUNDED_FAMILIES`) — never the whole ambiguous-fallback catalog. */
+    val requiredGroundingFamilies: List<String> = emptyList(),
+    /** Of [requiredGroundingFamilies], the ones a real tool of that exact family actually executed successfully for. */
+    val satisfiedGroundingFamilies: List<String> = emptyList(),
+    /** Non-null only when [groundingSatisfied] is false or a malformed-output guard fired — the exact enforcement reason, e.g. `no_tool_call_for_required_family:WEATHER` or `malformed_json_output`. */
+    val groundingBlockReason: String? = null,
+    /** [ToolOutcome.Failed]'s technical `code` per failed tool, same order as [toolsFailed] — never the spoken failure message. */
+    val toolFailureCodes: List<String> = emptyList(),
+    /** Live connectivity this turn read for gating a `requiresNetwork` tool — `null` when never checked (no network-requiring tool was ever offered/attempted). */
+    val networkAvailable: Boolean? = null,
 )

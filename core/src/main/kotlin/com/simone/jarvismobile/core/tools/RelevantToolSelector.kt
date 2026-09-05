@@ -99,8 +99,20 @@ object RelevantToolSelector {
         "sveglia", "svegliami", "timer", "allarme", "che ore", "che ora", "orario",
         "quanto manca", "fra quanto", "tra quanto",
     )
+    // § FASE 2A.6 — "luce"/"accendi"/"spegni" removed: they were the actual
+    // root cause of "Accendi la luce della camera" being able to reach
+    // `flashlight` at all (matched DEVICE via the bare word "luce", with no
+    // real smart-home tool to distinguish room lighting from the phone's own
+    // torch). "torcia"/"flash" are the words `CommandMatcher.TORCH_RE` (the
+    // deterministic fast path) itself already requires for a real torch
+    // command — kept here as the only DEVICE-selecting words for the same
+    // reason, so the model's tool catalog draws the identical line the fast
+    // path already draws deterministically. Bare "accendi"/"spegni" alone say
+    // nothing about DEVICE specifically (they also mean turning on music, an
+    // app, a light that isn't the torch, …) so they are gated by
+    // [HomeControlDetector] instead (§ below), never by this family.
     private val DEVICE_KEYWORDS = setOf(
-        "torcia", "luce", "accendi", "spegni", "batteria", "carica", "caricando", "percentuale",
+        "torcia", "flash", "batteria", "carica", "caricando", "percentuale",
     )
     private val AGENDA_KEYWORDS = setOf(
         "appuntamento", "appuntamenti", "impegno", "impegni", "agenda", "riunione", "riunioni",
@@ -161,23 +173,54 @@ object RelevantToolSelector {
         ToolFamily.HEALTH to HEALTH_KEYWORDS,
     )
 
+    // § FASE 2A.6 §4 — one compiled word/phrase-boundary regex per keyword,
+    // built once. Root cause fixed: `keywords.any(normalized::contains)` was
+    // a raw substring test, so e.g. the SYSTEM_APP keyword "app" matched
+    // *inside* "appuntamenti"/"appuntamento" (AGENDA's own words) — "Che
+    // appuntamenti ho domani?" silently pulled in SYSTEM_APP tools that have
+    // nothing to do with the request. `\b` works correctly around a
+    // multi-word keyword too (e.g. "che ore"), matching only when it appears
+    // as whole words, not as a fragment of a longer one. Multi-family
+    // selection itself is unaffected and still intentional (§ "Considerando
+    // come ho dormito e gli impegni di domani" must still match HEALTH+AGENDA
+    // both) — only spurious *incidental* substring matches are removed.
+    private val FAMILY_PATTERNS: Map<ToolFamily, List<Regex>> = FAMILY_KEYWORDS.mapValues { (_, keywords) ->
+        keywords.map { Regex("\\b" + Regex.escape(it) + "\\b") }
+    }
+
+    /**
+     * The [ToolFamily] values whose keyword set has a real word/phrase-
+     * boundary match in [userText] — the *specific*, high-confidence signal,
+     * as opposed to [select]'s conservative "ambiguous → full catalog"
+     * fallback (which is not a specific match at all). §FASE 2A.6 §1/§2: this
+     * is what a capability-first router and grounding enforcement should
+     * treat as "the user specifically asked about this family" — the
+     * ambiguous-fallback catalog must never be read as "every one of these
+     * families was specifically requested."
+     */
+    fun matchedFamilies(userText: String): Set<ToolFamily> {
+        val normalized = normalize(userText)
+        return FAMILY_PATTERNS.filterValues { patterns -> patterns.any { it.containsMatchIn(normalized) } }.keys
+    }
+
     /**
      * [availableTools] is `ToolRunner.available()`'s live (name, description)
      * pairs — the very same catalog the full prompt used to embed
      * unconditionally, never a second registry. Returns the subset plausibly
      * relevant to [userText], preserving [availableTools]' original order:
      *
-     *  - One or more [ToolFamily] keyword sets match → only tools in those
-     *    families, plus any tool [FAMILY_BY_TOOL_NAME] does not yet classify
-     *    (see the class doc comment on why those are never dropped). Checked
-     *    FIRST, regardless of [ToolIntentGate] (§ FASE 2A.5-bis root cause: a
-     *    factual question like "Che tempo fa domani?" does not match
-     *    [ToolIntentGate]'s action/device-question signals at all — it is a
-     *    plain question, not a command — so gating on that check first, as
-     *    an earlier phase did, silently starved every such family of any
-     *    chance to be selected. A specific family-keyword match is a
-     *    stronger, more targeted signal than the coarser intent gate, so it
-     *    is checked independently instead of behind it).
+     *  - One or more [ToolFamily] keyword sets match ([matchedFamilies]) →
+     *    only tools in those families, plus any tool [FAMILY_BY_TOOL_NAME]
+     *    does not yet classify (see the class doc comment on why those are
+     *    never dropped). Checked FIRST, regardless of [ToolIntentGate] (§
+     *    FASE 2A.5-bis root cause: a factual question like "Che tempo fa
+     *    domani?" does not match [ToolIntentGate]'s action/device-question
+     *    signals at all — it is a plain question, not a command — so gating
+     *    on that check first, as an earlier phase did, silently starved
+     *    every such family of any chance to be selected. A specific
+     *    family-keyword match is a stronger, more targeted signal than the
+     *    coarser intent gate, so it is checked independently instead of
+     *    behind it).
      *  - No family matched, but [ToolIntentGate] says a tool is plausibly
      *    needed anyway (a genuinely ambiguous request, e.g. "Attivalo per
      *    favore") → every tool: the conservative fallback that never costs
@@ -187,13 +230,12 @@ object RelevantToolSelector {
      *    catalog.
      */
     fun select(availableTools: List<Pair<String, String>>, userText: String): List<Pair<String, String>> {
-        val normalized = normalize(userText)
-        val matchedFamilies = FAMILY_KEYWORDS.filterValues { keywords -> keywords.any(normalized::contains) }.keys
+        val matched = matchedFamilies(userText)
 
-        if (matchedFamilies.isNotEmpty()) {
+        if (matched.isNotEmpty()) {
             return availableTools.filter { (name, _) ->
                 val family = FAMILY_BY_TOOL_NAME[name]
-                family == null || family in matchedFamilies
+                family == null || family in matched
             }
         }
 

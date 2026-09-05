@@ -84,6 +84,7 @@ class LlmIntentClassifierTest {
             return answer
         }
         override suspend fun chat(userText: String, systemPrompt: String, timeoutSeconds: Long): String = answer
+        override suspend fun chatStateless(userText: String, systemPrompt: String, timeoutSeconds: Long): String = answer
         override fun resetConversation() = Unit
         override fun cancel() = Unit
     }

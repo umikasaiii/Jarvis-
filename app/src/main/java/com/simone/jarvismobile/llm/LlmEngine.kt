@@ -68,6 +68,24 @@ interface LlmEngine {
     /** Drops the multi-turn history and starts a fresh conversation next [chat]. */
     fun resetConversation()
 
+    /**
+     * § FASE 2A.6 — one genuinely stateless turn: [userText] is answered with
+     * [systemPrompt] seeded fresh, on a brand-new native `Conversation` that is
+     * created and closed within this single call, never touching the
+     * persistent one [chat]/[resetConversation] manage. Exists for a caller
+     * whose own system prompt already varies every turn (tool catalog,
+     * context) and that already tracks its own cross-turn continuity
+     * explicitly (never relies on this engine's native memory) — unlike
+     * [chat], calling this can NEVER contaminate or be contaminated by
+     * another caller's persistent conversation on the same slot, and never
+     * needs [resetConversation] before or after it. Returns null on failure.
+     */
+    suspend fun chatStateless(
+        userText: String,
+        systemPrompt: String,
+        timeoutSeconds: Long = DEFAULT_GENERATION_TIMEOUT_SECONDS,
+    ): String?
+
     /** Requests a real stop of the currently running native inference. */
     fun cancel()
 }

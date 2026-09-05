@@ -54,7 +54,16 @@ class ResponseParser(
         if (repaired != null && repaired != trimmed) {
             decodeOrNull(repaired)?.let { return ParseResult.Repaired(it) }
         }
-        val attemptedJson = trimmed.contains('{') && trimmed.contains('}')
+        // § FASE 2A.6 §5 — hardened beyond "has both { and }": a truncated
+        // tool-call attempt like `{"tool_calls":[` has no closing brace at
+        // all and used to read as ordinary PLAIN_TEXT. Conservative signals
+        // for "the model was clearly attempting protocol JSON, whether or not
+        // it is well-formed": an opening brace, a ```json fence, or either of
+        // the two protocol field names appearing literally.
+        val attemptedJson = trimmed.startsWith("{") ||
+            trimmed.contains("```json") ||
+            trimmed.contains("\"tool_calls\"") ||
+            trimmed.contains("\"assistant_text\"")
         return ParseResult.PlainText(trimmed, looksLikeAttemptedJson = attemptedJson)
     }
 

@@ -3,6 +3,7 @@ package com.simone.jarvismobile.engine
 import android.util.Log
 import com.simone.jarvismobile.ai.RemoteChatState
 import com.simone.jarvismobile.context.ContextEngine
+import com.simone.jarvismobile.core.agenda.ItalianDateTimeParser
 import com.simone.jarvismobile.core.engine.BrainReply
 import com.simone.jarvismobile.core.engine.EngineTurnDiagnostics
 import com.simone.jarvismobile.core.engine.JarvisEngineMode
@@ -11,6 +12,9 @@ import com.simone.jarvismobile.core.engine.ToolCallBudget
 import com.simone.jarvismobile.core.intent.IntentAliases
 import com.simone.jarvismobile.core.protocol.ToolCall
 import com.simone.jarvismobile.core.tools.GROUNDED_FAMILIES
+import com.simone.jarvismobile.core.tools.HomeControlDetector
+import com.simone.jarvismobile.core.tools.RelevantToolSelector
+import com.simone.jarvismobile.core.tools.ToolFamily
 import com.simone.jarvismobile.data.SettingsRepository
 import com.simone.jarvismobile.llm.DEFAULT_GENERATION_TIMEOUT_SECONDS
 import com.simone.jarvismobile.tools.AgendaIntentRouter
@@ -22,6 +26,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import java.time.LocalDateTime
+import java.time.temporal.ChronoUnit
+import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -98,18 +107,25 @@ class ConversationalJarvisEngine @Inject constructor(
      */
     override suspend fun handle(transcript: String): String {
         val turn = TurnState(startedAt = System.currentTimeMillis(), cap = settings.jarvisToolLoopCap.first())
+        // § FASE 2A.6 §10 — one snapshot for the whole turn, not re-read per
+        // branch: what a network-requiring tool would actually be gated on
+        // right now, regardless of whether one is attempted this turn.
+        turn.networkAvailable = isOnline()
 
         val spoken = try {
             handlePendingConfirmation(transcript, turn)
                 ?: handlePendingDisambiguation(transcript, turn)
                 ?: runFastPath(transcript, turn)
                 ?: runStructuredPath(transcript, turn)
+                ?: runHomeControlGuard(transcript, turn)
+                ?: runCapabilityFastPath(transcript, turn)
                 ?: runBrainLoop(transcript, turn)
         } catch (e: CancellationException) {
             throw e
         } catch (t: Throwable) {
             Log.w(TAG, "conversational_turn_crash ${t.javaClass.simpleName}")
             turn.fallbackOccurred = true
+            turn.routingPath = "ERROR"
             CANNED_ERROR
         }
 
@@ -126,6 +142,7 @@ class ConversationalJarvisEngine @Inject constructor(
         // una conferma sospesa che intercetta ogni messaggio successivo
         // PRIMA che raggiunga fast-path/structured-path/runBrainLoop.
         Log.i(TAG, "ENGINE_BRANCH=pending_confirmation call=${call.name}")
+        turn.routingPath = "PENDING_CONFIRMATION"
         // Visibile anche in Diagnostica › "Ultima risposta chat" (§ stesso
         // pattern già in uso in JarvisBrain), non solo in Logcat — l'utente
         // può verificare senza adb se un turno è stato intercettato qui
@@ -151,6 +168,7 @@ class ConversationalJarvisEngine @Inject constructor(
         // reale alla disambiguazione), questo turno non raggiunge mai
         // fast-path/structured-path/runBrainLoop/JarvisBrain.tryRemoteReply.
         Log.i(TAG, "ENGINE_BRANCH=pending_disambiguation candidates=${pending.candidateIds.size}")
+        turn.routingPath = "PENDING_DISAMBIGUATION"
         remoteChatState.setLastRoute("LOCAL (bypass: disambiguazione sospesa)")
         pendingDisambiguation = null
         if (IntentAliases.isCancellationOfPendingAction(transcript) || IntentAliases.isNegative(transcript)) {
@@ -178,6 +196,7 @@ class ConversationalJarvisEngine @Inject constructor(
         Log.i(TAG, "ENGINE_BRANCH=fast_path tool=${match.call.name}")
         remoteChatState.setLastRoute("LOCAL (bypass: comando deterministico)")
         turn.fastPathHit = true
+        turn.routingPath = "FAST_PATH"
         return executeAndTrack(match.call, turn, confirmed = false)
     }
 
@@ -224,11 +243,13 @@ class ConversationalJarvisEngine @Inject constructor(
             is AgendaRouting.Call -> {
                 Log.i(TAG, "ENGINE_BRANCH=structured_path tool=${routing.call.name}")
                 remoteChatState.setLastRoute("LOCAL (bypass: comando agenda)")
+                turn.routingPath = "STRUCTURED_AGENDA"
                 executeAndTrack(routing.call, turn, confirmed = false)
             }
             is AgendaRouting.Disambiguate -> {
                 Log.i(TAG, "ENGINE_BRANCH=structured_path (disambiguate, candidates=${routing.candidateIds.size})")
                 remoteChatState.setLastRoute("LOCAL (bypass: disambiguazione agenda)")
+                turn.routingPath = "STRUCTURED_AGENDA"
                 pendingDisambiguation = PendingDisambiguation(routing.candidateIds, routing.pending)
                 routing.question
             }
@@ -239,14 +260,105 @@ class ConversationalJarvisEngine @Inject constructor(
         }
     }
 
+    /**
+     * § FASE 2A.6 §2/§9 — a request for real home-automation control (room
+     * lighting, climate, shutters, locks) that this app has no smart-home
+     * integration for at all (Phase 7, "Not started" — see `CLAUDE.md`).
+     * Checked as its own deterministic guard, ahead of both the capability
+     * router below and the model: the risk this closes is specific —
+     * `RelevantToolSelector`'s DEVICE family (the phone's own `flashlight`)
+     * must never silently stand in for a room-lighting request just because
+     * it happens to be the only "turn something on/off" tool registered.
+     * Never a side effect, never a guess — an honest, deterministic
+     * "unsupported" answer, exactly what §9's test 6 requires.
+     */
+    private fun runHomeControlGuard(transcript: String, turn: TurnState): String? {
+        if (!HomeControlDetector.looksLikeUnsupportedHomeControl(transcript)) return null
+        Log.i(TAG, "ENGINE_BRANCH=home_control_unsupported")
+        remoteChatState.setLastRoute("LOCAL (bypass: controllo domotico non supportato)")
+        turn.routingPath = "HOME_CONTROL_UNSUPPORTED"
+        return "Non ho ancora un'integrazione per il controllo della casa (luci, clima, tapparelle): " +
+            "posso solo controllare la torcia del telefono."
+    }
+
+    /**
+     * § FASE 2A.6 §2 — capability-first routing: when [transcript] matches
+     * EXACTLY ONE specific [ToolFamily] via `RelevantToolSelector.matchedFamilies`
+     * (never the conservative "ambiguous → full catalog" case, which is
+     * genuinely ambiguous and must still go to the model), and that family
+     * has a known, single, high-confidence tool, this calls it directly —
+     * no LLM round at all. This is the same architectural idea `runFastPath`/
+     * `runStructuredPath` already prove works for agenda commands, extended
+     * to the two capabilities added in FASE 2A.5-bis (`get_weather`,
+     * `get_health_summary`) that previously had no deterministic path and
+     * depended entirely on the model choosing to call them. Two or more
+     * families matching (e.g. "come ho dormito e gli impegni di domani")
+     * falls through to `runBrainLoop`, where grounding enforcement is the
+     * safety net for a genuinely multi-source request.
+     */
+    private suspend fun runCapabilityFastPath(transcript: String, turn: TurnState): String? {
+        val matched = RelevantToolSelector.matchedFamilies(transcript)
+        val call = when (matched.singleOrNull()) {
+            ToolFamily.WEATHER -> weatherCall(transcript)
+            ToolFamily.HEALTH -> healthCall()
+            else -> null
+        } ?: return null
+        Log.i(TAG, "ENGINE_BRANCH=capability_fast_path tool=${call.name}")
+        remoteChatState.setLastRoute("LOCAL (bypass: capability diretta)")
+        turn.routingPath = "CAPABILITY_FAST_PATH"
+        turn.modelRounds = 0
+        return executeAndTrack(call, turn, confirmed = false)
+    }
+
+    /** [ItalianDateTimeParser] resolves "domani"/"dopodomani"/an explicit date; anything else (or none named) defaults to today, never guessed beyond 3 days ahead ([GetWeatherTool]'s own supported range). */
+    private fun weatherCall(transcript: String): ToolCall {
+        val now = LocalDateTime.now()
+        val parsed = ItalianDateTimeParser.parse(transcript, now)
+        val daysAhead = if (parsed.dateExplicit && parsed.date != null) {
+            ChronoUnit.DAYS.between(now.toLocalDate(), parsed.date).toInt().coerceIn(0, 3)
+        } else {
+            0
+        }
+        return ToolCall(
+            id = UUID.randomUUID().toString(),
+            name = "get_weather",
+            arguments = JsonObject(mapOf("days_ahead" to JsonPrimitive(daysAhead.toString()))),
+            requiresConfirmation = false,
+        )
+    }
+
+    private fun healthCall(): ToolCall = ToolCall(
+        id = UUID.randomUUID().toString(),
+        name = "get_health_summary",
+        arguments = JsonObject(emptyMap()),
+        requiresConfirmation = false,
+    )
+
     /** Runs [call] through [ToolRouter], tracks it for [ConversationManager], and turns the outcome into speech. */
     private suspend fun executeAndTrack(call: ToolCall, turn: TurnState, confirmed: Boolean): String {
         turn.toolsRequested += call.name
+        // § FASE 2A.6 §1 — a deterministic path (pending confirmation/
+        // disambiguation, fast path, structured agenda, capability fast
+        // path) never goes through `runBrainLoop`'s own tracking, so it
+        // marks its own call's family as required here — always trivially
+        // satisfied below on success, never on failure, exactly like a
+        // model-requested tool call would be.
+        RelevantToolSelector.familyOf(call.name)?.let { fam ->
+            if (fam in GROUNDED_FAMILIES) turn.requiredGroundingFamilies = turn.requiredGroundingFamilies + fam
+        }
         val outcome = toolRouter.execute(call, turn.budget, online = isOnline(), confirmed = confirmed)
         conversationManager.onToolExecuted(call, outcome)
         return when (outcome) {
-            is ToolOutcome.Done -> { turn.toolsExecuted += call.name; outcome.spoken }
-            is ToolOutcome.Failed -> { turn.toolsFailed += call.name; outcome.spoken }
+            is ToolOutcome.Done -> {
+                turn.toolsExecuted += call.name
+                RelevantToolSelector.familyOf(call.name)?.let { turn.satisfiedGroundingFamilies += it }
+                outcome.spoken
+            }
+            is ToolOutcome.Failed -> {
+                turn.toolsFailed += call.name
+                turn.toolFailureCodes += outcome.code
+                outcome.spoken
+            }
             is ToolOutcome.NeedsConfirmation -> {
                 pendingConfirmation = outcome.call
                 outcome.prompt
@@ -319,6 +431,18 @@ class ConversationalJarvisEngine @Inject constructor(
                 turn.toolFamiliesSelected = diag.toolFamilies
                 turn.availableToolCount = diag.availableToolCount
                 turn.selectedToolCount = diag.selectedToolCount
+                // § FASE 2A.6 §1 — set once, from round 1: `toolSelectionText`
+                // is the same original `transcript` every round (§ FASE 2A.4),
+                // so the SPECIFIC families it maps to are stable for the whole
+                // turn, same as `toolFamiliesSelected` already is. Only the
+                // families the request SPECIFICALLY named (never the
+                // ambiguous-fallback whole catalog) become "required".
+                if (rounds == 1) {
+                    turn.requiredGroundingFamilies = diag.specificFamilies
+                        .mapNotNull { name -> ToolFamily.entries.find { it.name == name } }
+                        .filter { it in GROUNDED_FAMILIES }
+                        .toSet()
+                }
             }
             if (reply is BrainReply.Unavailable) {
                 // JarvisEngineRouter is expected to have already kept us from being
@@ -328,6 +452,8 @@ class ConversationalJarvisEngine @Inject constructor(
                 return CANNED_ERROR
             }
             val ready = reply as BrainReply.Ready
+            turn.modelRounds = rounds
+            turn.parseOutcomesByRound += ready.parseOutcome.name
             // § FASE 2A.5-bis: only a genuine MALFORMED_JSON round counts as
             // a real parse error — PLAIN_TEXT is the model correctly
             // answering without JSON because no tool was needed, the common
@@ -338,6 +464,34 @@ class ConversationalJarvisEngine @Inject constructor(
 
             val response = ready.response
             if (response.toolCalls.isEmpty()) {
+                // § FASE 2A.6 §6 — a genuinely malformed output (the model
+                // tried to produce protocol JSON and failed) must NEVER reach
+                // the user verbatim: `response.assistantText` here is
+                // literally `parsed.rawText` (see `JarvisBrain.reply`), i.e.
+                // possibly a raw, truncated protocol-JSON fragment itself — the
+                // exact "raw JSON shown in chat" bug this phase's audit
+                // found for "Accendi la luce della camera". Checked BEFORE
+                // grounding so a malformed round is never mistaken for a
+                // (well-formed but unhelpful) ungrounded answer.
+                if (ready.parseOutcome == ParseOutcome.MALFORMED_JSON) {
+                    turn.groundingBlockReason = "malformed_json_output"
+                    return MALFORMED_OUTPUT_MESSAGE
+                }
+                // § FASE 2A.6 §1 — grounding enforcement, fail-closed: the
+                // model answered in plain text (no tool call) while at least
+                // one family the request SPECIFICALLY required real data for
+                // still has no successfully-executed tool of that exact
+                // family. `groundingRequired`/`groundingSatisfied` used to be
+                // diagnostics computed AFTER the fact, never a real policy —
+                // this is the actual enforcement: that plain-text answer is
+                // never returned to the user, since the model already had its
+                // chance to call the tool and did not.
+                val unmet = turn.requiredGroundingFamilies - turn.satisfiedGroundingFamilies
+                if (unmet.isNotEmpty()) {
+                    turn.groundingBlockReason = "no_tool_call_for_required_family:" +
+                        unmet.joinToString(",") { it.name }
+                    return GROUNDING_FAIL_CLOSED_MESSAGE
+                }
                 return response.assistantText.trim().ifBlank { "Fatto." }
             }
 
@@ -352,11 +506,16 @@ class ConversationalJarvisEngine @Inject constructor(
                 when (val outcome = toolRouter.execute(call, turn.budget, online = isOnline(), confirmed = false)) {
                     is ToolOutcome.Done -> {
                         turn.toolsExecuted += call.name
+                        // § FASE 2A.6 §1 rule 5 — only the FAMILY the request
+                        // specifically required can satisfy it; a tool from an
+                        // unrelated family executing successfully never does.
+                        RelevantToolSelector.familyOf(call.name)?.let { turn.satisfiedGroundingFamilies += it }
                         conversationManager.onToolExecuted(call, outcome)
                         toolResults.append(outcome.spoken).append('\n')
                     }
                     is ToolOutcome.Failed -> {
                         turn.toolsFailed += call.name
+                        turn.toolFailureCodes += outcome.code
                         toolResults.append(outcome.spoken).append('\n')
                     }
                     is ToolOutcome.NeedsConfirmation -> {
@@ -408,20 +567,28 @@ class ConversationalJarvisEngine @Inject constructor(
         /** Set by [runStructuredPath] on a lexical miss, read by [runBrainLoop]. */
         var structuredMissHint: String? = null
 
+        // § FASE 2A.6 diagnostica v2 richiesta esplicitamente — see EngineTurnDiagnostics' own doc comment.
+        var routingPath: String = "BRAIN"
+        var modelRounds = 0
+        val parseOutcomesByRound = ArrayList<String>()
+        /** [ToolFamily]s the request SPECIFICALLY required real data for — grown by [executeAndTrack] for deterministic paths, by [runBrainLoop] from round 1's `PromptDiagnostics.specificFamilies`. */
+        var requiredGroundingFamilies: Set<ToolFamily> = emptySet()
+        /** Of [requiredGroundingFamilies], the ones a real tool of that exact family actually executed successfully for — the ONLY way to satisfy one (§ FASE 2A.6 §1 rules 1-6). */
+        val satisfiedGroundingFamilies = mutableSetOf<ToolFamily>()
+        var groundingBlockReason: String? = null
+        val toolFailureCodes = ArrayList<String>()
+        var networkAvailable: Boolean? = null
+
         /** Never includes the reply text itself — only counts/booleans, per [EngineTurnDiagnostics]'s contract. */
         fun toDiagnostics(): EngineTurnDiagnostics {
             val now = System.currentTimeMillis()
-            // § FASE 2A.5-bis diagnostica richiesta esplicitamente
-            // ("groundingRequired=true/false, groundingSatisfied=true/false").
-            // A deterministic fast/structured-path hit is itself grounded by
-            // construction (it always executes exactly one real tool, see
-            // `runFastPath`/`runStructuredPath`), so it counts as grounding
-            // required-and-satisfied without needing a selected tool family.
-            // Otherwise: required when the model was offered any tool from a
-            // `GROUNDED_FAMILIES` family this turn; satisfied when either
-            // grounding was not required, or at least one tool actually ran.
-            val groundingRequired = fastPathHit || toolFamiliesSelected.any { it in GROUNDED_FAMILY_NAMES }
-            val groundingSatisfied = !groundingRequired || toolsExecuted.isNotEmpty()
+            // § FASE 2A.6 §1 — no longer a heuristic computed after the fact:
+            // `requiredGroundingFamilies`/`satisfiedGroundingFamilies` are the
+            // exact sets `executeAndTrack`/`runBrainLoop` maintained (and
+            // enforced fail-closed against) while the turn actually ran.
+            val groundingRequired = requiredGroundingFamilies.isNotEmpty()
+            val groundingSatisfied = requiredGroundingFamilies.isEmpty() ||
+                satisfiedGroundingFamilies.containsAll(requiredGroundingFamilies)
             return EngineTurnDiagnostics(
                 engine = JarvisEngineMode.CONVERSAZIONALE,
                 fastPathHit = fastPathHit,
@@ -442,6 +609,14 @@ class ConversationalJarvisEngine @Inject constructor(
                 parseOutcome = parseOutcome,
                 groundingRequired = groundingRequired,
                 groundingSatisfied = groundingSatisfied,
+                routingPath = routingPath,
+                modelRounds = modelRounds,
+                parseOutcomesByRound = parseOutcomesByRound,
+                requiredGroundingFamilies = requiredGroundingFamilies.map { it.name },
+                satisfiedGroundingFamilies = satisfiedGroundingFamilies.map { it.name },
+                groundingBlockReason = groundingBlockReason,
+                toolFailureCodes = toolFailureCodes,
+                networkAvailable = networkAvailable,
             )
         }
     }
@@ -462,7 +637,10 @@ class ConversationalJarvisEngine @Inject constructor(
         const val CANNED_ERROR =
             "Non sono riuscito a completare la richiesta in modalità conversazionale. Riprova, per favore."
 
-        /** [GROUNDED_FAMILIES]' names, precomputed once — `toolFamiliesSelected` is already a `List<String>`. */
-        val GROUNDED_FAMILY_NAMES: Set<String> = GROUNDED_FAMILIES.map { it.name }.toSet()
+        // § FASE 2A.6 §1/§6 — the two fail-closed, honest fallback messages:
+        // never a fabricated fact, never a raw protocol/JSON fragment.
+        const val GROUNDING_FAIL_CLOSED_MESSAGE = "Non riesco ad accedere a quel dato in questo momento."
+        const val MALFORMED_OUTPUT_MESSAGE =
+            "Non sono riuscito a formulare una risposta chiara. Puoi ripetere la richiesta?"
     }
 }

@@ -2,6 +2,7 @@ package com.simone.jarvismobile.promode
 
 import android.content.Context
 import android.util.Log
+import com.simone.jarvismobile.context.ContextEngine
 import com.simone.jarvismobile.core.intent.IntentAliases
 import com.simone.jarvismobile.core.protocol.AssistantResponse
 import com.simone.jarvismobile.core.protocol.ParseResult
@@ -39,11 +40,22 @@ class ProModeCoordinator @Inject constructor(
     @ApplicationContext private val context: Context,
     private val router: LlmRouter,
     private val tools: ToolRunner,
+    private val contextEngine: ContextEngine,
 ) {
     private val parser = ResponseParser()
 
     /** A tool call PRO itself is waiting on the user to confirm/deny. Independent of NORMAL mode's own field. */
     @Volatile private var pendingConfirmation: ToolCall? = null
+
+    /**
+     * § FASE 2A.6 §8 — same latent bug as [com.simone.jarvismobile.engine.ConversationalJarvisEngine]
+     * fixed in FASE 2A.5-bis: this coordinator shares the same [ToolRunner]/
+     * [ToolRegistry][com.simone.jarvismobile.core.tools.ToolRegistry] and its
+     * own LLM sees the full live tool catalog, so it could in principle name
+     * a network-requiring tool (`get_weather`) — hardcoding `online = false`
+     * would make that call always fail even when genuinely connected.
+     */
+    private fun isOnline(): Boolean = contextEngine.state.value.networkAvailable == true
 
     /** Clears any PRO-specific mid-conversation state — called when Modalità Pro is switched off. */
     fun reset() {
@@ -58,7 +70,7 @@ class ProModeCoordinator @Inject constructor(
                 return "Va bene, annullato."
             }
             if (IntentAliases.isAffirmative(transcript)) {
-                return when (val outcome = tools.run(call, online = false, confirmed = true)) {
+                return when (val outcome = tools.run(call, online = isOnline(), confirmed = true)) {
                     is ToolOutcome.Done -> outcome.spoken
                     is ToolOutcome.Failed -> outcome.spoken
                     is ToolOutcome.NeedsConfirmation -> "Non posso eseguirlo senza conferma."
@@ -85,7 +97,7 @@ class ProModeCoordinator @Inject constructor(
         }
         val spokenResults = StringBuilder()
         for (call in response.toolCalls) {
-            when (val outcome = tools.run(call, online = false, confirmed = false)) {
+            when (val outcome = tools.run(call, online = isOnline(), confirmed = false)) {
                 is ToolOutcome.Done -> spokenResults.append(outcome.spoken).append('\n')
                 is ToolOutcome.Failed -> spokenResults.append(outcome.spoken).append('\n')
                 is ToolOutcome.NeedsConfirmation -> {

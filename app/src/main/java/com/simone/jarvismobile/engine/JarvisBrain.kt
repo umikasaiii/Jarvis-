@@ -153,31 +153,29 @@ class JarvisBrain @Inject constructor(
         if (remote == null) Log.i(TAG, "BRAIN_FALLBACK_LOCAL")
         val raw = remote
             ?: run {
-                // § FASE 2A.4 root cause of "Accendi la luce della camera" ->
-                // "'TEST CORE' è stato eseguito correttamente": `LitertLmEngine.chat()`
-                // deliberately reuses one native `Conversation` (KV cache) across
-                // calls to the same slot and, by design (see its own doc comment),
-                // does NOT re-seed it when the incoming systemPrompt differs from
-                // the one it was seeded with — a fix for Classic mode's own turns,
-                // where re-seeding on every per-turn-varying system prompt was
-                // destroying ITS chat memory. FASE 2A.2/2A.3 made this brain's own
-                // systemPrompt vary turn-to-turn too (selected tools, FAST/RICH
-                // tier) — so a local-fallback turn silently inherited a PRIOR,
-                // unrelated turn's live conversation: the model never even saw
-                // this turn's real system prompt (tool catalog included), and its
-                // native history still held the old exchange, verbatim explaining
-                // the observed contamination. This brain was never designed to
-                // rely on that native memory in the first place — every piece of
-                // cross-turn continuity it wants is already explicit
-                // (`ConversationManager`/`ContextAssembler`), never implicit model
-                // memory — so forcing a fresh, correctly-seeded conversation here
-                // costs nothing intentional. Classic mode's own `SessionCoordinator`
-                // calls into the very same shared `LlmRouter`/`LitertLmEngine`
-                // instances and is deliberately left untouched (no reset added
-                // there): this fix is scoped to the one call site that was
-                // actually measured to cause the bug.
-                router.resetConversation(slot)
-                router.chat(prompt, turnSystemPrompt, slot, timeoutSeconds)
+                // § FASE 2A.6 §9 — supersedes the FASE 2A.4 fix. That fix
+                // (`router.resetConversation(slot)` before every local-fallback
+                // call) stopped the contamination by discarding the ONE
+                // persistent native `Conversation` this brain shares with
+                // Classic mode's `SessionCoordinator` on the same slot — a
+                // real, explicitly accepted trade-off at the time ("could wipe
+                // Classic's memory if the user switches modes mid-session").
+                // `chatStateless` removes the trade-off instead of accepting
+                // it: it creates and closes its OWN `Conversation` within this
+                // one call, never reading or writing the shared persistent
+                // one at all — so Classic's memory is never touched by this
+                // path, and this brain (whose only intended cross-turn
+                // continuity is already explicit, via `ConversationManager`/
+                // `ContextAssembler`, never implicit model memory) is
+                // structurally isolated per turn, not just reset before each one.
+                // Manual on-device verification (no Robolectric/instrumented
+                // infra exists in this project to automate it): message A in
+                // Classic mode → switch to Conversational, one unrelated
+                // message → switch back to Classic, ask a follow-up that
+                // depends on A. Classic's own persistent `Conversation`
+                // (owned by `SessionCoordinator`, never touched by this call)
+                // must still remember A.
+                router.chatStateless(prompt, turnSystemPrompt, slot, timeoutSeconds)
             }
             ?: return BrainReply.Unavailable
         return when (val parsed = parser.parse(raw)) {
@@ -345,6 +343,12 @@ class JarvisBrain @Inject constructor(
         val selected = RelevantToolSelector.select(available, toolSelectionText)
         val built = SystemPromptComposer.compose(tier, richPersona, selected)
         val families = RelevantToolSelector.familiesOf(selected).map { it.name }
+        // § FASE 2A.6 §1 — the SPECIFIC families (never the whole-catalog
+        // ambiguous-fallback case), for `ConversationalJarvisEngine`'s
+        // grounding-enforcement to intersect with `GROUNDED_FAMILIES` — see
+        // `PromptDiagnostics.specificFamilies`'s own doc comment for why this
+        // must stay distinct from `families` above.
+        val specificFamilies = RelevantToolSelector.matchedFamilies(toolSelectionText).map { it.name }
         // § FASE 2A.5 diagnostica richiesta esplicitamente: tool family
         // selezionata, tool disponibili al modello, tier — mai contenuto del
         // prompt o argomenti. Set by the last systemPromptFor() call, mirroring
@@ -358,6 +362,7 @@ class JarvisBrain @Inject constructor(
             selectedToolCount = selected.size,
             toolFamilies = families,
             systemPromptChars = built.length,
+            specificFamilies = specificFamilies,
         )
         // § diagnostica non sensibile richiesta esplicitamente: solo dimensioni/conteggi,
         // mai il contenuto del prompt/dei nomi/descrizioni degli strumenti selezionati.

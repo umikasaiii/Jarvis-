@@ -281,7 +281,7 @@ class SystemPromptComposerTest {
     @Test
     fun `sequential pipeline - TEST CORE then a device command - turn 2's prompt never contains turn 1's literal text`() {
         val turn1 = composeForTurn("Rispondi solo: TEST CORE", SystemPromptComposer.Tier.FAST)
-        val turn2 = composeForTurn("Accendi la luce della camera", SystemPromptComposer.Tier.FAST)
+        val turn2 = composeForTurn("Accendi la torcia", SystemPromptComposer.Tier.FAST)
         assertFalse("TEST CORE" in turn2)
         assertTrue("flashlight" in turn2)
         assertNotEquals(turn1, turn2)
@@ -290,7 +290,7 @@ class SystemPromptComposerTest {
     @Test
     fun `sequential pipeline - an agenda question then a device command - turn 2 carries only device tools`() {
         val turn1 = composeForTurn("Che impegni ho oggi?", SystemPromptComposer.Tier.FAST)
-        val turn2 = composeForTurn("Accendi la luce della camera", SystemPromptComposer.Tier.FAST)
+        val turn2 = composeForTurn("Accendi la torcia", SystemPromptComposer.Tier.FAST)
         assertTrue("list_agenda" in turn1)
         assertFalse("list_agenda" in turn2)
         assertTrue("flashlight" in turn2)
@@ -298,7 +298,7 @@ class SystemPromptComposerTest {
 
     @Test
     fun `sequential pipeline - reverse order - device command then an agenda question - is equally isolated`() {
-        val turn1 = composeForTurn("Accendi la luce della camera", SystemPromptComposer.Tier.FAST)
+        val turn1 = composeForTurn("Accendi la torcia", SystemPromptComposer.Tier.FAST)
         val turn2 = composeForTurn("Che impegni ho oggi?", SystemPromptComposer.Tier.FAST)
         assertTrue("flashlight" in turn1)
         assertFalse("flashlight" in turn2)

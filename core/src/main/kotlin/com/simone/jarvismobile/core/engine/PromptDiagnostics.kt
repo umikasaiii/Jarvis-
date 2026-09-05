@@ -16,4 +16,14 @@ data class PromptDiagnostics(
     /** [com.simone.jarvismobile.core.tools.ToolFamily] names, e.g. `["AGENDA"]` — never a tool's free-text description. */
     val toolFamilies: List<String>,
     val systemPromptChars: Int,
+    /**
+     * § FASE 2A.6 §1 — the SPECIFIC families `RelevantToolSelector.matchedFamilies`
+     * found (as opposed to [toolFamilies], which for the conservative
+     * "ambiguous request" fallback is every family in the whole catalog).
+     * `ConversationalJarvisEngine` intersects this with `GROUNDED_FAMILIES` to
+     * compute the turn's real `requiredGroundingFamilies` — an ambiguous
+     * fallback must never be misread as "every grounded family was
+     * specifically requested."
+     */
+    val specificFamilies: List<String> = emptyList(),
 )

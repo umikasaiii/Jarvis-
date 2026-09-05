@@ -114,6 +114,14 @@ class LlmRouter @Inject constructor(
         return engineFor(slot).chat(userText, systemPrompt, timeoutSeconds)
     }
 
+    /** § FASE 2A.6 §9 — one stateless turn on [slot]; see [LlmEngine.chatStateless]. */
+    suspend fun chatStateless(
+        userText: String,
+        systemPrompt: String,
+        slot: ModelSlot,
+        timeoutSeconds: Long = DEFAULT_GENERATION_TIMEOUT_SECONDS,
+    ): String? = engineFor(slot).chatStateless(userText, systemPrompt, timeoutSeconds)
+
     /** Clears one brain without discarding the other brain's warm conversation. */
     fun resetConversation(slot: ModelSlot) {
         engineFor(slot).resetConversation()

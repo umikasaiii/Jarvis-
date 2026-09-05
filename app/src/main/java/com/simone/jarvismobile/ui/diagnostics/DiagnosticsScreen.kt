@@ -228,6 +228,19 @@ fun DiagnosticsScreen(
                                     "groundingSoddisfatto=${turn.groundingSatisfied}",
                                 style = MaterialTheme.typography.bodySmall,
                             )
+                            // § FASE 2A.6 diagnostica v2 richiesta esplicitamente — percorso
+                            // reale del turno, round-modello, famiglie richieste/soddisfatte,
+                            // motivo esatto di un eventuale blocco, rete letta — mai contenuto.
+                            Text(
+                                "path=${turn.routingPath} · modelRounds=${turn.modelRounds} · " +
+                                    "richieste=${turn.requiredGroundingFamilies.joinToString(",").ifEmpty { "-" }} · " +
+                                    "soddisfatte=${turn.satisfiedGroundingFamilies.joinToString(",").ifEmpty { "-" }} · " +
+                                    "rete=${turn.networkAvailable}",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            turn.groundingBlockReason?.let { reason ->
+                                Text("bloccoMotivo=$reason", style = MaterialTheme.typography.bodySmall)
+                            }
                         }
                     }
                 }

@@ -273,8 +273,15 @@ class RelevantToolSelectorTest {
         // bug lived one layer down, in the native model's own conversation
         // object (LitertLmEngine) - fixed in JarvisBrain, not here; see the
         // phase report for why this layer was never actually the culprit.
+        // § FASE 2A.6 — the device-family exemplar phrase itself changed from
+        // "Accendi la luce della camera" to "Accendi la torcia": that phrase
+        // is now, by deliberate design, NOT a specific DEVICE match at all
+        // (see `HomeControlDetector`/DEVICE_KEYWORDS' own doc comment for why)
+        // — it would no longer isolate DEVICE from AGENDA the way this test
+        // needs, so the isolation check itself now uses an unambiguous torch
+        // command instead. The isolation guarantee under test is unchanged.
         val turn1 = RelevantToolSelector.select(allTools, "Rispondi solo: TEST CORE")
-        val turn2 = RelevantToolSelector.select(allTools, "Accendi la luce della camera")
+        val turn2 = RelevantToolSelector.select(allTools, "Accendi la torcia")
         assertTrue(turn1.isEmpty())
         val names2 = turn2.map { it.first }
         assertTrue("flashlight" in names2)
@@ -282,14 +289,14 @@ class RelevantToolSelectorTest {
         assertFalse(names2.any { it.contains("agenda") })
         // Calling it a second time in isolation (no turn 1 before it) must
         // produce the exact same result - proof the first call left no trace.
-        val turn2Isolated = RelevantToolSelector.select(allTools, "Accendi la luce della camera")
+        val turn2Isolated = RelevantToolSelector.select(allTools, "Accendi la torcia")
         assertEquals(turn2, turn2Isolated)
     }
 
     @Test
     fun `an agenda question then a device command, back to back - selection never leaks between them`() {
         val turn1 = RelevantToolSelector.select(allTools, "Che impegni ho oggi?")
-        val turn2 = RelevantToolSelector.select(allTools, "Accendi la luce della camera")
+        val turn2 = RelevantToolSelector.select(allTools, "Accendi la torcia")
         val names1 = turn1.map { it.first }
         val names2 = turn2.map { it.first }
         assertTrue("list_agenda" in names1)
@@ -300,7 +307,7 @@ class RelevantToolSelectorTest {
 
     @Test
     fun `the reverse order - device command then an agenda question - is equally isolated`() {
-        val turn1 = RelevantToolSelector.select(allTools, "Accendi la luce della camera")
+        val turn1 = RelevantToolSelector.select(allTools, "Accendi la torcia")
         val turn2 = RelevantToolSelector.select(allTools, "Che impegni ho oggi?")
         val names1 = turn1.map { it.first }
         val names2 = turn2.map { it.first }
@@ -361,5 +368,40 @@ class RelevantToolSelectorTest {
         // Calling it a second time in isolation must give the exact same result.
         val turn2Isolated = RelevantToolSelector.select(allTools, "Quante ore ho dormito questa settimana?")
         assertEquals(turn2, turn2Isolated)
+    }
+
+    // --- § FASE 2A.6 §4 — word/phrase-boundary matching, not raw substring ------------
+
+    @Test
+    fun `SYSTEM_APP's keyword app does not incidentally match inside appuntamento`() {
+        // Root cause fixed: `contains("app")` used to match *inside*
+        // "appuntamenti"/"appuntamento" (AGENDA's own words), pulling
+        // SYSTEM_APP tools into a request that has nothing to do with them.
+        val selected = RelevantToolSelector.select(allTools, "Che appuntamenti ho domani?")
+        val names = selected.map { it.first }
+        assertTrue("list_agenda" in names)
+        assertFalse("open_app" in names)
+        assertFalse("open_settings" in names)
+    }
+
+    @Test
+    fun `a genuinely multi-family request still matches every real family, not reduced to one`() {
+        // The token-boundary fix must not collapse legitimate multi-family
+        // matches — HEALTH ("dormito") and AGENDA ("impegni") must both fire.
+        val matched = RelevantToolSelector.matchedFamilies("Considerando come ho dormito e gli impegni di domani...")
+        assertTrue(ToolFamily.HEALTH in matched)
+        assertTrue(ToolFamily.AGENDA in matched)
+    }
+
+    @Test
+    fun `matchedFamilies is empty for an ambiguous request, unlike select's full-catalog fallback`() {
+        // § FASE 2A.6 §1 — the distinction a capability router and grounding
+        // enforcement both rely on: `select()` conservatively returns the
+        // WHOLE catalog for "Attivalo per favore" (no capability was
+        // specifically named), but `matchedFamilies` must say so honestly —
+        // empty, not "every grounded family was requested".
+        val matched = RelevantToolSelector.matchedFamilies("Attivalo per favore, è urgente")
+        assertTrue(matched.isEmpty())
+        assertTrue(RelevantToolSelector.select(allTools, "Attivalo per favore, è urgente").isNotEmpty())
     }
 }

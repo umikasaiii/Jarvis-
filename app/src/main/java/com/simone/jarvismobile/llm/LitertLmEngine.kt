@@ -200,6 +200,48 @@ class LitertLmEngine @Inject constructor(
         conversationEpoch++
     }
 
+    /**
+     * § FASE 2A.6 §9 — replaces the FASE 2A.4 fix (`resetConversation(slot)`
+     * before every Conversational-engine local-fallback call), which worked by
+     * discarding the ONE persistent `conversation` this engine instance
+     * shares with Classic mode's `SessionCoordinator` on the same slot — a
+     * real, previously-accepted trade-off ("could wipe Classic's memory if the
+     * user switches modes mid-session"). A brand-new `Conversation` created
+     * and closed within this single call never reads or writes [conversation]/
+     * [seededSystemPrompt] at all, so it can neither leak into nor be
+     * contaminated by another turn on either side — Classic's persistent
+     * conversation is now never touched by this path, not just "less likely
+     * to be". Reuses [chatMutex]/[runGeneration] (the same single-flight/
+     * watchdog/cancellation discipline [chat] uses) so a stateless and a
+     * persistent call on this engine still never run concurrently.
+     */
+    override suspend fun chatStateless(
+        userText: String,
+        systemPrompt: String,
+        timeoutSeconds: Long,
+    ): String? =
+        withContext(Dispatchers.Default) {
+            val e = engine ?: return@withContext null
+            if (withTimeoutOrNull(LOCK_WAIT_TIMEOUT_MS) { chatMutex.lock() } == null) {
+                Log.w(TAG, "llm_chat_stateless_busy")
+                return@withContext null
+            }
+            try {
+                e.createConversation(
+                    ConversationConfig(systemInstruction = Contents.of(systemPrompt)),
+                ).use { conv -> runGeneration(conv, userText, timeoutSeconds) }
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (te: LlmGenerationTimeoutException) {
+                throw te
+            } catch (t: Throwable) {
+                Log.w(TAG, "llm_chat_stateless_failed ${t.javaClass.simpleName}")
+                null
+            } finally {
+                chatMutex.unlock()
+            }
+        }
+
     override fun cancel() {
         activeGeneration.get()?.request(StopReason.USER)
     }

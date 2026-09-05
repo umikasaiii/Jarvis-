@@ -115,6 +115,17 @@ class ResponseParserTest {
     }
 
     @Test
+    fun `a truncated tool-call attempt with no closing brace is still flagged as an attempted JSON`() {
+        // § FASE 2A.6 §5 — the exact case the old "has both { and }" heuristic
+        // missed: a generation cut off mid-JSON (e.g. hit an output budget)
+        // never even reaches a closing brace, but it very obviously WAS an
+        // attempt at the tool-call protocol, not ordinary prose.
+        val result = parser.parse("""{"tool_calls":[""")
+        assertTrue(result is ParseResult.PlainText)
+        assertTrue((result as ParseResult.PlainText).looksLikeAttemptedJson)
+    }
+
+    @Test
     fun `a bare unmatched opening brace in prose is not flagged as an attempted JSON`() {
         val result = parser.parse("Il valore x { non è definito qui, chiedimi altro.")
         assertTrue(result is ParseResult.PlainText)
