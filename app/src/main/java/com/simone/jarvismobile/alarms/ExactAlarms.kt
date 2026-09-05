@@ -103,6 +103,16 @@ class ExactAlarms @Inject constructor(
         const val KIND_AUTOMATION = "automation"
         /** The generic context+automation engine's scheduled clock triggers (phase 5). */
         const val KIND_RULE = "rule"
+        /**
+         * § FASE 2A.8 RELEASE GATE F — the Multi-Signal Morning Coordinator's own
+         * exact-alarm firings ([com.simone.jarvismobile.proactive.MorningTriggerScheduler]).
+         * Deliberately its own kind, not reused from [KIND_RULE]: this fires
+         * [com.simone.jarvismobile.proactive.ProactiveManager.evaluateOnUnlock]
+         * directly, never a user-authored rule.
+         */
+        const val KIND_MORNING_BRIEFING = "morning_briefing"
+        /** Which of the coordinator's signals scheduled this firing — see [KIND_MORNING_BRIEFING]. */
+        const val EXTRA_TRIGGER_SOURCE = "trigger_source"
         private const val TAG = "JarvisAlarms"
     }
 }

@@ -6,11 +6,9 @@ import android.content.pm.PackageManager
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.simone.jarvismobile.ai.AiRequest
-import com.simone.jarvismobile.ai.AiRoutingContextProvider
 import com.simone.jarvismobile.ai.RemoteAiEngine
 import com.simone.jarvismobile.core.ai.AiExecutionTarget
 import com.simone.jarvismobile.core.ai.AiRequestType
-import com.simone.jarvismobile.core.ai.AiRoutingHeuristic
 import com.simone.jarvismobile.core.agenda.ItalianDateTimeParser
 import com.simone.jarvismobile.core.state.ConversationEvent
 import com.simone.jarvismobile.core.state.ConversationState
@@ -121,7 +119,7 @@ class SessionCoordinator @Inject constructor(
     private val engineRouter: com.simone.jarvismobile.engine.JarvisEngineRouter,
     private val conversationalEngine: com.simone.jarvismobile.engine.ConversationalJarvisEngine,
     private val remoteAiEngine: RemoteAiEngine,
-    private val aiRoutingContextProvider: AiRoutingContextProvider,
+    private val aiRouter: com.simone.jarvismobile.ai.AiRouter,
     private val remoteChatState: com.simone.jarvismobile.ai.RemoteChatState,
 ) {
 
@@ -1077,25 +1075,56 @@ class SessionCoordinator @Inject constructor(
     }
 
     /**
-     * Tries JARVIS Core for this turn before the local model below — the
-     * same [AiRoutingHeuristic]/[AiRoutingContextProvider] JARVIS Core's own
-     * AI Router already uses, called directly rather than through
-     * `AiRouter.generate()` itself: that method's own local fallback goes
-     * through [com.simone.jarvismobile.ai.LocalAiEngine]'s single-shot
-     * `LlmRouter.chat(...)`, which would skip [chatReply]'s system-prompt
-     * caching, injected-context dedup and KV-cache-corruption retry below —
-     * real behaviour this integration must not touch (§ "NON creare una
-     * seconda pipeline chat"). So this only ever *replaces* the outcome when
-     * remote succeeds; on any failure it returns `null` and [chatReply]
-     * falls through to its existing, completely unmodified local block.
-     * With `coreEnabled`/`remoteAiEnabled` off (the default) this always
-     * returns `null` immediately — the local path is then byte-for-byte
-     * what it was before this integration.
+     * Tries JARVIS Core for this turn before the local model below, via
+     * [com.simone.jarvismobile.ai.AiRouter.attemptRemoteOnly] (§ FASE 2A.8:
+     * the same shared entry point `JarvisBrain.tryRemoteReply` calls) rather
+     * than through `AiRouter.generate()` itself: that method's own local
+     * fallback goes through [com.simone.jarvismobile.ai.LocalAiEngine]'s
+     * single-shot `LlmRouter.chat(...)`, which would skip [chatReply]'s
+     * system-prompt caching, injected-context dedup and KV-cache-corruption
+     * retry below — real behaviour this integration must not touch (§ "NON
+     * creare una seconda pipeline chat"). So this only ever *replaces* the
+     * outcome when remote succeeds; on any failure it returns `null` and
+     * [chatReply] falls through to its existing, completely unmodified local
+     * block. With `coreEnabled`/`remoteAiEnabled` off (the default) this
+     * always returns `null` immediately — the local path is then byte-for-
+     * byte what it was before this integration.
      */
     private suspend fun tryRemoteChat(message: String, system: String, needsReasoning: Boolean): String? {
         val requestType = if (needsReasoning) AiRequestType.COMPLEX else AiRequestType.CHAT
-        val prefs = aiRoutingContextProvider.preferencesFor(requestType)
-        val decision = AiRoutingHeuristic.decide(requestType, prefs)
+        val requestId = java.util.UUID.randomUUID().toString()
+        // § FASE 2A.8 — the "decide → build request → call remote → classify"
+        // step used to be reimplemented here independently (confirmed by
+        // audit: structurally identical to JarvisBrain's own copy, right down
+        // to the same LastRemoteAttempt shape) — now shared via
+        // AiRouter.attemptRemoteOnly, the same one JarvisBrain.tryRemoteReply
+        // calls. This class' own local fallback (chatReply's cached/retried
+        // router.chat(...)) is deliberately untouched — see
+        // attemptRemoteOnly's doc comment for why it must never go through
+        // AiRouter.generate()'s own LocalAiEngine instead.
+        val request = AiRequest(
+            requestId = requestId,
+            text = message,
+            systemPrompt = system,
+            requestType = requestType,
+        )
+        remoteChatState.activeRequestId = requestId
+        // Optimistic, UI-only status text: attemptRemoteOnly decides AND
+        // calls in one shot, so this can only be set eagerly here rather than
+        // after confirming the decision — a brief, harmless flash on the rare
+        // turn that turns out to route LOCAL, immediately overwritten by
+        // chatReply's own local-path status right after this returns null.
+        _diagnostic.value = "JARVIS Core…"
+        val attempt = try {
+            aiRouter.attemptRemoteOnly(request)
+        } finally {
+            // Must clear even when a CancellationException propagates through
+            // attemptRemoteOnly — otherwise a cancelled remote call would
+            // leave the shared active-request id dangling and a later
+            // cancelTextGeneration() would try to cancel a request that
+            // already unwound.
+            remoteChatState.activeRequestId = null
+        }
 
         // § audit "tryRemoteReply non arriva alla chiamata HTTP" (JarvisBrain):
         // stessa struttura registrata qui per il Motore Classico, cosicché il
@@ -1109,11 +1138,11 @@ class SessionCoordinator @Inject constructor(
                 com.simone.jarvismobile.ai.LastRemoteAttempt(
                     engine = "Classico",
                     requestType = requestType.name,
-                    target = decision.target.name,
-                    reason = decision.reason,
-                    coreState = prefs.coreState.name,
+                    target = attempt.decision.target.name,
+                    reason = attempt.decision.reason,
+                    coreState = attempt.prefs.coreState.name,
                     coreEnabled = coreEnabledNow,
-                    remoteAiEnabled = prefs.remoteAiEnabled,
+                    remoteAiEnabled = attempt.prefs.remoteAiEnabled,
                     preferredRemote = preferredRemoteNow,
                     outcome = outcome,
                     failureReason = failureReason,
@@ -1123,67 +1152,47 @@ class SessionCoordinator @Inject constructor(
             )
         }
 
-        if (decision.target == AiExecutionTarget.LOCAL) {
-            // Distinguishes, at a glance in Logcat, every reason an "ordinary
-            // chat" turn never left the device: toggles genuinely off
-            // (remote_ai_disabled/caller_forbids_remote) vs. Core reachable
-            // by "Testa connessione" (which probes independently of
-            // `coreEnabled`) but the actual routing gate — `coreEnabled`
-            // itself — still off (core_disabled), or Core reachable but
-            // offline/degraded-without-brain (core_offline/core_error). Never
-            // logs message content, only the routing reason (§ "non loggare
-            // dati personali").
-            Log.i(TAG, "CHAT -> LOCAL (reason=${decision.reason})")
-            record(com.simone.jarvismobile.ai.RemoteAttemptOutcome.NOT_ATTEMPTED)
-            remoteChatState.setLastRoute("LOCAL (${decision.reason})")
-            return null
+        return when (attempt.outcome) {
+            com.simone.jarvismobile.ai.RemoteAttemptOutcome.NOT_ATTEMPTED -> {
+                // Distinguishes, at a glance in Logcat, every reason an "ordinary
+                // chat" turn never left the device: toggles genuinely off
+                // (remote_ai_disabled/caller_forbids_remote) vs. Core reachable
+                // by "Testa connessione" (which probes independently of
+                // `coreEnabled`) but the actual routing gate — `coreEnabled`
+                // itself — still off (core_disabled), or Core reachable but
+                // offline/degraded-without-brain (core_offline/core_error). Never
+                // logs message content, only the routing reason (§ "non loggare
+                // dati personali").
+                Log.i(TAG, "CHAT -> LOCAL (reason=${attempt.decision.reason})")
+                record(com.simone.jarvismobile.ai.RemoteAttemptOutcome.NOT_ATTEMPTED)
+                remoteChatState.setLastRoute("LOCAL (${attempt.decision.reason})")
+                null
+            }
+            com.simone.jarvismobile.ai.RemoteAttemptOutcome.FAILED -> {
+                // § audit "ENGINE_ERROR non mostra la causa reale": AiRouter
+                // already appended errorDetail whenever present.
+                val reason = attempt.failureReason ?: "unknown"
+                Log.i(TAG, "CORE FAILED -> LOCAL FALLBACK (reason=$reason)")
+                record(com.simone.jarvismobile.ai.RemoteAttemptOutcome.FAILED, failureReason = reason)
+                remoteChatState.setLastRoute("LOCAL (fallback dopo Core: $reason)")
+                null
+            }
+            com.simone.jarvismobile.ai.RemoteAttemptOutcome.SUCCESS -> {
+                val cleaned = attempt.text?.let(AssistantReplyCleaner::clean)?.ifBlank { null }
+                if (cleaned == null) {
+                    Log.i(TAG, "CORE FAILED -> LOCAL FALLBACK (reason=empty_reply)")
+                    record(com.simone.jarvismobile.ai.RemoteAttemptOutcome.FAILED, failureReason = "empty_reply")
+                    remoteChatState.setLastRoute("LOCAL (fallback dopo Core: empty_reply)")
+                    return null
+                }
+                val targetLabel = if (attempt.decision.target == AiExecutionTarget.REMOTE_BRAIN) "CORE BRAIN" else "CORE FAST"
+                Log.i(TAG, "CHAT -> $targetLabel")
+                record(com.simone.jarvismobile.ai.RemoteAttemptOutcome.SUCCESS)
+                remoteChatState.setLastRoute(targetLabel)
+                cleaned
+            }
+            com.simone.jarvismobile.ai.RemoteAttemptOutcome.STARTED -> null // unreachable — attemptRemoteOnly never returns this outcome
         }
-
-        val targetLabel = if (decision.target == AiExecutionTarget.REMOTE_BRAIN) "CORE BRAIN" else "CORE FAST"
-        _diagnostic.value = "JARVIS Core…"
-        val requestId = java.util.UUID.randomUUID().toString()
-        val request = AiRequest(
-            requestId = requestId,
-            text = message,
-            systemPrompt = system,
-            requestType = requestType,
-            preferredModel = if (decision.target == AiExecutionTarget.REMOTE_BRAIN) "brain" else null,
-        )
-        remoteChatState.activeRequestId = requestId
-        record(com.simone.jarvismobile.ai.RemoteAttemptOutcome.STARTED)
-        val result = try {
-            runCancellable { remoteAiEngine.generate(request) }.getOrNull()
-        } finally {
-            // Must clear even when a CancellationException propagates through
-            // runCancellable — otherwise a cancelled remote call would leave
-            // the shared active-request id dangling and a later
-            // cancelTextGeneration() would try to cancel a request that
-            // already unwound.
-            remoteChatState.activeRequestId = null
-        }
-        if (result == null || !result.success) {
-            // § audit "ENGINE_ERROR non mostra la causa reale" (JarvisBrain,
-            // stessa correzione qui): appende result.errorDetail — il dettaglio
-            // fase/eccezione reale che JarvisCoreClientImpl ora conserva —
-            // invece di fermarsi al solo nome dell'enum AiFailureReason.
-            val reason = (result?.failureReason?.name ?: "cancelled_or_null") +
-                (result?.errorDetail?.let { ": $it" } ?: "")
-            Log.i(TAG, "CORE FAILED -> LOCAL FALLBACK (reason=$reason)")
-            record(com.simone.jarvismobile.ai.RemoteAttemptOutcome.FAILED, failureReason = reason)
-            remoteChatState.setLastRoute("LOCAL (fallback dopo Core: $reason)")
-            return null
-        }
-        val cleaned = result.text?.let(AssistantReplyCleaner::clean)?.ifBlank { null }
-        if (cleaned == null) {
-            Log.i(TAG, "CORE FAILED -> LOCAL FALLBACK (reason=empty_reply)")
-            record(com.simone.jarvismobile.ai.RemoteAttemptOutcome.FAILED, failureReason = "empty_reply")
-            remoteChatState.setLastRoute("LOCAL (fallback dopo Core: empty_reply)")
-            return null
-        }
-        Log.i(TAG, "CHAT -> $targetLabel")
-        record(com.simone.jarvismobile.ai.RemoteAttemptOutcome.SUCCESS)
-        remoteChatState.setLastRoute(targetLabel)
-        return cleaned
     }
 
     /**

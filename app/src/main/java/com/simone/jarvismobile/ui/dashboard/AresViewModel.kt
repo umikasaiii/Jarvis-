@@ -54,6 +54,17 @@ class AresViewModel @Inject constructor(
     private val _healthUpdatedAtMs = MutableStateFlow<Long?>(null)
     val healthUpdatedAtMs: StateFlow<Long?> = _healthUpdatedAtMs.asStateFlow()
 
+    /**
+     * § FASE 2A.8 RELEASE GATE E — [healthUpdatedAtMs] only says WHEN JARVIS
+     * last successfully asked Health Connect (`lastFetchAt`); it says nothing
+     * about how old the REAL data behind that answer is (`latestHealthRecordAt`)
+     * — a refresh can succeed while Honor Health simply hasn't written a
+     * newer record yet, and reporting only the fetch time would misleadingly
+     * read as "the data is current". Re-exposes [HealthConnectManager.diagnostic]
+     * as-is (already the source of both instants) rather than duplicating it.
+     */
+    val healthDiagnostic: StateFlow<HealthConnectManager.DiagnosticSnapshot?> = health.diagnostic
+
     val healthAvailable: Boolean get() = health.isAvailable
     /** Apre le impostazioni di Health Connect (§ richiesta esplicita: "aprire la pagina... ed io posso metterlo manualmente"). */
     fun healthSettingsIntent() = health.settingsIntent()

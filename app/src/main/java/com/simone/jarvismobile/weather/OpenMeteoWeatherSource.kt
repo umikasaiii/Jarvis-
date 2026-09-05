@@ -142,6 +142,16 @@ class OpenMeteoWeatherSource @Inject constructor() : WeatherSource {
             .getOrNull()
     }
 
+    override suspend fun fetchExtendedDay(
+        latitude: Double,
+        longitude: Double,
+        daysAhead: Int,
+    ): DayOutlook? = withContext(Dispatchers.IO) {
+        runCatching { fetchExtendedDayOrThrow(latitude, longitude, daysAhead) }
+            .onFailure { Log.w(TAG, "weather_extended_fetch_failed ${it.javaClass.simpleName}") }
+            .getOrNull()
+    }
+
     /** Throws on anything wrong; the caller wraps this in [runCatching]. */
     private fun fetchOrThrow(latitude: Double, longitude: Double): RainForecast? {
         val url = "https://api.open-meteo.com/v1/forecast" +
@@ -233,6 +243,44 @@ class OpenMeteoWeatherSource @Inject constructor() : WeatherSource {
     }
 
     /**
+     * § FASE 2A.8 RELEASE GATE H — the same `daily=` fields as
+     * [fetchOutlookOrThrow], but with a real, requested `forecast_days`
+     * instead of the fixed 4 the home dashboard needs, and returning only the
+     * one day actually asked for. [daysAhead]=0 is today, matching every
+     * other day-offset convention in this file. Deliberately does not touch
+     * [fetchOutlookOrThrow]/its cache — a separate, additive request.
+     *
+     * Onestà: Open-Meteo's public free-tier forecast horizon is documented as
+     * up to 16 days ([MAX_FORECAST_DAYS]) — not verified against a live
+     * payload in this environment (`api.open-meteo.com` is blocked by this
+     * sandbox's network proxy, the same limit already documented elsewhere in
+     * this project for TomTom/Health Connect); a request beyond what the API
+     * actually supports would come back with a normal HTTP error, handled
+     * like any other failure here (`null`, never a crash or a guess).
+     */
+    private fun fetchExtendedDayOrThrow(latitude: Double, longitude: Double, daysAhead: Int): DayOutlook? {
+        if (daysAhead < 0) return null
+        val forecastDays = (daysAhead + 1).coerceAtMost(MAX_FORECAST_DAYS)
+        if (daysAhead >= forecastDays) return null
+        val url = "https://api.open-meteo.com/v1/forecast" +
+            "?latitude=${round(latitude)}&longitude=${round(longitude)}" +
+            "&daily=weathercode,temperature_2m_max,temperature_2m_min,windspeed_10m_max,winddirection_10m_dominant" +
+            "&timezone=auto&forecast_days=$forecastDays"
+        val request = Request.Builder().url(url).build()
+        val response = client.newCall(request).execute()
+        val body = response.use { r -> if (r.isSuccessful) r.body?.string() else null } ?: return null
+        val parsed = json.decodeFromString(OpenMeteoOutlookResponse.serializer(), body)
+        val daily = parsed.daily ?: return null
+        return DayOutlook(
+            category = WeatherCategory.fromWmoCode(daily.weatherCode?.getOrNull(daysAhead)),
+            tempMaxC = daily.tempMax?.getOrNull(daysAhead),
+            tempMinC = daily.tempMin?.getOrNull(daysAhead),
+            windKmh = daily.windSpeedMax?.getOrNull(daysAhead),
+            windDirectionDeg = daily.windDirectionDominant?.getOrNull(daysAhead),
+        )
+    }
+
+    /**
      * ~1.1 km precision (2 decimals): enough for a local forecast, never the
      * user's exact address.
      */
@@ -301,6 +349,8 @@ class OpenMeteoWeatherSource @Inject constructor() : WeatherSource {
     private companion object {
         const val TAG = "JarvisWeather"
         const val TIMEOUT_SECONDS = 10L
+        /** § FASE 2A.8 RELEASE GATE H — see [fetchExtendedDayOrThrow]'s own honesty note. */
+        const val MAX_FORECAST_DAYS = 16
     }
 }
 
@@ -315,4 +365,14 @@ interface WeatherSource {
     /** Null on any failure. [dayIndex] follows [WeeklyOutlook]'s convention:
      *  0 = today, 1..3 = [WeeklyOutlook.upcoming]'s three days. */
     suspend fun fetchHourlyForecast(latitude: Double, longitude: Double, dayIndex: Int): HourlyForecast?
+
+    /**
+     * § FASE 2A.8 RELEASE GATE H — one day, any offset up to the source's
+     * real supported horizon (never limited to the home dashboard's fixed
+     * 0-3 days) — used only by the chat-facing `get_weather` capability for
+     * a horizon beyond what [fetchWeeklyOutlook] covers. Null on any
+     * failure or when [daysAhead] is beyond what the source genuinely
+     * supports — never a guessed/clamped day.
+     */
+    suspend fun fetchExtendedDay(latitude: Double, longitude: Double, daysAhead: Int): DayOutlook?
 }

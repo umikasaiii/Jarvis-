@@ -1696,6 +1696,7 @@ internal fun AresHomeScreen(
     val healthAverages by aresViewModel.healthAverages.collectAsStateWithLifecycle()
     val healthDaily by aresViewModel.healthDaily.collectAsStateWithLifecycle()
     val healthUpdatedAtMs by aresViewModel.healthUpdatedAtMs.collectAsStateWithLifecycle()
+    val healthDiagnostic by aresViewModel.healthDiagnostic.collectAsStateWithLifecycle()
     val healthPermissionsDiagnostic by aresViewModel.healthPermissionsDiagnostic.collectAsStateWithLifecycle()
     val healthContext = LocalContext.current
     // Il dialogo di consenso in-app (PermissionController.createRequestPermissionResultContract,
@@ -1906,6 +1907,10 @@ internal fun AresHomeScreen(
                     kind = kind,
                     daily = healthDaily,
                     updatedAtMs = healthUpdatedAtMs,
+                    latestRecordAt = when (kind) {
+                        HealthDetailKind.BPM -> healthDiagnostic?.lastHeartRateSampleAt
+                        HealthDetailKind.SONNO -> healthDiagnostic?.lastSleepSessionEndAt
+                    },
                     onDismiss = { healthDetail = null },
                 )
             }
@@ -2406,6 +2411,7 @@ private fun AresHealthDetailDialog(
     kind: HealthDetailKind,
     daily: List<HealthConnectManager.DailyHealthReading>,
     updatedAtMs: Long?,
+    latestRecordAt: java.time.Instant?,
     onDismiss: () -> Unit,
 ) {
     AlertDialog(
@@ -2443,10 +2449,31 @@ private fun AresHealthDetailDialog(
                     color = Muted,
                     fontSize = 11.sp,
                 )
+                // § FASE 2A.8 RELEASE GATE E — distinct from the line above on
+                // purpose: "Sincronizzato ora" only means JARVIS successfully
+                // asked Health Connect just now, not that the underlying data
+                // is new — Honor Health may not have synced a fresher record
+                // yet. Shown only when it genuinely differs from a same-day
+                // freshness read, so a device with real same-day data isn't
+                // shown a redundant second line.
+                Text(
+                    text = latestRecordLabel(kind, latestRecordAt),
+                    color = Muted,
+                    fontSize = 11.sp,
+                )
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Chiudi") } },
     )
+}
+
+/** "Ultimi dati sonno: 3 settembre" / "Ultimi dati battito: 5 settembre" / nessun dato reale ancora visto. */
+private fun latestRecordLabel(kind: HealthDetailKind, latestRecordAt: java.time.Instant?): String {
+    val label = if (kind == HealthDetailKind.BPM) "battito" else "sonno"
+    if (latestRecordAt == null) return "Ultimi dati $label: nessuno ancora ricevuto da Health Connect."
+    val date = latestRecordAt.atZone(java.time.ZoneId.systemDefault()).toLocalDate()
+    val formatted = date.format(java.time.format.DateTimeFormatter.ofPattern("d MMMM", Locale.ITALIAN))
+    return "Ultimi dati $label: $formatted."
 }
 
 /** "Aggiornato pochi minuti fa" / "Aggiornato 3h fa" / mai letto con successo. */

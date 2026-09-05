@@ -54,10 +54,18 @@ data class EngineTurnDiagnostics(
      * Which branch of `ConversationalJarvisEngine.handle()` actually produced
      * this turn's reply — e.g. `PENDING_CONFIRMATION`, `PENDING_DISAMBIGUATION`,
      * `FAST_PATH`, `STRUCTURED_AGENDA`, `HOME_CONTROL_UNSUPPORTED`,
-     * `CAPABILITY_FAST_PATH`, `BRAIN`, `ERROR`. Never personal content, a
+     * `CAPABILITY_FAST_PATH`, `LLM_LOOP`, `ERROR`. Never personal content, a
      * fixed vocabulary of route names.
+     *
+     * § FASE 2A.8 rename (was `"BRAIN"`): this only names WHICH ENGINE BRANCH
+     * ran (`runBrainLoop`, the LLM-driven tool-call loop) — it says nothing
+     * about which model actually answered inside that loop (LOCAL/REMOTE_FAST/
+     * a future REMOTE_BRAIN). That is a separate axis, already tracked by
+     * `RemoteChatState.lastRoute`/`lastAttempt.target` — conflating the two
+     * under the single word "BRAIN" misread a REMOTE_FAST-answered turn as if
+     * the not-yet-active BRAIN reasoning tier had run it.
      */
-    val routingPath: String = "BRAIN",
+    val routingPath: String = "LLM_LOOP",
     /** How many `JarvisBrain.reply()` rounds actually ran the model (0 for any deterministic/capability path that never reaches it). */
     val modelRounds: Int = 0,
     /** [ParseOutcome] name per round the model actually ran, in order — a size/enum list, never the text itself. */

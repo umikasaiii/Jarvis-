@@ -49,6 +49,9 @@ class BootReceiver : BroadcastReceiver() {
                 deps.ruleScheduler().sync()
                 // Place geofences (proximity alerts) also do not survive a reboot.
                 deps.places().reload()
+                // § FASE 2A.8 §F — Multi-Signal Morning Coordinator's own
+                // exact alarms are just as reboot-fragile as the ones above.
+                deps.morningTriggerScheduler().scheduleAll()
                 Log.i(TAG, "alarms_rearmed after=$action")
             } catch (e: Throwable) {
                 Log.w(TAG, "alarm_rearm_failed ${e.javaClass.simpleName}")
@@ -65,6 +68,7 @@ class BootReceiver : BroadcastReceiver() {
         fun automations(): AutomationRepository
         fun ruleScheduler(): RuleScheduler
         fun places(): PlaceRepository
+        fun morningTriggerScheduler(): com.simone.jarvismobile.proactive.MorningTriggerScheduler
     }
 
     private companion object {

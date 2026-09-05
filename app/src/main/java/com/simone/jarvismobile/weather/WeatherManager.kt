@@ -122,6 +122,23 @@ class WeatherManager @Inject constructor(
         return source.fetchHourlyForecast(point.first, point.second, dayIndex)
     }
 
+    /**
+     * § FASE 2A.8 RELEASE GATE H — chat-only horizon beyond the home
+     * dashboard's fixed 0-3 days: "Che tempo farà tra 10 giorni?" resolves to
+     * a real fetch instead of the old "solo 3 giorni" rejection, up to
+     * [com.simone.jarvismobile.core.weather.WeatherDaysAhead.MAX_SUPPORTED_DAYS_AHEAD].
+     * Deliberately its own method, never touching [fetchWeeklyOutlook]/its
+     * cache: the home presentation horizon (today+3, § "ONE weather source
+     * of truth" — same [WeatherSource]/[WeatherManager], just a second,
+     * additive request shape, not a second manager) is unaffected by this.
+     */
+    @SuppressLint("MissingPermission")
+    suspend fun fetchExtendedDay(daysAhead: Int): DayOutlook? {
+        if (!settings.weatherEnabled.first()) return null
+        val point = resolvePoint() ?: return null
+        return source.fetchExtendedDay(point.first, point.second, daysAhead)
+    }
+
     /** The chosen saved place's coordinate, or the last-known fix as a fallback. */
     @SuppressLint("MissingPermission")
     private suspend fun resolvePoint(): Pair<Double, Double>? {

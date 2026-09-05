@@ -67,6 +67,7 @@ class RelevantToolSelectorTest {
         "hide_driving_panel" to "Nasconde un pannello della Modalità Guida.",
         "get_weather" to "Meteo reale di oggi o dei prossimi giorni.",
         "get_health_summary" to "Riepilogo settimanale di sonno e frequenza cardiaca da Health Connect.",
+        "get_device_info" to "Informazioni reali sul telefono: RAM, spazio, versione Android, modello.",
     )
 
     // --- 1. chat semplice -----------------------------------------------------------
@@ -198,9 +199,9 @@ class RelevantToolSelectorTest {
             "open_app", "open_settings", "prepare_call", "compose_sms", "reply_message",
             "navigate", "play_media", "media_control", "list_notifications", "calculate",
             "start_driving_mode", "stop_driving_mode", "set_driving_navigation", "start_driving_route",
-            "show_driving_panel", "hide_driving_panel", "get_weather", "get_health_summary",
+            "show_driving_panel", "hide_driving_panel", "get_weather", "get_health_summary", "get_device_info",
         )
-        assertEquals(55, toolNames.size)
+        assertEquals(56, toolNames.size)
         val ambiguousResult = RelevantToolSelector.select(
             toolNames.map { it to "d" },
             "Attivalo per favore, è urgente",
@@ -441,5 +442,36 @@ class RelevantToolSelectorTest {
                     "(would have surfaced ${case.keywordToolName})",
             )
         }
+    }
+
+    // --- § FASE 2A.8 RELEASE GATE A/C — DEVICE_INFO: a data question, never a knowledge one -----
+
+    @Test
+    fun `a direct quantity question surfaces only the device info tool`() {
+        val selected = RelevantToolSelector.select(allTools, "Quanta RAM ho nel telefono?")
+        val names = selected.map { it.first }
+        assertTrue("get_device_info" in names)
+        assertFalse("get_weather" in names)
+        assertFalse("get_health_summary" in names)
+    }
+
+    @Test
+    fun `a conceptual knowledge question about RAM never matches DEVICE_INFO`() {
+        // "Che differenza c'è tra RAM e VRAM?" must stay a KNOWLEDGE/chat
+        // question answered by the model, never intercepted by a capability
+        // that can only report numbers, not explain concepts.
+        val matched = RelevantToolSelector.matchedFamilies("Che differenza c'è tra RAM e VRAM?")
+        assertFalse(ToolFamily.DEVICE_INFO in matched)
+    }
+
+    @Test
+    fun `a bare quanto ne ho follow-up matches no family on its own - it has no metric noun of its own`() {
+        val matched = RelevantToolSelector.matchedFamilies("Quanta ne ho nel telefono?")
+        assertTrue(ToolFamily.DEVICE_INFO !in matched)
+    }
+
+    @Test
+    fun `device info is a grounded family - never answerable from the model's own guess`() {
+        assertTrue(ToolFamily.DEVICE_INFO in GROUNDED_FAMILIES)
     }
 }

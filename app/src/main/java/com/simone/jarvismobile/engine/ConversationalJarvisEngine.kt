@@ -10,9 +10,13 @@ import com.simone.jarvismobile.core.engine.GroundingGate
 import com.simone.jarvismobile.core.engine.JarvisEngineMode
 import com.simone.jarvismobile.core.engine.ParseOutcome
 import com.simone.jarvismobile.core.engine.ToolCallBudget
-import com.simone.jarvismobile.core.health.HealthPeriodParser
+import com.simone.jarvismobile.core.health.HealthAggregation
+import com.simone.jarvismobile.core.health.HealthMetric
+import com.simone.jarvismobile.core.health.HealthQueryParser
+import com.simone.jarvismobile.core.health.HealthRange
 import com.simone.jarvismobile.core.intent.IntentAliases
 import com.simone.jarvismobile.core.protocol.ToolCall
+import com.simone.jarvismobile.core.tools.DeviceInfoFollowUp
 import com.simone.jarvismobile.core.tools.GROUNDED_FAMILIES
 import com.simone.jarvismobile.core.tools.HomeControlDetector
 import com.simone.jarvismobile.core.tools.RelevantToolSelector
@@ -23,6 +27,8 @@ import com.simone.jarvismobile.llm.DEFAULT_GENERATION_TIMEOUT_SECONDS
 import com.simone.jarvismobile.tools.AgendaIntentRouter
 import com.simone.jarvismobile.util.runCancellable
 import com.simone.jarvismobile.tools.AgendaRouting
+import com.simone.jarvismobile.tools.CommandMatcher
+import com.simone.jarvismobile.tools.Match
 import com.simone.jarvismobile.tools.ToolOutcome
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -122,6 +128,7 @@ class ConversationalJarvisEngine @Inject constructor(
                 ?: runStructuredPath(transcript, turn)
                 ?: runHomeControlGuard(transcript, turn)
                 ?: runCapabilityFastPath(transcript, turn)
+                ?: runFollowUpFastPath(transcript, turn)
                 ?: runBrainLoop(transcript, turn)
         } catch (e: CancellationException) {
             throw e
@@ -374,19 +381,123 @@ class ConversationalJarvisEngine @Inject constructor(
     }
 
     /**
-     * § FASE 2A.7 RELEASE GATE 4 real bug fix: [transcript] is parsed by
-     * [HealthPeriodParser] so "stanotte" builds a `period=last_night` call
-     * instead of the same `period=week` aggregate every health question used
-     * to get regardless of phrasing.
+     * § FASE 2A.8 RELEASE GATE D real bug fix: [transcript] is parsed by
+     * [HealthQueryParser] into metric+range+aggregation, so "stanotte"/"il 2
+     * settembre" build a specific-night call, "questa settimana" (no
+     * "media") builds a TOTAL, and "media del sonno questa settimana" builds
+     * an AVERAGE — three genuinely different answers instead of the single
+     * weekly-average every health question used to get regardless of
+     * phrasing (§ FASE 2A.7's `period` argument only got as far as
+     * last_night-vs-week).
      */
     private fun healthCall(transcript: String): ToolCall {
-        val period = HealthPeriodParser.parse(transcript)
+        val spec = HealthQueryParser.parse(transcript, LocalDateTime.now())
+        val args = buildMap {
+            put("metric", JsonPrimitive(if (spec.metric == HealthMetric.RESTING_HEART_RATE) "resting_heart_rate" else "sleep_duration"))
+            put("aggregation", JsonPrimitive(if (spec.aggregation == HealthAggregation.AVERAGE) "average" else "total"))
+            when (val range = spec.range) {
+                is HealthRange.Night -> put("range", JsonPrimitive(range.date.toString()))
+                HealthRange.Week -> put("range", JsonPrimitive("week"))
+            }
+        }
         return ToolCall(
             id = UUID.randomUUID().toString(),
             name = "get_health_summary",
-            arguments = JsonObject(mapOf("period" to JsonPrimitive(period.name.lowercase()))),
+            arguments = JsonObject(args),
             requiresConfirmation = false,
         )
+    }
+
+    /**
+     * § FASE 2A.8 RELEASE GATE A/C — resolves a bare elliptical follow-up
+     * ("E dopodomani?", "Quanta ne ho nel telefono?") against the LAST
+     * capability/knowledge topic this conversation touched, instead of
+     * letting it reach the model with no family keyword of its own to go
+     * on (see [ConversationManager]'s own doc comment for the audited root
+     * cause). Checked after [runCapabilityFastPath] — an explicit,
+     * keyword-bearing capability request always wins — and before
+     * [runBrainLoop]. Deliberately narrow: it only fires when [transcript]
+     * carries NO family keyword of its own
+     * (`RelevantToolSelector.matchedFamilies` empty), so it can never
+     * shadow a genuine new capability request.
+     *
+     * Two independent resolutions, checked in order:
+     *  1. A remembered [ConversationManager.currentKnowledgeTopic] (e.g.
+     *     "ram", noted after a RAM/VRAM knowledge exchange) plus a bare
+     *     partitive shape ("Quanta ne ho?") resolves via
+     *     [DeviceInfoFollowUp] — never for "vram" (no reliable Android
+     *     value), which falls through instead of guessing.
+     *  2. A remembered [ConversationManager.currentCapabilityTopic]
+     *     (WEATHER/AGENDA/HEALTH) plus a genuinely date-shaped
+     *     continuation is resolved by calling the SAME capability builders
+     *     [runCapabilityFastPath] itself uses ([weatherCall],
+     *     [CommandMatcher.agendaCall], [healthCall]) directly on the bare
+     *     text — no new date parser: none of the three check for family
+     *     keywords themselves, only date/period words, so they correctly
+     *     extract "dopodomani" on their own.
+     */
+    private suspend fun runFollowUpFastPath(transcript: String, turn: TurnState): String? {
+        if (RelevantToolSelector.matchedFamilies(transcript).isNotEmpty()) return null
+
+        val knowledgeTopic = conversationManager.currentKnowledgeTopic()
+        if (knowledgeTopic != null && DeviceInfoFollowUp.looksLikePartitiveFollowUp(transcript)) {
+            val metric = DeviceInfoFollowUp.resolveDeviceInfoMetric(knowledgeTopic)
+            if (metric != null) {
+                val call = ToolCall(
+                    id = UUID.randomUUID().toString(),
+                    name = "get_device_info",
+                    arguments = JsonObject(mapOf("metric" to JsonPrimitive(metric))),
+                    requiresConfirmation = false,
+                )
+                Log.i(TAG, "ENGINE_BRANCH=follow_up_fast_path tool=${call.name}")
+                remoteChatState.setLastRoute("LOCAL (bypass: follow-up device info)")
+                turn.routingPath = "CAPABILITY_FAST_PATH"
+                turn.modelRounds = 0
+                return executeAndTrack(call, turn, confirmed = false)
+            }
+            // Topic remembered but not answerable (e.g. "vram") — fall
+            // through rather than silently substituting a different metric.
+        }
+
+        val capabilityTopic = conversationManager.currentCapabilityTopic() ?: return null
+        val now = LocalDateTime.now()
+        if (!ItalianDateTimeParser.parse(transcript, now).dateExplicit) return null
+
+        return when (capabilityTopic) {
+            ToolFamily.WEATHER -> when (val plan = weatherCall(transcript)) {
+                is WeatherCapabilityPlan.OutOfRange -> {
+                    Log.i(TAG, "ENGINE_BRANCH=follow_up_fast_path weather_out_of_range")
+                    remoteChatState.setLastRoute("LOCAL (bypass: previsione fuori intervallo supportato)")
+                    turn.routingPath = "CAPABILITY_FAST_PATH"
+                    turn.modelRounds = 0
+                    WEATHER_OUT_OF_RANGE_MESSAGE
+                }
+                is WeatherCapabilityPlan.Call -> {
+                    Log.i(TAG, "ENGINE_BRANCH=follow_up_fast_path tool=${plan.call.name}")
+                    remoteChatState.setLastRoute("LOCAL (bypass: follow-up capability)")
+                    turn.routingPath = "CAPABILITY_FAST_PATH"
+                    turn.modelRounds = 0
+                    executeAndTrack(plan.call, turn, confirmed = false)
+                }
+            }
+            ToolFamily.AGENDA -> {
+                val call = (CommandMatcher.agendaCall(transcript, now) as? Match.Run)?.call ?: return null
+                Log.i(TAG, "ENGINE_BRANCH=follow_up_fast_path tool=${call.name}")
+                remoteChatState.setLastRoute("LOCAL (bypass: follow-up capability)")
+                turn.routingPath = "CAPABILITY_FAST_PATH"
+                turn.modelRounds = 0
+                executeAndTrack(call, turn, confirmed = false)
+            }
+            ToolFamily.HEALTH -> {
+                val call = healthCall(transcript)
+                Log.i(TAG, "ENGINE_BRANCH=follow_up_fast_path tool=${call.name}")
+                remoteChatState.setLastRoute("LOCAL (bypass: follow-up capability)")
+                turn.routingPath = "CAPABILITY_FAST_PATH"
+                turn.modelRounds = 0
+                executeAndTrack(call, turn, confirmed = false)
+            }
+            else -> null
+        }
     }
 
     /** Runs [call] through [ToolRouter], tracks it for [ConversationManager], and turns the outcome into speech. */
@@ -400,6 +511,11 @@ class ConversationalJarvisEngine @Inject constructor(
         // model-requested tool call would be.
         RelevantToolSelector.familyOf(call.name)?.let { fam ->
             if (fam in GROUNDED_FAMILIES) turn.requiredGroundingFamilies = turn.requiredGroundingFamilies + fam
+            // § FASE 2A.8 RELEASE GATE A — remembered even before the call
+            // resolves: a follow-up like "E domani?" after a WEATHER attempt
+            // that then failed (e.g. offline) should still try WEATHER
+            // again, not fall through with nothing to resolve against.
+            if (fam in FOLLOW_UP_CAPABLE_FAMILIES) conversationManager.noteCapabilityTopic(fam)
         }
         val outcome = toolRouter.execute(call, turn.budget, online = isOnline(), confirmed = confirmed)
         conversationManager.onToolExecuted(call, outcome)
@@ -441,6 +557,14 @@ class ConversationalJarvisEngine @Inject constructor(
         // davvero, il turno è stato intercettato prima (vedi i vari
         // ENGINE_BRANCH= sopra), mai da un problema dentro JarvisBrain stesso.
         Log.i(TAG, "ENGINE_BRANCH=brain_loop")
+        // § FASE 2A.8 RELEASE GATE A/C — remembered BEFORE the model answers
+        // (it will answer this conceptually, from its own knowledge, since no
+        // DEVICE_INFO family match exists for a bare "che differenza c'è tra
+        // RAM e VRAM?" — see RelevantToolSelector's own doc comment on why
+        // that keyword set is deliberately quantity-phrase-only) so a
+        // following bare partitive ("Quanta ne ho?") has something to
+        // resolve against.
+        DeviceInfoFollowUp.extractTopic(transcript)?.let { conversationManager.noteKnowledgeTopic(it) }
         val reasoningMode = settings.jarvisReasoningMode.first()
         val slot = brain.resolveSlot(reasoningMode, transcript)
         val assembled = contextAssembler.assemble(transcript, conversationManager.snapshotText())
@@ -560,6 +684,13 @@ class ConversationalJarvisEngine @Inject constructor(
                     toolResults.append("Ho eseguito il numero massimo di operazioni per questo turno.\n")
                     break
                 }
+                // § FASE 2A.8 RELEASE GATE A — same topic bookkeeping as
+                // executeAndTrack's deterministic paths, so a model-driven
+                // WEATHER/AGENDA/HEALTH tool call ALSO leaves a follow-up
+                // topic behind, not just the capability-fast-path ones.
+                RelevantToolSelector.familyOf(call.name)?.let { fam ->
+                    if (fam in FOLLOW_UP_CAPABLE_FAMILIES) conversationManager.noteCapabilityTopic(fam)
+                }
                 when (val outcome = toolRouter.execute(call, turn.budget, online = isOnline(), confirmed = false)) {
                     is ToolOutcome.Done -> {
                         turn.toolsExecuted += call.name
@@ -625,7 +756,7 @@ class ConversationalJarvisEngine @Inject constructor(
         var structuredMissHint: String? = null
 
         // § FASE 2A.6 diagnostica v2 richiesta esplicitamente — see EngineTurnDiagnostics' own doc comment.
-        var routingPath: String = "BRAIN"
+        var routingPath: String = "LLM_LOOP"
         var modelRounds = 0
         val parseOutcomesByRound = ArrayList<String>()
         /** [ToolFamily]s the request SPECIFICALLY required real data for — grown by [executeAndTrack] for deterministic paths, by [runBrainLoop] from round 1's `PromptDiagnostics.specificFamilies`. */
@@ -700,10 +831,17 @@ class ConversationalJarvisEngine @Inject constructor(
         const val MALFORMED_OUTPUT_MESSAGE =
             "Non sono riuscito a formulare una risposta chiara. Puoi ripetere la richiesta?"
 
-        // § FASE 2A.7 RELEASE GATE 3 — honest, deterministic answer for a
-        // forecast further out than `WeatherDaysAhead.MAX_SUPPORTED_DAYS_AHEAD`;
-        // never a silently-clamped nearer-day forecast instead.
+        // § FASE 2A.7/2A.8 RELEASE GATE 3/H — honest, deterministic answer for
+        // a forecast further out than `WeatherDaysAhead.MAX_SUPPORTED_DAYS_AHEAD`
+        // (raised to 16 in FASE 2A.8 §H — this message's own day count tracks
+        // that constant, never a silently-clamped nearer-day forecast instead).
         const val WEATHER_OUT_OF_RANGE_MESSAGE =
-            "Riesco a prevedere il meteo solo fino a 3 giorni da oggi: non ho una previsione così lontana."
+            "Riesco a prevedere il meteo solo fino a ${WeatherDaysAhead.MAX_SUPPORTED_DAYS_AHEAD} giorni da oggi: non ho una previsione così lontana."
+
+        // § FASE 2A.8 RELEASE GATE A — the families whose date-driven
+        // capability call can be re-invoked from a bare date follow-up
+        // ("E dopodomani?") via `runFollowUpFastPath`, without the request
+        // repeating a family keyword of its own.
+        val FOLLOW_UP_CAPABLE_FAMILIES = setOf(ToolFamily.WEATHER, ToolFamily.AGENDA, ToolFamily.HEALTH)
     }
 }

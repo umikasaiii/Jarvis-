@@ -114,6 +114,25 @@ class HealthConnectManager @Inject constructor(
     }
 
     /**
+     * § FASE 2A.8 RELEASE GATE E/G — a plain Android runtime permission
+     * (unlike [permissions] above, never requested through
+     * `HealthPermission.getReadPermission`), checked before any read that
+     * happens with no foreground component (the WorkManager-driven
+     * post-briefing refresh, §F/§G) — never assumed granted just because
+     * [hasPermissions] is true. The manifest declares it but never requests
+     * it via an in-app dialog (§ same reasoning as [settingsIntent] above:
+     * the in-app permission flow never worked reliably on the test device),
+     * so a caller here must be prepared for `false` and degrade gracefully
+     * rather than skip the check.
+     */
+    fun hasBackgroundPermission(): Boolean = runCatching {
+        androidx.core.content.ContextCompat.checkSelfPermission(
+            context,
+            "android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND",
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+    }.getOrDefault(false)
+
+    /**
      * Diagnostica testuale, mai usata dal percorso normale — solo per il
      * caso segnalato dall'utente: Health Connect mostra entrambi i
      * permessi concessi (screenshot delle sue Impostazioni), ma

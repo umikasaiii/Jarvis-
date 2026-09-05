@@ -118,6 +118,33 @@ class AlarmReceiver : BroadcastReceiver() {
                     }
                 }
             }
+            ExactAlarms.KIND_MORNING_BRIEFING -> {
+                val deps = EntryPointAccessors.fromApplication(
+                    context.applicationContext,
+                    AlarmEntryPoint::class.java,
+                )
+                val triggerSource = intent.getStringExtra(ExactAlarms.EXTRA_TRIGGER_SOURCE) ?: "CONFIGURED_TIME"
+                val pending = goAsync()
+                CoroutineScope(Dispatchers.Default).launch {
+                    try {
+                        deps.proactiveManager().evaluateOnUnlock(triggerSource = triggerSource)
+                        // Both signals are one-shot exact alarms — re-arm the
+                        // NEXT day's occurrence for whichever one just fired,
+                        // exactly like KIND_RULE's own re-arm above.
+                        val scheduler = deps.morningTriggerScheduler()
+                        when (id) {
+                            com.simone.jarvismobile.proactive.MorningTriggerScheduler.KEY_NEXT_ALARM ->
+                                scheduler.scheduleNextAlarmTrigger()
+                            com.simone.jarvismobile.proactive.MorningTriggerScheduler.KEY_CONFIGURED_TIME ->
+                                scheduler.scheduleConfiguredTimeTrigger()
+                        }
+                    } catch (e: Throwable) {
+                        Log.w(TAG, "alarm_morning_briefing_failed ${e.javaClass.simpleName}")
+                    } finally {
+                        pending.finish()
+                    }
+                }
+            }
         }
     }
 
@@ -201,6 +228,8 @@ class AlarmReceiver : BroadcastReceiver() {
         fun ruleExecutor(): AutomationExecutor
         fun ruleScheduler(): RuleScheduler
         fun weather(): com.simone.jarvismobile.weather.WeatherManager
+        fun proactiveManager(): com.simone.jarvismobile.proactive.ProactiveManager
+        fun morningTriggerScheduler(): com.simone.jarvismobile.proactive.MorningTriggerScheduler
     }
 
     private companion object {

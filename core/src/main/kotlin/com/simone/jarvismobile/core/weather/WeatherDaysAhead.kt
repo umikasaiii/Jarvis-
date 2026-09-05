@@ -15,11 +15,20 @@ package com.simone.jarvismobile.core.weather
  * capability-fast-path (to short-circuit honestly, without spending an LLM
  * round) and by the tool's own `validate()` (as a fail-safe if a call
  * somehow reaches it with an out-of-range value regardless).
+ *
+ * § FASE 2A.8 RELEASE GATE H — this is the CHAT horizon, not the home
+ * dashboard's: raised from 3 to Open-Meteo's real supported range (§
+ * `OpenMeteoWeatherSource.fetchExtendedDay`'s own honesty note on the exact
+ * upper bound) now that `get_weather`/`GetWeatherTool` genuinely fetch a day
+ * this far out instead of silently clamping to the home's fixed 4-day
+ * window. The home dashboard (tema Ares' `AresMeteoCard`, `fetchWeeklyOutlook`)
+ * is a completely separate, untouched call path — this constant never
+ * governs it.
  */
 object WeatherDaysAhead {
 
-    /** [GetWeatherTool][com.simone.jarvismobile.tools.GetWeatherTool]'s own supported range: today through 3 days ahead. */
-    const val MAX_SUPPORTED_DAYS_AHEAD = 3
+    /** `get_weather`'s real supported range: today through this many days ahead. */
+    const val MAX_SUPPORTED_DAYS_AHEAD = 16
 
     sealed interface Resolution {
         /** [daysAhead] is within the source's real range and may be asked for as-is. */

@@ -78,6 +78,15 @@ class SettingsRepository @Inject constructor(
         val PROACTIVE_QUIET_END = intPreferencesKey("proactive_quiet_end_hour")
         val PROACTIVE_DISABLED_KINDS = stringSetPreferencesKey("proactive_disabled_kinds")
         val PROACTIVE_MUTED_KINDS = stringSetPreferencesKey("proactive_muted_kinds")
+        // § FASE 2A.8 RELEASE GATE F — Multi-Signal Morning Coordinator. The
+        // mandatory CONFIGURED_TIME fallback deliberately gets its own key,
+        // distinct from REMINDER_MORNING_HOUR (that one governs "morning-of"
+        // agenda alert timing, a different user intent) even though both
+        // default to 8:00.
+        val MORNING_BRIEFING_HOUR = intPreferencesKey("morning_briefing_hour")
+        val MORNING_BRIEFING_MINUTE = intPreferencesKey("morning_briefing_minute")
+        /** Minutes after the next device alarm rings before the briefing fires (NEXT_ALARM signal). */
+        val MORNING_NEXT_ALARM_OFFSET_MINUTES = intPreferencesKey("morning_next_alarm_offset_minutes")
         val AUTO_EXPRESSIVE = booleanPreferencesKey("tts_auto_expressive")
         val EXPRESSIVE_INTENSITY = stringPreferencesKey("tts_expressive_intensity")
         val EXPRESSIVE_MANUAL_STYLE = stringPreferencesKey("tts_expressive_manual_style")
@@ -513,6 +522,28 @@ class SettingsRepository @Inject constructor(
 
     val proactiveMutedKinds: Flow<Set<String>> =
         context.settingsDataStore.data.map { it[Keys.PROACTIVE_MUTED_KINDS] ?: emptySet() }
+
+    /** § FASE 2A.8 §F — the mandatory fallback trigger: always scheduled, so the briefing never depends solely on unlock/alarm signals. */
+    val morningBriefingHour: Flow<Int> =
+        context.settingsDataStore.data.map { (it[Keys.MORNING_BRIEFING_HOUR] ?: 8).coerceIn(0, 23) }
+
+    val morningBriefingMinute: Flow<Int> =
+        context.settingsDataStore.data.map { (it[Keys.MORNING_BRIEFING_MINUTE] ?: 0).coerceIn(0, 59) }
+
+    /** Default +5min (§ spec) — how long after the next device alarm rings before the briefing fires. */
+    val morningNextAlarmOffsetMinutes: Flow<Int> =
+        context.settingsDataStore.data.map { (it[Keys.MORNING_NEXT_ALARM_OFFSET_MINUTES] ?: 5).coerceIn(0, 120) }
+
+    suspend fun setMorningBriefingTime(hour: Int, minute: Int) {
+        context.settingsDataStore.edit {
+            it[Keys.MORNING_BRIEFING_HOUR] = hour.coerceIn(0, 23)
+            it[Keys.MORNING_BRIEFING_MINUTE] = minute.coerceIn(0, 59)
+        }
+    }
+
+    suspend fun setMorningNextAlarmOffsetMinutes(value: Int) {
+        context.settingsDataStore.edit { it[Keys.MORNING_NEXT_ALARM_OFFSET_MINUTES] = value.coerceIn(0, 120) }
+    }
 
     suspend fun setProactiveEnabled(value: Boolean) {
         context.settingsDataStore.edit { it[Keys.PROACTIVE_ENABLED] = value }

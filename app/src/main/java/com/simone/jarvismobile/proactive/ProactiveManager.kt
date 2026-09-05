@@ -49,6 +49,7 @@ class ProactiveManager @Inject constructor(
     private val contextEngine: ContextEngine,
     private val weather: WeatherManager,
     private val health: HealthConnectManager,
+    private val morningTriggerScheduler: MorningTriggerScheduler,
 ) {
     /**
      * Called periodically by the worker as a coarse fallback (see
@@ -56,7 +57,8 @@ class ProactiveManager @Inject constructor(
      * whoever hasn't enabled "Automazioni in background", since there is then
      * no real unlock event to react to.
      */
-    suspend fun evaluate(now: LocalDateTime = LocalDateTime.now()) = run(now, isRealUnlock = false)
+    suspend fun evaluate(now: LocalDateTime = LocalDateTime.now()) =
+        run(now, isRealUnlock = false, triggerSource = "PERIODIC_FALLBACK")
 
     /**
      * Called at the real first-unlock-of-the-day event (§ "primo sblocco utile
@@ -66,7 +68,8 @@ class ProactiveManager @Inject constructor(
      * (rather than waiting for the next coarse tick) is what makes the morning
      * digest feel immediate instead of arriving up to an hour late.
      */
-    suspend fun evaluateOnUnlock(now: LocalDateTime = LocalDateTime.now()) = run(now, isRealUnlock = true)
+    suspend fun evaluateOnUnlock(now: LocalDateTime = LocalDateTime.now(), triggerSource: String = "FIRST_UNLOCK") =
+        run(now, isRealUnlock = true, triggerSource = triggerSource)
 
     /**
      * "Il briefing non è proprio arrivato" (non solo in ritardo, § segnalazioni
@@ -78,10 +81,19 @@ class ProactiveManager @Inject constructor(
      * (mai chiamato / disabilitato / nessun candidato all'ora X / ore silenziose /
      * budget esaurito / consegnato) invece di un'altra ipotesi. Mai il testo del
      * messaggio consegnato, solo il tipo e l'esito (§ "non loggare dati personali").
+     *
+     * [triggerSource] (§ FASE 2A.8 RELEASE GATE F — Multi-Signal Morning
+     * Coordinator): which signal caused this call — `"HUAWEI_SLEEP"` (not
+     * implemented, see [com.simone.jarvismobile.proactive.MorningTriggerScheduler]'s
+     * own honesty note), `"NEXT_ALARM"`, `"CONFIGURED_TIME"`, `"FIRST_UNLOCK"`,
+     * `"MANUAL"`, or `"PERIODIC_FALLBACK"`. Purely diagnostic — every source
+     * converges on this SAME method and the SAME governor per-day dedup key
+     * (`MORNING_DIGEST:<date>`), so no source can ever double-deliver.
      */
     data class RunDiagnostic(
         val ranAtMs: Long,
         val isRealUnlock: Boolean,
+        val triggerSource: String,
         val enabled: Boolean,
         val automationServiceEnabled: Boolean,
         val hour: Int,
@@ -92,17 +104,17 @@ class ProactiveManager @Inject constructor(
     private val _lastRun = MutableStateFlow<RunDiagnostic?>(null)
     val lastRun: StateFlow<RunDiagnostic?> = _lastRun.asStateFlow()
 
-    private suspend fun run(now: LocalDateTime, isRealUnlock: Boolean) {
+    private suspend fun run(now: LocalDateTime, isRealUnlock: Boolean, triggerSource: String) {
         val config = readSettings()
         val automationEnabled = settings.automationServiceEnabled.first()
         if (!config.enabled) {
-            recordRun(now, isRealUnlock, config.enabled, automationEnabled, candidateCount = 0, outcome = "proactivity_disabled")
+            recordRun(now, isRealUnlock, triggerSource, config.enabled, automationEnabled, candidateCount = 0, outcome = "proactivity_disabled")
             return
         }
         val today = now.toLocalDate()
         val candidates = candidatesFor(now, snapshot(today, now), today, isRealUnlock)
         if (candidates.isEmpty()) {
-            recordRun(now, isRealUnlock, config.enabled, automationEnabled, candidateCount = 0, outcome = "no_candidate_this_hour")
+            recordRun(now, isRealUnlock, triggerSource, config.enabled, automationEnabled, candidateCount = 0, outcome = "no_candidate_this_hour")
             return
         }
         val state = store.load().rolledTo(today)
@@ -113,12 +125,17 @@ class ProactiveManager @Inject constructor(
                 // Spoken too, same opt-in path a new-engine SPEAK action uses — an
                 // adaptive briefing that only JARVIS reads silently isn't a briefing.
                 runCatching { coordinator.speakBackgroundResponse(decision.suggestion.message) }
-                Log.i(TAG, "proactive_deliver ${decision.suggestion.kind}")
-                recordRun(now, isRealUnlock, config.enabled, automationEnabled, candidates.size, "delivered:${decision.suggestion.kind}")
+                Log.i(TAG, "proactive_deliver ${decision.suggestion.kind} source=$triggerSource")
+                recordRun(now, isRealUnlock, triggerSource, config.enabled, automationEnabled, candidates.size, "delivered:${decision.suggestion.kind}")
+                // § FASE 2A.8 RELEASE GATE G — only for a REAL morning-digest
+                // delivery, never for the evening digest or a battery tip.
+                if (decision.suggestion.kind == ProactiveKind.MORNING_DIGEST) {
+                    runCatching { morningTriggerScheduler.schedulePostBriefingRefreshes() }
+                }
             }
             is ProactiveDecision.Skip -> {
-                Log.i(TAG, "proactive_skip ${decision.reason}")
-                recordRun(now, isRealUnlock, config.enabled, automationEnabled, candidates.size, "skip:${decision.reason}")
+                Log.i(TAG, "proactive_skip ${decision.reason} source=$triggerSource")
+                recordRun(now, isRealUnlock, triggerSource, config.enabled, automationEnabled, candidates.size, "skip:${decision.reason}")
             }
         }
     }
@@ -126,6 +143,7 @@ class ProactiveManager @Inject constructor(
     private fun recordRun(
         now: LocalDateTime,
         isRealUnlock: Boolean,
+        triggerSource: String,
         enabled: Boolean,
         automationEnabled: Boolean,
         candidateCount: Int,
@@ -134,6 +152,7 @@ class ProactiveManager @Inject constructor(
         _lastRun.value = RunDiagnostic(
             ranAtMs = System.currentTimeMillis(),
             isRealUnlock = isRealUnlock,
+            triggerSource = triggerSource,
             enabled = enabled,
             automationServiceEnabled = automationEnabled,
             hour = now.hour,
@@ -251,6 +270,26 @@ class ProactiveManager @Inject constructor(
             rainToday = rain?.rainToday,
             todayWeather = weatherCategory,
         )
+    }
+
+    /**
+     * § FASE 2A.8 RELEASE GATE G — called only by [MorningRefreshWorker], AFTER
+     * a morning digest was already really delivered today. Re-composes the
+     * digest from freshly refreshed data and re-posts it under the SAME
+     * notification id ([ProactiveNotifier.notificationId] is stable per
+     * [com.simone.jarvismobile.core.proactive.ProactiveKind]) so it replaces
+     * in place rather than stacking a second notification. Deliberately does
+     * NOT go through [ProactiveGovernor.decide] again: that gate's per-day
+     * dedup exists to prevent a SECOND independent decision to deliver
+     * today's digest, which is correct for a new decision but wrong for
+     * refreshing content already shown — and deliberately does NOT re-speak
+     * it (a second spoken briefing minutes later would be intrusive, not
+     * helpful).
+     */
+    suspend fun refreshMorningDigestNotification(now: LocalDateTime = LocalDateTime.now()) {
+        val today = now.toLocalDate()
+        val suggestion = ProactiveComposer.morningDigest(snapshot(today, now), today)
+        notifier.show(suggestion)
     }
 
     private fun isBirthday(text: String): Boolean = text.contains("complean", ignoreCase = true)

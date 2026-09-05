@@ -83,6 +83,20 @@
     <uses-permission android:name="android.permission.health.READ_RESTING_HEART_RATE" />
     <uses-permission android:name="android.permission.health.READ_SLEEP" />
 
+    <!-- § FASE 2A.8 RELEASE GATE E/G audit — a plain, dangerous-protection
+         Android permission (not requested via HealthPermission.getReadPermission,
+         so deliberately NOT in health_permissions.xml's array — that array's own
+         doc comment says every entry there matches a per-record permission
+         string, which this is not). Needed only by the new WorkManager-based
+         post-briefing health refresh (§F/§G): the existing foreground read
+         (ProactiveManager.snapshot() at the real first unlock, already
+         working on-device) never needed it. Declaring it here does NOT grant
+         it — HealthConnectManager.hasBackgroundPermission() checks it
+         explicitly before any background read is attempted, and that refresh
+         degrades to "skip, try again later" rather than crashing or guessing
+         when it is missing (see HealthConnectManager.kt). -->
+    <uses-permission android:name="android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND" />
+
     <!-- Deliberately NOT requested: MANAGE_EXTERNAL_STORAGE, QUERY_ALL_PACKAGES,
          REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, any Accessibility service. See
          docs/PRIVACY.md and docs/SECURITY.md. -->
@@ -325,6 +339,18 @@
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
+
+        <!-- § FASE 2A.8 §F — Multi-Signal Morning Coordinator's NEXT_ALARM
+             signal: reschedules its exact alarm promptly when the device's
+             next alarm changes (see NextAlarmChangedReceiver's own honesty
+             note on this broadcast's reliability across OEM builds). -->
+        <receiver
+            android:name=".proactive.NextAlarmChangedReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.app.action.NEXT_ALARM_CLOCK_CHANGED" />
             </intent-filter>
         </receiver>
 

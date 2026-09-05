@@ -5,6 +5,7 @@ import com.simone.jarvismobile.core.ai.AiExecutionTarget
 import com.simone.jarvismobile.core.ai.AiRequestType
 import com.simone.jarvismobile.core.ai.AiRouteDecision
 import com.simone.jarvismobile.core.ai.AiRoutingHeuristic
+import com.simone.jarvismobile.core.ai.AiRoutingPreferences
 import com.simone.jarvismobile.core.snapshot.RelevantContextSelector
 import com.simone.jarvismobile.snapshot.PersonalIntelligenceSnapshotCache
 import kotlinx.coroutines.CancellationException
@@ -18,12 +19,17 @@ import javax.inject.Singleton
  * The single entry point the rest of the app should call for any AI
  * generation from here on (§ richiesta esplicita: "il resto dell'app non
  * deve sapere quale modello risponde"). Nothing outside `ai/` is expected to
- * hold a reference to [LocalAiEngine]/[RemoteAiEngine] directly — today
- * nothing does yet, since this phase deliberately does not rewire
- * `SessionCoordinator`/`ConversationalJarvisEngine`/`JarvisBrain` to call
- * through here (§ onestà: see CLAUDE.md phase note — those keep calling
- * `LlmRouter` directly, unchanged, until a future phase wires them through
- * [AiRouter]).
+ * hold a reference to [LocalAiEngine]/[RemoteAiEngine] directly.
+ *
+ * § FASE 2A.8 update: `JarvisBrain.tryRemoteReply`/`SessionCoordinator.tryRemoteChat`
+ * used to each reimplement this class' own "decide → call remote → classify"
+ * step independently (three structurally-identical copies, confirmed by
+ * audit) instead of calling through here — [attemptRemoteOnly] is the shared
+ * entry point that ends that duplication for the REMOTE leg specifically.
+ * Their LOCAL fallback still deliberately does NOT go through [generate]'s
+ * own [LocalAiEngine] (see [attemptRemoteOnly]'s doc comment for why — it
+ * would reintroduce a cross-turn contamination bug fixed elsewhere), so each
+ * keeps calling `LlmRouter` directly for that one piece only.
  *
  * **Fallback contract (§ richiesta esplicita, la parte più delicata)**: a
  * remote attempt that fails for any recoverable reason (timeout, network,
@@ -128,6 +134,58 @@ class AiRouter @Inject constructor(
         inFlightTarget.remove(request.requestId)
     }
 
+    /**
+     * § FASE 2A.8 — the shared "decide → call the remote engine only →
+     * classify the outcome" step, extracted so [JarvisBrain][com.simone.jarvismobile.engine.JarvisBrain]/
+     * `SessionCoordinator` stop each independently reimplementing it (audit
+     * confirmed: both had their own copy, structurally identical to
+     * [runRemoteWithFallback] below, down to the same `LastRemoteAttempt`
+     * shape). Deliberately does NOT fall back to [local] itself — those two
+     * callers each need their OWN local fallback (Classico's `chatReply`'s
+     * cached/retried `router.chat(...)`, Conversazionale's turn-isolated
+     * `chatStateless(...)`), never [LocalAiEngine]'s single-shot persistent-
+     * conversation `generate()`, which would reintroduce the exact cross-turn
+     * contamination FASE 2A.6 §9 fixed if either of them routed their local
+     * fallback through here instead. [generate]/[stream] below keep their own
+     * existing internal remote-then-[local]-fallback logic unchanged (lower
+     * risk than rewiring an already-tested method to share this), so this is
+     * an ADDITIONAL entry point, not a replacement for them.
+     *
+     * [request]'s own `timeoutSeconds` is never used for the remote leg — see
+     * [REMOTE_FAST_TIMEOUT_SECONDS]'s doc comment for why a caller's local-
+     * generation budget must never leak into how long a network call is
+     * allowed to hang before falling back.
+     */
+    suspend fun attemptRemoteOnly(request: AiRequest): RemoteAttempt {
+        val prefs = routingContext.preferencesFor(request.requestType)
+        val decision = AiRoutingHeuristic.decide(request.requestType, prefs)
+        if (decision.target == AiExecutionTarget.LOCAL) {
+            return RemoteAttempt(decision, prefs, RemoteAttemptOutcome.NOT_ATTEMPTED)
+        }
+        inFlightTarget[request.requestId] = decision.target
+        val remoteTimeoutSeconds = if (decision.target == AiExecutionTarget.REMOTE_BRAIN) {
+            REMOTE_BRAIN_TIMEOUT_SECONDS
+        } else {
+            REMOTE_FAST_TIMEOUT_SECONDS
+        }
+        val remoteRequest = request.withPreferredModel(decision.target).copy(timeoutSeconds = remoteTimeoutSeconds)
+        val result = try {
+            remote.generate(remoteRequest)
+        } catch (e: CancellationException) {
+            inFlightTarget.remove(request.requestId)
+            throw e
+        }
+        inFlightTarget.remove(request.requestId)
+        val text = result.text?.takeIf { result.success && it.isNotBlank() }
+        if (text != null) return RemoteAttempt(decision, prefs, RemoteAttemptOutcome.SUCCESS, text = text)
+        val reason = if (!result.success) {
+            (result.failureReason?.name ?: "unknown") + (result.errorDetail?.let { ": $it" } ?: "")
+        } else {
+            "empty_reply"
+        }
+        return RemoteAttempt(decision, prefs, RemoteAttemptOutcome.FAILED, failureReason = reason)
+    }
+
     fun cancel(requestId: String) {
         when (inFlightTarget[requestId]) {
             AiExecutionTarget.LOCAL -> local.cancel(requestId)
@@ -148,7 +206,14 @@ class AiRouter @Inject constructor(
     private suspend fun runRemoteWithFallback(request: AiRequest, decision: AiRouteDecision): AiEngineResult {
         Log.i(TAG, "ai_route target=${decision.target} type=${request.requestType} reason=${decision.reason}")
         inFlightTarget[request.requestId] = decision.target
-        val remoteRequest = request.withPreferredModel(decision.target)
+        // § FASE 2A.8 — see REMOTE_FAST_TIMEOUT_SECONDS's doc comment: never
+        // the caller's own (local-generation-sized) request.timeoutSeconds.
+        val remoteTimeoutSeconds = if (decision.target == AiExecutionTarget.REMOTE_BRAIN) {
+            REMOTE_BRAIN_TIMEOUT_SECONDS
+        } else {
+            REMOTE_FAST_TIMEOUT_SECONDS
+        }
+        val remoteRequest = request.withPreferredModel(decision.target).copy(timeoutSeconds = remoteTimeoutSeconds)
         val remoteResult = try {
             remote.generate(remoteRequest)
         } catch (e: CancellationException) {
@@ -177,3 +242,19 @@ class AiRouter @Inject constructor(
         const val TAG = "AiRouter"
     }
 }
+
+/**
+ * The full outcome of one [AiRouter.attemptRemoteOnly] call — everything a
+ * caller needs to build its own `LastRemoteAttempt` diagnostics record (the
+ * two raw `SettingsRepository` toggles `coreEnabled`/`corePreferRemote` stay
+ * the caller's own responsibility, exactly as before, since [AiRouter] itself
+ * has no reason to depend on `SettingsRepository` beyond what
+ * [AiRoutingPreferences] already exposes).
+ */
+data class RemoteAttempt(
+    val decision: AiRouteDecision,
+    val prefs: AiRoutingPreferences,
+    val outcome: RemoteAttemptOutcome,
+    val text: String? = null,
+    val failureReason: String? = null,
+)

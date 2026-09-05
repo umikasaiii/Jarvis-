@@ -21,6 +21,7 @@ import com.simone.jarvismobile.tools.CreateArchiveItemTool
 import com.simone.jarvismobile.tools.CreateListTool
 import com.simone.jarvismobile.tools.DeleteArchiveItemTool
 import com.simone.jarvismobile.tools.FlashlightTool
+import com.simone.jarvismobile.tools.GetDeviceInfoTool
 import com.simone.jarvismobile.tools.GetHealthSummaryTool
 import com.simone.jarvismobile.tools.GetWeatherTool
 import com.simone.jarvismobile.tools.ListAgendaTool
@@ -158,6 +159,7 @@ object ToolsModule {
             ReplyMessageTool(drivingNotifications),
             GetWeatherTool(weather),
             GetHealthSummaryTool(health),
+            GetDeviceInfoTool(context),
         ),
     )
 }

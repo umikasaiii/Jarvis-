@@ -17,6 +17,11 @@ enum class ToolFamily {
     // GROUNDED_FAMILIES below for why they, and several families above, are
     // never allowed to be answered from the model's own "knowledge".
     WEATHER, HEALTH,
+    // § FASE 2A.8 RELEASE GATE C — real on-device metrics (RAM/storage/
+    // Android version/model), distinct from DEVICE (flashlight/battery
+    // hardware actions/state): a "how much RAM do I have" DATA_QUERY, never
+    // answerable from the model's own guess about this specific phone.
+    DEVICE_INFO,
 }
 
 /**
@@ -31,7 +36,7 @@ enum class ToolFamily {
  */
 val GROUNDED_FAMILIES: Set<ToolFamily> = setOf(
     ToolFamily.WEATHER, ToolFamily.AGENDA, ToolFamily.MEMORY, ToolFamily.ARCHIVE,
-    ToolFamily.HEALTH, ToolFamily.DEVICE, ToolFamily.SYSTEM_APP,
+    ToolFamily.HEALTH, ToolFamily.DEVICE, ToolFamily.SYSTEM_APP, ToolFamily.DEVICE_INFO,
 )
 
 /**
@@ -93,6 +98,8 @@ object RelevantToolSelector {
         // being answered from the model's own guess instead of real data.
         put("get_weather", ToolFamily.WEATHER)
         put("get_health_summary", ToolFamily.HEALTH)
+        // § FASE 2A.8 RELEASE GATE C.
+        put("get_device_info", ToolFamily.DEVICE_INFO)
     }
 
     private val TIME_KEYWORDS = setOf(
@@ -156,6 +163,18 @@ object RelevantToolSelector {
         "dormito", "dormire", "sonno", "ore di sonno", "battito", "bpm", "frequenza cardiaca",
         "salute", "health connect", "riposo notturno",
     )
+    // § FASE 2A.8 RELEASE GATE C — deliberately QUANTITY-PHRASES, never the
+    // bare noun alone: "Che differenza c'è tra RAM e VRAM?" (a KNOWLEDGE
+    // question, answered by the model) must NOT match this family just
+    // because it says "ram" — only a clear "how much do I have" framing does.
+    // The bare-pronoun follow-up ("Quanta ne ho?") is deliberately NOT a
+    // keyword here at all — it has no metric noun of its own to match on;
+    // resolving it is `DeviceInfoFollowUp`'s job, one layer up.
+    private val DEVICE_INFO_KEYWORDS = setOf(
+        "quanta ram", "quanto ram", "ram ho", "ram disponibile", "ram libera", "ram del telefono",
+        "quanto spazio", "spazio libero", "spazio di archiviazione", "memoria interna",
+        "versione di android", "versione android", "che telefono ho", "modello del telefono", "modello di telefono",
+    )
 
     private val FAMILY_KEYWORDS: Map<ToolFamily, Set<String>> = mapOf(
         ToolFamily.TIME to TIME_KEYWORDS,
@@ -171,6 +190,7 @@ object RelevantToolSelector {
         ToolFamily.UTILITY to UTILITY_KEYWORDS,
         ToolFamily.WEATHER to WEATHER_KEYWORDS,
         ToolFamily.HEALTH to HEALTH_KEYWORDS,
+        ToolFamily.DEVICE_INFO to DEVICE_INFO_KEYWORDS,
     )
 
     // § FASE 2A.6 §4 — one compiled word/phrase-boundary regex per keyword,

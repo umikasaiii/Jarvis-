@@ -27,6 +27,7 @@ class JarvisApplication : Application() {
     @Inject lateinit var automationServiceController:
         com.simone.jarvismobile.automation.AutomationServiceController
     @Inject lateinit var proactiveScheduler: com.simone.jarvismobile.proactive.ProactiveScheduler
+    @Inject lateinit var morningTriggerScheduler: com.simone.jarvismobile.proactive.MorningTriggerScheduler
     @Inject lateinit var ruleScheduler: com.simone.jarvismobile.automation.rule.RuleScheduler
     @Inject lateinit var placeRepository: com.simone.jarvismobile.automation.rule.PlaceRepository
     @Inject lateinit var weatherScheduler: com.simone.jarvismobile.weather.WeatherScheduler
@@ -48,6 +49,11 @@ class JarvisApplication : Application() {
         appScope.launch { runCatching { automationServiceController.syncFromSettings() } }
         // Re-book the proactive check if the user has proactivity on.
         appScope.launch { runCatching { proactiveScheduler.sync() } }
+        // § FASE 2A.8 §F — re-arm both Multi-Signal Morning Coordinator triggers
+        // (NEXT_ALARM/CONFIGURED_TIME) on every cold start, exactly like
+        // ruleScheduler.sync() below: an exact alarm is one-shot and does not
+        // survive a reboot/force-stop on its own.
+        appScope.launch { runCatching { morningTriggerScheduler.scheduleAll() } }
         // Arm the generic engine's clock triggers (phase 5). Time rules re-arm on
         // every cold start, so an OEM force-stop cannot leave the engine dead.
         appScope.launch { runCatching { ruleScheduler.sync() } }

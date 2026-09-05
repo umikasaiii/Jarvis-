@@ -8,24 +8,29 @@ import kotlin.test.assertEquals
  * richiesta": pins that an out-of-range day offset resolves to an honest
  * [WeatherDaysAhead.Resolution.OutOfRange] carrying the REAL requested
  * value, never silently substituted by an in-range one.
+ *
+ * § FASE 2A.8 RELEASE GATE H — the supported range was raised from 3 to 16
+ * (chat horizon, "che tempo farà tra 10 giorni?" no longer rejected) while
+ * the home dashboard's own separate 4-day window is untouched code — see
+ * [WeatherDaysAhead]'s own doc comment.
  */
 class WeatherDaysAheadTest {
 
     @Test
-    fun `today and each of the three supported days ahead are all supported`() {
-        for (day in 0..3) {
+    fun `today and every day up to the real supported horizon are all supported`() {
+        for (day in 0..16) {
             assertEquals(WeatherDaysAhead.Resolution.Supported(day), WeatherDaysAhead.resolve(day))
         }
     }
 
     @Test
-    fun `ten days ahead is out of range, carrying the real requested value`() {
-        assertEquals(WeatherDaysAhead.Resolution.OutOfRange(10), WeatherDaysAhead.resolve(10))
+    fun `ten days ahead is now genuinely supported, not silently rejected`() {
+        assertEquals(WeatherDaysAhead.Resolution.Supported(10), WeatherDaysAhead.resolve(10))
     }
 
     @Test
-    fun `four days ahead - one past the supported range - is out of range too`() {
-        assertEquals(WeatherDaysAhead.Resolution.OutOfRange(4), WeatherDaysAhead.resolve(4))
+    fun `seventeen days ahead is out of range, carrying the real requested value`() {
+        assertEquals(WeatherDaysAhead.Resolution.OutOfRange(17), WeatherDaysAhead.resolve(17))
     }
 
     @Test
@@ -35,7 +40,7 @@ class WeatherDaysAheadTest {
 
     @Test
     fun `out of range never reports back an in-range value instead of the real one`() {
-        val resolution = WeatherDaysAhead.resolve(10) as WeatherDaysAhead.Resolution.OutOfRange
-        assertEquals(10, resolution.requestedDaysAhead)
+        val resolution = WeatherDaysAhead.resolve(30) as WeatherDaysAhead.Resolution.OutOfRange
+        assertEquals(30, resolution.requestedDaysAhead)
     }
 }

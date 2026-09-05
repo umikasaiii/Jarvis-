@@ -4,6 +4,7 @@ import com.simone.jarvismobile.agenda.AgendaRepository
 import com.simone.jarvismobile.core.memory.MemoryEntry
 import com.simone.jarvismobile.core.memory.MemoryTier
 import com.simone.jarvismobile.core.protocol.ToolCall
+import com.simone.jarvismobile.core.tools.ToolFamily
 import com.simone.jarvismobile.tools.ToolOutcome
 import com.simone.jarvismobile.util.runCancellable
 import kotlinx.serialization.json.JsonObject
@@ -57,6 +58,66 @@ class ConversationManager @Inject constructor(
             return null
         }
         return p
+    }
+
+    /**
+     * § FASE 2A.8 RELEASE GATE A — real bug audited: "Che impegni ho domani?"
+     * → "E dopodomani?" used to reach the model with NO family selected at
+     * all (`matchedFamilies` finds no keyword in a bare date phrase), so the
+     * FAST prompt explicitly told it "no tool needed" and it answered from
+     * nothing. This is deliberately separate from [PendingTask] above (which
+     * only tracks an in-flight AGENDA WRITE, e.g. "Ricordami... " → "Anzi,
+     * alle 18") — a plain data-QUERY follow-up ("E dopodomani?" after a
+     * read-only "che impegni ho domani?") never creates or touches a
+     * `PendingTask` at all, so without this it has nothing to resolve
+     * against. Short idle timeout: a "the next bare date word means the same
+     * capability" assumption should not survive an unrelated topic switch a
+     * few minutes later.
+     */
+    private data class LastCapabilityTopic(val family: ToolFamily, val touchedAtMs: Long)
+
+    @Volatile private var lastCapabilityTopic: LastCapabilityTopic? = null
+
+    /** The [ToolFamily] a capability request most recently, successfully resolved to — or null if none/gone stale. */
+    fun currentCapabilityTopic(): ToolFamily? {
+        val t = lastCapabilityTopic ?: return null
+        if (System.currentTimeMillis() - t.touchedAtMs > TOPIC_IDLE_TIMEOUT_MS) {
+            lastCapabilityTopic = null
+            return null
+        }
+        return t.family
+    }
+
+    fun noteCapabilityTopic(family: ToolFamily) {
+        lastCapabilityTopic = LastCapabilityTopic(family, System.currentTimeMillis())
+    }
+
+    /**
+     * § FASE 2A.8 RELEASE GATE A/C — the RAM/VRAM anaphora case: "Che
+     * differenza c'è tra RAM e VRAM?" (a KNOWLEDGE question, answered by the
+     * model, never a tool) is remembered here so "Quanta ne ho nel telefono?"
+     * (a bare partitive follow-up with no metric noun of its own — see
+     * [com.simone.jarvismobile.core.tools.DeviceInfoFollowUp]) can resolve to
+     * the right [GetDeviceInfoTool][com.simone.jarvismobile.tools.GetDeviceInfoTool]
+     * metric instead of reaching the model with nothing to answer either.
+     * [topic] is a plain device-metric noun string (e.g. `"ram"`), never
+     * personal content.
+     */
+    private data class LastKnowledgeTopic(val topic: String, val touchedAtMs: Long)
+
+    @Volatile private var lastKnowledgeTopic: LastKnowledgeTopic? = null
+
+    fun currentKnowledgeTopic(): String? {
+        val t = lastKnowledgeTopic ?: return null
+        if (System.currentTimeMillis() - t.touchedAtMs > TOPIC_IDLE_TIMEOUT_MS) {
+            lastKnowledgeTopic = null
+            return null
+        }
+        return t.topic
+    }
+
+    fun noteKnowledgeTopic(topic: String) {
+        lastKnowledgeTopic = LastKnowledgeTopic(topic, System.currentTimeMillis())
     }
 
     /** What `ContextAssembler` includes in the prompt for the next turn. */
@@ -123,6 +184,12 @@ class ConversationManager @Inject constructor(
         // still lands on the same entry; short enough that a stale pending
         // task from an hour-old conversation never resurfaces unexpectedly.
         const val IDLE_TIMEOUT_MS = 10 * 60 * 1000L
+
+        // § FASE 2A.8 — deliberately shorter than IDLE_TIMEOUT_MS above: a
+        // bare "E dopodomani?"/"Quanta ne ho?" follow-up is a much tighter
+        // conversational move than a slow correction to an agenda write, so
+        // an old topic should stop being assumed sooner.
+        const val TOPIC_IDLE_TIMEOUT_MS = 3 * 60 * 1000L
 
         val AGENDA_ENTRY_TOOLS = setOf(
             "add_reminder", "add_task", "move_agenda", "rename_agenda",
