@@ -54,16 +54,21 @@ class ResponseParser(
         if (repaired != null && repaired != trimmed) {
             decodeOrNull(repaired)?.let { return ParseResult.Repaired(it) }
         }
-        // § FASE 2A.6 §5 — hardened beyond "has both { and }": a truncated
-        // tool-call attempt like `{"tool_calls":[` has no closing brace at
-        // all and used to read as ordinary PLAIN_TEXT. Conservative signals
-        // for "the model was clearly attempting protocol JSON, whether or not
-        // it is well-formed": an opening brace, a ```json fence, or either of
-        // the two protocol field names appearing literally.
+        // § FASE 2A.6 §5 / § FASE 2A.7 RELEASE GATE 7 — hardened beyond "has
+        // both { and }": a truncated tool-call attempt like `{"tool_calls":[`
+        // has no closing brace at all and used to read as ordinary
+        // PLAIN_TEXT. Conservative signals for "the model was clearly
+        // attempting protocol JSON, whether or not it is well-formed": an
+        // opening brace, a ```json fence, or either protocol field name
+        // appearing literally — quoted (inside a JSON fragment) or bare (a
+        // degenerate generation that stops after just the field name; these
+        // are English protocol tokens that essentially never occur in
+        // ordinary Italian conversational prose, so this is not a
+        // meaningfully broader false-positive risk than the quoted check).
         val attemptedJson = trimmed.startsWith("{") ||
             trimmed.contains("```json") ||
-            trimmed.contains("\"tool_calls\"") ||
-            trimmed.contains("\"assistant_text\"")
+            trimmed.contains("tool_calls") ||
+            trimmed.contains("assistant_text")
         return ParseResult.PlainText(trimmed, looksLikeAttemptedJson = attemptedJson)
     }
 

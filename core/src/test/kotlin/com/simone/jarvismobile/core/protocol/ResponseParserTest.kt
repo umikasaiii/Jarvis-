@@ -165,6 +165,86 @@ class ResponseParserTest {
         assertTrue(response.followUpExpected)
     }
 
+    // --- § FASE 2A.7 RELEASE GATE 7 — malformed-JSON matrix -----------------
+    // The exact simulated-model-output list from the spec: every truncated
+    // or malformed tool-call ATTEMPT must be flagged as an attempted JSON
+    // (never confused with ordinary plain-text prose), while genuinely valid/
+    // repairable JSON keeps parsing as before. No raw malformed text is ever
+    // executed as a tool — `looksLikeAttemptedJson` is purely a diagnostic
+    // signal for the caller (§ FASE 2A.6 §6's fail-closed message), never
+    // itself a trigger for any tool execution.
+
+    @Test
+    fun `a bare opening brace alone is flagged as an attempted JSON`() {
+        val result = parser.parse("{")
+        assertTrue(result is ParseResult.PlainText)
+        assertTrue((result as ParseResult.PlainText).looksLikeAttemptedJson)
+    }
+
+    @Test
+    fun `an unterminated tool_calls array with no closing brace is flagged`() {
+        val result = parser.parse("""{"tool_calls":[""")
+        assertTrue(result is ParseResult.PlainText)
+        assertTrue((result as ParseResult.PlainText).looksLikeAttemptedJson)
+    }
+
+    @Test
+    fun `a bare markdown json fence opener with no content is flagged`() {
+        val result = parser.parse("```json\n{\"tool_calls\":")
+        assertTrue(result is ParseResult.PlainText)
+        assertTrue((result as ParseResult.PlainText).looksLikeAttemptedJson)
+    }
+
+    @Test
+    fun `an unterminated assistant_text field is flagged`() {
+        val result = parser.parse("""{"assistant_text":""")
+        assertTrue(result is ParseResult.PlainText)
+        assertTrue((result as ParseResult.PlainText).looksLikeAttemptedJson)
+    }
+
+    @Test
+    fun `the bare literal field name tool_calls with no braces at all is flagged`() {
+        val result = parser.parse("tool_calls")
+        assertTrue(result is ParseResult.PlainText)
+        assertTrue((result as ParseResult.PlainText).looksLikeAttemptedJson)
+    }
+
+    @Test
+    fun `the bare literal field name assistant_text with no braces at all is flagged`() {
+        val result = parser.parse("assistant_text")
+        assertTrue(result is ParseResult.PlainText)
+        assertTrue((result as ParseResult.PlainText).looksLikeAttemptedJson)
+    }
+
+    @Test
+    fun `valid JSON naming an unknown tool still parses - ToolRegistry, not the parser, is the authority`() {
+        val raw = """
+            {"assistant_text": "", "tool_calls": [
+              {"id": "a1", "name": "does_not_exist", "arguments": {}, "requires_confirmation": false}
+            ]}
+        """.trimIndent()
+        val result = parser.parse(raw)
+        assertTrue(result is ParseResult.Valid)
+        assertEquals("does_not_exist", (result as ParseResult.Valid).response.toolCalls.single().name)
+    }
+
+    @Test
+    fun `valid JSON with missing arguments still parses - an empty arguments object, never a crash`() {
+        val raw = """{"assistant_text": "", "tool_calls": [{"id": "a1", "name": "get_weather"}]}"""
+        val result = parser.parse(raw)
+        assertTrue(result is ParseResult.Valid)
+        val call = (result as ParseResult.Valid).response.toolCalls.single()
+        assertEquals("get_weather", call.name)
+        assertTrue(call.arguments.isEmpty())
+    }
+
+    @Test
+    fun `ordinary plain text prose is never flagged as an attempted JSON, even when it mentions a brace conceptually`() {
+        val result = parser.parse("Non serve nessuno strumento per questa richiesta, rispondo direttamente.")
+        assertTrue(result is ParseResult.PlainText)
+        assertFalse((result as ParseResult.PlainText).looksLikeAttemptedJson)
+    }
+
     @Test
     fun `a single tool call and a multi tool plan share the same shape, differing only in count`() {
         val single = """

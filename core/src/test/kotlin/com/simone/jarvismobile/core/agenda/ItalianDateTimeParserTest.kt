@@ -167,4 +167,67 @@ class ItalianDateTimeParserTest {
     fun `minutes until is null without a time`() {
         assertNull(ItalianDateTimeParser.minutesUntil("domani", now))
     }
+
+    // --- § FASE 2A.7 RELEASE GATE 2 — date boundaries, clock injected via `now` ----------
+
+    @Test
+    fun `domani crosses a month boundary correctly`() {
+        val endOfMonth = LocalDateTime.of(2026, 8, 31, 10, 0)
+        val r = ItalianDateTimeParser.parse("domani revisione", endOfMonth)
+        assertEquals(LocalDate.of(2026, 9, 1), r.date)
+    }
+
+    @Test
+    fun `domani crosses a year boundary correctly`() {
+        val newYearsEve = LocalDateTime.of(2026, 12, 31, 23, 0)
+        val r = ItalianDateTimeParser.parse("domani revisione", newYearsEve)
+        assertEquals(LocalDate.of(2027, 1, 1), r.date)
+    }
+
+    @Test
+    fun `dopodomani crosses a year boundary correctly`() {
+        val newYearsEve = LocalDateTime.of(2026, 12, 31, 23, 0)
+        val r = ItalianDateTimeParser.parse("dopodomani revisione", newYearsEve)
+        assertEquals(LocalDate.of(2027, 1, 2), r.date)
+    }
+
+    @Test
+    fun `a request one minute before midnight still resolves domani to the correct calendar day`() {
+        val almostMidnight = LocalDateTime.of(2026, 8, 6, 23, 59)
+        val r = ItalianDateTimeParser.parse("domani revisione", almostMidnight)
+        assertEquals(LocalDate.of(2026, 8, 7), r.date)
+    }
+
+    @Test
+    fun `a request one minute after midnight resolves domani from the new calendar day, not the previous one`() {
+        val justAfterMidnight = LocalDateTime.of(2026, 8, 7, 0, 1)
+        val r = ItalianDateTimeParser.parse("domani revisione", justAfterMidnight)
+        assertEquals(LocalDate.of(2026, 8, 8), r.date)
+    }
+
+    @Test
+    fun `weekday name from a Sunday rolls over into the next Monday, not staying inside the same week`() {
+        // 9 Aug 2026 is a Sunday.
+        val sunday = LocalDateTime.of(2026, 8, 9, 10, 0)
+        val r = ItalianDateTimeParser.parse("lunedì revisione", sunday)
+        assertEquals(LocalDate.of(2026, 8, 10), r.date)
+    }
+
+    @Test
+    fun `naming the current weekday itself means next week, not today`() {
+        // 6 Aug 2026 is a Thursday; asking for "giovedì" on a Thursday must
+        // never silently resolve to today (an already-past instruction).
+        val thursday = LocalDateTime.of(2026, 8, 6, 10, 0)
+        val r = ItalianDateTimeParser.parse("giovedì revisione", thursday)
+        assertEquals(LocalDate.of(2026, 8, 13), r.date)
+    }
+
+    @Test
+    fun `an explicit day-month date spanning into next year is resolved correctly, not silently kept in the current year`() {
+        // Asking for "1 gennaio" from December must mean next January, not a
+        // date already in the past.
+        val midDecember = LocalDateTime.of(2026, 12, 15, 10, 0)
+        val r = ItalianDateTimeParser.parse("il 1 gennaio revisione", midDecember)
+        assertEquals(LocalDate.of(2027, 1, 1), r.date)
+    }
 }

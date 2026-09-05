@@ -70,3 +70,59 @@ Steps 6–8/17–20 depend on later phases; verify as they land.
 
 Record measured latencies (press→tone, STT, TTFT, tokens/sec, TTS) and thermal/
 battery behavior in a results table per run.
+
+## FASE 2A.7 — JARVIS Release Gate: Device Acceptance Checklist (Conversational Engine)
+
+Companion to the automated JVM release gate (`cd core && ./gradlew test` —
+grounding, capability routing, keyword-matching, parser-safety and date/period
+invariants are pinned there and run on every push). The 15 scenarios below are
+the ones that **cannot** be certified without a real Honor 200: Health
+Connect's actual permission dialog and real synced data, real airplane-mode
+network transitions, a real JARVIS Core PC instance turning on/off mid-session,
+real mode switching with the model's own native `Conversation`/KV cache, and
+the actual flashlight hardware. Enable Impostazioni → Diagnostica's
+conversational-engine debug panel before starting (it shows `routingPath`,
+`modelRounds`, `toolFamiliesSelected`, `requiredGroundingFamilies`/
+`satisfiedGroundingFamilies`, `groundingBlockReason`, `networkAvailable` per
+turn — read it after every step instead of guessing from the spoken reply
+alone).
+
+**FASE 2A is done only when every row below is ✅ AND the automated suite is
+green — a green CI run alone is `AUTOMATED RELEASE GATE ✅`, never
+`FASE 2A — FAST COMPLETATA` by itself.**
+
+| # | Input | Expected `routingPath` | Expected tool/source | Expected `modelRounds` | Expected grounding | Expected failure behavior | Pass/Fail |
+|---|-------|------------------------|-----------------------|------------------------|---------------------|----------------------------|-----------|
+| 1 | "Ciao, come stai?" | `FAST_LLM`/`BRAIN` (no capability match) | none | model answers directly (>0 is fine — no tool round needed) | `requiredGroundingFamilies` empty | n/a — natural reply, no JSON, no boilerplate "Come posso aiutarti?" | |
+| 2 | "Che impegni ho domani?" | `FAST_PATH` (existing agenda fast path) | `list_agenda`, real `AgendaRepository` | `0` | AGENDA required+satisfied | if no agenda entries: says so plainly, never invents one | |
+| 3 | "Che tempo fa domani?" | `CAPABILITY_FAST_PATH` | `get_weather`, real `WeatherManager` | `0` | WEATHER required+satisfied | offline/source failure → honest fail message, no invented forecast | |
+| 4 | "Quante ore ho dormito questa settimana?" | `CAPABILITY_FAST_PATH` | `get_health_summary` `period=week`, real `HealthConnectManager` | `0` | HEALTH required+satisfied | missing days shown as missing, never counted as 0h | |
+| 5 | "Qual è la mia media sonno questa settimana?" | `CAPABILITY_FAST_PATH` | `get_health_summary` `period=week` | `0` | HEALTH required+satisfied | same weekly aggregate as #4 (by design — "media" and "questa settimana" are the same window) | |
+| 6 | Weather con rete OFF (airplane mode), poi "Che tempo fa domani?" | `CAPABILITY_FAST_PATH` | `get_weather` tool call attempted, rejected `NetworkRequiredButOffline` | `0` | WEATHER required, **not** satisfied | "Non riesco ad accedere a quel dato in questo momento." — no invented weather | |
+| 7 | Revoca il permesso Health Connect da Impostazioni Android, poi "Quanto ho dormito stanotte?" | `CAPABILITY_FAST_PATH` | `get_health_summary` `period=last_night`, `health_permission_missing` | `0` | HEALTH required, **not** satisfied | honest fail message, never a fabricated number | |
+| 8 | Ripristina il permesso Health Connect, ripeti "Quanto ho dormito stanotte?" | `CAPABILITY_FAST_PATH` | `get_health_summary` `period=last_night`, real last-night reading (or honest "nessun dato" if not yet synced) | `0` | HEALTH required+satisfied (or honestly unsatisfied if truly no data) | never falls back to the week's average for "stanotte" | |
+| 9 | "Accendi la torcia." | (existing device fast path / `CommandMatcher`) | `flashlight`, real hardware toggle | n/a | DEVICE required+satisfied | — | |
+| 10 | "Accendi la luce della camera." | `HOME_CONTROL_UNSUPPORTED` | none — **never** `flashlight** | `0` | n/a (guard fires before grounding) | "Non ho ancora un'integrazione per il controllo della casa…" — flashlight must NOT turn on | |
+| 11 | Con JARVIS Core (PC) acceso e raggiungibile, un messaggio qualunque | `lastRoute` in Diagnostica = `CORE FAST`/`CORE BRAIN` | remote Ollama via `jarvis-core` | n/a | per-request as above | — | |
+| 12 | Core spento/non raggiungibile, stesso messaggio | `lastRoute` = `LOCAL (fallback…)` | local Gemma via `LlmRouter` | n/a | per-request as above | fallback is silent to the user (one coherent reply, never two) | |
+| 13 | Spegni Core (o disconnetti il PC dalla rete) A METÀ di una richiesta in corso | `lastRoute` ends as `LOCAL (fallback dopo Core: …)` | local fallback completes the turn | n/a | per-request as above | no crash, no hung turn, next request may return to `CORE FAST` once Core is back | |
+| 14 | Modalità Classica: "Il mio codice temporaneo è ALFA" → passa a Conversazionale, fai 1-2 richieste qualunque → torna a Classica → "Qual era il codice temporaneo?" | n/a (Classic mode has no `routingPath`) | Classic's own persistent `Conversation` | n/a | n/a | Classic must still answer "ALFA" — its native session must survive the round-trip through Conversational mode | |
+| 15 | "Considerando come ho dormito e gli impegni di domani, a che ora dovrei andare a letto?" | `BRAIN` (multi-family, never `CAPABILITY_FAST_PATH`) | both `get_health_summary` and `list_agenda`/agenda tool actually executed | `>0` | HEALTH+AGENDA both required, both must be satisfied before an answer | if either source fails, the reply must say so — never reasons as if it had both when it only got one | |
+
+### Casi che NON possono essere certificati senza l'Honor 200 (§ FASE 2A.7)
+
+- Il comportamento reale del modello locale (Gemma) e di Core/Ollama davanti
+  al protocollo JSON — se rispetta davvero il contratto, se produce mai testo
+  che elude comunque le regex del parser — è verificabile solo eseguendo un
+  vero modello, non in questo ambiente di sviluppo (nessuna GPU/NPU, nessun
+  modello nel repository).
+- Il vero stato dei permessi Health Connect (righe 7-8) e la vera
+  sincronizzazione Honor Health → Health Connect.
+- Le vere transizioni di rete (aereo ON/OFF, righe 6, 11-13) e un vero
+  processo JARVIS Core in esecuzione su un PC reale.
+- La torcia hardware reale (riga 9) e la garanzia che "luce della camera"
+  (riga 10) non la accenda per errore su un dispositivo reale.
+- La sopravvivenza della `Conversation` nativa di Modalità Classica attraverso
+  un vero cambio di modalità (riga 14) — dipende dal comportamento reale di
+  `LitertLmEngine`, non riproducibile senza il modello caricato su device.
+- Process death/Doze reali durante un turno multi-round.

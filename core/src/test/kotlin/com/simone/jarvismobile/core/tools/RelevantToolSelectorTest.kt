@@ -404,4 +404,42 @@ class RelevantToolSelectorTest {
         assertTrue(matched.isEmpty())
         assertTrue(RelevantToolSelector.select(allTools, "Attivalo per favore, è urgente").isNotEmpty())
     }
+
+    // --- § FASE 2A.7 RELEASE GATE 6 — word-boundary matching, parametrized -------------
+    // The `\b<keyword>\b` fix is structural (a boundary regex cannot match
+    // mid-word by construction), so these are regression insurance against a
+    // future revert to substring matching, not a search for new bugs: each
+    // pair is a real Italian word that legitimately CONTAINS a shorter
+    // family keyword, and must never pull that family in just because of it.
+
+    private data class FalsePositiveCase(val phrase: String, val keywordFamily: ToolFamily, val keywordToolName: String)
+
+    private val falsePositiveCases = listOf(
+        // SYSTEM_APP's "app" inside AGENDA's own words (the original bug).
+        FalsePositiveCase("Che appuntamenti ho domani?", ToolFamily.SYSTEM_APP, "open_app"),
+        // SYSTEM_APP's "apri" inside "aprile" (a month name, very plausible in a date).
+        FalsePositiveCase("Ricordami l'appuntamento di aprile", ToolFamily.SYSTEM_APP, "open_app"),
+        // WEATHER's "vento" inside "avvento" (Advent).
+        FalsePositiveCase("Quanto manca all'Avvento?", ToolFamily.WEATHER, "get_weather"),
+        // HEALTH's "battito" inside "dibattito" (a debate).
+        FalsePositiveCase("C'è un dibattito interessante stasera", ToolFamily.HEALTH, "get_health_summary"),
+        // DEVICE's "carica" inside "scaricare" (to download/discharge).
+        FalsePositiveCase("Devo scaricare un file dal computer", ToolFamily.DEVICE, "flashlight"),
+        // ARCHIVE's "nota" inside "notizie" (the news).
+        FalsePositiveCase("Guarda le notizie di oggi", ToolFamily.ARCHIVE, "create_archive_item"),
+        // UTILITY's "somma" inside "sommario" (a summary).
+        FalsePositiveCase("Fammi un sommario della riunione", ToolFamily.UTILITY, "calculate"),
+    )
+
+    @Test
+    fun `family keywords never match as a substring inside a longer, unrelated Italian word`() {
+        for (case in falsePositiveCases) {
+            val matched = RelevantToolSelector.matchedFamilies(case.phrase)
+            assertFalse(
+                case.keywordFamily in matched,
+                "\"${case.phrase}\" incorrectly matched ${case.keywordFamily} " +
+                    "(would have surfaced ${case.keywordToolName})",
+            )
+        }
+    }
 }

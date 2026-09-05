@@ -6,15 +6,18 @@ import com.simone.jarvismobile.context.ContextEngine
 import com.simone.jarvismobile.core.agenda.ItalianDateTimeParser
 import com.simone.jarvismobile.core.engine.BrainReply
 import com.simone.jarvismobile.core.engine.EngineTurnDiagnostics
+import com.simone.jarvismobile.core.engine.GroundingGate
 import com.simone.jarvismobile.core.engine.JarvisEngineMode
 import com.simone.jarvismobile.core.engine.ParseOutcome
 import com.simone.jarvismobile.core.engine.ToolCallBudget
+import com.simone.jarvismobile.core.health.HealthPeriodParser
 import com.simone.jarvismobile.core.intent.IntentAliases
 import com.simone.jarvismobile.core.protocol.ToolCall
 import com.simone.jarvismobile.core.tools.GROUNDED_FAMILIES
 import com.simone.jarvismobile.core.tools.HomeControlDetector
 import com.simone.jarvismobile.core.tools.RelevantToolSelector
 import com.simone.jarvismobile.core.tools.ToolFamily
+import com.simone.jarvismobile.core.weather.WeatherDaysAhead
 import com.simone.jarvismobile.data.SettingsRepository
 import com.simone.jarvismobile.llm.DEFAULT_GENERATION_TIMEOUT_SECONDS
 import com.simone.jarvismobile.tools.AgendaIntentRouter
@@ -298,41 +301,93 @@ class ConversationalJarvisEngine @Inject constructor(
      */
     private suspend fun runCapabilityFastPath(transcript: String, turn: TurnState): String? {
         val matched = RelevantToolSelector.matchedFamilies(transcript)
-        val call = when (matched.singleOrNull()) {
-            ToolFamily.WEATHER -> weatherCall(transcript)
-            ToolFamily.HEALTH -> healthCall()
-            else -> null
-        } ?: return null
-        Log.i(TAG, "ENGINE_BRANCH=capability_fast_path tool=${call.name}")
-        remoteChatState.setLastRoute("LOCAL (bypass: capability diretta)")
-        turn.routingPath = "CAPABILITY_FAST_PATH"
-        turn.modelRounds = 0
-        return executeAndTrack(call, turn, confirmed = false)
+        when (matched.singleOrNull()) {
+            ToolFamily.WEATHER -> {
+                when (val plan = weatherCall(transcript)) {
+                    is WeatherCapabilityPlan.OutOfRange -> {
+                        // § FASE 2A.7 RELEASE GATE 3 — resolved deterministically,
+                        // honestly, WITHOUT ever calling `get_weather` with a
+                        // silently-clamped day count: this app genuinely cannot
+                        // forecast that far, so say so directly instead of
+                        // spending an LLM round on a request the tool would
+                        // reject anyway.
+                        Log.i(TAG, "ENGINE_BRANCH=capability_fast_path weather_out_of_range")
+                        remoteChatState.setLastRoute("LOCAL (bypass: previsione fuori intervallo supportato)")
+                        turn.routingPath = "CAPABILITY_FAST_PATH"
+                        turn.modelRounds = 0
+                        return WEATHER_OUT_OF_RANGE_MESSAGE
+                    }
+                    is WeatherCapabilityPlan.Call -> {
+                        Log.i(TAG, "ENGINE_BRANCH=capability_fast_path tool=${plan.call.name}")
+                        remoteChatState.setLastRoute("LOCAL (bypass: capability diretta)")
+                        turn.routingPath = "CAPABILITY_FAST_PATH"
+                        turn.modelRounds = 0
+                        return executeAndTrack(plan.call, turn, confirmed = false)
+                    }
+                }
+            }
+            ToolFamily.HEALTH -> {
+                val call = healthCall(transcript)
+                Log.i(TAG, "ENGINE_BRANCH=capability_fast_path tool=${call.name}")
+                remoteChatState.setLastRoute("LOCAL (bypass: capability diretta)")
+                turn.routingPath = "CAPABILITY_FAST_PATH"
+                turn.modelRounds = 0
+                return executeAndTrack(call, turn, confirmed = false)
+            }
+            else -> return null
+        }
     }
 
-    /** [ItalianDateTimeParser] resolves "domani"/"dopodomani"/an explicit date; anything else (or none named) defaults to today, never guessed beyond 3 days ahead ([GetWeatherTool]'s own supported range). */
-    private fun weatherCall(transcript: String): ToolCall {
+    /** What [weatherCall] decided for one request — either a real `get_weather` call, or an honest "out of range" that never reaches the tool at all. */
+    private sealed interface WeatherCapabilityPlan {
+        data class Call(val call: ToolCall) : WeatherCapabilityPlan
+        data class OutOfRange(val requestedDaysAhead: Int) : WeatherCapabilityPlan
+    }
+
+    /**
+     * [ItalianDateTimeParser] resolves "domani"/"dopodomani"/an explicit date;
+     * anything else (or none named) defaults to today. § FASE 2A.7 RELEASE
+     * GATE 3 real bug fix: the real (unclamped) day offset is now checked
+     * against [WeatherDaysAhead] BEFORE building any tool call — "tra 10
+     * giorni" used to be silently coerced into "tra 3 giorni" here, with
+     * neither the model nor the user ever told the difference.
+     */
+    private fun weatherCall(transcript: String): WeatherCapabilityPlan {
         val now = LocalDateTime.now()
         val parsed = ItalianDateTimeParser.parse(transcript, now)
-        val daysAhead = if (parsed.dateExplicit && parsed.date != null) {
-            ChronoUnit.DAYS.between(now.toLocalDate(), parsed.date).toInt().coerceIn(0, 3)
+        val requestedDaysAhead = if (parsed.dateExplicit && parsed.date != null) {
+            ChronoUnit.DAYS.between(now.toLocalDate(), parsed.date).toInt()
         } else {
             0
         }
+        return when (val resolution = WeatherDaysAhead.resolve(requestedDaysAhead)) {
+            is WeatherDaysAhead.Resolution.OutOfRange -> WeatherCapabilityPlan.OutOfRange(resolution.requestedDaysAhead)
+            is WeatherDaysAhead.Resolution.Supported -> WeatherCapabilityPlan.Call(
+                ToolCall(
+                    id = UUID.randomUUID().toString(),
+                    name = "get_weather",
+                    arguments = JsonObject(mapOf("days_ahead" to JsonPrimitive(resolution.daysAhead.toString()))),
+                    requiresConfirmation = false,
+                ),
+            )
+        }
+    }
+
+    /**
+     * § FASE 2A.7 RELEASE GATE 4 real bug fix: [transcript] is parsed by
+     * [HealthPeriodParser] so "stanotte" builds a `period=last_night` call
+     * instead of the same `period=week` aggregate every health question used
+     * to get regardless of phrasing.
+     */
+    private fun healthCall(transcript: String): ToolCall {
+        val period = HealthPeriodParser.parse(transcript)
         return ToolCall(
             id = UUID.randomUUID().toString(),
-            name = "get_weather",
-            arguments = JsonObject(mapOf("days_ahead" to JsonPrimitive(daysAhead.toString()))),
+            name = "get_health_summary",
+            arguments = JsonObject(mapOf("period" to JsonPrimitive(period.name.lowercase()))),
             requiresConfirmation = false,
         )
     }
-
-    private fun healthCall(): ToolCall = ToolCall(
-        id = UUID.randomUUID().toString(),
-        name = "get_health_summary",
-        arguments = JsonObject(emptyMap()),
-        requiresConfirmation = false,
-    )
 
     /** Runs [call] through [ToolRouter], tracks it for [ConversationManager], and turns the outcome into speech. */
     private suspend fun executeAndTrack(call: ToolCall, turn: TurnState, confirmed: Boolean): String {
@@ -464,35 +519,37 @@ class ConversationalJarvisEngine @Inject constructor(
 
             val response = ready.response
             if (response.toolCalls.isEmpty()) {
-                // § FASE 2A.6 §6 — a genuinely malformed output (the model
-                // tried to produce protocol JSON and failed) must NEVER reach
-                // the user verbatim: `response.assistantText` here is
-                // literally `parsed.rawText` (see `JarvisBrain.reply`), i.e.
-                // possibly a raw, truncated protocol-JSON fragment itself — the
-                // exact "raw JSON shown in chat" bug this phase's audit
-                // found for "Accendi la luce della camera". Checked BEFORE
-                // grounding so a malformed round is never mistaken for a
-                // (well-formed but unhelpful) ungrounded answer.
-                if (ready.parseOutcome == ParseOutcome.MALFORMED_JSON) {
-                    turn.groundingBlockReason = "malformed_json_output"
-                    return MALFORMED_OUTPUT_MESSAGE
+                // § FASE 2A.7 — the exact fail-closed invariant this phase's
+                // predecessor enforced inline is now [GroundingGate] (`:core`,
+                // pure, tested by GroundingGateTest's cases A-F): a genuinely
+                // malformed output (the model tried to produce protocol JSON
+                // and failed — `response.assistantText` here is literally
+                // `parsed.rawText`, i.e. possibly a raw, truncated protocol-
+                // JSON fragment, the exact "raw JSON shown in chat" bug found
+                // for "Accendi la luce della camera") is blocked BEFORE
+                // grounding; then every family the request SPECIFICALLY
+                // required real data for must have a successfully-executed
+                // tool of that exact family, or the plain-text answer is
+                // never returned. Same messages, same precedence as before —
+                // this call replaces the two inline `if`s, it does not change
+                // what they decided.
+                when (
+                    val decision = GroundingGate.decide(
+                        parseOutcome = ready.parseOutcome,
+                        requiredFamilies = turn.requiredGroundingFamilies.map { it.name }.toSet(),
+                        satisfiedFamilies = turn.satisfiedGroundingFamilies.map { it.name }.toSet(),
+                    )
+                ) {
+                    is GroundingGate.Decision.Block -> {
+                        turn.groundingBlockReason = decision.reason
+                        return if (decision.reason == GroundingGate.MALFORMED_JSON_REASON) {
+                            MALFORMED_OUTPUT_MESSAGE
+                        } else {
+                            GROUNDING_FAIL_CLOSED_MESSAGE
+                        }
+                    }
+                    GroundingGate.Decision.Allow -> return response.assistantText.trim().ifBlank { "Fatto." }
                 }
-                // § FASE 2A.6 §1 — grounding enforcement, fail-closed: the
-                // model answered in plain text (no tool call) while at least
-                // one family the request SPECIFICALLY required real data for
-                // still has no successfully-executed tool of that exact
-                // family. `groundingRequired`/`groundingSatisfied` used to be
-                // diagnostics computed AFTER the fact, never a real policy —
-                // this is the actual enforcement: that plain-text answer is
-                // never returned to the user, since the model already had its
-                // chance to call the tool and did not.
-                val unmet = turn.requiredGroundingFamilies - turn.satisfiedGroundingFamilies
-                if (unmet.isNotEmpty()) {
-                    turn.groundingBlockReason = "no_tool_call_for_required_family:" +
-                        unmet.joinToString(",") { it.name }
-                    return GROUNDING_FAIL_CLOSED_MESSAGE
-                }
-                return response.assistantText.trim().ifBlank { "Fatto." }
             }
 
             val toolResults = StringBuilder()
@@ -642,5 +699,11 @@ class ConversationalJarvisEngine @Inject constructor(
         const val GROUNDING_FAIL_CLOSED_MESSAGE = "Non riesco ad accedere a quel dato in questo momento."
         const val MALFORMED_OUTPUT_MESSAGE =
             "Non sono riuscito a formulare una risposta chiara. Puoi ripetere la richiesta?"
+
+        // § FASE 2A.7 RELEASE GATE 3 — honest, deterministic answer for a
+        // forecast further out than `WeatherDaysAhead.MAX_SUPPORTED_DAYS_AHEAD`;
+        // never a silently-clamped nearer-day forecast instead.
+        const val WEATHER_OUT_OF_RANGE_MESSAGE =
+            "Riesco a prevedere il meteo solo fino a 3 giorni da oggi: non ho una previsione così lontana."
     }
 }

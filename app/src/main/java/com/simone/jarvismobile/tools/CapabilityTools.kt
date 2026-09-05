@@ -1,5 +1,6 @@
 package com.simone.jarvismobile.tools
 
+import com.simone.jarvismobile.core.health.HealthPeriod
 import com.simone.jarvismobile.core.tools.SensitivityLevel
 import com.simone.jarvismobile.core.tools.Tool
 import com.simone.jarvismobile.core.tools.ToolPolicy
@@ -99,21 +100,34 @@ class GetWeatherTool(private val weather: WeatherManager) : Tool {
 }
 
 /**
- * Real weekly sleep/resting-heart-rate summary from the same
- * [HealthConnectManager] the Ares dashboard already reads — never a
- * duplicated database, never a per-model estimate. A day with no record is
- * counted in [daysMissing], never silently treated as zero hours slept (§
- * explicit constraint, "NON interpretare un giorno senza record come 0 ore
- * dormite" — already [HealthConnectManager]'s own contract via nullable
- * `sleepHours`/`heartRateBpm` per day, reused verbatim here rather than
- * re-derived). Fails honestly (never invents a number) when Health Connect
- * itself is unavailable on this device, the permission was never granted, or
- * there is genuinely no data yet.
+ * Real weekly sleep/resting-heart-rate summary, or a single night's own
+ * reading, from the same [HealthConnectManager] the Ares dashboard already
+ * reads — never a duplicated database, never a per-model estimate. A day
+ * with no record is counted in [daysMissing], never silently treated as zero
+ * hours slept (§ explicit constraint, "NON interpretare un giorno senza
+ * record come 0 ore dormite" — already [HealthConnectManager]'s own contract
+ * via nullable `sleepHours`/`heartRateBpm` per day, reused verbatim here
+ * rather than re-derived). Fails honestly (never invents a number) when
+ * Health Connect itself is unavailable on this device, the permission was
+ * never granted, or there is genuinely no data yet.
+ *
+ * § FASE 2A.7 RELEASE GATE 4 real bug fix: this tool used to take no
+ * temporal argument at all, so "stanotte"/"questa settimana"/"ultimi 7
+ * giorni" all produced the identical weekly aggregate — "stanotte" was
+ * silently answered with the week's average instead of last night's own
+ * reading. The optional `period` argument (`"last_night"` | `"week"`, built
+ * from [HealthPeriodParser][com.simone.jarvismobile.core.health.HealthPeriodParser]
+ * by the capability router — parameter extraction stays separate from this
+ * tool's own execution) now distinguishes the two; an absent/unrecognized
+ * value defaults to `"week"`, the prior (and still correct for any
+ * week-shaped phrasing) behavior, so any other caller offering this tool to
+ * the model with no `period` at all is unaffected.
  */
 class GetHealthSummaryTool(private val health: HealthConnectManager) : Tool {
     override val name = "get_health_summary"
     override val description =
-        "Riepilogo reale della settimana da Health Connect: ore di sonno e frequenza cardiaca a riposo, con quanti giorni hanno davvero un dato."
+        "Riepilogo reale da Health Connect: ore di sonno e frequenza cardiaca a riposo. " +
+            "Argomento opzionale \"period\": \"last_night\" per il dato di stanotte, \"week\" (default) per la media/settimana."
     override val policy = ToolPolicy.READ_ONLY
     override val sensitivity = SensitivityLevel.PERSONAL
     override val requiresNetwork = false
@@ -128,6 +142,41 @@ class GetHealthSummaryTool(private val health: HealthConnectManager) : Tool {
         val snapshot = health.refresh() ?: health.cachedSnapshot()
             ?: return ToolResult.Failure("health_unavailable")
 
+        val period = if (arguments.str("period") == "last_night") HealthPeriod.LAST_NIGHT else HealthPeriod.WEEK
+        return when (period) {
+            HealthPeriod.LAST_NIGHT -> lastNightResult(snapshot)
+            HealthPeriod.WEEK -> weeklyResult(snapshot)
+        }
+    }
+
+    /**
+     * The most recent day in the series is "stanotte" regardless of when
+     * during the day it is asked — [HealthDailySeries][com.simone.jarvismobile.core.health.HealthDailySeries]
+     * attributes a sleep session to the day of its wake-up, so last night's
+     * sleep (if Health Connect has synced it yet) always lands on today's
+     * entry. Never falls back to the weekly average — a missing single-night
+     * reading is a genuinely different answer ("no data for last night"),
+     * not "here is the week instead".
+     */
+    private fun lastNightResult(snapshot: HealthConnectManager.HealthSnapshot): ToolResult {
+        val last = snapshot.daily.lastOrNull()
+        val hours = last?.sleepHours ?: return ToolResult.Failure("health_no_data")
+        val totalMinutes = (hours * 60).roundToInt()
+        val h = totalMinutes / 60
+        val m = totalMinutes % 60
+        val spoken = "Stanotte hai dormito ${h}h ${m}min."
+        return ToolResult.Success(
+            JsonObject(
+                mapOf(
+                    "period" to JsonPrimitive("last_night"),
+                    "sleep_hours" to JsonPrimitive(hours.toString()),
+                    "spoken" to JsonPrimitive(spoken),
+                ),
+            ),
+        )
+    }
+
+    private fun weeklyResult(snapshot: HealthConnectManager.HealthSnapshot): ToolResult {
         val daysWithSleep = snapshot.daily.count { it.sleepHours != null }
         val daysMissing = snapshot.daily.size - daysWithSleep
         val totalSleepHours = snapshot.daily.mapNotNull { it.sleepHours }.sum()
@@ -154,6 +203,7 @@ class GetHealthSummaryTool(private val health: HealthConnectManager) : Tool {
         return ToolResult.Success(
             JsonObject(
                 mapOf(
+                    "period" to JsonPrimitive("week"),
                     "days_with_sleep_data" to JsonPrimitive(daysWithSleep.toString()),
                     "days_missing" to JsonPrimitive(daysMissing.toString()),
                     "total_sleep_hours" to JsonPrimitive(totalSleepHours.toString()),
