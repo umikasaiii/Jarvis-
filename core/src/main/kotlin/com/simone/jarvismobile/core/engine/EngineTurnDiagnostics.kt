@@ -108,4 +108,28 @@ data class EngineTurnDiagnostics(
     val semanticFailureReason: String? = null,
     /** How long the semantic-interpreter call itself took, measured separately from tool/answer latency (§18). */
     val semanticLatencyMs: Long? = null,
+    // § FASE 2A.9.1 FIX SEMANTIC ROUTING OWNERSHIP — additive, default to
+    // previous no-op values so no other constructor call site breaks.
+    /**
+     * `ANSWER` (a direct capability call resolved the turn) | `HANDOFF_LLM`
+     * (a valid frame that isn't `com.simone.jarvismobile.core.semantic.SemanticRouter`'s
+     * job — KNOWLEDGE_QUERY/CONVERSATION/MULTI_SOURCE_REASONING/a
+     * non-read-only operation/an ambiguous or unsupported domain — sent
+     * straight to the reasoning loop, never reclassified by keyword) |
+     * `LEGACY_FALLBACK` (the interpreter itself failed/produced an invalid
+     * frame — the only case the old keyword/topic paths may still answer).
+     * Null only for a turn a HARD deterministic guard resolved before the
+     * semantic layer was ever reached.
+     */
+    val semanticDisposition: String? = null,
+    /**
+     * Release invariant (§ FASE 2A.9.1): must always be `false`. A `true`
+     * value means the legacy keyword paths ran for a turn whose semantic
+     * interpretation was VALID — the exact bug this phase closed structurally
+     * (`SemanticRouteResult`/`SemanticRoutingOutcome` make that path
+     * unreachable by construction, so this field is a runtime canary, not
+     * the primary guarantee). A device/CI run that ever reports `true` here
+     * is a real regression, not a tuning question.
+     */
+    val legacyInvokedAfterValidSemantic: Boolean = false,
 )

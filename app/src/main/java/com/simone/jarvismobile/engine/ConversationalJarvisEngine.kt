@@ -17,14 +17,14 @@ import com.simone.jarvismobile.core.health.HealthRange
 import com.simone.jarvismobile.core.intent.IntentAliases
 import com.simone.jarvismobile.core.protocol.ToolCall
 import com.simone.jarvismobile.core.agenda.AgendaWeekRange
-import com.simone.jarvismobile.core.semantic.READ_ONLY_OPERATIONS
 import com.simone.jarvismobile.core.semantic.SemanticDialogueContext
 import com.simone.jarvismobile.core.semantic.SemanticFrame
 import com.simone.jarvismobile.core.semantic.SemanticFrameMerger
 import com.simone.jarvismobile.core.semantic.SemanticInterpretation
 import com.simone.jarvismobile.core.semantic.SemanticInterpreter
 import com.simone.jarvismobile.core.semantic.SemanticIntent
-import com.simone.jarvismobile.core.semantic.SemanticOperation
+import com.simone.jarvismobile.core.semantic.SemanticRoutingOutcome
+import com.simone.jarvismobile.core.semantic.SemanticRouter
 import com.simone.jarvismobile.core.semantic.SemanticSource
 import com.simone.jarvismobile.core.tools.DeviceInfoFollowUp
 import com.simone.jarvismobile.core.tools.GROUNDED_FAMILIES
@@ -143,13 +143,10 @@ class ConversationalJarvisEngine @Inject constructor(
                 // an unambiguous safe command never needs a model call at
                 // all) and the old keyword/topic paths below (now demoted to
                 // LEGACY_FALLBACK, reached only when the interpreter itself
-                // fails/produces an invalid frame — see runSemanticPath's own
-                // doc comment for why, and CLAUDE.md/the FASE 2A.9 report for
-                // the root cause this replaces).
-                ?: runSemanticPath(transcript, turn)
-                ?: runCapabilityFastPath(transcript, turn)
-                ?: runFollowUpFastPath(transcript, turn)
-                ?: runBrainLoop(transcript, turn)
+                // fails/produces an invalid frame — see resolveSemanticRoute's
+                // own doc comment for why, and CLAUDE.md/the FASE
+                // 2A.9/2A.9.1 reports for the root cause this replaces).
+                ?: resolveSemanticRoute(transcript, turn)
         } catch (e: CancellationException) {
             throw e
         } catch (t: Throwable) {
@@ -181,8 +178,23 @@ class ConversationalJarvisEngine @Inject constructor(
     }
 
     /**
+     * § FASE 2A.9.1 — the explicit ownership contract a bare `String?` could
+     * not express (see [SemanticRoutingOutcome]'s doc comment for the exact
+     * bug this closes): [Answer] is a real reply, already produced; a valid
+     * frame that isn't this router's own job goes straight to
+     * [HandoffToLlm]; only an interpreter failure or an INVALID frame ever
+     * produces [LegacyFallback] — the one and only door back to the old
+     * keyword/topic paths.
+     */
+    private sealed interface SemanticRouteResult {
+        data class Answer(val text: String) : SemanticRouteResult
+        data object HandoffToLlm : SemanticRouteResult
+        data object LegacyFallback : SemanticRouteResult
+    }
+
+    /**
      * § FASE 2A.9 — USER TEXT → [SemanticInterpreter] → [SemanticFrame] →
-     * this router. Root cause this replaces: the OLD `runFollowUpFastPath`
+     * [SemanticRouter]. Root cause this replaces: the OLD `runFollowUpFastPath`
      * decided "same capability as last time" purely from "no keyword in this
      * turn" + "a leftover topic exists" + "the text looks date-shaped" — with
      * ZERO check that the current turn's own words are consistent with that
@@ -193,21 +205,25 @@ class ConversationalJarvisEngine @Inject constructor(
      * resolved frame — never the other way around (§ permanent architectural
      * rule: `SIGNIFICATO ESPLICITO DEL TURNO ATTUALE > CONTESTO PRECEDENTE`).
      *
-     * Returns null (falling through to the legacy keyword paths, then the
-     * full reasoning loop) whenever: the interpreter is unavailable/fails
-     * ([SemanticSource.LEGACY_FALLBACK]); its output doesn't validate
-     * ([SemanticSource.LEGACY_FALLBACK]); or it validates but describes
-     * something this router deliberately never resolves on its own —
-     * MULTI_SOURCE_REASONING (handed to [runBrainLoop] as a grounding
-     * requirement instead, §10), KNOWLEDGE_QUERY/CONVERSATION/CLARIFICATION/
-     * UNKNOWN, a non-read-only operation (§12 — this router NEVER authorizes
-     * a side effect; CONTROL/CREATE/UPDATE/DELETE always fall through to the
-     * existing deterministic/tool-call paths, which enforce
-     * confirmation/security independently), or an ambiguous/empty domain set
-     * (all [SemanticSource.LLM_FALLBACK] — a genuinely valid frame that
-     * simply isn't this router's job).
+     * § FASE 2A.9.1 — a SECOND bug this same rule was still exposed to,
+     * found on re-audit of the real committed pipeline: the first cut of
+     * this method returned a bare `String?`, so "interpreter failed/invalid"
+     * and "interpreter succeeded but the frame must be delegated elsewhere
+     * (KNOWLEDGE_QUERY, CONVERSATION, MULTI_SOURCE_REASONING, a non-read-only
+     * operation, an ambiguous/unsupported domain)" were BOTH spelled `null` —
+     * indistinguishable to [resolveSemanticRoute], which then let EITHER case
+     * fall through to the legacy keyword paths. A perfectly valid
+     * `KNOWLEDGE_QUERY` frame could therefore still be silently reclassified
+     * by the very keyword matching this whole phase demoted to a fallback —
+     * the same "current meaning loses to something else" shape the phase
+     * exists to close, just one level removed. [SemanticRouteResult] (an
+     * explicit sealed type, not a nullable string) makes that impossible:
+     * legacy is reachable ONLY via [SemanticRouteResult.LegacyFallback],
+     * which THIS method returns ONLY for the two `Invalid`/interpreter-failure
+     * cases below — every other branch either answers directly or hands off
+     * to [runBrainLoop], never back through the keyword paths.
      */
-    private suspend fun runSemanticPath(transcript: String, turn: TurnState): String? {
+    private suspend fun runSemanticPath(transcript: String, turn: TurnState): SemanticRouteResult {
         val previousFrame = conversationManager.currentSemanticFrame()
         turn.semanticEnabled = true
         val startedAt = System.currentTimeMillis()
@@ -220,18 +236,22 @@ class ConversationalJarvisEngine @Inject constructor(
             null -> {
                 turn.semanticSource = SemanticSource.LEGACY_FALLBACK.name
                 turn.semanticFailureReason = "interpreter_unavailable_or_threw"
-                return null
+                turn.semanticDisposition = "LEGACY_FALLBACK"
+                return SemanticRouteResult.LegacyFallback
             }
             is SemanticInterpretation.Invalid -> {
                 turn.semanticSource = SemanticSource.LEGACY_FALLBACK.name
                 turn.semanticFailureReason = interpretation.reason
-                return null
+                turn.semanticDisposition = "LEGACY_FALLBACK"
+                return SemanticRouteResult.LegacyFallback
             }
             is SemanticInterpretation.Valid -> interpretation.frame
         }
 
         val merge = SemanticFrameMerger.merge(rawFrame, previousFrame)
         val frame = merge.frame
+        // § FASE 2A.9.1 — everything from here on describes a VALID frame:
+        // no branch below may ever return LegacyFallback again.
         turn.semanticValid = true
         turn.semanticIntent = frame.intent.name
         turn.semanticDomains = frame.domains.map { it.name }
@@ -242,34 +262,74 @@ class ConversationalJarvisEngine @Inject constructor(
         turn.semanticConfidence = frame.confidence
         conversationManager.noteSemanticFrame(frame)
 
-        if (frame.intent == SemanticIntent.MULTI_SOURCE_REASONING) {
-            // § FASE 2A.9 §10 — never builds its own synthesis pipeline: seeds
-            // runBrainLoop's EXISTING multi-round tool-calling loop with the
-            // domains this turn actually named, so grounding enforcement
-            // (GroundingGate) requires a real tool call for EACH of them
-            // before any answer is allowed, instead of relying on
-            // RelevantToolSelector's keyword match to have found them too.
-            turn.semanticMultiSourceDomains = frame.domains.filter { it in GROUNDED_FAMILIES }.toSet()
-            turn.semanticSource = SemanticSource.LLM_FALLBACK.name
-            return null
+        return when (val outcome = SemanticRouter.routeFrame(frame)) {
+            SemanticRoutingOutcome.HandoffToLlm -> {
+                if (frame.intent == SemanticIntent.MULTI_SOURCE_REASONING) {
+                    // § FASE 2A.9 §10 — never builds its own synthesis
+                    // pipeline: seeds runBrainLoop's EXISTING multi-round
+                    // tool-calling loop with the domains this turn actually
+                    // named, so grounding enforcement (GroundingGate)
+                    // requires a real tool call for EACH of them before any
+                    // answer is allowed, instead of relying on
+                    // RelevantToolSelector's keyword match to have found
+                    // them too.
+                    turn.semanticMultiSourceDomains = frame.domains.filter { it in GROUNDED_FAMILIES }.toSet()
+                }
+                turn.semanticSource = SemanticSource.LLM_FALLBACK.name
+                turn.semanticDisposition = "HANDOFF_LLM"
+                SemanticRouteResult.HandoffToLlm
+            }
+            is SemanticRoutingOutcome.Direct -> {
+                val routed = routeSemanticCapability(outcome.domain, transcript, frame, previousFrame, LocalDateTime.now(), turn)
+                if (routed != null) {
+                    turn.semanticSource = SemanticSource.LOCAL_INTERPRETER.name
+                    turn.semanticDisposition = "ANSWER"
+                    SemanticRouteResult.Answer(routed)
+                } else {
+                    // § FASE 2A.9.1 semantica obbligatoria #8 — the domain
+                    // WAS one this router owns, but the domain-specific
+                    // resolution itself failed (e.g. no resolvable metric,
+                    // no parseable range) — still a VALID frame, so this is
+                    // a handoff, never a fall-through to legacy keyword
+                    // reclassification.
+                    turn.semanticSource = SemanticSource.LLM_FALLBACK.name
+                    turn.semanticDisposition = "HANDOFF_LLM"
+                    SemanticRouteResult.HandoffToLlm
+                }
+            }
         }
-        if (frame.intent != SemanticIntent.CAPABILITY_QUERY) {
-            turn.semanticSource = SemanticSource.LLM_FALLBACK.name
-            return null
-        }
-        if (frame.operation != SemanticOperation.UNKNOWN && frame.operation !in READ_ONLY_OPERATIONS) {
-            turn.semanticSource = SemanticSource.LLM_FALLBACK.name
-            return null
-        }
-        val domain = frame.domains.singleOrNull()
-        if (domain == null) {
-            turn.semanticSource = SemanticSource.LLM_FALLBACK.name
-            return null
-        }
+    }
 
-        val routed = routeSemanticCapability(domain, transcript, frame, previousFrame, LocalDateTime.now(), turn)
-        turn.semanticSource = if (routed != null) SemanticSource.LOCAL_INTERPRETER.name else SemanticSource.LLM_FALLBACK.name
-        return routed
+    /**
+     * The single entry point [handle] actually calls: owns the FULL
+     * disposition of [runSemanticPath]'s result, so legacy keyword routing
+     * ([runCapabilityFastPath]/[runFollowUpFastPath]) is reachable from
+     * exactly one place — the [SemanticRouteResult.LegacyFallback] branch —
+     * never as a side effect of a valid-but-delegated frame. Always returns
+     * a real answer: [SemanticRouteResult.HandoffToLlm] and a legacy miss
+     * both fall through to [runBrainLoop], which never returns null.
+     */
+    private suspend fun resolveSemanticRoute(transcript: String, turn: TurnState): String {
+        return when (val result = runSemanticPath(transcript, turn)) {
+            is SemanticRouteResult.Answer -> result.text
+            SemanticRouteResult.HandoffToLlm -> runBrainLoop(transcript, turn)
+            SemanticRouteResult.LegacyFallback -> {
+                val legacy = runCapabilityFastPath(transcript, turn) ?: runFollowUpFastPath(transcript, turn)
+                if (legacy != null) {
+                    // § FASE 2A.9.1 release invariant, checked at runtime as
+                    // a defensive canary — see EngineTurnDiagnostics'
+                    // `legacyInvokedAfterValidSemantic` doc comment. This can
+                    // only ever read false: `turn.semanticValid` is set to
+                    // true nowhere upstream of a LegacyFallback return in
+                    // runSemanticPath (both LegacyFallback branches return
+                    // before that line executes).
+                    if (turn.semanticValid) turn.legacyInvokedAfterValidSemantic = true
+                    legacy
+                } else {
+                    runBrainLoop(transcript, turn)
+                }
+            }
+        }
     }
 
     /**
@@ -1020,6 +1080,13 @@ class ConversationalJarvisEngine @Inject constructor(
         /** Set by [runSemanticPath] for a MULTI_SOURCE_REASONING frame — read once by [runBrainLoop]'s round 1. */
         var semanticMultiSourceDomains: Set<ToolFamily> = emptySet()
 
+        // § FASE 2A.9.1 diagnostica richiesta esplicitamente — see
+        // EngineTurnDiagnostics' own doc comment for both fields' contract.
+        /** "ANSWER"/"HANDOFF_LLM"/"LEGACY_FALLBACK" — [runSemanticPath]'s own disposition of this turn, set on every branch before it returns. */
+        var semanticDisposition: String? = null
+        /** Release invariant: must always read false — see [resolveSemanticRoute]'s own doc comment for why this can only ever be a defensive canary, never a real trigger. */
+        var legacyInvokedAfterValidSemantic = false
+
         /** Never includes the reply text itself — only counts/booleans, per [EngineTurnDiagnostics]'s contract. */
         fun toDiagnostics(): EngineTurnDiagnostics {
             val now = System.currentTimeMillis()
@@ -1070,6 +1137,8 @@ class ConversationalJarvisEngine @Inject constructor(
                 semanticConfidence = semanticConfidence,
                 semanticFailureReason = semanticFailureReason,
                 semanticLatencyMs = semanticLatencyMs,
+                semanticDisposition = semanticDisposition,
+                legacyInvokedAfterValidSemantic = legacyInvokedAfterValidSemantic,
             )
         }
     }
