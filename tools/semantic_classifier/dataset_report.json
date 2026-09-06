@@ -1,0 +1,29 @@
+{
+  "total_examples": 3808,
+  "duplicates_removed": 1,
+  "distinct_template_families": 64,
+  "hard_negative_count": 745,
+  "hard_negative_percentage": 19.56,
+  "rows_per_split": {
+    "train": 1944,
+    "validation": 655,
+    "test": 511,
+    "blind": 698
+  },
+  "intent_distribution": {
+    "CAPABILITY_QUERY": 1793,
+    "DIRECT_COMMAND": 223,
+    "KNOWLEDGE_QUERY": 652,
+    "CONVERSATION": 538,
+    "CLARIFICATION": 265,
+    "MULTI_SOURCE_REASONING": 269,
+    "UNKNOWN": 68
+  },
+  "domain_distribution": {
+    "WEATHER": 927,
+    "HEALTH": 524,
+    "AGENDA": 749,
+    "DEVICE_INFO": 415,
+    "KNOWLEDGE": 652
+  }
+}

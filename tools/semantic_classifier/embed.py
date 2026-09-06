@@ -16,9 +16,73 @@ abbiano significato semantico reale.
 from __future__ import annotations
 
 import hashlib
+import json
+import os
 import numpy as np
 
 FAKE_EMBEDDING_DIM = 64
+
+
+class EmbeddingCache:
+    """
+    § FASE 2A.11 ADDENDUM §5 — on-disk embedding cache so `dataset ->
+    embedding cache -> train heads` never re-invokes the (real, slow, and in
+    a real environment GPU/CPU-bound) EmbeddingGemma model once per training
+    epoch — embeddings are computed once per (text, model_id) pair and
+    reused by every downstream script (train_heads.py/calibrate.py/
+    report.py/export.py).
+
+    Keyed by sha256(model_id + "\\0" + text) so switching model/tokenizer
+    versions never silently reuses a stale embedding from a different model.
+    Stored as one JSON file mapping key -> list[float] — simple and
+    inspectable; not optimized for millions of rows, which this project's
+    corpus size (thousands, not millions) never approaches.
+    """
+
+    def __init__(self, path: str, model_id: str):
+        self.path = path
+        self.model_id = model_id
+        self._data: dict[str, list[float]] = {}
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as f:
+                self._data = json.load(f)
+        self._dirty = False
+
+    def _key(self, text: str) -> str:
+        return hashlib.sha256(f"{self.model_id}\0{text}".encode("utf-8")).hexdigest()
+
+    def get(self, text: str) -> np.ndarray | None:
+        row = self._data.get(self._key(text))
+        return np.asarray(row) if row is not None else None
+
+    def put(self, text: str, vec: np.ndarray) -> None:
+        self._data[self._key(text)] = vec.tolist()
+        self._dirty = True
+
+    def save(self) -> None:
+        if not self._dirty:
+            return
+        with open(self.path, "w", encoding="utf-8") as f:
+            json.dump(self._data, f)
+        self._dirty = False
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+
+def cached_embedder(embed_fn, cache: EmbeddingCache):
+    """Wraps any embed_fn (fake or real) with the on-disk cache above —
+    same call signature (`text -> np.ndarray`), transparent to callers."""
+
+    def embed(text: str) -> np.ndarray:
+        cached = cache.get(text)
+        if cached is not None:
+            return cached
+        vec = embed_fn(text)
+        cache.put(text, vec)
+        return vec
+
+    return embed
 
 
 def fake_embedder():

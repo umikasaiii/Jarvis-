@@ -56,6 +56,7 @@ def calibrate_intent_thresholds(
     embed_fn,
     confidence_grid=tuple(round(x, 2) for x in np.arange(0.20, 0.71, 0.05)),
     margin_grid=tuple(round(x, 2) for x in np.arange(0.02, 0.21, 0.02)),
+    false_accept_penalty: float = 3.0,
 ) -> dict:
     """
     Grid-searches (intentConfidenceMin, intentMarginMin) over the validation
@@ -63,9 +64,11 @@ def calibrate_intent_thresholds(
     correctly classified (top-1 intent matches AND passes both thresholds)
     vs. wrongly forced OOD (correct top-1 but rejected by thresholds) vs.
     wrongly accepted (top-1 wrong but passes thresholds anyway). Picks the
-    pair maximizing (accepted_correct - accepted_wrong), a proxy for the
-    spec's "una falsa classificazione grounded e peggio di un handoff" —
-    wrong-accept is penalized equally to a missed accept, not just counted.
+    pair maximizing `accepted_correct - false_accept_penalty * accepted_wrong`
+    — § ADDENDUM §7/§9: "una richiesta OOD classificata erroneamente come
+    HEALTH/AGENDA/WEATHER è considerata più grave di un HandoffToLlm", so a
+    wrong accept costs `false_accept_penalty`x a missed accept, not 1x —
+    explicitly biases calibration toward capability PRECISION over recall.
     """
     train_protos = corpus.train()
     val_protos = corpus.validation()
@@ -88,7 +91,7 @@ def calibrate_intent_thresholds(
                 accepted_wrong += 1
             elif not accept and correct:
                 rejected_correct += 1
-        objective = accepted_correct - accepted_wrong
+        objective = accepted_correct - false_accept_penalty * accepted_wrong
         candidate = {
             "intentConfidenceMin": conf_min,
             "intentMarginMin": margin_min,
@@ -102,28 +105,82 @@ def calibrate_intent_thresholds(
     return best
 
 
+def calibrate_domain_threshold(
+    corpus: Corpus,
+    embed_fn,
+    threshold_grid=tuple(round(x, 2) for x in np.arange(0.20, 0.81, 0.02)),
+) -> dict:
+    """
+    § ADDENDUM §6/§7 — grid-searches a single shared `domainSimilarityMin`
+    (the per-label sigmoid-equivalent threshold the centroid classifier
+    uses) over the validation split, maximizing domain-level micro-F1 —
+    calibrated, not the arbitrary 0.40 this file previously hardcoded.
+    A per-domain threshold would fit each label's own separation better, but
+    a single shared value is already a real calibration (not invented) and
+    keeps the search space (and the exported `ClassifierThresholds` shape,
+    which the Kotlin side already expects as ONE `domainSimilarityMin`)
+    unchanged — a per-domain refinement is documented as a further
+    improvement in the final report, not silently skipped.
+    """
+    train_protos = corpus.train()
+    val_protos = corpus.validation()
+    domains = sorted({d for p in train_protos for d in p.domains})
+    centroids: dict[str, np.ndarray] = {}
+    for d in domains:
+        vecs = [embed_fn(p.text) for p in train_protos if d in p.domains]
+        if vecs:
+            centroids[d] = np.mean(np.stack(vecs), axis=0)
+
+    val_scored = []
+    for p in val_protos:
+        q = embed_fn(p.text)
+        sims = {}
+        for d, c in centroids.items():
+            sims[d] = float(np.dot(q, c) / (np.linalg.norm(q) * np.linalg.norm(c) + 1e-9))
+        val_scored.append((set(p.domains), sims))
+
+    best = None
+    for thresh in threshold_grid:
+        tp = fp = fn = 0
+        for actual_domains, sims in val_scored:
+            predicted = {d for d, s in sims.items() if s >= thresh}
+            tp += len(predicted & actual_domains)
+            fp += len(predicted - actual_domains)
+            fn += len(actual_domains - predicted)
+        precision = tp / (tp + fp) if (tp + fp) else 0.0
+        recall = tp / (tp + fn) if (tp + fn) else 0.0
+        f1 = 2 * precision * recall / (precision + recall) if (precision + recall) else 0.0
+        candidate = {"domainSimilarityMin": float(thresh), "precision": precision, "recall": recall, "f1": f1}
+        if best is None or f1 > best["f1"]:
+            best = candidate
+    return best
+
+
 if __name__ == "__main__":
     import argparse
 
-    from dataset import load_corpus
+    from dataset import TRAINING_CORPUS_PATH, load_corpus
     from embed import fake_embedder
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--fake", action="store_true")
+    parser.add_argument("--corpus", default=TRAINING_CORPUS_PATH)
     parser.add_argument("--out", default=None)
     args = parser.parse_args()
     if not args.fake:
         raise SystemExit("only --fake (self-test) mode is runnable in this environment — see embed.py's honesty note")
 
-    corpus = load_corpus()
+    corpus = load_corpus(args.corpus)
     embed_fn = fake_embedder()
-    result = calibrate_intent_thresholds(corpus, embed_fn)
-    print(json.dumps(result, indent=2))
+    intent_result = calibrate_intent_thresholds(corpus, embed_fn)
+    print("intent thresholds:", json.dumps(intent_result, indent=2))
+    domain_result = calibrate_domain_threshold(corpus, embed_fn)
+    print("domain threshold:", json.dumps(domain_result, indent=2))
 
     thresholds = {
-        "intentConfidenceMin": result["intentConfidenceMin"],
-        "intentMarginMin": result["intentMarginMin"],
-        "domainSimilarityMin": 0.40,
+        "intentConfidenceMin": intent_result["intentConfidenceMin"],
+        "intentMarginMin": intent_result["intentMarginMin"],
+        "domainSimilarityMin": domain_result["domainSimilarityMin"],
         "operationConfidenceMin": 0.40,
         "referenceModeConfidenceMin": 0.40,
     }

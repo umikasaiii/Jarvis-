@@ -1,0 +1,6335 @@
+{
+ "prototypes": [
+  {
+   "text": "Ci sarà vento forte oggi?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "wx_wind",
+   "category": "WEATHER",
+   "hardNegative": false
+  },
+  {
+   "text": "Ci sarà vento forte la settimana prossima?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "wx_wind",
+   "category": "WEATHER",
+   "hardNegative": false
+  },
+  {
+   "text": "Ci sarà vento forte giovedì pomeriggio?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "wx_wind",
+   "category": "WEATHER",
+   "hardNegative": false
+  },
+  {
+   "text": "Ci sara vento forte questo weekend?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "wx_wind",
+   "category": "WEATHER",
+   "hardNegative": false
+  },
+  {
+   "text": "tira vento lunedì",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "wx_wind",
+   "category": "WEATHER",
+   "hardNegative": false
+  },
+  {
+   "text": "Tira vento givoedì pomeriggio?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "wx_wind",
+   "category": "WEATHER",
+   "hardNegative": false
+  },
+  {
+   "text": "Tira vento venerdì",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "wx_wind",
+   "category": "WEATHER",
+   "hardNegative": false
+  },
+  {
+   "text": "ci sara vento forte tra una settimana",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "wx_wind",
+   "category": "WEATHER",
+   "hardNegative": false
+  },
+  {
+   "text": "Ci sarà vento forte sabato prossimo?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "wx_wind",
+   "category": "WEATHER",
+   "hardNegative": false
+  },
+  {
+   "text": "Tira vento sabato prossimo?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "wx_wind",
+   "category": "WEATHER",
+   "hardNegative": false
+  },
+  {
+   "text": "Tira vento martedì?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "wx_wind",
+   "category": "WEATHER",
+   "hardNegative": false
+  },
+  {
+   "text": "Ci sara vento forte lunedi prossimo?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "wx_wind",
+   "category": "WEATHER",
+   "hardNegative": false
+  },
+  {
+   "text": "ci sarà vento forte dopodomani",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "wx_wind",
+   "category": "WEATHER",
+   "hardNegative": false
+  },
+  {
+   "text": "Ci sarà venot forte lunedì?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "wx_wind",
+   "category": "WEATHER",
+   "hardNegative": false
+  },
+  {
+   "text": "Ci sarà vento",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "wx_wind",
+   "category": "WEATHER",
+   "hardNegative": false
+  },
+  {
+   "text": "tira vento dopodomani",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "wx_wind",
+   "category": "WEATHER",
+   "hardNegative": false
+  },
+  {
+   "text": "Tira vento sabato?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "wx_wind",
+   "category": "WEATHER",
+   "hardNegative": false
+  },
+  {
+   "text": "Tira vento domani mattina?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "wx_wind",
+   "category": "WEATHER",
+   "hardNegative": false
+  },
+  {
+   "text": "Tira vento il weekend prossimo?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "wx_wind",
+   "category": "WEATHER",
+   "hardNegative": false
+  },
+  {
+   "text": "Tira vento domani sera?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "wx_wind",
+   "category": "WEATHER",
+   "hardNegative": false
+  },
+  {
+   "text": "tira vento venerdì sera",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "wx_wind",
+   "category": "WEATHER",
+   "hardNegative": false
+  },
+  {
+   "text": "Ci sarà vento forte tra due goirni?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "wx_wind",
+   "category": "WEATHER",
+   "hardNegative": false
+  },
+  {
+   "text": "Tira vento oggi",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "wx_wind",
+   "category": "WEATHER",
+   "hardNegative": false
+  },
+  {
+   "text": "ci sara vento forte domani mattina",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "wx_wind",
+   "category": "WEATHER",
+   "hardNegative": false
+  },
+  {
+   "text": "Ci sarà vento forte mercoledì?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "wx_wind",
+   "category": "WEATHER",
+   "hardNegative": false
+  },
+  {
+   "text": "Ci sarà vento forte domani sera?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "wx_wind",
+   "category": "WEATHER",
+   "hardNegative": false
+  },
+  {
+   "text": "Tira vento tra una settimana?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "wx_wind",
+   "category": "WEATHER",
+   "hardNegative": false
+  },
+  {
+   "text": "Ci sara vento forte venerdi sera?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "wx_wind",
+   "category": "WEATHER",
+   "hardNegative": false
+  },
+  {
+   "text": "tira vento stasera",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "wx_wind",
+   "category": "WEATHER",
+   "hardNegative": false
+  },
+  {
+   "text": "Tira vento qeusto weekend?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "wx_wind",
+   "category": "WEATHER",
+   "hardNegative": false
+  },
+  {
+   "text": "ci sara vento forte domani",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "wx_wind",
+   "category": "WEATHER",
+   "hardNegative": false
+  },
+  {
+   "text": "Tira vento tra due giorni?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "wx_wind",
+   "category": "WEATHER",
+   "hardNegative": false
+  },
+  {
+   "text": "Tira vento lunedì prossimo?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "wx_wind",
+   "category": "WEATHER",
+   "hardNegative": false
+  },
+  {
+   "text": "Ci sarà vento forte venerdì?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "wx_wind",
+   "category": "WEATHER",
+   "hardNegative": false
+  },
+  {
+   "text": "Tira vento mercoledi?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "wx_wind",
+   "category": "WEATHER",
+   "hardNegative": false
+  },
+  {
+   "text": "ci sarà vento forte stasera",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "wx_wind",
+   "category": "WEATHER",
+   "hardNegative": false
+  },
+  {
+   "text": "Tira venot domenica?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "wx_wind",
+   "category": "WEATHER",
+   "hardNegative": false
+  },
+  {
+   "text": "Tira vento stamattina",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "wx_wind",
+   "category": "WEATHER",
+   "hardNegative": false
+  },
+  {
+   "text": "tira vento la settimana prossima",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "wx_wind",
+   "category": "WEATHER",
+   "hardNegative": false
+  },
+  {
+   "text": "Ci sarà vento forte martedì?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "wx_wind",
+   "category": "WEATHER",
+   "hardNegative": false
+  },
+  {
+   "text": "Tira vento domani?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "wx_wind",
+   "category": "WEATHER",
+   "hardNegative": false
+  },
+  {
+   "text": "Ci sarà vento forte il weekend prossimo?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "wx_wind",
+   "category": "WEATHER",
+   "hardNegative": false
+  },
+  {
+   "text": "Ci sara vento forte sabato?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "wx_wind",
+   "category": "WEATHER",
+   "hardNegative": false
+  },
+  {
+   "text": "Che dati di salute risultano stamattina presto?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "HEALTH"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "hl_general_wellbeing",
+   "category": "HEALTH",
+   "hardNegative": false
+  },
+  {
+   "text": "Come sto messo a livello di salute nell'ultima settimana?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "HEALTH"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "hl_general_wellbeing",
+   "category": "HEALTH",
+   "hardNegative": false
+  },
+  {
+   "text": "Come stanno andando i miei parametri di salute in questi giorni?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "HEALTH"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "hl_general_wellbeing",
+   "category": "HEALTH",
+   "hardNegative": false
+  },
+  {
+   "text": "Che dati di salute risultano in media questa settimana?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "HEALTH"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "hl_general_wellbeing",
+   "category": "HEALTH",
+   "hardNegative": false
+  },
+  {
+   "text": "come sto messo a livello di salute in questi giorni",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "HEALTH"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "hl_general_wellbeing",
+   "category": "HEALTH",
+   "hardNegative": false
+  },
+  {
+   "text": "Come satnno andando i miei parametri di salute nell'ultima settimana?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "HEALTH"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "hl_general_wellbeing",
+   "category": "HEALTH",
+   "hardNegative": false
+  },
+  {
+   "text": "Come stanno andando i miei parametri di salute",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "HEALTH"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "hl_general_wellbeing",
+   "category": "HEALTH",
+   "hardNegative": false
+  },
+  {
+   "text": "come stanno andando i miei parametri di salute in media questa settimana",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "HEALTH"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "hl_general_wellbeing",
+   "category": "HEALTH",
+   "hardNegative": false
+  },
+  {
+   "text": "Che dati di salute risultano negli ultimi giorni?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "HEALTH"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "hl_general_wellbeing",
+   "category": "HEALTH",
+   "hardNegative": false
+  },
+  {
+   "text": "Come sto messo a livello di salute stanotte?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "HEALTH"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "hl_general_wellbeing",
+   "category": "HEALTH",
+   "hardNegative": false
+  },
+  {
+   "text": "Come stanno andando i miei parametri di salute questa settimana?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "HEALTH"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "hl_general_wellbeing",
+   "category": "HEALTH",
+   "hardNegative": false
+  },
+  {
+   "text": "Che dati di salute risultano in questi giorni?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "HEALTH"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "hl_general_wellbeing",
+   "category": "HEALTH",
+   "hardNegative": false
+  },
+  {
+   "text": "come stanno andando i miei parametri di salute stanotte",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "HEALTH"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "hl_general_wellbeing",
+   "category": "HEALTH",
+   "hardNegative": false
+  },
+  {
+   "text": "Come sto messo a livello di slaute stamattina presto?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "HEALTH"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "hl_general_wellbeing",
+   "category": "HEALTH",
+   "hardNegative": false
+  },
+  {
+   "text": "come sto messo a livello di salute in media questa settimana",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "HEALTH"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "hl_general_wellbeing",
+   "category": "HEALTH",
+   "hardNegative": false
+  },
+  {
+   "text": "Come stanno andando i miei parametri di salute negli ultimi giorni?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "HEALTH"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "hl_general_wellbeing",
+   "category": "HEALTH",
+   "hardNegative": false
+  },
+  {
+   "text": "Che dati di salute risultano stanotte?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "HEALTH"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "hl_general_wellbeing",
+   "category": "HEALTH",
+   "hardNegative": false
+  },
+  {
+   "text": "Che dati di salute risultano nell'ultima settimana?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "HEALTH"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "hl_general_wellbeing",
+   "category": "HEALTH",
+   "hardNegative": false
+  },
+  {
+   "text": "Come sto messo a livello di salute negli ultimi giorni?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "HEALTH"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "hl_general_wellbeing",
+   "category": "HEALTH",
+   "hardNegative": false
+  },
+  {
+   "text": "che dati di salute risultano ieri notte",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "HEALTH"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "hl_general_wellbeing",
+   "category": "HEALTH",
+   "hardNegative": false
+  },
+  {
+   "text": "Come sto messo a livello di salute quetsa settimana?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "HEALTH"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "hl_general_wellbeing",
+   "category": "HEALTH",
+   "hardNegative": false
+  },
+  {
+   "text": "Come sto messo a livello di salute",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "HEALTH"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "hl_general_wellbeing",
+   "category": "HEALTH",
+   "hardNegative": false
+  },
+  {
+   "text": "che dati di salute risultano questa settimana",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "HEALTH"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "hl_general_wellbeing",
+   "category": "HEALTH",
+   "hardNegative": false
+  },
+  {
+   "text": "Ho la riunione confermata sabato?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "AGENDA"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ag_specific_check",
+   "category": "AGENDA",
+   "hardNegative": false
+  },
+  {
+   "text": "Ho la riunione confermata domani?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "AGENDA"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ag_specific_check",
+   "category": "AGENDA",
+   "hardNegative": false
+  },
+  {
+   "text": "Ho la riunione confermata venerdì?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "AGENDA"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ag_specific_check",
+   "category": "AGENDA",
+   "hardNegative": false
+  },
+  {
+   "text": "È ancora segnato l'appuntamento dal dentista dopodomani?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "AGENDA"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ag_specific_check",
+   "category": "AGENDA",
+   "hardNegative": false
+  },
+  {
+   "text": "ho la riunione confermata martedì",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "AGENDA"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ag_specific_check",
+   "category": "AGENDA",
+   "hardNegative": false
+  },
+  {
+   "text": "Ho la irunione confermata giovedì pomeriggio?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "AGENDA"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ag_specific_check",
+   "category": "AGENDA",
+   "hardNegative": false
+  },
+  {
+   "text": "È ancora segnato l'appuntamento dal dentista",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "AGENDA"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ag_specific_check",
+   "category": "AGENDA",
+   "hardNegative": false
+  },
+  {
+   "text": "ho la riunione confermata lunedi prossimo",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "AGENDA"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ag_specific_check",
+   "category": "AGENDA",
+   "hardNegative": false
+  },
+  {
+   "text": "È ancora segnato l'appuntamento dal dentista domani mattina?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "AGENDA"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ag_specific_check",
+   "category": "AGENDA",
+   "hardNegative": false
+  },
+  {
+   "text": "È ancora segnato l'appuntamento dal dentista sabato?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "AGENDA"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ag_specific_check",
+   "category": "AGENDA",
+   "hardNegative": false
+  },
+  {
+   "text": "È ancora segnato l'appuntamento dal dentista la settimana prossima?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "AGENDA"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ag_specific_check",
+   "category": "AGENDA",
+   "hardNegative": false
+  },
+  {
+   "text": "È ancora segnato l'appuntamento dal dentista mercoledi?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "AGENDA"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ag_specific_check",
+   "category": "AGENDA",
+   "hardNegative": false
+  },
+  {
+   "text": "è ancora segnato l'appuntamento dal dentista domani",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "AGENDA"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ag_specific_check",
+   "category": "AGENDA",
+   "hardNegative": false
+  },
+  {
+   "text": "È ancora segnato l'appuntamento dal dentista giovedì pomreiggio?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "AGENDA"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ag_specific_check",
+   "category": "AGENDA",
+   "hardNegative": false
+  },
+  {
+   "text": "È ancora segnato l'appuntamento dal dentista il",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "AGENDA"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ag_specific_check",
+   "category": "AGENDA",
+   "hardNegative": false
+  },
+  {
+   "text": "ho la riunione confermata oggi",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "AGENDA"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ag_specific_check",
+   "category": "AGENDA",
+   "hardNegative": false
+  },
+  {
+   "text": "Ho la riunione confermata tra una settimana?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "AGENDA"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ag_specific_check",
+   "category": "AGENDA",
+   "hardNegative": false
+  },
+  {
+   "text": "Ho la riunione confermata dopodomani?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "AGENDA"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ag_specific_check",
+   "category": "AGENDA",
+   "hardNegative": false
+  },
+  {
+   "text": "È ancora segnato l'appuntamento dal dentista martedì?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "AGENDA"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ag_specific_check",
+   "category": "AGENDA",
+   "hardNegative": false
+  },
+  {
+   "text": "Ho la riunione confermata tra due giorni?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "AGENDA"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ag_specific_check",
+   "category": "AGENDA",
+   "hardNegative": false
+  },
+  {
+   "text": "è ancora segnato l'appuntamento dal dentista lunedì prossimo",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "AGENDA"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ag_specific_check",
+   "category": "AGENDA",
+   "hardNegative": false
+  },
+  {
+   "text": "Ho la riunioen confermata domenica?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "AGENDA"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ag_specific_check",
+   "category": "AGENDA",
+   "hardNegative": false
+  },
+  {
+   "text": "Ho la riunione confermata",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "AGENDA"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ag_specific_check",
+   "category": "AGENDA",
+   "hardNegative": false
+  },
+  {
+   "text": "e ancora segnato l'appuntamento dal dentista tra una settimana",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "AGENDA"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ag_specific_check",
+   "category": "AGENDA",
+   "hardNegative": false
+  },
+  {
+   "text": "Ho la riunione confermata stasera?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "AGENDA"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ag_specific_check",
+   "category": "AGENDA",
+   "hardNegative": false
+  },
+  {
+   "text": "È ancora segnato l'appuntamento dal dentista stasera?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "AGENDA"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ag_specific_check",
+   "category": "AGENDA",
+   "hardNegative": false
+  },
+  {
+   "text": "Ho la riunione confermata domani sera?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "AGENDA"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ag_specific_check",
+   "category": "AGENDA",
+   "hardNegative": false
+  },
+  {
+   "text": "È ancora segnato l'appuntamento dal dentista stamattina?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "AGENDA"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ag_specific_check",
+   "category": "AGENDA",
+   "hardNegative": false
+  },
+  {
+   "text": "ho la riunione confermata lunedì",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "AGENDA"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ag_specific_check",
+   "category": "AGENDA",
+   "hardNegative": false
+  },
+  {
+   "text": "È ancora segnato l'appuntaemnto dal dentista domani sera?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "AGENDA"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ag_specific_check",
+   "category": "AGENDA",
+   "hardNegative": false
+  },
+  {
+   "text": "e ancora segnato l'appuntamento dal dentista tra due giorni",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "AGENDA"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ag_specific_check",
+   "category": "AGENDA",
+   "hardNegative": false
+  },
+  {
+   "text": "Ho la riunione confermata mercoledì?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "AGENDA"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ag_specific_check",
+   "category": "AGENDA",
+   "hardNegative": false
+  },
+  {
+   "text": "È ancora segnato l'appuntamento dal dentista venerdì?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "AGENDA"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ag_specific_check",
+   "category": "AGENDA",
+   "hardNegative": false
+  },
+  {
+   "text": "Ho la riunione confermata venerdì sera?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "AGENDA"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ag_specific_check",
+   "category": "AGENDA",
+   "hardNegative": false
+  },
+  {
+   "text": "Ho la riunione confermata stamattina?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "AGENDA"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ag_specific_check",
+   "category": "AGENDA",
+   "hardNegative": false
+  },
+  {
+   "text": "ho la riunione confermata la settimana prossima",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "AGENDA"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ag_specific_check",
+   "category": "AGENDA",
+   "hardNegative": false
+  },
+  {
+   "text": "Ho la riunione confermata sabato prossmio?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "AGENDA"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ag_specific_check",
+   "category": "AGENDA",
+   "hardNegative": false
+  },
+  {
+   "text": "È ancora segnato l'appuntamento dal",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "AGENDA"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ag_specific_check",
+   "category": "AGENDA",
+   "hardNegative": false
+  },
+  {
+   "text": "e ancora segnato l'appuntamento dal dentista oggi",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "AGENDA"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ag_specific_check",
+   "category": "AGENDA",
+   "hardNegative": false
+  },
+  {
+   "text": "Ho la riunione confermata il weekend prossimo?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "AGENDA"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ag_specific_check",
+   "category": "AGENDA",
+   "hardNegative": false
+  },
+  {
+   "text": "È ancora segnato l'appuntamento dal dentista domenica?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "AGENDA"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ag_specific_check",
+   "category": "AGENDA",
+   "hardNegative": false
+  },
+  {
+   "text": "È ancora segnato l'appuntamento dal dentista sabato prossimo?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "AGENDA"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ag_specific_check",
+   "category": "AGENDA",
+   "hardNegative": false
+  },
+  {
+   "text": "È ancora segnato l'appuntamento dal dentista questo weekend?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "AGENDA"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ag_specific_check",
+   "category": "AGENDA",
+   "hardNegative": false
+  },
+  {
+   "text": "Che modello di telefono è questo?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "Ascolta, che modello di telefono è questo?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "A proposito, che dispositivo sto usando esattamente?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "Dimmi un po', che telefono ho in mano di preciso?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "senti, che modello di telefono è questo? dai",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "Senti, che teelfono ho in mano di preciso? dai",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "Senti, che modello di telefono",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "scusa, che telefono ho in mano di preciso? per favore",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "Che modello di telefono è questo? grazie",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "Piuttosto, che modello di telefono è questo? grazie",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "Ascolta, che modello di telefono è questo? per favore",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "Che dispositivo sto usando esattamente? dai",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "dimmi un po', che telefono ho in mano di preciso? grazie",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "Dimmi un po', che telefoon ho in mano di preciso?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "A proposito, che telefono ho in mano di",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "che telefono ho in mano di preciso",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "Che telefono ho in mano di preciso?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "Scusa, che dispositivo sto usando esattamente? grazie",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "Che dispositivo sto usando esattamente?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "senti, che telefono ho in mano di preciso",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "Ok, che dispositivo sto usanod esattamente?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "Senti, che modello di telefono è questo?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "ascolta, che dispositivo sto usando esattamente? grazie",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "Scusa, che telefono ho in mano di preciso?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "Comunque, che telefono ho in mano di preciso? dai",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "Senti, che dispositivo sto usando esattamente? per favore",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "Ascolta, che telefono ho in mano di preciso? dai",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "comunque, che dispositivo sto usando esattamente",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "Senti, che telefono ho in mano di precsio? per favore",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "Che modello di telefono",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "Piuttosto, che modello di telefono è questo?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "Scusa, che dispositivo sto usando esattamente?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "Dimmi un po', che dispositivo sto usando esattamente? dai",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "ok, che modello di telefono è questo",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "Ok, che modello di telefono è qeusto?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "A proposito, che telefono ho in mano",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "comunque, che dispositivo sto usando esattamente? per favore",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "Comunque, che dispositivo sto usando esattamente?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "Che dispositivo sto usando esattamente? per favore",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "Comunque, che dispositivo sto usando esattamente? dai",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "ok, che dispositivo sto usando esattamente",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "Che telefono ho in mano di precios? dai",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "Scusa, che modello di telefono",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "scusa, che dispositivo sto usando esattamente",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "A proposito, che telefono ho in mano di preciso? dai",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "Comunque, che telefono ho in mano di preciso? grazie",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "Comunque, che telefono ho in mano di preciso? per favore",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "scusa, che dispositivo sto usando esattamente? per favore",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "Comunque, che modello di telfeono è questo?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "piuttosto, che dispositivo sto usando esattamente? per favore",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "Che telefono ho in mano di preciso? grazie",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "Piuttosto, che dispositivo sto usando esattamente? grazie",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "Ok, che dispositivo sto usando esattamente?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "Che modello di telefono e questo? dai",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "comunque, che telefono ho in mano di preciso",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "Senti, che dispositiov sto usando esattamente?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "Scusa, che modello di telefono è",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "piuttosto, che dispositivo sto usando esattamente",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "Ascolta, che dispositivo sto usando esattamente?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "Piuttosto, che telefono ho in mano di preciso?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "Senti, che modello di telefono è questo? grazie",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "Piuttosto, che telefono ho in mano di preciso? per favore",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "piuttosto, che telefono ho in mano di preciso",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "Comunque, che omdello di telefono è questo? dai",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "A proposito, che telefono ho in mano di preciso?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "dimmi un po', che modello di telefono e questo",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "Che modello di telefono è questo? per favore",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "A proposito, che modello di telefono è questo?",
+   "intent": "CAPABILITY_QUERY",
+   "domains": [
+    "DEVICE_INFO"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "dv_model",
+   "category": "DEVICE_INFO",
+   "hardNegative": false
+  },
+  {
+   "text": "Come si formano le nuvole?",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "Comunque, cos'è un anticiclone? grazie",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "Dimmi un po', come si formano le nuvole? grazie",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "Perche d'estate fa piu caldo che d'inverno? dai",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "ok, cos'è un anticiclone",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "Piuttsoto, come si formano le nuvole?",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "Comunque, come si formano",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "senti, come si formano le nuvole? dai",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "Comunque, cos'è un anticiclone?",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "Ok, perché d'estate fa più caldo che d'inverno? per favore",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "Dimmi un po', perché d'estate fa più caldo che d'inverno?",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "Senti, perche d'estate fa piu caldo che d'inverno?",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "perché d'estate fa più caldo che d'inverno",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "Dimmi un po', come si foramno le nuvole?",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "Scusa, perché d'estate fa più caldo che",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "scusa, cos'e un anticiclone",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "Piuttosto, perché d'estate fa più caldo che d'inverno?",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "Ok, cos'è un anticiclone?",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "Ok, cos'è un anticiclone? grazie",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "dimmi un po', cos'è un anticiclone? per favore",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "Perché d'estate fa più calod che d'inverno? per favore",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "A proposito, come si formano",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "ascolta, cos'e un anticiclone? per favore",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "A proposito, cos'è un anticiclone? grazie",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "Comunque, perché d'estate fa più caldo che d'inverno? per favore",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "A proposito, cos'è un anticiclone? per favore",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "Scusa, perche d'estate fa piu caldo che d'inverno?",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "ascolta, come si formano le nuvole? dai",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "Piuttosto, come si fromano le nuvole? per favore",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "Dimmi un po', perché d'estate fa più caldo",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "comunque, come si formano le nuvole? per favore",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "A proposito, cos'è un anticiclone?",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "Dimmi un po', come si formano le nuvole? dai",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "Senti, perché d'estate fa più caldo che d'inverno? per favore",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "Piuttosto, cos'e un anticiclone?",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "senti, perché d'estate fa più caldo che d'inverno? dai",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "Piuttosto, perché d'setate fa più caldo che d'inverno? dai",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "Scusa, come si formano",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "scusa, perche d'estate fa piu caldo che d'inverno? per favore",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "Senti, cos'è un anticiclone?",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "Dimmi un po', come si formano le nuvole?",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "Come si formano le nuvole? dai",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "piuttosto, perché d'estate fa più caldo che d'inverno? grazie",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "Ok, cosè' un anticiclone?",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "Cos'è un anticiclone?",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "ascolta, come si formano le nuvole",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "Ok, perché d'estate fa più caldo che d'inverno? dai",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "Come si formano le nuvole? per favore",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "Scusa, come si formano le nuvole?",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "dimmi un po', perché d'estate fa più caldo che d'inverno",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "Scusa, percéh d'estate fa più caldo che d'inverno? dai",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "Ok, come si formano",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "cos'e un anticiclone",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "Perché d'estate fa più caldo che d'inverno? grazie",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "A proposito, come si formano le nuvole? per favore",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "Dimmi un po', perché d'estate fa più caldo che d'inverno? dai",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "Comunque, come si formano le nuvole? dai",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "a proposito, perché d'estate fa più caldo che d'inverno? per favore",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "Comunque, come si formano le nuovle?",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "Perché d'estate fa più caldo",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "come si formano le nuvole",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "A proposito, perché d'estate fa più caldo che d'inverno?",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "Dimmi un po', perché d'estate fa più caldo che d'inverno? per favore",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "Scusa, cos'è un anticiclone?",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "Ok, perche d'estate fa piu caldo che d'inverno?",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "Perché 'destate fa più caldo che d'inverno? per favore",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "comunque, perche d'estate fa piu caldo che d'inverno? grazie",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "Come si formano le nuvole? grazie",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "Cos'è un anticiclone? dai",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "Ok, perché d'estate fa più caldo che d'inverno?",
+   "intent": "KNOWLEDGE_QUERY",
+   "domains": [
+    "KNOWLEDGE"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "kn_hn_weather",
+   "category": "KNOWLEDGE",
+   "hardNegative": true
+  },
+  {
+   "text": "Comunque, sono un po' stanco oggi, sinceramente",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Scusa, oggi sono un po' giù di morale",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Oggi sono un po' giù di morale",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Dimmi un po', sono un po' stanco oggi, sinceramente",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "ok, sono un po' stanco oggi, sinceramente",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "A propoisto, oggi sono un po' giù di morale",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Dimmi un po', oggi sono un po' giù di",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "ok, oggi sono un po' giu di morale",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Ascolta, oggi sono un po' giù di morale",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Ascolta, sono un po' stanco oggi, sinceramente grazie",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Scusa, oggi sono un po' giu di morale",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "a proposito, sono un po' stanco oggi, sinceramente",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "A proposito, sono un po' stanco ogig, sinceramente grazie",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Oggi sono un po' giù di",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "senti, oggi sono un po' giu di morale",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "A proposito, oggi sono un po' giù di morale per favore",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Piuttosto, oggi sono un po' giù di morale",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Scusa, sono un po' stanco oggi, sinceramente per favore",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "oggi sono un po' giù di morale",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Scusa, oggi sono un po' giù di moarle dai",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "ascolta, oggi sono un po' giu di morale",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Oggi sono un po' giù di morale dai",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Sono un po' stanco oggi, sinceramente",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Dimmi un po', oggi sono un po' giù di morale",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Scusa, oggi sono un po' giù di moarle grazie",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "sono un po' stanco oggi, sinceramente",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "A proposito, sono un po' stanco oggi, sinceramente",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Scusa, sono un po' stanco oggi, sinceramente dai",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "piuttosto, oggi sono un po' giù di morale grazie",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Dimmi un po', oggi sono un po' giù di morale per favore",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Comunque, oggi sono un po' giù di",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Ok, sono un po' stanco oggi, sinceramente",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Sono un po' stanco oggi, sinceramente grazie",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Comunque, sono un po' stanco oggi, sinceramente grazie",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Senti, oggi sono un po' giu di morale",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "sono un po' stanco oggi, sinceramente dai",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Oggi sono un po' giù di morale graize",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Senti, oggi sono un po' giù di morale",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "comunque, oggi sono un po' giu di morale",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Senti, sono un po' stanco oggi, sinceramente",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "A proposito, sono un po' stanco oggi, sinceramente per favore",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Comunque, oggi sono un po' giù di morale",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "ascolta, sono un po' stanco oggi, sinceramente",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Sono un po' stanco oggi, sniceramente grazie",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "senti, oggi sono un po' giu di morale dai",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Ascolta, sono un po' stanco oggi, sinceramente per favore",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Dimmi un po', sono un po' stanco oggi, sinceramente dai",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "scusa, sono un po' stanco oggi, sinceramente",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Ok, oggi sono un po' giù di morael",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Ok, oggi sono un po' giù di morale",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "oggi sono un po' giu di morale",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "A proposito, oggi sono un po' giù di morale dai",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "A proposito, oggi sono un po' giu di morale grazie",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "comunque, oggi sono un po' giù di morale",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Senti, sono un po' stacno oggi, sinceramente per favore",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Piuttosto, oggi sono un po' giù di",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Comunque, sono un po' stanco oggi, sinceramente per favore",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Ascolta, oggi sono un po' giù di morale dai",
+   "intent": "CONVERSATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cv_mood",
+   "category": "CONVERSATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Ok, puoi ripetere, non ho capito bene",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "A proposito, scusa, puoi ridirlo? grazie",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "A proposito, puoi ripetere, non ho capito bene dai",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Ok, puoi ripetere, non ho capito bene grazie",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "dimmi un po', non ho sentito bene, ripeti per favore",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "A proposito, scsua, puoi ridirlo?",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Comunque, puoi ripetere, non ho",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "comunque, scusa, puoi ridirlo",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Senti, scusa, puoi ridirlo? grazie",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Ascolta, non ho sentito bene, ripeti per favore",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Comunque, scusa, puoi ridirlo? grazie",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Comunque, scusa, puoi ridirlo?",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "non ho sentito bene, ripeti per favore",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "A proposito, sucsa, puoi ridirlo?",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Dimmi un po', puoi ripetere, non ho",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "scusa, puoi ridirlo",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Scusa, non ho sentito bene, ripeti per favore",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Ok, puoi ripetere, non ho capito bene per favore",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Puoi ripetere, non ho capito bene dai",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Ok, non ho sentito bene, ripeti per favore",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Senti, puoi ripeetre, non ho capito bene",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "A proposito, non ho sentito bene, ripeti per",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "scusa, puoi ridirlo? per favore",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Piuttosto, puoi ripetere, non ho capito bene grazie",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Piuttosto, scusa, puoi ridirlo?",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Dimmi un po', puoi ripetere, non ho capito bene",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Comunque, non ho sentito bene, ripeti per favore",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "dimmi un po', scusa, puoi ridirlo",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "cSusa, scusa, puoi ridirlo?",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "ok, puoi ripetere, non ho capito bene",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Puoi ripetere, non ho capito bene grazie",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Comunque, puoi ripetere, non ho capito bene dai",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Non ho sentito bene, ripeti per favore dai",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "piuttosto, scusa, puoi ridirlo",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Scsua, scusa, puoi ridirlo? grazie",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Scusa, puoi ripetere, non ho capito",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "a proposito, non ho sentito bene, ripeti per favore per favore",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Puoi ripetere, non ho capito bene",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "A proposito, scusa, puoi ridirlo?",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Ascolta, puoi ripetere, non ho capito bene",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "ok, non ho sentito bene, ripeti per favore",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Piuttosto, non ho sentito bene, ripeti per favoer grazie",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Ok, scusa, puoi",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "ok, puoi ripetere, non ho capito bene dai",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Scusa, scusa, puoi ridirlo?",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Senti, non ho sentito bene, ripeti per favore dai",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Dimmi un po', scusa, puoi ridirlo?",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "ascolta, scusa, puoi ridirlo",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Dimmi un po', puoi rieptere, non ho capito bene grazie",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Comunque, puoi ripetere, non ho capito bene",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "senti, puoi ripetere, non ho capito bene grazie",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Scusa, puoi ridirlo?",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Piuttosto, puoi ripetere, non ho capito bene per favore",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Dimmi un po', puoi ripetere, non ho capito bene per favore",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Scusa, non ho sentito bene, ripeti per favore per favore",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "non ho sentito bene, ripeti per favore grazie",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Senti, sucsa, puoi ridirlo? dai",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Piuttosto, non ho sentito bene, ripeti",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Ok, scusa, puoi ridirlo? grazie",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Piuttosto, non ho sentito bene, ripeti per favore",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Senti, scusa, puoi ridirlo?",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Setni, puoi ripetere, non ho capito bene",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Ok, non ho sentito bene, ripeti per",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "puoi ripetere, non ho capito bene per favore",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Scusa, puoi ridirlo? grazie",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Ascolta, puoi ripetere, non ho capito bene grazie",
+   "intent": "CLARIFICATION",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "cl_repeat",
+   "category": "CLARIFICATION",
+   "hardNegative": false
+  },
+  {
+   "text": "Visto il caldo di oggi e la stanchezza che ho accumulato, meglio riposare o allenarmi lo stesso? per favore",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "Con questo caldo e come ho dormito, è meglio uscire a correre stasera o domani mattina? per favore",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "Comunque, ho dormito male e domani fa freddo, mi conviene comunque uscire a fare sport?",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "Ascolta, visto il caldo di oggi e la stanchezza che ho accumulato, meglio riposare o allenarmi lo stesso? per favore",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "ok, con questo caldo e come ho dormito, è meglio uscire a correre stasera o domani mattina",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "Sneti, ho dormito male e domani fa freddo, mi conviene comunque uscire a fare sport?",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "Piuttosto, con questo caldo e come ho dormito, è meglio uscire a correre stasera o domani",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "ok, il mio sonno di stanotte piu il freddo di oggi, mi conviene allenarmi lo stesso? dai",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "Il mio sonno di stanotte più il freddo di oggi, mi conviene allenarmi lo stesso? dai",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "Piuttosto, ho dormito male e domani fa freddo, mi conviene comunque uscire a fare sport? grazie",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "Con questo caldo e come ho dormito, è meglio uscire a correre stasera o domani mattina?",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "A proposito, il mio sonno di stanotte piu il freddo di oggi, mi conviene allenarmi lo stesso?",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "dimmi un po', con questo caldo e come ho dormito, è meglio uscire a correre stasera o domani mattina",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "Ho dormito male e odmani fa freddo, mi conviene comunque uscire a fare sport?",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "Piuttosto, con questo caldo e come ho dormito, è meglio uscire a correre stasera o",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "dimmi un po', il mio sonno di stanotte piu il freddo di oggi, mi conviene allenarmi lo stesso",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "Dimmi un po', con questo caldo e come ho dormito, è meglio uscire a correre stasera o domani mattina?",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "Ho dormito male e domani fa freddo, mi conviene comunque uscire a fare sport?",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "Ascolta, visto il caldo di oggi e la stanchezza che ho accumulato, meglio riposare o allenarmi lo stesso? dai",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "Comunque, con questo caldo e come ho dormito, e meglio uscire a correre stasera o domani mattina? dai",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "ok, visto il caldo di oggi e la stanchezza che ho accumulato, meglio riposare o allenarmi lo stesso? per favore",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "Senti, il mio sonno di stanotte più il freddo di oggi, mi conviene allenarmi lo setsso? dai",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "Scusa, con questo caldo e come ho dormito, è meglio uscire a correre stasera o domani mattina?",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "piuttosto, il mio sonno di stanotte piu il freddo di oggi, mi conviene allenarmi lo stesso? dai",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "Senti, visto il caldo di oggi e la stanchezza che ho accumulato, meglio riposare o allenarmi lo stesso? grazie",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "Dimmi un po', visto il caldo di oggi e la stanchezza che ho accumulato, meglio riposare o allenarmi lo stesso? per favore",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "A proposito, con questo caldo e come ho dormito, e meglio uscire a correre stasera o domani mattina? dai",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "ascolta, visto il caldo di oggi e la stanchezza che ho accumulato, meglio riposare o allenarmi lo stesso",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "Comunque, con questo caldo e come ho dorimto, è meglio uscire a correre stasera o domani mattina?",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "Ok, il mio sonno di stanotte più il freddo di oggi, mi conviene allenarmi lo",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "ho dormito male e domani fa freddo, mi conviene comunque uscire a fare sport",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "Piuttosto, con questo caldo e come ho dormito, è meglio uscire a correre stasera o domani mattina? per favore",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "Ok, ho dormito male e domani fa freddo, mi conviene comunque uscire a fare sport?",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "Scusa, il mio sonno di stanotte più il freddo di oggi, mi conviene allenarmi lo stesso? grazie",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "A proposito, con questo caldo e come ho dormito, e meglio uscire a correre stasera o domani mattina? grazie",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "ok, visto il caldo di oggi e la stanchezza che ho accumulato, meglio riposare o allenarmi lo stesso",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "A prpoosito, con questo caldo e come ho dormito, è meglio uscire a correre stasera o domani mattina?",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "Ok, ho dormito male e domani fa freddo, mi conviene comunque uscire a fare",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "senti, il mio sonno di stanotte piu il freddo di oggi, mi conviene allenarmi lo stesso",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "Ascolta, visto il caldo di oggi e la stanchezza che ho accumulato, meglio riposare o allenarmi lo stesso?",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "Comunque, con questo caldo e come ho dormito, è meglio uscire a correre stasera o domani mattina?",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "Senti, visto il caldo di oggi e la stanchezza che ho accumulato, meglio riposare o allenarmi lo stesso?",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "Senti, ho dormito male e domani fa freddo, mi conviene comunque uscire a fare sport? grazie",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "scusa, il mio sonno di stanotte più il freddo di oggi, mi conviene allenarmi lo stesso",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "Con questo caldo e come ho dormito, è meglio uscire a correer stasera o domani mattina? per favore",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "Ascolta, ho dormito male e domani fa freddo, mi conviene comunque uscire a",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "il mio sonno di stanotte piu il freddo di oggi, mi conviene allenarmi lo stesso? per favore",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "Il mio sonno di stanotte più il freddo di oggi, mi conviene allenarmi lo stesso?",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "Scusa, visto il caldo di oggi e la stanchezza che ho accumulato, meglio riposare o allenarmi lo stesso? dai",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "Ascolta, il mio sonno di stanotte più il freddo di oggi, mi conviene allenarmi lo stesso? dai",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "Piuttosto, il mio sonno di stanotte piu il freddo di oggi, mi conviene allenarmi lo stesso? grazie",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "con questo caldo e come ho dormito, è meglio uscire a correre stasera o domani mattina",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "Il mio sonno di stanotte più il freddo di gogi, mi conviene allenarmi lo stesso? grazie",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "Dimmi un po', ho dormito male e domani fa freddo, mi conviene comunque uscire a fare",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "ho dormito male e domani fa freddo, mi conviene comunque uscire a fare sport? dai",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "Comunque, visto il caldo di oggi e la stanchezza che ho accumulato, meglio riposare o allenarmi lo stesso?",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "Ok, il mio sonno di stanotte più il freddo di oggi, mi conviene allenarmi lo stesso?",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "Ascolta, il mio sonno di stanotte più il freddo di oggi, mi conviene allenarmi lo stesso?",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "Senti, visto il caldo di oggi e la stanchezza che ho accumulato, meglio riposare o allenarmi lo stesso? dai",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "senti, visto il caldo di oggi e la stanchezza che ho accumulato, meglio riposare o allenarmi lo stesso? per favore",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "Ascolat, il mio sonno di stanotte più il freddo di oggi, mi conviene allenarmi lo stesso? grazie",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "Senti, ho dormito male e domani fa freddo, mi conviene comunque uscire a",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "piuttosto, visto il caldo di oggi e la stanchezza che ho accumulato, meglio riposare o allenarmi lo stesso? grazie",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "Senti, con questo caldo e come ho dormito, è meglio uscire a correre stasera o domani mattina? per favore",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "Scusa, visto il caldo di oggi e la stanchezza che ho accumulato, meglio riposare o allenarmi lo stesso? per favore",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "Dimmi un po', il mio sonno di stanotte piu il freddo di oggi, mi conviene allenarmi lo stesso?",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "Comunque, il mio sonno di stanotte più il freddo di oggi, mi conviene allenarmi lo stesso? dai",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "Ok, visto il caldo di oggi e la stanchezza che ho accumulato, meglio riposare o allenarmi lo",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "ho dormito male e domani fa freddo, mi conviene comunque uscire a fare sport? grazie",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "Senti, con questo caldo e come ho dormito, è meglio uscire a correre stasera o domani mattina?",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "Piuttosto, ho dormito male e domani fa freddo, mi conviene comunque uscire a fare sport?",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "Ok, con questo caldo e come ho dormito, è meglio uscire a correre stasera o domani mattina?",
+   "intent": "MULTI_SOURCE_REASONING",
+   "domains": [
+    "HEALTH",
+    "WEATHER"
+   ],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ms_health_weather",
+   "category": "MULTI_SOURCE",
+   "hardNegative": false
+  },
+  {
+   "text": "Trafolinga bruxemuto vaslendria kompifor gnarlutti per favore",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "Ok, trafolinga bruxemuto vaslendria kompifor gnarlutti dai",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "Ascolta, blenza forpiglio quantrusco melifando strambosa",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "Ascolta, squeblor nantavik flurindesta prolimango zaxu per favore",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "comunque, squeblor nantavik flurindesta prolimango zaxu",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "Acsolta, xilonqua vetrusmo fantibolo glorx nimparil squetto per favore",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "Blenza forpiglio quantrusco melifando strambosa",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "ok, zorgle blaminto della fasca whurendi non esiste per davvero",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "Ascolta, xilonqua vetrusmo fantibolo glorx nimparil squetto grazie",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "Senti, xilonqua vetrusmo fantibolo glorx nimparil squetto grazie",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "Dimmi un po', zorgle blaminto della fasca whurendi non esiste per davvero per favore",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "Ascolta, xilonqua vetrusmo fantibolo glorx nimparil squetto",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "scusa, squeblor nantavik flurindesta prolimango zaxu",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "Xilonqua vetrusmo fantibolo glorx nimapril squetto",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "Senti, xilonqua vetrusmo fantibolo glorx nimparil squetto",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "piuttosto, squeblor nantavik flurindesta prolimango zaxu",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "Piuttosto, zorgle blaminto della fasca whurendi non esiste per davvero",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "Ascolta, trafolinga bruxemuto vaslendria kompifor gnarlutti grazie",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "Piuttosto, xilonqua vetrusmo fantibolo glorx nimparil squetto dai",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "Ok, xilonqua vetrusmo fantibolo glorx nimparil squetot",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "Comunque, zorgle blaminto della fasca whurendi non esiste",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "scusa, trafolinga bruxemuto vaslendria kompifor gnarlutti per favore",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "Scusa, blenza forpiglio quantrusco melifando strambosa grazie",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "Ascolta, trafolinga bruxemuto vaslendria kompifor gnarlutti per favore",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "Scusa, zorgle blaminto della fasca whurendi non esiste per davvero dai",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "squeblor nantavik flurindesta prolimango zaxu",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "Comunque, zorgle blaminto della fasca whurendi non esiste per",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "scusa, squeblor nantavik flurindesta prolimango zaxu grazie",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "Senti, trafolinga bruxemuto vaslendria kompifor gnarlutti",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "Comunque, trafolinga bruxemuto vaslendria kompifor gnarlutti dai",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "Scusa, xilonqua vetrusmo fantibolo glorx nimparil squetto per favore",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "ok, squeblor nantavik flurindesta prolimango zaxu",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "Ok, zorgle blaminto della fasca whurendi non esiste per davveor dai",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "A proposito, xilonqua vetrusmo fantibolo glorx",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "scusa, blenza forpiglio quantrusco melifando strambosa per favore",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "Comunque, zorgle blaminto della fasca whurendi non esiste per davvero",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "Ok, squeblor nantavik flurindesta prolimango zaxu per favore",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "Squeblor nantavik flurindesta prolimango zaxu grazie",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "Dimmi un po', trafolinga bruxemuto vaslendria kompifor gnarlutti",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "blenza forpiglio quantrusco melifando strambosa grazie",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "Comunque, squeblor nantavik flurindesta prolmiango zaxu grazie",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "Scusa, zorgle blaminto della fasca whurendi non esiste per davvero",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "senti, zorgle blaminto della fasca whurendi non esiste per davvero dai",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "Dimmi un po', trafolinga bruxemuto vaslendria kompifor gnarlutti dai",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "Dimmi un po', blenza forpiglio quantrusco melifando strambosa",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "Scusa, squeblor nantavik flurindesta prolimango zaxu dai",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "Senti, blenza forpiglio quantrusco melifando strambosa",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "trafolinga bruxemuto vaslendria kompifor gnarlutti dai",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "Piuttosto, blezna forpiglio quantrusco melifando strambosa dai",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "Xilonqua vetrusmo fantibolo glorx",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "a proposito, blenza forpiglio quantrusco melifando strambosa dai",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "Scusa, blenza forpiglio quantrusco melifando strambosa dai",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "A proposito, trafolinga bruxemuto vaslendria kompifor gnarlutti",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "Comunque, xilonqua vetrusmo fantibolo glorx nimparil squetto per favore",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "Dimmi un po', xilonqua vetrusmo fantibolo glorx nimparil squetto grazie",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "comunque, blenza forpiglio quantrusco melifando strambosa",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "Piuttosto, xilonqua vertusmo fantibolo glorx nimparil squetto",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "Ok, squeblor nantavik flurindesta",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "ascolta, zorgle blaminto della fasca whurendi non esiste per davvero per favore",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "A proposito, zorgle blaminto della fasca whurendi non esiste per davvero per favore",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "Comunque, xilonqua vetrusmo fantibolo glorx nimparil squetto",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "Comunque, blenza forpiglio quantrusco melifando strambosa",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "blenza forpiglio quantrusco melifando strambosa per favore",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "Ascolta, blenza forpiglio quantrusco melifando strambsoa per favore",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "Senti, xilonqua vetrusmo fantibolo glorx nimparil",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "scusa, xilonqua vetrusmo fantibolo glorx nimparil squetto dai",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "Zorgle blaminto della fasca whurendi non esiste per davvero",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  },
+  {
+   "text": "Ascolta, squeblor nantavik flurindesta prolimango zaxu",
+   "intent": "UNKNOWN",
+   "domains": [],
+   "operation": "UNKNOWN",
+   "referenceMode": "NONE",
+   "split": "test",
+   "templateFamily": "ood_gibberish",
+   "category": "OOD",
+   "hardNegative": false
+  }
+ ]
+}

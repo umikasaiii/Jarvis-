@@ -21,6 +21,12 @@ CORPUS_PATH = os.path.join(
     os.path.dirname(__file__), "..", "..", "core", "src", "main", "resources", "semantic", "prototypes.json",
 )
 
+# § FASE 2A.11 ADDENDUM — the large (3000-5000 example) offline-only training
+# corpus for the Learned Head (see generate_corpus.py/split_corpus.py),
+# DISTINCT from CORPUS_PATH above (the small ~176-example corpus the
+# PROTOTYPE/CENTROID classifier ships with in the app).
+TRAINING_CORPUS_PATH = os.path.join(os.path.dirname(__file__), "training_corpus.json")
+
 
 @dataclass
 class Prototype:
@@ -30,6 +36,8 @@ class Prototype:
     operation: str = "UNKNOWN"
     reference_mode: str = "NONE"
     split: str = "train"
+    category: str = ""
+    hard_negative: bool = False
 
 
 @dataclass
@@ -48,6 +56,13 @@ class Corpus:
     def test(self) -> list[Prototype]:
         return self.by_split("test")
 
+    def blind(self) -> list[Prototype]:
+        """§ ADDENDUM §12 — the blind holdout: never touched by training,
+        calibration, or hyperparameter selection. Empty for the small
+        prototypes.json corpus (no `blind` split there), populated for
+        `training_corpus.json`."""
+        return self.by_split("blind")
+
 
 def load_corpus(path: str = CORPUS_PATH) -> Corpus:
     with open(path, encoding="utf-8") as f:
@@ -60,6 +75,8 @@ def load_corpus(path: str = CORPUS_PATH) -> Corpus:
             operation=p.get("operation", "UNKNOWN"),
             reference_mode=p.get("referenceMode", "NONE"),
             split=p.get("split", "train"),
+            category=p.get("category", ""),
+            hard_negative=p.get("hardNegative", False),
         )
         for p in raw["prototypes"]
     ]
@@ -76,9 +93,13 @@ def check_near_duplicate_leakage(corpus: Corpus, embed_fn, threshold: float = 0.
     """
     import numpy as np
 
-    splits = {"train": corpus.train(), "validation": corpus.validation(), "test": corpus.test()}
-    embedded = {name: [(p.text, embed_fn(p.text)) for p in protos] for name, protos in splits.items()}
-    pairs = [("train", "validation"), ("train", "test"), ("validation", "test")]
+    splits = {
+        "train": corpus.train(), "validation": corpus.validation(), "test": corpus.test(),
+        "blind": corpus.blind(),
+    }
+    embedded = {name: [(p.text, embed_fn(p.text)) for p in protos] for name, protos in splits.items() if protos}
+    names = list(embedded.keys())
+    pairs = [(names[i], names[j]) for i in range(len(names)) for j in range(i + 1, len(names))]
     leaks: list[tuple[str, str, float]] = []
     for a, b in pairs:
         for text_a, emb_a in embedded[a]:

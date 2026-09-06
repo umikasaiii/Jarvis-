@@ -4,7 +4,10 @@ import android.content.Context
 import android.util.Log
 import com.simone.jarvismobile.core.semantic.SemanticFrame
 import com.simone.jarvismobile.core.semantic.embedding.ClassifierThresholds
+import com.simone.jarvismobile.core.semantic.embedding.EmbeddingVector
 import com.simone.jarvismobile.core.semantic.embedding.HasSemanticTiming
+import com.simone.jarvismobile.core.semantic.embedding.LearnedHeadClassifierEngine
+import com.simone.jarvismobile.core.semantic.embedding.LearnedHeadExport
 import com.simone.jarvismobile.core.semantic.embedding.PrototypeCorpusCodec
 import com.simone.jarvismobile.core.semantic.embedding.PrototypeSemanticClassifierEngine
 import com.simone.jarvismobile.core.semantic.embedding.SemanticClassificationResult
@@ -37,6 +40,16 @@ import javax.inject.Singleton
  * [com.simone.jarvismobile.core.semantic.SemanticInterpretation.Invalid],
  * which (since FASE 2A.10) goes straight to the full reasoning loop, never a
  * keyword fallback.
+ *
+ * § FASE 2A.11 ADDENDUM §11 — PRIMARY/FALLBACK: if a real trained
+ * `semantic/head_weights.json` asset is present and parses (produced by
+ * `tools/semantic_classifier/export.py` against a REAL EmbeddingGemma
+ * embedding run — never shipped by this codebase today, see the training
+ * pipeline's own honesty notes), [LearnedHeadClassifierEngine] becomes
+ * primary automatically; its absence (the honest current state —
+ * TRAINING_PENDING, no real embeddings have ever been computed in this
+ * environment) falls back to [PrototypeSemanticClassifierEngine] exactly as
+ * before. Dropping in a real export later needs NO code change here.
  */
 @Singleton
 class EmbeddingSemanticClassifier @Inject constructor(
@@ -47,11 +60,12 @@ class EmbeddingSemanticClassifier @Inject constructor(
 
     private val loadMutex = Mutex()
     private val buildMutex = Mutex()
-    @Volatile private var cachedEngine: PrototypeSemanticClassifierEngine? = null
+    @Volatile private var cachedClassifyFn: ((EmbeddingVector, SemanticFrame?) -> SemanticClassificationResult)? = null
+    @Volatile private var cachedBackendName: String? = null
     @Volatile private var lastTiming: SemanticInterpreterTiming? = null
 
     override suspend fun classify(text: String, previousFrame: SemanticFrame?): SemanticClassificationResult {
-        val engine = ensureWarmEngine() ?: run {
+        val classifyFn = ensureWarmEngine() ?: run {
             lastTiming = null
             return SemanticClassificationResult.unavailable("SEMANTIC_MODEL_UNAVAILABLE")
         }
@@ -61,7 +75,7 @@ class EmbeddingSemanticClassifier @Inject constructor(
             return SemanticClassificationResult.unavailable("SEMANTIC_MODEL_UNAVAILABLE")
         }
         val classifyStart = System.currentTimeMillis()
-        val result = engine.classify(embedding, previousFrame)
+        val result = classifyFn(embedding, previousFrame)
         val classifyMs = System.currentTimeMillis() - classifyStart
         val engineTiming = embeddingEngine.lastTiming
         lastTiming = SemanticInterpreterTiming(
@@ -76,43 +90,81 @@ class EmbeddingSemanticClassifier @Inject constructor(
 
     override fun lastSemanticTiming(): SemanticInterpreterTiming? = lastTiming
 
+    /** Which backend answered the last built classify call — `"LEARNED_HEAD"` or `"PROTOTYPE"`. Debug/diagnostics only. */
+    fun activeBackendName(): String? = cachedBackendName
+
     /**
-     * Builds the [PrototypeSemanticClassifierEngine] the first time it's
-     * needed (embedding every TRAINING-split prototype once), then reuses it
+     * Builds and caches the classify function the first time it's needed,
+     * preferring a real trained head over the prototype/centroid classifier
      * — §15: "NON ricaricare... embedding dei prototipi a ogni messaggio".
      * Returns null if the embedding engine itself isn't loaded — the model
      * being unavailable is a genuine "not ready" state, never silently
      * retried into a broken/empty engine.
      */
-    private suspend fun ensureWarmEngine(): PrototypeSemanticClassifierEngine? {
-        cachedEngine?.let { return it }
+    private suspend fun ensureWarmEngine(): ((EmbeddingVector, SemanticFrame?) -> SemanticClassificationResult)? {
+        cachedClassifyFn?.let { return it }
         ensureModelLoadedFromSettings()
         if (embeddingEngine.loadState.value != EmbeddingLoadState.LOADED) return null
         return buildMutex.withLock {
-            cachedEngine?.let { return@withLock it }
-            val corpusJson = runCatching {
-                context.assets.open(CORPUS_ASSET_PATH).bufferedReader().use { it.readText() }
-            }.getOrNull() ?: run {
-                Log.w(TAG, "corpus_asset_missing")
-                return@withLock null
-            }
-            val corpus = runCatching { PrototypeCorpusCodec.parse(corpusJson) }.getOrNull() ?: run {
-                Log.w(TAG, "corpus_parse_failed")
-                return@withLock null
-            }
+            cachedClassifyFn?.let { return@withLock it }
             val thresholds = loadThresholds()
-            val embedded = corpus.trainingPrototypes().mapNotNull { proto ->
-                embeddingEngine.embed(proto.text)?.let { emb ->
-                    PrototypeSemanticClassifierEngine.EmbeddedPrototype(proto, emb)
-                }
+
+            buildLearnedHeadEngine(thresholds)?.let { engine ->
+                Log.i(TAG, "semantic_classifier_primary=LEARNED_HEAD")
+                cachedBackendName = "LEARNED_HEAD"
+                return@withLock (engine::classify).also { cachedClassifyFn = it }
             }
-            if (embedded.isEmpty()) {
-                Log.w(TAG, "no_prototypes_embedded")
-                return@withLock null
-            }
-            Log.i(TAG, "semantic_classifier_warm_built prototypeCount=${embedded.size}")
-            PrototypeSemanticClassifierEngine(embedded, thresholds).also { cachedEngine = it }
+
+            val engine = buildPrototypeEngine(thresholds) ?: return@withLock null
+            Log.i(TAG, "semantic_classifier_primary=PROTOTYPE")
+            cachedBackendName = "PROTOTYPE"
+            (engine::classify).also { cachedClassifyFn = it }
         }
+    }
+
+    /**
+     * § FASE 2A.11 ADDENDUM §11 — null whenever no real trained head exists
+     * yet (missing asset, malformed JSON, wrong schema version, or a real
+     * embedding call failing for one of the head's own labels) — never a
+     * partially-built/guessed engine.
+     */
+    private suspend fun buildLearnedHeadEngine(thresholds: ClassifierThresholds): LearnedHeadClassifierEngine? {
+        val json = runCatching {
+            context.assets.open(HEAD_WEIGHTS_ASSET_PATH).bufferedReader().use { it.readText() }
+        }.getOrNull() ?: return null
+        val export = LearnedHeadExport.parseOrNull(json) ?: run {
+            Log.w(TAG, "learned_head_asset_invalid")
+            return null
+        }
+        if (export.embeddingDim != embeddingEngine.embeddingDimension) {
+            Log.w(TAG, "learned_head_dimension_mismatch expected=${embeddingEngine.embeddingDimension} actual=${export.embeddingDim}")
+            return null
+        }
+        return LearnedHeadClassifierEngine(export, thresholds)
+    }
+
+    private suspend fun buildPrototypeEngine(thresholds: ClassifierThresholds): PrototypeSemanticClassifierEngine? {
+        val corpusJson = runCatching {
+            context.assets.open(CORPUS_ASSET_PATH).bufferedReader().use { it.readText() }
+        }.getOrNull() ?: run {
+            Log.w(TAG, "corpus_asset_missing")
+            return null
+        }
+        val corpus = runCatching { PrototypeCorpusCodec.parse(corpusJson) }.getOrNull() ?: run {
+            Log.w(TAG, "corpus_parse_failed")
+            return null
+        }
+        val embedded = corpus.trainingPrototypes().mapNotNull { proto ->
+            embeddingEngine.embed(proto.text)?.let { emb ->
+                PrototypeSemanticClassifierEngine.EmbeddedPrototype(proto, emb)
+            }
+        }
+        if (embedded.isEmpty()) {
+            Log.w(TAG, "no_prototypes_embedded")
+            return null
+        }
+        Log.i(TAG, "semantic_classifier_warm_built prototypeCount=${embedded.size}")
+        return PrototypeSemanticClassifierEngine(embedded, thresholds)
     }
 
     /**
@@ -134,7 +186,8 @@ class EmbeddingSemanticClassifier @Inject constructor(
 
     /** Forces a rebuild on the next [classify] call — used when the embedding model is (re)loaded, so a stale cache never survives a model swap. */
     fun invalidate() {
-        cachedEngine = null
+        cachedClassifyFn = null
+        cachedBackendName = null
     }
 
     /**
@@ -163,5 +216,6 @@ class EmbeddingSemanticClassifier @Inject constructor(
         const val TAG = "EmbeddingSemanticClassifier"
         const val CORPUS_ASSET_PATH = "semantic/prototypes.json"
         const val THRESHOLDS_ASSET_PATH = "semantic/thresholds.json"
+        const val HEAD_WEIGHTS_ASSET_PATH = "semantic/head_weights.json"
     }
 }
