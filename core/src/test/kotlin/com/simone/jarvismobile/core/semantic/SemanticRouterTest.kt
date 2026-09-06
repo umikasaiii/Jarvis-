@@ -138,6 +138,39 @@ class SemanticRouterTest {
         }
     }
 
+    // § FASE 2A.10 test category C (CURRENT TURN PRECEDENCE) — the two
+    // literal cross-domain scenarios the spec names beyond the ones FASE
+    // 2A.9.1 already pinned above (HEALTH->WEATHER, AGENDA->HEALTH).
+
+    @Test
+    fun `explicit WEATHER after a previous AGENDA frame routes Direct to WEATHER`() {
+        val previous = SemanticFrame(
+            intent = SemanticIntent.CAPABILITY_QUERY, domains = setOf(ToolFamily.AGENDA), operation = SemanticOperation.LIST,
+            temporalExpression = "domani", metric = null, aggregation = null, entities = emptyList(),
+            referenceMode = ReferenceMode.NONE, requiresGrounding = true, confidence = 0.9,
+            explicitSlots = setOf(SemanticSlot.DOMAINS, SemanticSlot.TEMPORAL_EXPRESSION),
+        )
+        val current = frame(SemanticIntent.CAPABILITY_QUERY, domains = setOf(ToolFamily.WEATHER)).copy(
+            explicitSlots = setOf(SemanticSlot.DOMAINS),
+        )
+        val merged = SemanticFrameMerger.merge(current, previous).frame
+        assertEquals(SemanticRoutingOutcome.Direct(ToolFamily.WEATHER), SemanticRouter.routeFrame(merged))
+    }
+
+    @Test
+    fun `explicit DEVICE_INFO after a previous KNOWLEDGE frame routes Direct to DEVICE_INFO`() {
+        // "Che differenza c'è tra RAM e VRAM?" (KNOWLEDGE_QUERY, not a domain
+        // source for CAPABILITY_QUERY inheritance) then "Quanta RAM ho nel
+        // telefono?" (its own explicit DEVICE_INFO domain) — the previous
+        // turn's domain must never leak in, and none is needed to route.
+        val previous = frame(SemanticIntent.KNOWLEDGE_QUERY, domains = setOf(ToolFamily.KNOWLEDGE))
+        val current = frame(SemanticIntent.CAPABILITY_QUERY, domains = setOf(ToolFamily.DEVICE_INFO)).copy(
+            explicitSlots = setOf(SemanticSlot.DOMAINS),
+        )
+        val merged = SemanticFrameMerger.merge(current, previous).frame
+        assertEquals(SemanticRoutingOutcome.Direct(ToolFamily.DEVICE_INFO), SemanticRouter.routeFrame(merged))
+    }
+
     // --- 200+ turn soak: valid interpretation never produces a "legacy-shaped" outcome ---
 
     @Test

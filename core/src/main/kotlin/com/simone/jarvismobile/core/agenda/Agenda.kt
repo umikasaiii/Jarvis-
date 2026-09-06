@@ -112,11 +112,24 @@ object Agenda {
     fun humanTime(time: LocalTime?): String =
         if (time == null) "" else "%02d:%02d".format(time.hour, time.minute)
 
-    /** One spoken line: "domani alle 15:00, tagliare i capelli". */
-    fun speak(entry: AgendaEntry, today: LocalDate): String {
-        val whenPart = humanDate(entry.date, today)
-        val timePart = entry.time?.let { " alle ${humanTime(it)}" }.orEmpty()
-        return "$whenPart$timePart, ${entry.text}"
+    /**
+     * One spoken line: "domani alle 15:00, tagliare i capelli". § FASE 2A.10
+     * §"presentation layer" — [includeDate] lets a caller that has already
+     * named the day in its own introduction ("Hai un impegno per domani: …")
+     * omit it here instead of repeating it ("…: domani alle 15:00, …") —
+     * the exact repetitive phrasing the spec calls out. Default `true` keeps
+     * every existing caller's behavior identical.
+     */
+    fun speak(entry: AgendaEntry, today: LocalDate, includeDate: Boolean = true): String {
+        val timePart = entry.time?.let { "alle ${humanTime(it)}" }
+        return if (includeDate) {
+            val whenPart = humanDate(entry.date, today)
+            "$whenPart${timePart?.let { " $it" }.orEmpty()}, ${entry.text}"
+        } else if (timePart != null) {
+            "$timePart, ${entry.text}"
+        } else {
+            entry.text
+        }
     }
 
     /** "477" → "7 ore e 57 minuti". Used to answer "quanto manca alle 16?". */

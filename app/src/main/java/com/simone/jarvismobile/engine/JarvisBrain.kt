@@ -22,6 +22,7 @@ import com.simone.jarvismobile.core.protocol.ParseResult
 import com.simone.jarvismobile.core.protocol.ResponseParser
 import com.simone.jarvismobile.core.routing.ComplexityHeuristic
 import com.simone.jarvismobile.core.tools.RelevantToolSelector
+import com.simone.jarvismobile.core.tools.ToolFamily
 import com.simone.jarvismobile.data.SettingsRepository
 import com.simone.jarvismobile.llm.DEFAULT_GENERATION_TIMEOUT_SECONDS
 import com.simone.jarvismobile.llm.LlmRouter
@@ -139,6 +140,13 @@ class JarvisBrain @Inject constructor(
         // [userText] for a normal single-shot turn, and the caller passes the
         // turn's original transcript explicitly across every round instead.
         toolSelectionText: String = userText,
+        // § FASE 2A.10 §5 — families a MULTI_SOURCE_REASONING SemanticFrame
+        // already knows this turn genuinely needs (e.g. HEALTH+AGENDA),
+        // unioned into tool selection regardless of whether their keyword
+        // also happens to appear in [toolSelectionText] — see
+        // `RelevantToolSelector.select`'s own doc comment. Empty for every
+        // other caller/turn shape, so existing behavior is unchanged.
+        forcedToolFamilies: Set<ToolFamily> = emptySet(),
     ): BrainReply {
         // § logging temporaneo obbligatorio, audit "Conversational mode non
         // tenta più Core dopo integrazione" — prova che reply() sia stato
@@ -146,7 +154,7 @@ class JarvisBrain @Inject constructor(
         Log.i(TAG, "BRAIN_REPLY_ENTER slot=$slot")
         val prompt = if (contextBlock.isBlank()) userText else "$contextBlock\n\n$userText"
         val tier = if (slot == ModelSlot.ADVANCED) SystemPromptComposer.Tier.RICH else SystemPromptComposer.Tier.FAST
-        val turnSystemPrompt = systemPromptFor(toolSelectionText, tier)
+        val turnSystemPrompt = systemPromptFor(toolSelectionText, tier, forcedToolFamilies)
         val remote = tryRemoteReply(prompt, turnSystemPrompt, slot, timeoutSeconds)
         if (remote == null) Log.i(TAG, "BRAIN_FALLBACK_LOCAL")
         val raw = remote
@@ -329,9 +337,13 @@ class JarvisBrain @Inject constructor(
      * entirely untouched — this only decides what the model is TOLD about,
      * never what it may actually call.
      */
-    private fun systemPromptFor(toolSelectionText: String, tier: SystemPromptComposer.Tier): String {
+    private fun systemPromptFor(
+        toolSelectionText: String,
+        tier: SystemPromptComposer.Tier,
+        forcedToolFamilies: Set<ToolFamily> = emptySet(),
+    ): String {
         val available = tools.available()
-        val selected = RelevantToolSelector.select(available, toolSelectionText)
+        val selected = RelevantToolSelector.select(available, toolSelectionText, forcedToolFamilies)
         val built = SystemPromptComposer.compose(tier, richPersona, selected)
         val families = RelevantToolSelector.familiesOf(selected).map { it.name }
         // § FASE 2A.6 §1 — the SPECIFIC families (never the whole-catalog

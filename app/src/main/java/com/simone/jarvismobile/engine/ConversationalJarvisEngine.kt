@@ -16,7 +16,8 @@ import com.simone.jarvismobile.core.health.HealthQueryParser
 import com.simone.jarvismobile.core.health.HealthRange
 import com.simone.jarvismobile.core.intent.IntentAliases
 import com.simone.jarvismobile.core.protocol.ToolCall
-import com.simone.jarvismobile.core.agenda.AgendaWeekRange
+import com.simone.jarvismobile.core.agenda.TemporalScope
+import com.simone.jarvismobile.core.agenda.TemporalScopeResolver
 import com.simone.jarvismobile.core.semantic.SemanticDialogueContext
 import com.simone.jarvismobile.core.semantic.SemanticFrame
 import com.simone.jarvismobile.core.semantic.SemanticFrameMerger
@@ -136,16 +137,19 @@ class ConversationalJarvisEngine @Inject constructor(
             handlePendingConfirmation(transcript, turn)
                 ?: handlePendingDisambiguation(transcript, turn)
                 ?: runFastPath(transcript, turn)
-                ?: runStructuredPath(transcript, turn)
                 ?: runHomeControlGuard(transcript, turn)
-                // § FASE 2A.9 SEMANTIC UNDERSTANDING LAYER — inserted between
-                // the HARD deterministic guards above (still checked first:
-                // an unambiguous safe command never needs a model call at
-                // all) and the old keyword/topic paths below (now demoted to
-                // LEGACY_FALLBACK, reached only when the interpreter itself
-                // fails/produces an invalid frame — see resolveSemanticRoute's
-                // own doc comment for why, and CLAUDE.md/the FASE
-                // 2A.9/2A.9.1 reports for the root cause this replaces).
+                // § FASE 2A.10 SEMANTIC ROUTER AUTHORITATIVE — every other
+                // natural-language turn goes here FIRST. `runStructuredPath`
+                // (AgendaIntentRouter's delete/move/rename/complete/query
+                // fuzzy-title resolution) is no longer a pre-semantic
+                // authority checked unconditionally before this: it is now
+                // invoked, if at all, only from inside resolveSemanticRoute's
+                // HandoffToLlm branch, as a deterministic EXECUTOR for a turn
+                // the Semantic Interpreter has already confirmed is AGENDA —
+                // see resolveSemanticRoute's own doc comment. Root cause this
+                // closes: "Che impegni ho domani?" used to answer instantly
+                // from CommandMatcher's keyword regex, never from real
+                // understanding (§ FASE 2A.10 report point 2).
                 ?: resolveSemanticRoute(transcript, turn)
         } catch (e: CancellationException) {
             throw e
@@ -163,11 +167,16 @@ class ConversationalJarvisEngine @Inject constructor(
         // of null, without runSemanticPath itself having to know which
         // branch will eventually answer.
         if (turn.semanticSource == null) {
+            // § FASE 2A.10 — "STRUCTURED_AGENDA" no longer belongs here: it
+            // is now reachable ONLY from inside resolveSemanticRoute's
+            // HandoffToLlm branch, i.e. only ever AFTER runSemanticPath has
+            // already run and set semanticSource itself — so this branch is
+            // never actually hit for it (the `if` guard above already
+            // prevents overwriting a real value).
             turn.semanticSource = when (turn.routingPath) {
-                "FAST_PATH", "STRUCTURED_AGENDA", "HOME_CONTROL_UNSUPPORTED",
+                "FAST_PATH", "HOME_CONTROL_UNSUPPORTED",
                 "PENDING_CONFIRMATION", "PENDING_DISAMBIGUATION",
                 -> SemanticSource.HARD_DETERMINISTIC.name
-                "CAPABILITY_FAST_PATH" -> SemanticSource.LEGACY_FALLBACK.name
                 "LLM_LOOP" -> SemanticSource.LLM_FALLBACK.name
                 else -> null
             }
@@ -188,7 +197,15 @@ class ConversationalJarvisEngine @Inject constructor(
      */
     private sealed interface SemanticRouteResult {
         data class Answer(val text: String) : SemanticRouteResult
-        data object HandoffToLlm : SemanticRouteResult
+
+        /**
+         * [frame] is the already-validated+merged frame, carried so
+         * [resolveSemanticRoute] can decide whether a deterministic AGENDA
+         * executor ([runStructuredPath]) should run before the full
+         * reasoning loop (§ FASE 2A.10 — `AgendaIntentRouter` as executor,
+         * never as a pre-semantic authority).
+         */
+        data class HandoffToLlm(val frame: SemanticFrame) : SemanticRouteResult
         data object LegacyFallback : SemanticRouteResult
     }
 
@@ -227,9 +244,25 @@ class ConversationalJarvisEngine @Inject constructor(
         val previousFrame = conversationManager.currentSemanticFrame()
         turn.semanticEnabled = true
         val startedAt = System.currentTimeMillis()
-        val interpretation = runCancellable {
-            semanticInterpreter.interpret(transcript, SemanticDialogueContext(previousFrame))
+        val dialogueContext = SemanticDialogueContext(previousFrame)
+
+        var interpretation = runCancellable {
+            semanticInterpreter.interpret(transcript, dialogueContext)
         }.getOrNull()
+        // § FASE 2A.10 §"LEGACY FALLBACK" — "fai al massimo UN retry
+        // semantico compatto/stateless, se tecnicamente sensato": a failed
+        // (null) or invalid first attempt gets exactly one more try —
+        // covers a transient timeout/busy-mutex/malformed-output — before
+        // this turn is treated as a genuine interpreter failure. Never more
+        // than one retry: a stuck/slow model must not cost the turn two full
+        // timeouts stacked on top of each other.
+        if (interpretation == null || interpretation is SemanticInterpretation.Invalid) {
+            turn.retryAttempted = true
+            interpretation = runCancellable {
+                semanticInterpreter.interpret(transcript, dialogueContext)
+            }.getOrNull()
+            turn.retrySucceeded = interpretation is SemanticInterpretation.Valid
+        }
         turn.semanticLatencyMs = System.currentTimeMillis() - startedAt
 
         val rawFrame = when (interpretation) {
@@ -237,12 +270,14 @@ class ConversationalJarvisEngine @Inject constructor(
                 turn.semanticSource = SemanticSource.LEGACY_FALLBACK.name
                 turn.semanticFailureReason = "interpreter_unavailable_or_threw"
                 turn.semanticDisposition = "LEGACY_FALLBACK"
+                turn.legacyUsed = true
                 return SemanticRouteResult.LegacyFallback
             }
             is SemanticInterpretation.Invalid -> {
                 turn.semanticSource = SemanticSource.LEGACY_FALLBACK.name
                 turn.semanticFailureReason = interpretation.reason
                 turn.semanticDisposition = "LEGACY_FALLBACK"
+                turn.legacyUsed = true
                 return SemanticRouteResult.LegacyFallback
             }
             is SemanticInterpretation.Valid -> interpretation.frame
@@ -277,7 +312,7 @@ class ConversationalJarvisEngine @Inject constructor(
                 }
                 turn.semanticSource = SemanticSource.LLM_FALLBACK.name
                 turn.semanticDisposition = "HANDOFF_LLM"
-                SemanticRouteResult.HandoffToLlm
+                SemanticRouteResult.HandoffToLlm(frame)
             }
             is SemanticRoutingOutcome.Direct -> {
                 val routed = routeSemanticCapability(outcome.domain, transcript, frame, previousFrame, LocalDateTime.now(), turn)
@@ -294,7 +329,7 @@ class ConversationalJarvisEngine @Inject constructor(
                     // reclassification.
                     turn.semanticSource = SemanticSource.LLM_FALLBACK.name
                     turn.semanticDisposition = "HANDOFF_LLM"
-                    SemanticRouteResult.HandoffToLlm
+                    SemanticRouteResult.HandoffToLlm(frame)
                 }
             }
         }
@@ -302,43 +337,50 @@ class ConversationalJarvisEngine @Inject constructor(
 
     /**
      * The single entry point [handle] actually calls: owns the FULL
-     * disposition of [runSemanticPath]'s result, so legacy keyword routing
-     * ([runCapabilityFastPath]/[runFollowUpFastPath]) is reachable from
-     * exactly one place — the [SemanticRouteResult.LegacyFallback] branch —
-     * never as a side effect of a valid-but-delegated frame. Always returns
-     * a real answer: [SemanticRouteResult.HandoffToLlm] and a legacy miss
-     * both fall through to [runBrainLoop], which never returns null.
+     * disposition of [runSemanticPath]'s result.
+     *
+     * § FASE 2A.10 SEMANTIC ROUTER AUTHORITATIVE — root cause this closes:
+     * the FASE 2A.9.1 version of this method still fell back to the OLD
+     * keyword/topic paths (`runCapabilityFastPath`/`runFollowUpFastPath`)
+     * whenever the interpreter itself failed — and one of those paths
+     * (`runFollowUpFastPath`'s "same capability as last time" heuristic,
+     * driven by `ConversationManager.currentCapabilityTopic()`) is EXACTLY
+     * what answered "Domani farà caldo?" from stale HEALTH topic memory
+     * whenever the interpreter didn't get a valid frame in time — the very
+     * bug this whole phase exists to close, for real this time: those two
+     * methods are gone entirely now, not just unreached. [LegacyFallback]
+     * (interpreter failed even after one retry — see [runSemanticPath]) now
+     * falls straight to [runBrainLoop] — the full reasoning loop, which
+     * still enforces [GroundingGate] before answering, so a genuinely
+     * ungrounded guess is still blocked even on this path. A
+     * [HandoffToLlm][SemanticRouteResult.HandoffToLlm] frame whose domain is
+     * exactly `AGENDA` gets one more deterministic try first —
+     * [runStructuredPath] (`AgendaIntentRouter`'s fuzzy real-entry
+     * resolution) — now reachable ONLY here, after the Semantic Interpreter
+     * has already confirmed the domain, never as an independent pre-semantic
+     * authority. Always returns a real answer: every branch either answers
+     * directly or falls through to [runBrainLoop], which never returns null.
      */
     private suspend fun resolveSemanticRoute(transcript: String, turn: TurnState): String {
         return when (val result = runSemanticPath(transcript, turn)) {
             is SemanticRouteResult.Answer -> result.text
-            SemanticRouteResult.HandoffToLlm -> runBrainLoop(transcript, turn)
-            SemanticRouteResult.LegacyFallback -> {
-                val legacy = runCapabilityFastPath(transcript, turn) ?: runFollowUpFastPath(transcript, turn)
-                if (legacy != null) {
-                    // § FASE 2A.9.1 release invariant, checked at runtime as
-                    // a defensive canary — see EngineTurnDiagnostics'
-                    // `legacyInvokedAfterValidSemantic` doc comment. This can
-                    // only ever read false: `turn.semanticValid` is set to
-                    // true nowhere upstream of a LegacyFallback return in
-                    // runSemanticPath (both LegacyFallback branches return
-                    // before that line executes).
-                    if (turn.semanticValid) turn.legacyInvokedAfterValidSemantic = true
-                    legacy
-                } else {
-                    runBrainLoop(transcript, turn)
+            is SemanticRouteResult.HandoffToLlm -> {
+                if (result.frame.domains.singleOrNull() == ToolFamily.AGENDA) {
+                    runStructuredPath(transcript, turn)?.let { return it }
                 }
+                runBrainLoop(transcript, turn)
             }
+            SemanticRouteResult.LegacyFallback -> runBrainLoop(transcript, turn)
         }
     }
 
     /**
      * Executes the ONE grounded capability [frame]'s domain names, reusing
-     * exactly the same builders [runCapabilityFastPath] uses — never a
-     * second `get_weather`/`get_health_summary`/`get_device_info` call
-     * shape. Returns null (never a guess) when the domain isn't one this
-     * router resolves directly, or when a domain-specific resolution (e.g.
-     * an unanswerable DEVICE_INFO metric) fails.
+     * the same builders [weatherCall]/[healthCall]/[agendaCallFromFrame] —
+     * never a second `get_weather`/`get_health_summary`/`get_device_info`
+     * call shape. Returns null (never a guess) when the domain isn't one
+     * this router resolves directly, or when a domain-specific resolution
+     * (e.g. an unanswerable DEVICE_INFO metric) fails.
      */
     private suspend fun routeSemanticCapability(
         domain: ToolFamily,
@@ -403,25 +445,31 @@ class ConversationalJarvisEngine @Inject constructor(
     }
 
     /**
-     * § FASE 2A.9 — "E durante tutta la settimana prossima?": neither
-     * `ItalianDateTimeParser` nor `DayPeriod` had any week-range concept
-     * before this phase (see [AgendaWeekRange]'s own doc comment) — resolved
-     * FIRST against a week phrase (the frame's own [SemanticFrame.temporalExpression],
-     * falling back to the raw [transcript] in case it was empty), then the
-     * existing single-day [CommandMatcher.agendaCall] builder, exactly like
-     * [runFollowUpFastPath] already reuses it for a single-day follow-up.
+     * § FASE 2A.10 — "Che impegni ho tra oggi e venerdì?"/"Da lunedì a
+     * giovedì?"/"E durante tutta la settimana prossima?": [TemporalScopeResolver]
+     * (`:core`) is the genuinely structured calendar-range representation
+     * requested — a real interval, not a hardcoded phrase list — checked
+     * FIRST against the frame's own [SemanticFrame.temporalExpression]
+     * (falling back to the raw [transcript] in case it was empty). Only a
+     * [TemporalScope.Range] is handled directly here: a single day or "no
+     * date at all" still delegates to the existing
+     * [CommandMatcher.agendaCall] builder, which already resolves a bare day
+     * + part-of-day + title search correctly — this only ADDS the range
+     * capability that builder never had, it does not replace it.
      */
     private fun agendaCallFromFrame(transcript: String, frame: SemanticFrame, now: LocalDateTime): ToolCall? {
-        val weekRange = frame.temporalExpression?.let { AgendaWeekRange.resolve(it, now) }
-            ?: AgendaWeekRange.resolve(transcript, now)
-        if (weekRange != null) {
+        val scope = frame.temporalExpression
+            ?.let { TemporalScopeResolver.resolve(it, now) }
+            ?.takeIf { it is TemporalScope.Range }
+            ?: TemporalScopeResolver.resolve(transcript, now)
+        if (scope is TemporalScope.Range) {
             return ToolCall(
                 id = UUID.randomUUID().toString(),
                 name = "list_agenda",
                 arguments = JsonObject(
                     mapOf(
-                        "day" to JsonPrimitive(weekRange.start.toString()),
-                        "to" to JsonPrimitive(weekRange.endInclusive.toString()),
+                        "day" to JsonPrimitive(scope.start.toString()),
+                        "to" to JsonPrimitive(scope.end.toString()),
                     ),
                 ),
                 requiresConfirmation = false,
@@ -500,12 +548,19 @@ class ConversationalJarvisEngine @Inject constructor(
     /**
      * Deterministic planner CRUD — delete/move/rename/complete/"when is X" —
      * fuzzy-resolved to a real entry id (or a disambiguation question) exactly
-     * like Classic mode's own `AgendaIntentRouter` call, checked after
-     * [FastPathRouter] for the same reason Classic checks `CommandMatcher`
-     * first: an explicit command wins over a looser name match. The one
-     * difference from Classic is [contextEntryId] — `SessionCoordinator`'s
+     * like Classic mode's own `AgendaIntentRouter` call. The one difference
+     * from Classic is [contextEntryId] — `SessionCoordinator`'s
      * `lastAgendaEntryId` is Classic-only state, so this uses
      * [ConversationManager]'s tracked pending task instead.
+     *
+     * § FASE 2A.10 SEMANTIC ROUTER AUTHORITATIVE — called from EXACTLY ONE
+     * place now: [resolveSemanticRoute]'s `HandoffToLlm` branch, and only
+     * when the Semantic Interpreter has ALREADY confirmed this turn's domain
+     * is `AGENDA`. It is no longer a pre-semantic authority checked
+     * unconditionally on every turn — `AgendaCommandParser.parse()`'s own
+     * text-based understanding is now purely an EXECUTOR concern (resolving
+     * WHICH real entry a confirmed-AGENDA turn refers to), never the thing
+     * that decides a turn is about the agenda in the first place.
      *
      * This closes a real gap: without it, "segna le scadenze come completate"
      * or "quando devo andare dal dentista" have no resolved entry id to give
@@ -578,60 +633,6 @@ class ConversationalJarvisEngine @Inject constructor(
             "posso solo controllare la torcia del telefono."
     }
 
-    /**
-     * § FASE 2A.6 §2 — capability-first routing: when [transcript] matches
-     * EXACTLY ONE specific [ToolFamily] via `RelevantToolSelector.matchedFamilies`
-     * (never the conservative "ambiguous → full catalog" case, which is
-     * genuinely ambiguous and must still go to the model), and that family
-     * has a known, single, high-confidence tool, this calls it directly —
-     * no LLM round at all. This is the same architectural idea `runFastPath`/
-     * `runStructuredPath` already prove works for agenda commands, extended
-     * to the two capabilities added in FASE 2A.5-bis (`get_weather`,
-     * `get_health_summary`) that previously had no deterministic path and
-     * depended entirely on the model choosing to call them. Two or more
-     * families matching (e.g. "come ho dormito e gli impegni di domani")
-     * falls through to `runBrainLoop`, where grounding enforcement is the
-     * safety net for a genuinely multi-source request.
-     */
-    private suspend fun runCapabilityFastPath(transcript: String, turn: TurnState): String? {
-        val matched = RelevantToolSelector.matchedFamilies(transcript)
-        when (matched.singleOrNull()) {
-            ToolFamily.WEATHER -> {
-                when (val plan = weatherCall(transcript)) {
-                    is WeatherCapabilityPlan.OutOfRange -> {
-                        // § FASE 2A.7 RELEASE GATE 3 — resolved deterministically,
-                        // honestly, WITHOUT ever calling `get_weather` with a
-                        // silently-clamped day count: this app genuinely cannot
-                        // forecast that far, so say so directly instead of
-                        // spending an LLM round on a request the tool would
-                        // reject anyway.
-                        Log.i(TAG, "ENGINE_BRANCH=capability_fast_path weather_out_of_range")
-                        remoteChatState.setLastRoute("LOCAL (bypass: previsione fuori intervallo supportato)")
-                        turn.routingPath = "CAPABILITY_FAST_PATH"
-                        turn.modelRounds = 0
-                        return WEATHER_OUT_OF_RANGE_MESSAGE
-                    }
-                    is WeatherCapabilityPlan.Call -> {
-                        Log.i(TAG, "ENGINE_BRANCH=capability_fast_path tool=${plan.call.name}")
-                        remoteChatState.setLastRoute("LOCAL (bypass: capability diretta)")
-                        turn.routingPath = "CAPABILITY_FAST_PATH"
-                        turn.modelRounds = 0
-                        return executeAndTrack(plan.call, turn, confirmed = false)
-                    }
-                }
-            }
-            ToolFamily.HEALTH -> {
-                val call = healthCall(transcript)
-                Log.i(TAG, "ENGINE_BRANCH=capability_fast_path tool=${call.name}")
-                remoteChatState.setLastRoute("LOCAL (bypass: capability diretta)")
-                turn.routingPath = "CAPABILITY_FAST_PATH"
-                turn.modelRounds = 0
-                return executeAndTrack(call, turn, confirmed = false)
-            }
-            else -> return null
-        }
-    }
-
     /** What [weatherCall] decided for one request — either a real `get_weather` call, or an honest "out of range" that never reaches the tool at all. */
     private sealed interface WeatherCapabilityPlan {
         data class Call(val call: ToolCall) : WeatherCapabilityPlan
@@ -695,98 +696,6 @@ class ConversationalJarvisEngine @Inject constructor(
         )
     }
 
-    /**
-     * § FASE 2A.8 RELEASE GATE A/C — resolves a bare elliptical follow-up
-     * ("E dopodomani?", "Quanta ne ho nel telefono?") against the LAST
-     * capability/knowledge topic this conversation touched, instead of
-     * letting it reach the model with no family keyword of its own to go
-     * on (see [ConversationManager]'s own doc comment for the audited root
-     * cause). Checked after [runCapabilityFastPath] — an explicit,
-     * keyword-bearing capability request always wins — and before
-     * [runBrainLoop]. Deliberately narrow: it only fires when [transcript]
-     * carries NO family keyword of its own
-     * (`RelevantToolSelector.matchedFamilies` empty), so it can never
-     * shadow a genuine new capability request.
-     *
-     * Two independent resolutions, checked in order:
-     *  1. A remembered [ConversationManager.currentKnowledgeTopic] (e.g.
-     *     "ram", noted after a RAM/VRAM knowledge exchange) plus a bare
-     *     partitive shape ("Quanta ne ho?") resolves via
-     *     [DeviceInfoFollowUp] — never for "vram" (no reliable Android
-     *     value), which falls through instead of guessing.
-     *  2. A remembered [ConversationManager.currentCapabilityTopic]
-     *     (WEATHER/AGENDA/HEALTH) plus a genuinely date-shaped
-     *     continuation is resolved by calling the SAME capability builders
-     *     [runCapabilityFastPath] itself uses ([weatherCall],
-     *     [CommandMatcher.agendaCall], [healthCall]) directly on the bare
-     *     text — no new date parser: none of the three check for family
-     *     keywords themselves, only date/period words, so they correctly
-     *     extract "dopodomani" on their own.
-     */
-    private suspend fun runFollowUpFastPath(transcript: String, turn: TurnState): String? {
-        if (RelevantToolSelector.matchedFamilies(transcript).isNotEmpty()) return null
-
-        val knowledgeTopic = conversationManager.currentKnowledgeTopic()
-        if (knowledgeTopic != null && DeviceInfoFollowUp.looksLikePartitiveFollowUp(transcript)) {
-            val metric = DeviceInfoFollowUp.resolveDeviceInfoMetric(knowledgeTopic)
-            if (metric != null) {
-                val call = ToolCall(
-                    id = UUID.randomUUID().toString(),
-                    name = "get_device_info",
-                    arguments = JsonObject(mapOf("metric" to JsonPrimitive(metric))),
-                    requiresConfirmation = false,
-                )
-                Log.i(TAG, "ENGINE_BRANCH=follow_up_fast_path tool=${call.name}")
-                remoteChatState.setLastRoute("LOCAL (bypass: follow-up device info)")
-                turn.routingPath = "CAPABILITY_FAST_PATH"
-                turn.modelRounds = 0
-                return executeAndTrack(call, turn, confirmed = false)
-            }
-            // Topic remembered but not answerable (e.g. "vram") — fall
-            // through rather than silently substituting a different metric.
-        }
-
-        val capabilityTopic = conversationManager.currentCapabilityTopic() ?: return null
-        val now = LocalDateTime.now()
-        if (!ItalianDateTimeParser.parse(transcript, now).dateExplicit) return null
-
-        return when (capabilityTopic) {
-            ToolFamily.WEATHER -> when (val plan = weatherCall(transcript)) {
-                is WeatherCapabilityPlan.OutOfRange -> {
-                    Log.i(TAG, "ENGINE_BRANCH=follow_up_fast_path weather_out_of_range")
-                    remoteChatState.setLastRoute("LOCAL (bypass: previsione fuori intervallo supportato)")
-                    turn.routingPath = "CAPABILITY_FAST_PATH"
-                    turn.modelRounds = 0
-                    WEATHER_OUT_OF_RANGE_MESSAGE
-                }
-                is WeatherCapabilityPlan.Call -> {
-                    Log.i(TAG, "ENGINE_BRANCH=follow_up_fast_path tool=${plan.call.name}")
-                    remoteChatState.setLastRoute("LOCAL (bypass: follow-up capability)")
-                    turn.routingPath = "CAPABILITY_FAST_PATH"
-                    turn.modelRounds = 0
-                    executeAndTrack(plan.call, turn, confirmed = false)
-                }
-            }
-            ToolFamily.AGENDA -> {
-                val call = (CommandMatcher.agendaCall(transcript, now) as? Match.Run)?.call ?: return null
-                Log.i(TAG, "ENGINE_BRANCH=follow_up_fast_path tool=${call.name}")
-                remoteChatState.setLastRoute("LOCAL (bypass: follow-up capability)")
-                turn.routingPath = "CAPABILITY_FAST_PATH"
-                turn.modelRounds = 0
-                executeAndTrack(call, turn, confirmed = false)
-            }
-            ToolFamily.HEALTH -> {
-                val call = healthCall(transcript)
-                Log.i(TAG, "ENGINE_BRANCH=follow_up_fast_path tool=${call.name}")
-                remoteChatState.setLastRoute("LOCAL (bypass: follow-up capability)")
-                turn.routingPath = "CAPABILITY_FAST_PATH"
-                turn.modelRounds = 0
-                executeAndTrack(call, turn, confirmed = false)
-            }
-            else -> null
-        }
-    }
-
     /** Runs [call] through [ToolRouter], tracks it for [ConversationManager], and turns the outcome into speech. */
     private suspend fun executeAndTrack(call: ToolCall, turn: TurnState, confirmed: Boolean): String {
         turn.toolsRequested += call.name
@@ -798,11 +707,6 @@ class ConversationalJarvisEngine @Inject constructor(
         // model-requested tool call would be.
         RelevantToolSelector.familyOf(call.name)?.let { fam ->
             if (fam in GROUNDED_FAMILIES) turn.requiredGroundingFamilies = turn.requiredGroundingFamilies + fam
-            // § FASE 2A.8 RELEASE GATE A — remembered even before the call
-            // resolves: a follow-up like "E domani?" after a WEATHER attempt
-            // that then failed (e.g. offline) should still try WEATHER
-            // again, not fall through with nothing to resolve against.
-            if (fam in FOLLOW_UP_CAPABLE_FAMILIES) conversationManager.noteCapabilityTopic(fam)
         }
         val outcome = toolRouter.execute(call, turn.budget, online = isOnline(), confirmed = confirmed)
         conversationManager.onToolExecuted(call, outcome)
@@ -886,7 +790,16 @@ class ConversationalJarvisEngine @Inject constructor(
             // (round 2+) — see `JarvisBrain.reply`'s `toolSelectionText` doc
             // comment for why selecting from that text instead would starve
             // a later round of tools the original request might still need.
-            val reply = brain.reply(currentText, contextBlock, slot, timeoutSeconds, toolSelectionText = transcript)
+            // § FASE 2A.10 §5 — a MULTI_SOURCE_REASONING frame's grounded
+            // domains (e.g. HEALTH+AGENDA) are ALWAYS offered to the model as
+            // tools, never left to chance on whether their keyword also
+            // happens to appear in the text (see `RelevantToolSelector.select`'s
+            // `forcedFamilies` doc comment).
+            val reply = brain.reply(
+                currentText, contextBlock, slot, timeoutSeconds,
+                toolSelectionText = transcript,
+                forcedToolFamilies = turn.semanticMultiSourceDomains,
+            )
             // § FASE 2A.5 diagnostica richiesta esplicitamente ("tool family
             // selezionata", "tool disponibili al modello") — read right after
             // the call it describes, same "set by the last call" convention
@@ -964,7 +877,11 @@ class ConversationalJarvisEngine @Inject constructor(
                         return if (decision.reason == GroundingGate.MALFORMED_JSON_REASON) {
                             MALFORMED_OUTPUT_MESSAGE
                         } else {
-                            GROUNDING_FAIL_CLOSED_MESSAGE
+                            // § FASE 2A.10 §"multi-source" — "se una manca,
+                            // risposta onesta che identifica il dato mancante":
+                            // names the exact missing family instead of a
+                            // generic refusal.
+                            groundingFailClosedMessage(decision.reason)
                         }
                     }
                     GroundingGate.Decision.Allow -> return response.assistantText.trim().ifBlank { "Fatto." }
@@ -978,13 +895,6 @@ class ConversationalJarvisEngine @Inject constructor(
                 if (turn.budget.exhausted) {
                     toolResults.append("Ho eseguito il numero massimo di operazioni per questo turno.\n")
                     break
-                }
-                // § FASE 2A.8 RELEASE GATE A — same topic bookkeeping as
-                // executeAndTrack's deterministic paths, so a model-driven
-                // WEATHER/AGENDA/HEALTH tool call ALSO leaves a follow-up
-                // topic behind, not just the capability-fast-path ones.
-                RelevantToolSelector.familyOf(call.name)?.let { fam ->
-                    if (fam in FOLLOW_UP_CAPABLE_FAMILIES) conversationManager.noteCapabilityTopic(fam)
                 }
                 when (val outcome = toolRouter.execute(call, turn.budget, online = isOnline(), confirmed = false)) {
                     is ToolOutcome.Done -> {
@@ -1017,6 +927,33 @@ class ConversationalJarvisEngine @Inject constructor(
                 "finale per Simone in assistant_text, in linguaggio naturale, e lascia tool_calls vuoto."
             contextBlock = ""
         }
+    }
+
+    /**
+     * § FASE 2A.10 — turns [GroundingGate.UNMET_FAMILY_REASON_PREFIX]'s
+     * comma-separated family-name list into an honest Italian sentence
+     * naming what is actually missing, instead of the previous one-size
+     * refusal — the multi-source spec's explicit ask ("se una manca,
+     * risposta onesta che identifica il dato mancante").
+     */
+    private fun groundingFailClosedMessage(reason: String): String {
+        val names = reason.removePrefix(GroundingGate.UNMET_FAMILY_REASON_PREFIX)
+            .split(",")
+            .filter { it.isNotBlank() }
+        if (names.isEmpty()) return GROUNDING_FAIL_CLOSED_MESSAGE
+        return "Non ho ancora ${names.joinToString(" e ") { familyLabel(it) }}: non posso rispondere con certezza."
+    }
+
+    private fun familyLabel(familyName: String): String = when (familyName) {
+        "HEALTH" -> "i dati di salute"
+        "AGENDA" -> "gli impegni in agenda"
+        "WEATHER" -> "le previsioni meteo"
+        "DEVICE_INFO" -> "le informazioni sul dispositivo"
+        "MEMORY" -> "i ricordi salvati"
+        "ARCHIVE" -> "i dati dell'archivio"
+        "DEVICE" -> "lo stato del dispositivo"
+        "SYSTEM_APP" -> "le notifiche o app richieste"
+        else -> "quel dato"
     }
 
     private fun recordDiagnostics(entry: EngineTurnDiagnostics) {
@@ -1087,6 +1024,12 @@ class ConversationalJarvisEngine @Inject constructor(
         /** Release invariant: must always read false — see [resolveSemanticRoute]'s own doc comment for why this can only ever be a defensive canary, never a real trigger. */
         var legacyInvokedAfterValidSemantic = false
 
+        // § FASE 2A.10 diagnostica richiesta esplicitamente — see
+        // EngineTurnDiagnostics' own doc comment for both fields' contract.
+        var retryAttempted = false
+        var retrySucceeded = false
+        var legacyUsed = false
+
         /** Never includes the reply text itself — only counts/booleans, per [EngineTurnDiagnostics]'s contract. */
         fun toDiagnostics(): EngineTurnDiagnostics {
             val now = System.currentTimeMillis()
@@ -1139,6 +1082,9 @@ class ConversationalJarvisEngine @Inject constructor(
                 semanticLatencyMs = semanticLatencyMs,
                 semanticDisposition = semanticDisposition,
                 legacyInvokedAfterValidSemantic = legacyInvokedAfterValidSemantic,
+                retryAttempted = retryAttempted,
+                retrySucceeded = retrySucceeded,
+                legacyUsed = legacyUsed,
             )
         }
     }
@@ -1172,10 +1118,5 @@ class ConversationalJarvisEngine @Inject constructor(
         const val WEATHER_OUT_OF_RANGE_MESSAGE =
             "Riesco a prevedere il meteo solo fino a ${WeatherDaysAhead.MAX_SUPPORTED_DAYS_AHEAD} giorni da oggi: non ho una previsione così lontana."
 
-        // § FASE 2A.8 RELEASE GATE A — the families whose date-driven
-        // capability call can be re-invoked from a bare date follow-up
-        // ("E dopodomani?") via `runFollowUpFastPath`, without the request
-        // repeating a family keyword of its own.
-        val FOLLOW_UP_CAPABLE_FAMILIES = setOf(ToolFamily.WEATHER, ToolFamily.AGENDA, ToolFamily.HEALTH)
     }
 }

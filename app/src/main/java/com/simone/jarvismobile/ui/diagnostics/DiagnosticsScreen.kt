@@ -241,6 +241,27 @@ fun DiagnosticsScreen(
                             turn.groundingBlockReason?.let { reason ->
                                 Text("bloccoMotivo=$reason", style = MaterialTheme.typography.bodySmall)
                             }
+                            // § FASE 2A.10 diagnostica richiesta esplicitamente — quale
+                            // meccanismo ha stabilito il significato di questo turno,
+                            // con quale esito, mai il testo del prompt o della risposta.
+                            Text(
+                                "semantic=${turn.semanticEnabled} · fonte=${turn.semanticSource ?: "-"} · " +
+                                    "valido=${turn.semanticValid} · latenza=${turn.semanticLatencyMs?.let { "${it}ms" } ?: "-"}",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            Text(
+                                "intent=${turn.semanticIntent ?: "-"} · " +
+                                    "domini=${turn.semanticDomains.joinToString(",").ifEmpty { "-" }} · " +
+                                    "operazione=${turn.semanticOperation ?: "-"} · " +
+                                    "esito=${turn.semanticDisposition ?: "-"}",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            Text(
+                                "retry=${turn.retryAttempted}${if (turn.retryAttempted) "(ok=${turn.retrySucceeded})" else ""} · " +
+                                    "legacyUsato=${turn.legacyUsed} · " +
+                                    "legacyDopoSemanticaValida=${turn.legacyInvokedAfterValidSemantic}",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
                         }
                     }
                 }

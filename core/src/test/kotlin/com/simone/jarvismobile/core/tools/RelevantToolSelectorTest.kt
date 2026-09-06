@@ -474,4 +474,72 @@ class RelevantToolSelectorTest {
     fun `device info is a grounded family - never answerable from the model's own guess`() {
         assertTrue(ToolFamily.DEVICE_INFO in GROUNDED_FAMILIES)
     }
+
+    // § FASE 2A.10 §5 (MULTI_SOURCE_REASONING grounding) — forcedFamilies.
+
+    @Test
+    fun `forcedFamilies adds a family's tools even with zero keyword match`() {
+        val selected = RelevantToolSelector.select(allTools, "A che ora dovrei andare a letto?", forcedFamilies = setOf(ToolFamily.HEALTH))
+        assertTrue(selected.any { (name, _) -> RelevantToolSelector.familyOf(name) == ToolFamily.HEALTH })
+    }
+
+    @Test
+    fun `forcedFamilies never removes a keyword-matched family`() {
+        val selected = RelevantToolSelector.select(allTools, "Che impegni ho domani?", forcedFamilies = setOf(ToolFamily.HEALTH))
+        assertTrue(selected.any { (name, _) -> RelevantToolSelector.familyOf(name) == ToolFamily.AGENDA })
+        assertTrue(selected.any { (name, _) -> RelevantToolSelector.familyOf(name) == ToolFamily.HEALTH })
+    }
+
+    @Test
+    fun `no forcedFamilies leaves existing behavior unchanged`() {
+        assertEquals(
+            RelevantToolSelector.select(allTools, "Ciao, come stai?"),
+            RelevantToolSelector.select(allTools, "Ciao, come stai?", forcedFamilies = emptySet()),
+        )
+    }
+
+    // § FASE 2A.10 test category F — exactness of `requiredGroundingFamilies`
+    // for a genuine MULTI_SOURCE_REASONING pair, not just "the family is
+    // present somewhere in the list".
+
+    @Test
+    fun `forcedFamilies with two families and zero keyword match selects EXACTLY those two families' tools`() {
+        val selected = RelevantToolSelector.select(
+            allTools,
+            "Considerando tutto questo, dimmi se va bene",
+            forcedFamilies = setOf(ToolFamily.HEALTH, ToolFamily.AGENDA),
+        )
+        assertEquals(setOf(ToolFamily.HEALTH, ToolFamily.AGENDA), RelevantToolSelector.familiesOf(selected))
+        // Never the ambiguous-fallback full catalog — forcedFamilies alone
+        // makes `matched` non-empty, so `select` takes the family-filter
+        // branch, not the "no family matched" branch.
+        assertTrue(selected.size < allTools.size)
+    }
+
+    @Test
+    fun `forcedFamilies unions with a keyword-matched third family, never replacing or dropping either`() {
+        // "Considerando come ho dormito e gli impegni di domani, che tempo farà?"
+        // — HEALTH+AGENDA are the forced multi-source domains, WEATHER matches
+        // by keyword on its own ("che tempo farà").
+        val selected = RelevantToolSelector.select(
+            allTools,
+            "Che tempo farà? Considerando come ho dormito e gli impegni di domani.",
+            forcedFamilies = setOf(ToolFamily.HEALTH, ToolFamily.AGENDA),
+        )
+        assertEquals(
+            setOf(ToolFamily.WEATHER, ToolFamily.HEALTH, ToolFamily.AGENDA),
+            RelevantToolSelector.familiesOf(selected),
+        )
+    }
+
+    @Test
+    fun `forcedFamilies exactness holds even when the two forced families overlap the same keyword-matched families`() {
+        // No redundant duplication when matchedFamilies() already finds both.
+        val selected = RelevantToolSelector.select(
+            allTools,
+            "Considerando come ho dormito e gli impegni di domani",
+            forcedFamilies = setOf(ToolFamily.HEALTH, ToolFamily.AGENDA),
+        )
+        assertEquals(setOf(ToolFamily.HEALTH, ToolFamily.AGENDA), RelevantToolSelector.familiesOf(selected))
+    }
 }

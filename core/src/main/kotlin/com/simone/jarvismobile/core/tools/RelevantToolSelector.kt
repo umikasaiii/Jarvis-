@@ -249,8 +249,19 @@ object RelevantToolSelector {
      *  - Neither matched → empty: a plain "Ciao, come stai?" needs no tool
      *    catalog.
      */
-    fun select(availableTools: List<Pair<String, String>>, userText: String): List<Pair<String, String>> {
-        val matched = matchedFamilies(userText)
+    fun select(
+        availableTools: List<Pair<String, String>>,
+        userText: String,
+        // § FASE 2A.10 — a MULTI_SOURCE_REASONING SemanticFrame already knows
+        // which families the turn genuinely needs (e.g. HEALTH+AGENDA for
+        // "considerando come ho dormito e gli impegni di domani...") — this
+        // union guarantees those families' tools are ALWAYS offered to the
+        // model, never left to chance on whether their keyword also happens
+        // to appear in the text. Never removes a family [matchedFamilies]
+        // would have found on its own; purely additive.
+        forcedFamilies: Set<ToolFamily> = emptySet(),
+    ): List<Pair<String, String>> {
+        val matched = matchedFamilies(userText) + forcedFamilies
 
         if (matched.isNotEmpty()) {
             return availableTools.filter { (name, _) ->

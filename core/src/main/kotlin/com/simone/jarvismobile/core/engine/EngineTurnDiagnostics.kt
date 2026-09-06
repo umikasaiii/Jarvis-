@@ -132,4 +132,18 @@ data class EngineTurnDiagnostics(
      * is a real regression, not a tuning question.
      */
     val legacyInvokedAfterValidSemantic: Boolean = false,
+    // § FASE 2A.10 SEMANTIC ROUTER AUTHORITATIVE — additive, default to
+    // previous no-op values so no other constructor call site breaks.
+    /** Whether the interpreter's first attempt this turn failed/was invalid and a second, stateless attempt was made before giving up. */
+    val retryAttempted: Boolean = false,
+    /** True only when [retryAttempted] and that second attempt produced a VALID frame. */
+    val retrySucceeded: Boolean = false,
+    /**
+     * True when neither the first nor (if attempted) the retried semantic
+     * interpretation validated, so this turn's meaning came from the full
+     * reasoning loop directly — never from a keyword/topic domain guess for
+     * WEATHER/AGENDA/HEALTH/DEVICE_INFO (§ FASE 2A.10: legacy keyword domain
+     * routing is no longer reachable at all after a semantic failure).
+     */
+    val legacyUsed: Boolean = false,
 )

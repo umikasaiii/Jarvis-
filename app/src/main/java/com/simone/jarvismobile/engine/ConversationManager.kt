@@ -5,7 +5,6 @@ import com.simone.jarvismobile.core.memory.MemoryEntry
 import com.simone.jarvismobile.core.memory.MemoryTier
 import com.simone.jarvismobile.core.protocol.ToolCall
 import com.simone.jarvismobile.core.semantic.SemanticFrame
-import com.simone.jarvismobile.core.tools.ToolFamily
 import com.simone.jarvismobile.tools.ToolOutcome
 import com.simone.jarvismobile.util.runCancellable
 import kotlinx.serialization.json.JsonObject
@@ -61,37 +60,18 @@ class ConversationManager @Inject constructor(
         return p
     }
 
-    /**
-     * § FASE 2A.8 RELEASE GATE A — real bug audited: "Che impegni ho domani?"
-     * → "E dopodomani?" used to reach the model with NO family selected at
-     * all (`matchedFamilies` finds no keyword in a bare date phrase), so the
-     * FAST prompt explicitly told it "no tool needed" and it answered from
-     * nothing. This is deliberately separate from [PendingTask] above (which
-     * only tracks an in-flight AGENDA WRITE, e.g. "Ricordami... " → "Anzi,
-     * alle 18") — a plain data-QUERY follow-up ("E dopodomani?" after a
-     * read-only "che impegni ho domani?") never creates or touches a
-     * `PendingTask` at all, so without this it has nothing to resolve
-     * against. Short idle timeout: a "the next bare date word means the same
-     * capability" assumption should not survive an unrelated topic switch a
-     * few minutes later.
-     */
-    private data class LastCapabilityTopic(val family: ToolFamily, val touchedAtMs: Long)
-
-    @Volatile private var lastCapabilityTopic: LastCapabilityTopic? = null
-
-    /** The [ToolFamily] a capability request most recently, successfully resolved to — or null if none/gone stale. */
-    fun currentCapabilityTopic(): ToolFamily? {
-        val t = lastCapabilityTopic ?: return null
-        if (System.currentTimeMillis() - t.touchedAtMs > TOPIC_IDLE_TIMEOUT_MS) {
-            lastCapabilityTopic = null
-            return null
-        }
-        return t.family
-    }
-
-    fun noteCapabilityTopic(family: ToolFamily) {
-        lastCapabilityTopic = LastCapabilityTopic(family, System.currentTimeMillis())
-    }
+    // § FASE 2A.10 SEMANTIC ROUTER AUTHORITATIVE — the FASE 2A.8 topic-based
+    // follow-up heuristic that used to live here (`LastCapabilityTopic`/
+    // `currentCapabilityTopic`/`noteCapabilityTopic`, read only by the now-
+    // removed `ConversationalJarvisEngine.runFollowUpFastPath`) has been
+    // retired entirely, not left unread: it was the exact mechanism behind
+    // "Domani farà caldo?" answering from a stale HEALTH topic whenever the
+    // Semantic Interpreter failed — see `ConversationalJarvisEngine`'s own
+    // FASE 2A.10 doc comments for the full root-cause explanation. A
+    // follow-up's domain continuity is now `SemanticFrameMerger`'s job
+    // (below), driven by the actually-validated previous [SemanticFrame],
+    // never a bare family name with no check that the current turn's own
+    // words are consistent with it.
 
     /**
      * § FASE 2A.8 RELEASE GATE A/C — the RAM/VRAM anaphora case: "Che

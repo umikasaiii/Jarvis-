@@ -117,6 +117,22 @@ class AgendaTest {
         assertEquals("domani alle 15:00, tagliare i capelli", Agenda.speak(e, today))
     }
 
+    // § FASE 2A.10 §"presentation layer" — "Hai un impegno per domani: domani
+    // alle 08:00, ..." repeated the date already stated in the intro;
+    // includeDate=false lets a caller that already named the day omit it.
+
+    @Test
+    fun `spoken line without date omits the day but keeps the time`() {
+        val e = AgendaEntry(today.plusDays(1), LocalTime.of(8, 0), "comprare menta e orzata")
+        assertEquals("alle 08:00, comprare menta e orzata", Agenda.speak(e, today, includeDate = false))
+    }
+
+    @Test
+    fun `spoken line without date and without a time is just the text`() {
+        val e = AgendaEntry(today.plusDays(1), null, "portare fuori il cane")
+        assertEquals("portare fuori il cane", Agenda.speak(e, today, includeDate = false))
+    }
+
     @Test
     fun `human minutes`() {
         assertEquals("7 ore e 57 minuti", Agenda.humanMinutes(477))

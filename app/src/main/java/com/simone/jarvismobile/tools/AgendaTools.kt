@@ -186,11 +186,18 @@ class ListAgendaTool(private val agenda: AgendaRepository) : Tool {
             if (period != null) append(if (day != null) " " else " per ").append(period.name.lowercase())
         }
 
+        // § FASE 2A.10 §"presentation layer" — the intro already names the
+        // single day being asked about ("Hai un impegno per domani: …"), so
+        // repeating it inside Agenda.speak() too ("…: domani alle 08:00, …")
+        // is the exact redundant phrasing the spec calls out. A RANGE keeps
+        // the per-item date (each entry can fall on a different day within
+        // it), only a single exact day omits it.
+        val singleDayExact = day != null && to == null
         val spoken = when {
             items.isEmpty() -> "Non hai impegni in agenda$scope."
-            items.size == 1 -> "Hai un impegno$scope: ${Agenda.speak(items.first(), today)}."
+            items.size == 1 -> "Hai un impegno$scope: ${Agenda.speak(items.first(), today, includeDate = !singleDayExact)}."
             else -> "Hai ${items.size} impegni$scope: " +
-                items.joinToString("; ") { Agenda.speak(it, today) } + "."
+                items.joinToString("; ") { Agenda.speak(it, today, includeDate = !singleDayExact) } + "."
         }
         return okJson("count" to items.size.toString(), "spoken" to spoken)
     }
