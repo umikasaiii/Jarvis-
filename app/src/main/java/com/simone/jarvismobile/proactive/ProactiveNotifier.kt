@@ -76,6 +76,26 @@ class ProactiveNotifier @Inject constructor(
             .setPriority(if (isDigest) NotificationCompat.PRIORITY_DEFAULT else NotificationCompat.PRIORITY_LOW)
             .setCategory(NotificationCompat.CATEGORY_RECOMMENDATION)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            // § bug reale segnalato dall'utente: il briefing mattutino delle
+            // 8:00 è stato seguito da un secondo avviso "Briefing" alle 9:00,
+            // dopo aver collegato l'orologio alle 8:30 — causa reale, non
+            // ipotizzata: `ProactiveManager.refreshMorningDigestNotification()`
+            // (§ FASE 2A.8 §G, +10min/+60min post-briefing refresh) ripubblica
+            // DELIBERATAMENTE la stessa notifica (stesso id, mai una seconda)
+            // per aggiornarne il contenuto con dati Health nel frattempo
+            // sincronizzati — ma senza `setOnlyAlertOnce`, `notify()` con lo
+            // stesso id fa comunque suonare/vibrare/apparire di nuovo la
+            // notifica su un canale `IMPORTANCE_HIGH` come CHANNEL_REMINDERS,
+            // che è indistinguibile per l'utente da un secondo messaggio
+            // vero. Il commento di `refreshMorningDigestNotification()`
+            // dichiarava già l'intento ("si sostituisce sul posto... mai un
+            // secondo messaggio") ma il costruttore della notifica non lo
+            // garantiva. Con questo flag, un `notify()` sulla stessa notifica
+            // ancora presente nella shade aggiorna il contenuto in silenzio;
+            // se l'utente l'ha già chiusa nel frattempo, Android la tratta
+            // comunque come nuova e avvisa di nuovo — comportamento corretto,
+            // non un bug residuo.
+            .setOnlyAlertOnce(true)
         if (!isDigest) builder.addAction(0, "Non avvisarmi più di questo", mute)
         val notification = builder.build()
         runCatching {
