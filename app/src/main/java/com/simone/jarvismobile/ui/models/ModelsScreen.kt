@@ -21,12 +21,17 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.simone.jarvismobile.llm.EmbeddingLoadState
 import com.simone.jarvismobile.llm.LlmLoadState
+import com.simone.jarvismobile.llm.LocalModel
 
 /**
  * Models screen (Phase 3): import an on-device LLM model file (LiteRT-LM
@@ -43,8 +48,16 @@ fun ModelsScreen(
     val loadedName by viewModel.loadedModelName.collectAsStateWithLifecycle()
     val advancedName by viewModel.advancedModelName.collectAsStateWithLifecycle()
     val classifierName by viewModel.classifierModelName.collectAsStateWithLifecycle()
+    val semanticState by viewModel.semanticClassifierLoadState.collectAsStateWithLifecycle()
+    val semanticName by viewModel.semanticClassifierModelName.collectAsStateWithLifecycle()
     val status by viewModel.status.collectAsStateWithLifecycle()
     val busy by viewModel.busy.collectAsStateWithLifecycle()
+
+    // § FASE 2A.11 — EmbeddingGemma needs TWO files at once (`.tflite` +
+    // SentencePiece tokenizer); this two-step pick mirrors the existing
+    // per-row assignment buttons instead of a second import flow.
+    var pendingTflite by remember { mutableStateOf<LocalModel?>(null) }
+    var pendingTokenizer by remember { mutableStateOf<LocalModel?>(null) }
 
     // GetContent (ACTION_GET_CONTENT) is more permissive than OpenDocument on
     // OEM ROMs (MagicOS/EMUI grey out unknown types like .litertlm in the
@@ -68,6 +81,10 @@ fun ModelsScreen(
                 Text("Rapido: ${loadedName ?: "—"}", style = MaterialTheme.typography.bodyMedium)
                 Text("Avanzato: ${advancedName ?: "—"}", style = MaterialTheme.typography.bodyMedium)
                 Text("Classificatore: ${classifierName ?: "—"}", style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    "Comprensione semantica: ${semanticName ?: "—"} (${semanticLoadStateLabel(semanticState)})",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
                 if (status.isNotEmpty()) {
                     Text(status, style = MaterialTheme.typography.bodyMedium)
                 }
@@ -100,6 +117,14 @@ fun ModelsScreen(
                             Button(onClick = { viewModel.load(model) }, enabled = !busy) { Text("Rapido") }
                             Button(onClick = { viewModel.loadAdvanced(model) }, enabled = !busy) { Text("Avanzato") }
                             Button(onClick = { viewModel.loadClassifier(model) }, enabled = !busy) { Text("Classificatore") }
+                            OutlinedButton(
+                                onClick = { pendingTflite = model },
+                                enabled = !busy,
+                            ) { Text(if (pendingTflite == model) "✓ Sem. modello" else "Sem. modello") }
+                            OutlinedButton(
+                                onClick = { pendingTokenizer = model },
+                                enabled = !busy,
+                            ) { Text(if (pendingTokenizer == model) "✓ Sem. tokenizer" else "Sem. tokenizer") }
                             OutlinedButton(onClick = { viewModel.delete(model) }, enabled = !busy) { Text("Elimina") }
                         }
                     }
@@ -115,6 +140,24 @@ fun ModelsScreen(
             }
             OutlinedButton(onClick = viewModel::unloadClassifier, modifier = Modifier.fillMaxWidth()) {
                 Text("Scarica classificatore")
+            }
+            val tflite = pendingTflite
+            val tokenizer = pendingTokenizer
+            Button(
+                onClick = { if (tflite != null && tokenizer != null) viewModel.loadSemanticClassifier(tflite, tokenizer) },
+                enabled = !busy && tflite != null && tokenizer != null,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(
+                    if (tflite != null && tokenizer != null) {
+                        "Carica comprensione semantica (${tflite.name} + ${tokenizer.name})"
+                    } else {
+                        "Scegli sopra il modello .tflite e il tokenizer, poi tocca qui"
+                    },
+                )
+            }
+            OutlinedButton(onClick = viewModel::unloadSemanticClassifier, modifier = Modifier.fillMaxWidth()) {
+                Text("Scarica comprensione semantica")
             }
         }
 
@@ -151,6 +194,23 @@ fun ModelsScreen(
             }
         }
 
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Comprensione semantica (EmbeddingGemma)", style = MaterialTheme.typography.titleMedium)
+                HorizontalDivider()
+                Text(
+                    "Un quarto modello, diverso dai tre sopra: NON risponde mai, capisce solo il " +
+                        "significato di quello che dici (agenda, meteo, salute, informazioni sul " +
+                        "telefono, conoscenza generale) prima ancora che il modello che risponde " +
+                        "entri in gioco. Servono due file importati insieme: " +
+                        "embeddinggemma-300M_seq256_mixed-precision.tflite e sentencepiece.model. " +
+                        "Senza questi due file, JARVIS passa direttamente al ciclo di ragionamento " +
+                        "completo per capire ogni richiesta — funziona comunque, solo un po' più lento.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+
         OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
             Text("Indietro")
         }
@@ -169,4 +229,11 @@ private fun loadStateLabel(s: LlmLoadState): String = when (s) {
     LlmLoadState.LOADING -> "Caricamento…"
     LlmLoadState.LOADED -> "Pronto"
     LlmLoadState.ERROR -> "Errore"
+}
+
+private fun semanticLoadStateLabel(s: EmbeddingLoadState): String = when (s) {
+    EmbeddingLoadState.UNLOADED -> "non caricata"
+    EmbeddingLoadState.LOADING -> "caricamento…"
+    EmbeddingLoadState.LOADED -> "pronta"
+    EmbeddingLoadState.ERROR -> "errore"
 }

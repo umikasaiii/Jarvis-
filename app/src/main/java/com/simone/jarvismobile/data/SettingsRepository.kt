@@ -56,6 +56,17 @@ class SettingsRepository @Inject constructor(
         val KNOWLEDGE_URI = stringPreferencesKey("knowledge_tree_uri")
         val EMBEDDING_MODEL_PATH = stringPreferencesKey("embedding_model_path")
         val EMBEDDING_VOCAB_PATH = stringPreferencesKey("embedding_vocab_path")
+        // § FASE 2A.11 — deliberately DISTINCT keys/names from the pair right
+        // above: those are the Memory V2 retrieval sentence-embedder
+        // (ONNX+WordPiece, a different model for a different purpose,
+        // audited and left untouched). This is EmbeddingGemma 300M
+        // (TFLite+SentencePiece) for the Semantic Understanding Layer.
+        val SEMANTIC_CLASSIFIER_TFLITE_PATH = stringPreferencesKey("semantic_classifier_tflite_path")
+        val SEMANTIC_CLASSIFIER_TFLITE_NAME = stringPreferencesKey("semantic_classifier_tflite_name")
+        val SEMANTIC_CLASSIFIER_TOKENIZER_PATH = stringPreferencesKey("semantic_classifier_tokenizer_path")
+        val SEMANTIC_CLASSIFIER_TOKENIZER_NAME = stringPreferencesKey("semantic_classifier_tokenizer_name")
+        /** Debug-only A/B toggle (§14): `false` (default) = EmbeddingGemma classifier: `true` = the legacy FASE 2A.9 generative interpreter. Never read outside a debug comparison screen. */
+        val SEMANTIC_USE_LEGACY_GEMMA_INTERPRETER = booleanPreferencesKey("semantic_use_legacy_gemma_interpreter")
         val PRO_MODE_ACTIVE = booleanPreferencesKey("pro_mode_active")
         val RESPONSE_NOTIFICATIONS = booleanPreferencesKey("response_notifications")
         val SHOW_RESPONSE_PREVIEW = booleanPreferencesKey("show_response_preview")
@@ -319,6 +330,52 @@ class SettingsRepository @Inject constructor(
             it.remove(Keys.CLASSIFIER_MODEL_PATH)
             it.remove(Keys.CLASSIFIER_MODEL_NAME)
         }
+    }
+
+    /**
+     * § FASE 2A.11 — the EmbeddingGemma 300M model (`.tflite`) and its
+     * SentencePiece tokenizer (`.model`), the Semantic Understanding Layer's
+     * dedicated classifier — a DIFFERENT model from [classifierModelPath]
+     * above (that one is an optional third GENERATIVE brain for
+     * `LlmIntentClassifier`; this one is never generative, never answers,
+     * never used for anything but turning text into an embedding).
+     */
+    val semanticClassifierTflitePath: Flow<String> =
+        context.settingsDataStore.data.map { it[Keys.SEMANTIC_CLASSIFIER_TFLITE_PATH] ?: "" }
+
+    val semanticClassifierTfliteName: Flow<String> =
+        context.settingsDataStore.data.map { it[Keys.SEMANTIC_CLASSIFIER_TFLITE_NAME] ?: "" }
+
+    val semanticClassifierTokenizerPath: Flow<String> =
+        context.settingsDataStore.data.map { it[Keys.SEMANTIC_CLASSIFIER_TOKENIZER_PATH] ?: "" }
+
+    val semanticClassifierTokenizerName: Flow<String> =
+        context.settingsDataStore.data.map { it[Keys.SEMANTIC_CLASSIFIER_TOKENIZER_NAME] ?: "" }
+
+    suspend fun setSemanticClassifierModel(tflitePath: String, tfliteName: String, tokenizerPath: String, tokenizerName: String) {
+        context.settingsDataStore.edit {
+            it[Keys.SEMANTIC_CLASSIFIER_TFLITE_PATH] = tflitePath
+            it[Keys.SEMANTIC_CLASSIFIER_TFLITE_NAME] = tfliteName
+            it[Keys.SEMANTIC_CLASSIFIER_TOKENIZER_PATH] = tokenizerPath
+            it[Keys.SEMANTIC_CLASSIFIER_TOKENIZER_NAME] = tokenizerName
+        }
+    }
+
+    suspend fun clearSemanticClassifierModel() {
+        context.settingsDataStore.edit {
+            it.remove(Keys.SEMANTIC_CLASSIFIER_TFLITE_PATH)
+            it.remove(Keys.SEMANTIC_CLASSIFIER_TFLITE_NAME)
+            it.remove(Keys.SEMANTIC_CLASSIFIER_TOKENIZER_PATH)
+            it.remove(Keys.SEMANTIC_CLASSIFIER_TOKENIZER_NAME)
+        }
+    }
+
+    /** § FASE 2A.11 §14 debug-only A/B — see [Keys.SEMANTIC_USE_LEGACY_GEMMA_INTERPRETER]'s own doc comment. */
+    val semanticUseLegacyGemmaInterpreter: Flow<Boolean> =
+        context.settingsDataStore.data.map { it[Keys.SEMANTIC_USE_LEGACY_GEMMA_INTERPRETER] ?: false }
+
+    suspend fun setSemanticUseLegacyGemmaInterpreter(value: Boolean) {
+        context.settingsDataStore.edit { it[Keys.SEMANTIC_USE_LEGACY_GEMMA_INTERPRETER] = value }
     }
 
     val assistantName: Flow<String> =

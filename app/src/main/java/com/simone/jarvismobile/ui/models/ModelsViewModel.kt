@@ -4,12 +4,15 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.simone.jarvismobile.data.SettingsRepository
+import com.simone.jarvismobile.engine.semantic.EmbeddingSemanticClassifier
+import com.simone.jarvismobile.llm.EmbeddingLoadState
 import com.simone.jarvismobile.llm.ImportResult
 import com.simone.jarvismobile.llm.LlmEngine
 import com.simone.jarvismobile.llm.LlmLoadState
 import com.simone.jarvismobile.llm.LlmRouter
 import com.simone.jarvismobile.llm.LocalModel
 import com.simone.jarvismobile.llm.ModelManager
+import com.simone.jarvismobile.llm.SemanticEmbeddingEngine
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -24,6 +27,8 @@ class ModelsViewModel @Inject constructor(
     private val llm: LlmEngine,
     private val router: LlmRouter,
     private val settings: SettingsRepository,
+    private val semanticEmbeddingEngine: SemanticEmbeddingEngine,
+    private val semanticClassifier: EmbeddingSemanticClassifier,
 ) : ViewModel() {
 
     val loadState: StateFlow<LlmLoadState> = llm.loadState
@@ -32,6 +37,10 @@ class ModelsViewModel @Inject constructor(
     val advancedModelName: StateFlow<String?> = router.advancedModelName
     val classifierLoadState: StateFlow<LlmLoadState> = router.classifierLoadState
     val classifierModelName: StateFlow<String?> = router.classifierModelName
+
+    /** § FASE 2A.11 — EmbeddingGemma (Semantic Understanding Layer), a DIFFERENT model from the three above. */
+    val semanticClassifierLoadState: StateFlow<EmbeddingLoadState> = semanticEmbeddingEngine.loadState
+    val semanticClassifierModelName: StateFlow<String?> = semanticEmbeddingEngine.loadedModelName
 
     private val _models = MutableStateFlow<List<LocalModel>>(emptyList())
     val models: StateFlow<List<LocalModel>> = _models.asStateFlow()
@@ -155,6 +164,38 @@ class ModelsViewModel @Inject constructor(
         router.classifier.unload()
         viewModelScope.launch { settings.clearClassifierModel() }
         _status.value = "Modello classificatore scaricato"
+    }
+
+    /**
+     * § FASE 2A.11 — assigns the two files EmbeddingGemma needs
+     * (`.tflite` + SentencePiece tokenizer) to the Semantic Understanding
+     * Layer's dedicated slot. Never used for chat/answers — only for turning
+     * text into an embedding for the semantic classifier.
+     */
+    fun loadSemanticClassifier(tfliteModel: LocalModel, tokenizerModel: LocalModel) {
+        if (_busy.value) return
+        _busy.value = true
+        _status.value = "Caricamento del modello di comprensione semantica…"
+        viewModelScope.launch {
+            val ok = semanticEmbeddingEngine.load(tfliteModel.path, tokenizerModel.path, tfliteModel.name)
+            if (ok) {
+                settings.setSemanticClassifierModel(tfliteModel.path, tfliteModel.name, tokenizerModel.path, tokenizerModel.name)
+                semanticClassifier.invalidate()
+                _status.value = "Comprensione semantica pronta: ${tfliteModel.name}. Verrà usata per capire " +
+                    "il significato delle richieste, mai per rispondere direttamente."
+            } else {
+                _status.value = "Caricamento della comprensione semantica fallito. Dettaglio: " +
+                    semanticEmbeddingEngine.lastLoadDetail.value.ifBlank { "errore sconosciuto" }
+            }
+            _busy.value = false
+        }
+    }
+
+    fun unloadSemanticClassifier() {
+        semanticEmbeddingEngine.unload()
+        semanticClassifier.invalidate()
+        viewModelScope.launch { settings.clearSemanticClassifierModel() }
+        _status.value = "Comprensione semantica scaricata — le richieste passano al ciclo di ragionamento completo"
     }
 
     fun unload() {

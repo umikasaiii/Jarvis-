@@ -186,6 +186,13 @@ dependencies {
     implementation(libs.litertlm.android)
     implementation(libs.androidx.documentfile)
     implementation(libs.onnxruntime.android)
+    // § FASE 2A.11 — base LiteRT (TensorFlow Lite) Interpreter runtime for
+    // EmbeddingGemma's raw `.tflite` encoder graph; `litertlm-android` above
+    // is a different, LLM-specific wrapper that cannot load it (see
+    // `libs.versions.toml`'s own note). Coordinate/version not verified
+    // against Maven Central in this environment (network-blocked) — CI/
+    // Android Studio's Gradle resolution is the real first check.
+    implementation(libs.litert)
 
     // Supertonic 3 TTS — TEMPORARILY COMMENTED OUT (user request, 2026-08-19):
     // this dependency does not resolve without app/libs/sherpa-onnx-1.13.5.aar,

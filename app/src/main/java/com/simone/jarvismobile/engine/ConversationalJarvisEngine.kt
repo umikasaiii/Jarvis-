@@ -27,6 +27,7 @@ import com.simone.jarvismobile.core.semantic.SemanticIntent
 import com.simone.jarvismobile.core.semantic.SemanticRoutingOutcome
 import com.simone.jarvismobile.core.semantic.SemanticRouter
 import com.simone.jarvismobile.core.semantic.SemanticSource
+import com.simone.jarvismobile.core.semantic.embedding.HasSemanticTiming
 import com.simone.jarvismobile.core.tools.DeviceInfoFollowUp
 import com.simone.jarvismobile.core.tools.GROUNDED_FAMILIES
 import com.simone.jarvismobile.core.tools.HomeControlDetector
@@ -264,6 +265,26 @@ class ConversationalJarvisEngine @Inject constructor(
             turn.retrySucceeded = interpretation is SemanticInterpretation.Valid
         }
         turn.semanticLatencyMs = System.currentTimeMillis() - startedAt
+        // § FASE 2A.11 §15 — optional, backend-specific timing breakdown:
+        // `HasSemanticTiming` is a second interface only the real
+        // `EmbeddingSemanticClassifier`-backed adapter implements (the legacy
+        // generative interpreter cannot report tokenization/embedding/
+        // classification as separate stages at all) — same "set by the last
+        // call, read via `as?`" convention already used for
+        // `JarvisBrain.lastPromptDiagnostics`, so this never grows the
+        // `SemanticInterpreter` contract itself.
+        (semanticInterpreter as? HasSemanticTiming)?.lastSemanticTiming()?.let { timing ->
+            // Reaching this block at all means the bound `SemanticInterpreter`
+            // implements `HasSemanticTiming` — today only the embedding
+            // classifier adapter does, so this label is accurate without
+            // needing to name that concrete class here.
+            turn.semanticBackend = "EMBEDDING"
+            turn.semanticTokenizationMs = timing.tokenizationMs
+            turn.semanticEmbeddingMs = timing.embeddingMs
+            turn.semanticClassificationMs = timing.classificationMs
+            turn.semanticTotalMs = timing.totalMs
+            turn.modelColdStartMs = timing.coldStartMs
+        }
 
         val rawFrame = when (interpretation) {
             null -> {
@@ -1030,6 +1051,15 @@ class ConversationalJarvisEngine @Inject constructor(
         var retrySucceeded = false
         var legacyUsed = false
 
+        // § FASE 2A.11 §15 diagnostica richiesta esplicitamente — see
+        // EngineTurnDiagnostics' own doc comment for each field's contract.
+        var semanticBackend: String? = null
+        var semanticTokenizationMs: Long? = null
+        var semanticEmbeddingMs: Long? = null
+        var semanticClassificationMs: Long? = null
+        var semanticTotalMs: Long? = null
+        var modelColdStartMs: Long? = null
+
         /** Never includes the reply text itself — only counts/booleans, per [EngineTurnDiagnostics]'s contract. */
         fun toDiagnostics(): EngineTurnDiagnostics {
             val now = System.currentTimeMillis()
@@ -1085,6 +1115,12 @@ class ConversationalJarvisEngine @Inject constructor(
                 retryAttempted = retryAttempted,
                 retrySucceeded = retrySucceeded,
                 legacyUsed = legacyUsed,
+                semanticBackend = semanticBackend,
+                semanticTokenizationMs = semanticTokenizationMs,
+                semanticEmbeddingMs = semanticEmbeddingMs,
+                semanticClassificationMs = semanticClassificationMs,
+                semanticTotalMs = semanticTotalMs,
+                modelColdStartMs = modelColdStartMs,
             )
         }
     }

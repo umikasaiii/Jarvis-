@@ -35,6 +35,18 @@ documentfile = "1.0.1"
 onnxruntime = "1.20.0"
 playServicesAuth = "21.6.0"
 healthConnect = "1.1.0-alpha07"
+# § FASE 2A.11 — the BASE LiteRT (TensorFlow Lite) runtime, distinct from
+# `litertlm` above: `litertlm-android` is Google's higher-level LLM-specific
+# wrapper (its own `.litertlm` bundle format, generate()/chat() API) and
+# cannot load an arbitrary encoder `.tflite` graph like EmbeddingGemma's —
+# this is the general-purpose Interpreter API every custom TFLite model
+# (including EmbeddingGemma) actually runs on. Same LiteRT family, not a
+# second ML runtime — `com.google.ai.edge.litert:litert` is the current
+# Maven Central artifact name (successor to `org.tensorflow:tensorflow-lite`)
+# per public knowledge; NOT verified against the real dependency in this
+# environment (Maven Central resolution only happens in CI/Android Studio —
+# same honest limit already documented for Health Connect above).
+litert = "1.4.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -79,6 +91,7 @@ androidx-documentfile = { group = "androidx.documentfile", name = "documentfile"
 onnxruntime-android = { group = "com.microsoft.onnxruntime", name = "onnxruntime-android", version.ref = "onnxruntime" }
 play-services-auth = { group = "com.google.android.gms", name = "play-services-auth", version.ref = "playServicesAuth" }
 androidx-health-connect-client = { group = "androidx.health.connect", name = "connect-client", version.ref = "healthConnect" }
+litert = { group = "com.google.ai.edge.litert", name = "litert", version.ref = "litert" }
 
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 okhttp-logging = { group = "com.squareup.okhttp3", name = "logging-interceptor", version.ref = "okhttp" }

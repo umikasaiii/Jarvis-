@@ -146,4 +146,20 @@ data class EngineTurnDiagnostics(
      * routing is no longer reachable at all after a semantic failure).
      */
     val legacyUsed: Boolean = false,
+    // § FASE 2A.11 §15 diagnostica richiesta esplicitamente — additive,
+    // default to previous no-op values so no other constructor call site
+    // breaks. Never the user's text, never a raw embedding vector — timings
+    // and a backend label only.
+    /** Which [com.simone.jarvismobile.core.semantic.SemanticInterpreter] backend answered this turn — `"EMBEDDING"` (EmbeddingGemma classifier, the default) or `"LEGACY_GEMMA"` (the FASE 2A.9 generative interpreter, debug-only A/B). Null when neither was ever reached (a HARD path resolved the turn first). */
+    val semanticBackend: String? = null,
+    /** Milliseconds spent tokenizing the turn's text — null when the embedding backend was never reached or a real token-level timer isn't available (e.g. the legacy generative backend). */
+    val semanticTokenizationMs: Long? = null,
+    /** Milliseconds spent computing the sentence embedding itself (model inference), separate from tokenization and classification. */
+    val semanticEmbeddingMs: Long? = null,
+    /** Milliseconds spent on the centroid/cosine classification step once the embedding is available — normally tiny, kept separate so a slow turn is attributable to the right stage. */
+    val semanticClassificationMs: Long? = null,
+    /** Tokenization + embedding + classification combined — the same quantity [semanticLatencyMs] already reports for the interpreter as a whole, repeated here so a caller reading only the FASE 2A.11 fields doesn't need the FASE 2A.9 one too. */
+    val semanticTotalMs: Long? = null,
+    /** Non-null only on the FIRST embedding call after the model was (re)loaded — the one-time cost of a cold TFLite interpreter/tokenizer, never charged to a later turn's own latency. */
+    val modelColdStartMs: Long? = null,
 )

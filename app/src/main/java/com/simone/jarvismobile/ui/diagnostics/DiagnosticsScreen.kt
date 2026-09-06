@@ -262,6 +262,21 @@ fun DiagnosticsScreen(
                                     "legacyDopoSemanticaValida=${turn.legacyInvokedAfterValidSemantic}",
                                 style = MaterialTheme.typography.bodySmall,
                             )
+                            // § FASE 2A.11 diagnostica richiesta esplicitamente — quale
+                            // backend semantico ha risposto (EmbeddingGemma vs il
+                            // vecchio interprete generativo) e il dettaglio dei tempi,
+                            // mai il testo dell'utente o l'embedding stesso.
+                            turn.semanticBackend?.let { backend ->
+                                Text(
+                                    "semBackend=$backend · " +
+                                        "tokenizzazione=${turn.semanticTokenizationMs?.let { "${it}ms" } ?: "-"} · " +
+                                        "embedding=${turn.semanticEmbeddingMs?.let { "${it}ms" } ?: "-"} · " +
+                                        "classificazione=${turn.semanticClassificationMs?.let { "${it}ms" } ?: "-"} · " +
+                                        "totale=${turn.semanticTotalMs?.let { "${it}ms" } ?: "-"}" +
+                                        (turn.modelColdStartMs?.let { " · coldStart=${it}ms" } ?: ""),
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
                         }
                     }
                 }
