@@ -38,6 +38,9 @@ data class WeeklyHealthAverages(val avgHeartRateBpm: Long?, val avgSleepPerNight
  */
 object HealthDailySeries {
 
+    /** The standard day-to-day window every automatic refresh uses — named so a manual historical sync (a much wider, one-off window) can still restrict [computeAverages] to exactly this many recent days, never diluting the weekly average with older recovered history. */
+    const val DEFAULT_WINDOW_DAYS = 7
+
     /**
      * Real elapsed sleep time: the session span minus any stages the source
      * marked as awake. Falls back to the raw start-end interval when no
@@ -60,7 +63,7 @@ object HealthDailySeries {
      * session or heart-rate reading from earlier *today* is never excluded
      * just because the day isn't over yet.
      */
-    fun queryRange(today: LocalDate, zone: ZoneId, now: Instant, windowDays: Int = 7): ClosedRange<Instant> {
+    fun queryRange(today: LocalDate, zone: ZoneId, now: Instant, windowDays: Int = DEFAULT_WINDOW_DAYS): ClosedRange<Instant> {
         val start = today.atStartOfDay(zone).toInstant().minus(windowDays.toLong(), ChronoUnit.DAYS)
         return start..now
     }
@@ -80,7 +83,7 @@ object HealthDailySeries {
         sleepSessions: List<SleepSessionSpan>,
         zone: ZoneId,
         today: LocalDate,
-        windowDays: Int = 7,
+        windowDays: Int = DEFAULT_WINDOW_DAYS,
     ): List<DailyHealthReading> {
         val bpmByDate = heartRateSamples.groupBy({ it.time.atZone(zone).toLocalDate() }, { it.bpm })
         val sleepByDate = sleepSessions.groupBy({ it.endTime.atZone(zone).toLocalDate() }, { sleepDuration(it) })
@@ -110,5 +113,28 @@ object HealthDailySeries {
             avgHeartRateBpm = if (bpmValues.isNotEmpty()) bpmValues.average().roundToLong() else null,
             avgSleepPerNight = if (sleepValues.isNotEmpty()) Duration.ofMinutes((sleepValues.average() * 60.0).roundToLong()) else null,
         )
+    }
+
+    /**
+     * § richiesta esplicita dell'utente — tasto "Sincronizza" manuale (un
+     * recupero storico su una finestra molto più larga di quella
+     * quotidiana): [fresh] non SOSTITUISCE mai [existing] alla cieca. Per
+     * ogni data, un valore non-null in [fresh] vince (un vero refresh); un
+     * valore null in [fresh] non cancella mai un valore già noto in
+     * [existing] — una finestra quotidiana più stretta non deve mai leggersi
+     * come "Health Connect ha cancellato" un giorno recuperato in precedenza
+     * da una sincronizzazione storica più ampia.
+     */
+    fun mergeDaily(existing: List<DailyHealthReading>, fresh: List<DailyHealthReading>): List<DailyHealthReading> {
+        val byDate = existing.associateByTo(LinkedHashMap()) { it.date }
+        for (reading in fresh) {
+            val prior = byDate[reading.date]
+            byDate[reading.date] = DailyHealthReading(
+                date = reading.date,
+                heartRateBpm = reading.heartRateBpm ?: prior?.heartRateBpm,
+                sleepHours = reading.sleepHours ?: prior?.sleepHours,
+            )
+        }
+        return byDate.values.sortedBy { it.date }
     }
 }

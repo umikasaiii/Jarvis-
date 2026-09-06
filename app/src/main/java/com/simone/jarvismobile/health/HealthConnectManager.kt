@@ -301,11 +301,11 @@ class HealthConnectManager @Inject constructor(
      * conteggio zero o un'eccezione reale sono visibili anche se il resto
      * della funzione fallisse in modo inatteso.
      */
-    private suspend fun fetchDailySeries(): List<DailyHealthReading> {
+    private suspend fun fetchDailySeries(windowDays: Int = HealthDailySeries.DEFAULT_WINDOW_DAYS): List<DailyHealthReading> {
         val c = client ?: return emptyList()
         val zone = ZoneId.systemDefault()
         val today = LocalDate.now()
-        val range = HealthDailySeries.queryRange(today, zone, Instant.now())
+        val range = HealthDailySeries.queryRange(today, zone, Instant.now(), windowDays)
         val hcRange = TimeRangeFilter.between(range.start, range.endInclusive)
         return runCatching {
             val restingHeartRateRecords = readAllRecords(c, RestingHeartRateRecord::class, hcRange)
@@ -337,7 +337,7 @@ class HealthConnectManager @Inject constructor(
                     },
                 )
             }
-            HealthDailySeries.dailySeries(heartRateSamples, sleepSessions, zone, today)
+            HealthDailySeries.dailySeries(heartRateSamples, sleepSessions, zone, today, windowDays)
                 .map { DailyHealthReading(it.date, it.heartRateBpm, it.sleepHours) }
         }.onFailure { e ->
             Log.w(TAG, "fetch_daily_series_failed ${e.javaClass.simpleName}")
@@ -358,10 +358,51 @@ class HealthConnectManager @Inject constructor(
         }.getOrDefault(emptyList())
     }
 
+    /**
+     * SEMPRE ristretta a [HealthDailySeries.DEFAULT_WINDOW_DAYS] giorni
+     * recenti, indipendentemente da quanti giorni porta [daily] — § richiesta
+     * esplicita dell'utente (tasto "Sincronizza", [syncHistorical]): un
+     * recupero storico non deve mai diluire la media settimanale mostrata
+     * nel tile Home con giorni molto più vecchi.
+     */
     private fun computeAverages(daily: List<DailyHealthReading>, today: LocalDate): WeeklyHealthAverages {
-        val coreDaily = daily.map { com.simone.jarvismobile.core.health.DailyHealthReading(it.date, it.heartRateBpm, it.sleepHours) }
+        val windowStart = today.minusDays(HealthDailySeries.DEFAULT_WINDOW_DAYS.toLong())
+        val windowed = daily.filter { !it.date.isBefore(windowStart) }
+        val coreDaily = windowed.map { com.simone.jarvismobile.core.health.DailyHealthReading(it.date, it.heartRateBpm, it.sleepHours) }
         val averages = HealthDailySeries.computeAverages(coreDaily, today)
         return WeeklyHealthAverages(averages.avgHeartRateBpm, averages.avgSleepPerNight)
+    }
+
+    /**
+     * § richiesta esplicita dell'utente ("crea modo per recuperare i dati
+     * qualora l'orologio si disconnetta o non sia connesso per più tempo") —
+     * thin wrapper attorno a [HealthDailySeries.mergeDaily] (`:core`, puro,
+     * testato): converte solo fra il tipo app-locale [DailyHealthReading] e
+     * quello `:core`, la stessa mappatura già usata da [computeAverages] —
+     * nessuna seconda implementazione della logica di merge da tenere
+     * allineata.
+     */
+    private fun mergeDaily(existing: List<DailyHealthReading>, fresh: List<DailyHealthReading>): List<DailyHealthReading> {
+        fun toCore(d: DailyHealthReading) = com.simone.jarvismobile.core.health.DailyHealthReading(d.date, d.heartRateBpm, d.sleepHours)
+        val merged = HealthDailySeries.mergeDaily(existing.map(::toCore), fresh.map(::toCore))
+        return merged.map { DailyHealthReading(it.date, it.heartRateBpm, it.sleepHours) }
+    }
+
+    private suspend fun refreshWithWindow(windowDays: Int): HealthSnapshot? {
+        if (!hasPermissions()) return null
+        val fresh = fetchDailySeries(windowDays)
+        if (fresh.isEmpty()) {
+            Log.w(TAG, "refresh_empty_daily_series")
+            return null
+        }
+        val existing = cachedSnapshot()?.daily.orEmpty()
+        val merged = mergeDaily(existing, fresh)
+        val nowMs = System.currentTimeMillis()
+        val snapshot = HealthSnapshot(merged, computeAverages(merged, LocalDate.now()), updatedAtMs = nowMs)
+        _diagnostic.value = _diagnostic.value?.copy(refreshSucceededAtMs = nowMs)
+        runCatching { settings.setHealthDailyCache(snapshot.toCacheJson(nowMs)) }
+            .onFailure { e -> Log.w(TAG, "health_cache_write_failed ${e.javaClass.simpleName}") }
+        return snapshot
     }
 
     /**
@@ -372,27 +413,40 @@ class HealthConnectManager @Inject constructor(
      * `AresViewModel` per un refresh immediato quando l'utente apre la
      * schermata o concede l'accesso. Null quando i permessi mancano o la
      * lettura fallisce — la cache esistente resta quella vecchia, mai
-     * cancellata da un fallimento.
+     * cancellata da un fallimento. Finestra standard di
+     * [HealthDailySeries.DEFAULT_WINDOW_DAYS] giorni — mai la finestra larga
+     * di [syncHistorical], che resta un'azione esplicita dell'utente.
      */
-    suspend fun refresh(): HealthSnapshot? {
-        if (!hasPermissions()) return null
-        val daily = fetchDailySeries()
-        if (daily.isEmpty()) {
-            Log.w(TAG, "refresh_empty_daily_series")
-            return null
-        }
-        val nowMs = System.currentTimeMillis()
-        val snapshot = HealthSnapshot(daily, computeAverages(daily, LocalDate.now()), updatedAtMs = nowMs)
-        _diagnostic.value = _diagnostic.value?.copy(refreshSucceededAtMs = nowMs)
-        runCatching { settings.setHealthDailyCache(snapshot.toCacheJson(nowMs)) }
-            .onFailure { e -> Log.w(TAG, "health_cache_write_failed ${e.javaClass.simpleName}") }
-        return snapshot
-    }
+    suspend fun refresh(): HealthSnapshot? = refreshWithWindow(HealthDailySeries.DEFAULT_WINDOW_DAYS)
+
+    /**
+     * § richiesta esplicita dell'utente — tasto "Sincronizza" manuale nel
+     * dialog di dettaglio BPM/Sonno: un'azione di emergenza per quando
+     * l'orologio è rimasto disconnesso (o Honor Health non ha sincronizzato
+     * con Health Connect) più a lungo della finestra quotidiana di 7 giorni,
+     * per "mettersi a pari" recuperando anche i giorni più vecchi. Stessa
+     * identica pipeline di lettura di [refresh] (nessuna seconda query Health
+     * Connect da mantenere allineata) con una finestra molto più larga
+     * ([daysBack], default [HISTORICAL_SYNC_WINDOW_DAYS] = 30 giorni — oltre
+     * quella soglia Health Connect stesso raramente conserva ancora dati di
+     * un wearable non sincronizzato, e una finestra illimitata rischierebbe
+     * di esaurire la paginazione di [readAllRecords] per un beneficio ormai
+     * trascurabile). Il risultato si FONDE con la cache esistente
+     * ([mergeDaily]), non la sostituisce: un giorno già recuperato prima resta
+     * visibile anche se un refresh quotidiano successivo, con la sua finestra
+     * più stretta, non lo tocca più. Le medie restano SEMPRE quelle degli
+     * ultimi [HealthDailySeries.DEFAULT_WINDOW_DAYS] giorni (§ [computeAverages])
+     * — una sincronizzazione storica arricchisce solo l'elenco del dialog di
+     * dettaglio, mai la media mostrata nel tile Home.
+     */
+    suspend fun syncHistorical(daysBack: Int = HISTORICAL_SYNC_WINDOW_DAYS): HealthSnapshot? =
+        refreshWithWindow(daysBack)
 
     /** Ultimo snapshot salvato — istantaneo, nessuna lettura da Health Connect (§ stesso pattern di [com.simone.jarvismobile.weather.WeatherManager.cachedOutlook]). */
     suspend fun cachedSnapshot(): HealthSnapshot? = healthSnapshotFromCacheJson(settings.healthDailyCache.first())
 
     private companion object {
         const val TAG = "HealthConnectManager"
+        const val HISTORICAL_SYNC_WINDOW_DAYS = 30
     }
 }

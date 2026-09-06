@@ -79,6 +79,27 @@ class AresViewModel @Inject constructor(
     private val _healthPermissionsDiagnostic = MutableStateFlow<String?>(null)
     val healthPermissionsDiagnostic: StateFlow<String?> = _healthPermissionsDiagnostic.asStateFlow()
 
+    /**
+     * § richiesta esplicita dell'utente — tasto "Sincronizza" manuale nel
+     * dialog di dettaglio BPM/Sonno, per quando l'automatico non basta
+     * (l'orologio è rimasto disconnesso più a lungo della finestra
+     * quotidiana di 7 giorni). `null` = mai avviata questa sessione;
+     * altrimenti l'ultimo esito, mai un valore bpm/sonno — solo un conteggio
+     * e un booleone di esito, stessa disciplina privacy del resto della
+     * diagnostica Health.
+     */
+    sealed interface HealthSyncResult {
+        data class Recovered(val newlyFilledDays: Int) : HealthSyncResult
+        data object NoAdditionalData : HealthSyncResult
+        data object Failed : HealthSyncResult
+    }
+
+    private val _healthSyncing = MutableStateFlow(false)
+    val healthSyncing: StateFlow<Boolean> = _healthSyncing.asStateFlow()
+
+    private val _healthSyncResult = MutableStateFlow<HealthSyncResult?>(null)
+    val healthSyncResult: StateFlow<HealthSyncResult?> = _healthSyncResult.asStateFlow()
+
     private val _hourly = MutableStateFlow<HourlyForecast?>(null)
     val hourly: StateFlow<HourlyForecast?> = _hourly.asStateFlow()
 
@@ -141,6 +162,43 @@ class AresViewModel @Inject constructor(
             _healthPermissionsDiagnostic.value = null
             health.cachedSnapshot()?.let { applySnapshot(it) }
             health.refresh()?.let { applySnapshot(it) }
+        }
+    }
+
+    /** Days with at least one real reading (bpm or sleep) — never a guess, used only to count a sync's own gain. */
+    private fun daysWithData(daily: List<HealthConnectManager.DailyHealthReading>): Int =
+        daily.count { it.heartRateBpm != null || it.sleepHours != null }
+
+    /**
+     * § richiesta esplicita dell'utente — "tasto sincronizza... anche
+     * un'emergenza... recupera tutti i dati mancanti, anche quelli vecchi".
+     * Chiama [HealthConnectManager.syncHistorical] (finestra molto più larga
+     * della quotidiana, fusa con la cache esistente — mai una sostituzione)
+     * e riusa lo stesso [applySnapshot] di [refreshHealth], così il dialog e
+     * il tile Home vedono lo stesso identico stato aggiornato. Non richiede
+     * mai i permessi da sé: se non sono già concessi, [refreshHealth]
+     * (chiamato ad ogni apertura schermo) li avrebbe già impostati a `false`
+     * e la UI mostra già il pulsante "Concedi accesso" invece di questo.
+     */
+    fun syncHealthHistory() {
+        if (_healthSyncing.value) return
+        viewModelScope.launch {
+            _healthSyncing.value = true
+            _healthSyncResult.value = null
+            val before = daysWithData(_healthDaily.value)
+            val snapshot = health.syncHistorical()
+            if (snapshot == null) {
+                _healthSyncResult.value = HealthSyncResult.Failed
+            } else {
+                applySnapshot(snapshot)
+                val after = daysWithData(snapshot.daily)
+                _healthSyncResult.value = if (after > before) {
+                    HealthSyncResult.Recovered(after - before)
+                } else {
+                    HealthSyncResult.NoAdditionalData
+                }
+            }
+            _healthSyncing.value = false
         }
     }
 }

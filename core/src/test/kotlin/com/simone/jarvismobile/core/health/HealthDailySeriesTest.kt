@@ -227,4 +227,63 @@ class HealthDailySeriesTest {
 
         assertTrue(earlierToday in range)
     }
+
+    // --- mergeDaily: § FASE 2A.9.3 "tasto Sincronizza" manual historical backfill ---
+
+    @Test
+    fun `a non-null fresh value always overwrites an existing one - a real refresh wins`() {
+        val date = LocalDate.of(2026, 9, 1)
+        val existing = listOf(DailyHealthReading(date, heartRateBpm = 50L, sleepHours = 7.0))
+        val fresh = listOf(DailyHealthReading(date, heartRateBpm = 55L, sleepHours = 7.5))
+        val merged = HealthDailySeries.mergeDaily(existing, fresh)
+        assertEquals(55L, merged.single().heartRateBpm)
+        assertEquals(7.5, merged.single().sleepHours)
+    }
+
+    @Test
+    fun `a null fresh value never erases a value already known - a narrow refresh is never a deletion`() {
+        val date = LocalDate.of(2026, 8, 20)
+        val existing = listOf(DailyHealthReading(date, heartRateBpm = 48L, sleepHours = 8.0))
+        // A day outside the fresh (narrow) window's own range still comes
+        // back from Health Connect as null for that date - simulating a
+        // daily refresh whose window no longer reaches this recovered day.
+        val fresh = listOf(DailyHealthReading(date, heartRateBpm = null, sleepHours = null))
+        val merged = HealthDailySeries.mergeDaily(existing, fresh)
+        assertEquals(48L, merged.single().heartRateBpm)
+        assertEquals(8.0, merged.single().sleepHours)
+    }
+
+    @Test
+    fun `a date only in fresh is added, a date only in existing is kept, both sorted by date`() {
+        val old = LocalDate.of(2026, 8, 10)
+        val new = LocalDate.of(2026, 9, 1)
+        val existing = listOf(DailyHealthReading(old, 48L, 8.0))
+        val fresh = listOf(DailyHealthReading(new, 52L, 6.5))
+        val merged = HealthDailySeries.mergeDaily(existing, fresh)
+        assertEquals(listOf(old, new), merged.map { it.date })
+        assertEquals(48L, merged.first().heartRateBpm)
+        assertEquals(52L, merged.last().heartRateBpm)
+    }
+
+    @Test
+    fun `one metric refreshed and the other still missing on the same day merges field by field`() {
+        val date = LocalDate.of(2026, 9, 1)
+        val existing = listOf(DailyHealthReading(date, heartRateBpm = 50L, sleepHours = null))
+        val fresh = listOf(DailyHealthReading(date, heartRateBpm = null, sleepHours = 7.25))
+        val merged = HealthDailySeries.mergeDaily(existing, fresh)
+        assertEquals(50L, merged.single().heartRateBpm) // kept from existing, fresh had null
+        assertEquals(7.25, merged.single().sleepHours) // filled in by fresh
+    }
+
+    @Test
+    fun `an empty existing list simply adopts fresh entirely`() {
+        val fresh = listOf(DailyHealthReading(LocalDate.of(2026, 9, 1), 50L, 7.0))
+        assertEquals(fresh, HealthDailySeries.mergeDaily(emptyList(), fresh))
+    }
+
+    @Test
+    fun `an empty fresh list leaves existing entirely untouched`() {
+        val existing = listOf(DailyHealthReading(LocalDate.of(2026, 9, 1), 50L, 7.0))
+        assertEquals(existing, HealthDailySeries.mergeDaily(existing, emptyList()))
+    }
 }

@@ -1903,6 +1903,8 @@ internal fun AresHomeScreen(
                 }
             }
             healthDetail?.let { kind ->
+                val healthSyncing by aresViewModel.healthSyncing.collectAsStateWithLifecycle()
+                val healthSyncResult by aresViewModel.healthSyncResult.collectAsStateWithLifecycle()
                 AresHealthDetailDialog(
                     kind = kind,
                     daily = healthDaily,
@@ -1911,6 +1913,9 @@ internal fun AresHomeScreen(
                         HealthDetailKind.BPM -> healthDiagnostic?.lastHeartRateSampleAt
                         HealthDetailKind.SONNO -> healthDiagnostic?.lastSleepSessionEndAt
                     },
+                    syncing = healthSyncing,
+                    syncResult = healthSyncResult,
+                    onSync = aresViewModel::syncHealthHistory,
                     onDismiss = { healthDetail = null },
                 )
             }
@@ -2412,13 +2417,23 @@ private fun AresHealthDetailDialog(
     daily: List<HealthConnectManager.DailyHealthReading>,
     updatedAtMs: Long?,
     latestRecordAt: java.time.Instant?,
+    syncing: Boolean,
+    syncResult: AresViewModel.HealthSyncResult?,
+    onSync: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (kind == HealthDetailKind.BPM) "BPM medi per giorno" else "Sonno per notte") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            // § richiesta esplicita dell'utente: il tasto "Sincronizza" può
+            // recuperare fino a 30 giorni di storico (§ HealthConnectManager.
+            // syncHistorical) — una lista fissa a schermo non basterebbe più,
+            // da qui lo scroll (prima non serviva, sempre 8 righe al massimo).
+            Column(
+                modifier = Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 if (daily.isEmpty()) {
                     Text("Nessun dato disponibile.", color = Muted)
                 } else {
@@ -2461,6 +2476,37 @@ private fun AresHealthDetailDialog(
                     color = Muted,
                     fontSize = 11.sp,
                 )
+                // § richiesta esplicita dell'utente — tasto di emergenza:
+                // "se non dovesse farlo in automatico lo sincronizza
+                // manualmente [...] recupera tutti i dati mancanti, anche
+                // quelli vecchi [...] qualora l'orologio si disconnetta o non
+                // sia connesso per più tempo". Riusa la stessa lettura Health
+                // Connect di sempre con una finestra molto più larga (§
+                // HealthConnectManager.syncHistorical) — mai una seconda
+                // pipeline.
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    TextButton(onClick = onSync, enabled = !syncing) {
+                        if (syncing) {
+                            CircularProgressIndicator(color = Cyan, modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.width(6.dp))
+                        }
+                        Text(if (syncing) "Sincronizzazione…" else "Sincronizza")
+                    }
+                }
+                syncResult?.let { result ->
+                    val label = when (result) {
+                        is AresViewModel.HealthSyncResult.Recovered ->
+                            "Recuperati ${result.newlyFilledDays} " +
+                                if (result.newlyFilledDays == 1) "giorno mancante." else "giorni mancanti."
+                        AresViewModel.HealthSyncResult.NoAdditionalData -> "Nessun dato aggiuntivo trovato su Health Connect."
+                        AresViewModel.HealthSyncResult.Failed -> "Sincronizzazione non riuscita: riprova più tardi."
+                    }
+                    Text(text = label, color = Muted, fontSize = 11.sp)
+                }
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Chiudi") } },
