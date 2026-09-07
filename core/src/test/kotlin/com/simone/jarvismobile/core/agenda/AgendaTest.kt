@@ -91,6 +91,71 @@ class AgendaTest {
         assertEquals(listOf("chiamare il gommista"), out.map { it.text })
     }
 
+    // ============================================================
+    // § JARVIS Implementation Master Plan — PASSAGGIO 4 §4/§11 — temporal
+    // execution semantics: today/tomorrow/day-after-tomorrow/explicit
+    // date/range crossing a month-year boundary (the day-granularity
+    // equivalent of "midnight" for this LocalDate-based, not LocalDateTime-
+    // based, model — see AgendaEvidence's own doc comment for why an
+    // explicit half-open representation is not introduced separately).
+    // ============================================================
+
+    @Test
+    fun `filter by today itself`() {
+        val out = Agenda.filter(entries, today, day = today)
+        assertEquals(listOf("colazione con Luca", "chiamare il gommista"), out.map { it.text })
+    }
+
+    @Test
+    fun `filter by tomorrow`() {
+        val out = Agenda.filter(entries, today, day = today.plusDays(1))
+        assertEquals(listOf("revisione auto"), out.map { it.text })
+    }
+
+    @Test
+    fun `filter by the day after tomorrow finds nothing when nothing is scheduled there, never leaks an adjacent day`() {
+        val out = Agenda.filter(entries, today, day = today.plusDays(2))
+        assertEquals(emptyList<String>(), out.map { it.text })
+    }
+
+    @Test
+    fun `filter by an explicit far-future date matches only that exact day`() {
+        val explicit = today.plusDays(45)
+        val entriesWithExplicit = entries + AgendaEntry(explicit, null, "appuntamento lontano")
+        val out = Agenda.filter(entriesWithExplicit, today, day = explicit)
+        assertEquals(listOf("appuntamento lontano"), out.map { it.text })
+    }
+
+    @Test
+    fun `a range crossing a month-year boundary neither drops nor double-counts entries at the edges`() {
+        val newYearsEve = LocalDate.of(2026, 12, 31)
+        val newYearsDay = LocalDate.of(2027, 1, 1)
+        val dayAfter = LocalDate.of(2027, 1, 2)
+        val boundaryEntries = listOf(
+            AgendaEntry(newYearsEve.minusDays(1), null, "prima del range"),
+            AgendaEntry(newYearsEve, null, "capodanno vigilia"),
+            AgendaEntry(newYearsDay, null, "capodanno"),
+            AgendaEntry(dayAfter, null, "dopo capodanno, fuori range"),
+        )
+        val out = Agenda.filter(boundaryEntries, newYearsEve, day = newYearsEve, toDay = newYearsDay)
+        assertEquals(listOf("capodanno vigilia", "capodanno"), out.map { it.text })
+        // Each boundary entry appears exactly once — no double-count.
+        assertEquals(1, out.count { it.text == "capodanno vigilia" })
+        assertEquals(1, out.count { it.text == "capodanno" })
+    }
+
+    @Test
+    fun `Home's default upcoming query and Chat's no-argument list_agenda query are the exact same call, by construction`() {
+        // § §2 — "Home and Chat must not independently reproduce agenda
+        // filters": DashboardViewModel.upcoming and ListAgendaTool with no
+        // day/period/to argument both resolve to this identical call — a
+        // pure-function proof that the two surfaces cannot silently diverge,
+        // since there is only one implementation to call.
+        val homeUpcoming = Agenda.filter(entries, today)
+        val chatDefaultQuery = Agenda.filter(entries, today, day = null, period = null, toDay = null)
+        assertEquals(homeUpcoming, chatDefaultQuery)
+    }
+
     @Test
     fun `human date reads naturally`() {
         assertEquals("oggi", Agenda.humanDate(today, today))

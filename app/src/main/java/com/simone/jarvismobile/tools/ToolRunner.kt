@@ -197,6 +197,10 @@ class ToolRunner @Inject constructor(
         "health_permission_missing" ->
             "Non ho ancora il permesso per leggere i dati di Health Connect. Puoi concederlo in Impostazioni."
         "health_no_data" -> "Health Connect non ha ancora nessun dato reale per questo periodo."
+        // § JARVIS Implementation Master Plan PASSAGGIO 4 — same honest,
+        // deterministic pattern: a genuine local-storage read failure,
+        // never silently reported as "no impegni".
+        "agenda_unavailable" -> "Non riesco ad accedere all'agenda in questo momento."
         else -> "Non sono riuscito a completare: $tool."
     }
 

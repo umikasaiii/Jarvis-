@@ -3,6 +3,8 @@ package com.simone.jarvismobile.tools
 import com.simone.jarvismobile.agenda.AgendaRepository
 import com.simone.jarvismobile.core.agenda.Agenda
 import com.simone.jarvismobile.core.agenda.AgendaEntry
+import com.simone.jarvismobile.core.agenda.AgendaEvidence
+import com.simone.jarvismobile.core.agenda.AgendaQueryOutcome
 import com.simone.jarvismobile.core.agenda.DayPeriod
 import com.simone.jarvismobile.core.agenda.ReminderAlert
 import com.simone.jarvismobile.core.agenda.ReminderAlertType
@@ -144,6 +146,16 @@ class AddTaskTool(private val agenda: AgendaRepository) : Tool {
 /**
  * Reads the agenda back. Deterministic on purpose: what is on the calendar comes
  * from the file, never from the model, so an appointment can't be invented.
+ *
+ * § JARVIS Implementation Master Plan — PASSAGGIO 4 §3 — the primary Agenda
+ * read tool, migrated to [com.simone.jarvismobile.agenda.AgendaRepository.queryResult]
+ * (see that method's own doc comment): a real storage failure now returns [ToolResult.Failure] with
+ * [com.simone.jarvismobile.core.tools.StructuredToolResult.sourceFailure]
+ * evidence, so [GroundingGate][com.simone.jarvismobile.core.engine.GroundingGate]
+ * (§ PASSAGGIO 2) can correctly BLOCK a grounded turn instead of the tool
+ * always reporting "Non hai impegni" regardless of whether the read ever
+ * actually happened — the exact EMPTY-vs-FAILURE bug PASSAGGIO 1 fixed for
+ * Health, now closed here too.
  */
 class ListAgendaTool(private val agenda: AgendaRepository) : Tool {
     override val name = "list_agenda"
@@ -176,7 +188,18 @@ class ListAgendaTool(private val agenda: AgendaRepository) : Tool {
         val period = arguments.text("period")
             ?.let { p -> DayPeriod.entries.firstOrNull { it.name.equals(p, ignoreCase = true) } }
 
-        val items = runCatching { agenda.query(today, day, period, toDay = to) }.getOrDefault(emptyList())
+        val retrievedAt = System.currentTimeMillis()
+        val requestedRange = AgendaEvidence.requestedRangeLabel(day, to)
+        val outcome = runCatching { agenda.queryResult(today, day, period, toDay = to) }
+            .getOrElse { e -> AgendaQueryOutcome.Failure(e.javaClass.simpleName ?: "unknown") }
+
+        if (outcome is AgendaQueryOutcome.Failure) {
+            return ToolResult.Failure(
+                "agenda_unavailable",
+                evidence = AgendaEvidence.evidenceFor(outcome, requestedRange, retrievedAt),
+            )
+        }
+        val items = (outcome as AgendaQueryOutcome.Success).entries
         val scope = buildString {
             if (day != null && to != null) {
                 append(" dal ").append(Agenda.humanDate(day, today)).append(" al ").append(Agenda.humanDate(to, today))
@@ -199,7 +222,10 @@ class ListAgendaTool(private val agenda: AgendaRepository) : Tool {
             else -> "Hai ${items.size} impegni$scope: " +
                 items.joinToString("; ") { Agenda.speak(it, today, includeDate = !singleDayExact) } + "."
         }
-        return okJson("count" to items.size.toString(), "spoken" to spoken)
+        return ToolResult.Success(
+            JsonObject(mapOf("count" to JsonPrimitive(items.size.toString()), "spoken" to JsonPrimitive(spoken))),
+            evidence = AgendaEvidence.evidenceFor(outcome, requestedRange, retrievedAt),
+        )
     }
 }
 

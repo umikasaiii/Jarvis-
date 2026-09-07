@@ -123,8 +123,20 @@ class AgendaIntentRouter @Inject constructor(
 
     // --- Resolution ----------------------------------------------------
 
+    /**
+     * § JARVIS Implementation Master Plan — PASSAGGIO 4 §2 (JARVIS-08) —
+     * always [AgendaRepository.reload]s, never the previous "trust the
+     * cache unless it happens to be empty" policy. That policy meant this
+     * router (delete/move/rename/complete/query target resolution) and
+     * [ListAgendaTool] (which already force-reloads on every call) could
+     * disagree about what is currently in the agenda within the SAME
+     * conversation turn — a genuinely stale (but non-empty) cache here
+     * would resolve a delete/rename against records `list_agenda` had
+     * already shown as outdated. Same cost `ListAgendaTool` already pays,
+     * called at most once per routing decision.
+     */
     private suspend fun entries(): List<AgendaEntry> =
-        agenda.entries.value.ifEmpty { runCatching { agenda.reload() }.getOrDefault(emptyList()) }
+        runCatching { agenda.reload() }.getOrDefault(agenda.entries.value)
 
     private suspend fun resolve(intent: ResolvedIntent, contextEntryId: String?): List<AgendaEntry> {
         val open = entries().filterNot { it.done }

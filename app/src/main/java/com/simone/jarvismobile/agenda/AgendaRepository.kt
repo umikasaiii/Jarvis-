@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.simone.jarvismobile.core.agenda.Agenda
 import com.simone.jarvismobile.core.agenda.AgendaEntry
+import com.simone.jarvismobile.core.agenda.AgendaQueryOutcome
 import com.simone.jarvismobile.core.agenda.DayPeriod
 import com.simone.jarvismobile.core.agenda.ReminderAlert
 import com.simone.jarvismobile.memory.VaultRepository
@@ -58,7 +59,14 @@ class AgendaRepository @Inject constructor(
     }
 
     private suspend fun loadLocked(): List<AgendaEntry> {
-        val text = readRaw()
+        // § JARVIS Implementation Master Plan PASSAGGIO 4 — [readRaw] now
+        // surfaces a real read failure as a `Result.failure`; this call site
+        // (and every existing caller reachable through it — [reload]/[add]/
+        // [setDone]/etc., ~15 across the app) keeps its EXACT prior
+        // behavior on purpose: a failure silently degrades to "" (no
+        // entries), unchanged. [queryResult] below is the new, additive
+        // caller that does NOT swallow it.
+        val text = readRaw().getOrDefault("")
         val parsed = Agenda.parseFile(text)
         _entries.value = Agenda.sorted(parsed)
         return _entries.value
@@ -185,13 +193,45 @@ class AgendaRepository @Inject constructor(
      * inclusive date-RANGE query (§ FASE 2A.9 — "durante tutta la settimana
      * prossima") instead of one exact day; see [Agenda.filter]'s own doc
      * comment.
+     *
+     * § JARVIS Implementation Master Plan — PASSAGGIO 4 §3 — same
+     * [readRaw]/[Agenda.filter] as [reload] (this repository stays the
+     * single facade, never a second read/parse/merge implementation), but
+     * surfaces a genuine LOCAL storage read failure as
+     * [AgendaQueryOutcome.Failure] instead of silently degrading it to "no
+     * entries" the way [reload]'s own ~15 existing callers still do
+     * (unchanged, for their backward compatibility — see [loadLocked]'s own
+     * doc comment). [com.simone.jarvismobile.tools.ListAgendaTool] uses this to build
+     * honest [com.simone.jarvismobile.core.tools.StructuredToolResult]
+     * evidence via [com.simone.jarvismobile.core.agenda.AgendaEvidence]:
+     * SUCCESS_EMPTY only when the read genuinely succeeded and found
+     * nothing, never when it merely failed (§ the exact EMPTY-vs-FAILURE
+     * distinction PASSAGGIO 1 fixed for Health, now closed for Agenda too).
+     *
+     * Honest limit: a VAULT-side read failure is still NOT distinguishable
+     * here — [VaultRepository.readJarvisFile][com.simone.jarvismobile.memory.VaultRepository.readJarvisFile]
+     * already swallows its own exceptions internally (returns `null`,
+     * indistinguishable from "no vault file yet") — fixing that would mean
+     * touching `VaultRepository`'s own error handling, out of scope for the
+     * targeted Agenda read path this passage covers. The LOCAL file (this
+     * repository's own documented "source that cannot silently fail" — see
+     * [writeRaw]) is what this method actually protects.
      */
-    suspend fun query(
+    suspend fun queryResult(
         today: LocalDate,
         day: LocalDate? = null,
         period: DayPeriod? = null,
         toDay: LocalDate? = null,
-    ): List<AgendaEntry> = Agenda.filter(reload(), today, day, period, toDay = toDay)
+    ): AgendaQueryOutcome = mutex.withLock {
+        val text = readRaw().getOrElse { e ->
+            Log.w(TAG, "agenda_query_failed ${e.javaClass.simpleName}")
+            return@withLock AgendaQueryOutcome.Failure(e.javaClass.simpleName ?: "unknown")
+        }
+        val parsed = Agenda.sorted(Agenda.parseFile(text))
+        _entries.value = parsed
+        reminderScheduler.sync(parsed)
+        AgendaQueryOutcome.Success(Agenda.filter(parsed, today, day, period, toDay = toDay))
+    }
 
     // --- storage ---------------------------------------------------------
 
@@ -206,15 +246,23 @@ class AgendaRepository @Inject constructor(
      * in on every read: the vault's copy wins for entries present in both (so an
      * Obsidian edit sticks), and entries that exist only locally are preserved
      * (so a flaky vault can never lose an on-device add).
+     *
+     * § PASSAGGIO 4 — returns [Result.failure] on a genuine LOCAL read error
+     * instead of silently collapsing it to an empty string, so [queryResult]
+     * can tell "no entries" apart from "the read itself failed". [loadLocked]
+     * calls [Result.getOrDefault] on this to keep its ~15 existing callers'
+     * behavior byte-for-byte unchanged — only the new [queryResult] actually
+     * observes the failure.
      */
-    private suspend fun readRaw(): String {
-        val localEntries = Agenda.parseFile(readLocal())
-        if (!vault.isConfigured()) return Agenda.renderFile(localEntries)
+    private suspend fun readRaw(): Result<String> {
+        val localText = readLocal().getOrElse { return Result.failure(it) }
+        val localEntries = Agenda.parseFile(localText)
+        if (!vault.isConfigured()) return Result.success(Agenda.renderFile(localEntries))
         val vaultEntries = Agenda.parseFile(vault.readJarvisFile(AGENDA_FILE).orEmpty())
         val byId = LinkedHashMap<String, AgendaEntry>()
         localEntries.forEach { byId[it.id] = it }
         vaultEntries.forEach { byId[it.id] = it } // vault overrides on shared ids
-        return Agenda.renderFile(byId.values.toList())
+        return Result.success(Agenda.renderFile(byId.values.toList()))
     }
 
     private suspend fun writeRaw(content: String): Boolean {
@@ -226,8 +274,8 @@ class AgendaRepository @Inject constructor(
         return localOk
     }
 
-    private suspend fun readLocal(): String = withContext(Dispatchers.IO) {
-        runCatching { if (localFile.exists()) localFile.readText() else "" }.getOrDefault("")
+    private suspend fun readLocal(): Result<String> = withContext(Dispatchers.IO) {
+        runCatching { if (localFile.exists()) localFile.readText() else "" }
     }
 
     private suspend fun writeLocal(content: String): Boolean = withContext(Dispatchers.IO) {
