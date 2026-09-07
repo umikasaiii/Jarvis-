@@ -9,7 +9,9 @@ import com.simone.jarvismobile.core.engine.EngineTurnDiagnostics
 import com.simone.jarvismobile.core.engine.GroundingGate
 import com.simone.jarvismobile.core.engine.JarvisEngineMode
 import com.simone.jarvismobile.core.engine.ParseOutcome
+import com.simone.jarvismobile.core.engine.PresentationGuard
 import com.simone.jarvismobile.core.engine.ToolCallBudget
+import com.simone.jarvismobile.core.engine.ToolLoopEvidence
 import com.simone.jarvismobile.core.health.HealthAggregation
 import com.simone.jarvismobile.core.health.HealthMetric
 import com.simone.jarvismobile.core.health.HealthQueryParser
@@ -33,6 +35,9 @@ import com.simone.jarvismobile.core.tools.GROUNDED_FAMILIES
 import com.simone.jarvismobile.core.tools.HomeControlDetector
 import com.simone.jarvismobile.core.tools.RelevantToolSelector
 import com.simone.jarvismobile.core.tools.ToolFamily
+import com.simone.jarvismobile.core.tools.ToolOutcomeStatus
+import com.simone.jarvismobile.core.tools.ToolOutcomeTier
+import com.simone.jarvismobile.core.tools.tier
 import com.simone.jarvismobile.core.weather.WeatherDaysAhead
 import com.simone.jarvismobile.data.SettingsRepository
 import com.simone.jarvismobile.llm.DEFAULT_GENERATION_TIMEOUT_SECONDS
@@ -732,7 +737,14 @@ class ConversationalJarvisEngine @Inject constructor(
         }
         val outcome = toolRouter.execute(call, turn.budget, online = isOnline(), confirmed = confirmed)
         conversationManager.onToolExecuted(call, outcome)
-        outcome.statusOrNull()?.let { turn.toolOutcomeStatuses += it.name }
+        val status = outcome.statusOrNull()
+        status?.let { turn.toolOutcomeStatuses += it.name }
+        // § PASSAGGIO 2 §1 — the real StructuredToolResult status, not just
+        // "did a tool of this family run successfully at all", feeds
+        // GroundingGate below — see TurnState.noteFamilyEvidence's own doc
+        // comment for the monotonic "never downgrade an already-good family"
+        // rule this shares with runBrainLoop's own per-round tracking.
+        status?.let { s -> RelevantToolSelector.familyOf(call.name)?.let { fam -> turn.noteFamilyEvidence(fam, s) } }
         return when (outcome) {
             is ToolOutcome.Done -> {
                 turn.toolsExecuted += call.name
@@ -800,6 +812,12 @@ class ConversationalJarvisEngine @Inject constructor(
         }
         var currentText = transcript
         var rounds = 0
+        // § JARVIS Implementation Master Plan PASSAGGIO 2 §2 (JARVIS-05) —
+        // grows across EVERY round of this loop, never reset per-round: the
+        // real fix for "a later tool round replaced the original question
+        // with only the latest round's spokenText" — see ToolLoopEvidence's
+        // own doc comment for the exact prior bug shape.
+        val evidenceAccumulator = mutableListOf<ToolLoopEvidence.RoundResult>()
 
         while (true) {
             rounds++
@@ -859,7 +877,13 @@ class ConversationalJarvisEngine @Inject constructor(
                 // called at all in this case; this is the honest fallback if the
                 // model unloads mid-turn regardless.
                 turn.fallbackOccurred = true
-                return CANNED_ERROR
+                // § PASSAGGIO 2 §6 — "a model failure after successful
+                // evidence collection must not erase the evidence": a
+                // previous round may already have gathered real, usable tool
+                // results before the model itself became unavailable on a
+                // LATER round — present those instead of a generic error the
+                // user cannot tell apart from "nothing was ever found out".
+                return ToolLoopEvidence.presentAccumulatedOrNull(evidenceAccumulator) ?: CANNED_ERROR
             }
             val ready = reply as BrainReply.Ready
             turn.modelRounds = rounds
@@ -893,6 +917,16 @@ class ConversationalJarvisEngine @Inject constructor(
                         parseOutcome = ready.parseOutcome,
                         requiredFamilies = turn.requiredGroundingFamilies.map { it.name }.toSet(),
                         satisfiedFamilies = turn.satisfiedGroundingFamilies.map { it.name }.toSet(),
+                        // § PASSAGGIO 2 §1 — the real per-family
+                        // ToolOutcomeStatus when known, so SUCCESS_EMPTY/
+                        // PARTIAL/STALE are told apart from a genuine
+                        // failure instead of the boolean-only check above.
+                        // staleAllowedFamilies stays empty: no capability in
+                        // this pass opts a family into "usable while stale"
+                        // (§ honesty — see GroundingGate's own doc comment;
+                        // the logic exists and is tested, no live producer
+                        // sets StructuredToolResult.stale(...) yet).
+                        evidenceByFamily = turn.familyEvidence.entries.associate { it.key.name to it.value },
                     )
                 ) {
                     is GroundingGate.Decision.Block -> {
@@ -903,24 +937,47 @@ class ConversationalJarvisEngine @Inject constructor(
                             // § FASE 2A.10 §"multi-source" — "se una manca,
                             // risposta onesta che identifica il dato mancante":
                             // names the exact missing family instead of a
-                            // generic refusal.
-                            groundingFailClosedMessage(decision.reason)
+                            // generic refusal. § PASSAGGIO 2 §4 — now also
+                            // distinguishes PERMISSION_MISSING/DATA_UNAVAILABLE/
+                            // SOURCE_FAILURE/TOOL_FAILURE/disallowed-STALE by
+                            // their real status when known.
+                            groundingFailClosedMessage(decision.unmetDetails, decision.reason)
                         }
                     }
-                    GroundingGate.Decision.Allow -> return response.assistantText.trim().ifBlank { "Fatto." }
+                    GroundingGate.Decision.Allow -> {
+                        val text = response.assistantText.trim().ifBlank { "Fatto." }
+                        // § PASSAGGIO 2 §3 — a successfully-PARSED response can
+                        // still carry an entire nested protocol-shaped JSON
+                        // object literally inside `assistant_text` itself
+                        // (never caught by GroundingGate's MALFORMED_JSON
+                        // check, which only covers the outer envelope failing
+                        // to parse at all) — see PresentationGuard's own doc
+                        // comment for why this is a structural parse-based
+                        // check, never the forbidden word/character blacklist.
+                        return if (PresentationGuard.isInternalSchemaLeak(text)) {
+                            turn.groundingBlockReason = INTERNAL_SCHEMA_LEAK_REASON
+                            MALFORMED_OUTPUT_MESSAGE
+                        } else {
+                            text
+                        }
+                    }
                 }
             }
 
-            val toolResults = StringBuilder()
             var confirmationPrompt: String? = null
             for (call in response.toolCalls) {
                 turn.toolsRequested += call.name
                 if (turn.budget.exhausted) {
-                    toolResults.append("Ho eseguito il numero massimo di operazioni per questo turno.\n")
+                    evidenceAccumulator += ToolLoopEvidence.RoundResult(
+                        toolName = call.name,
+                        status = null,
+                        spoken = "Ho eseguito il numero massimo di operazioni per questo turno.",
+                    )
                     break
                 }
                 val outcome = toolRouter.execute(call, turn.budget, online = isOnline(), confirmed = false)
-                outcome.statusOrNull()?.let { turn.toolOutcomeStatuses += it.name }
+                val status = outcome.statusOrNull()
+                status?.let { turn.toolOutcomeStatuses += it.name }
                 when (outcome) {
                     is ToolOutcome.Done -> {
                         turn.toolsExecuted += call.name
@@ -929,27 +986,41 @@ class ConversationalJarvisEngine @Inject constructor(
                         // unrelated family executing successfully never does.
                         RelevantToolSelector.familyOf(call.name)?.let { turn.satisfiedGroundingFamilies += it }
                         conversationManager.onToolExecuted(call, outcome)
-                        toolResults.append(outcome.spoken).append('\n')
+                        evidenceAccumulator += ToolLoopEvidence.RoundResult(call.name, status, outcome.spoken)
                     }
                     is ToolOutcome.Failed -> {
                         turn.toolsFailed += call.name
                         turn.toolFailureCodes += outcome.code
-                        toolResults.append(outcome.spoken).append('\n')
+                        evidenceAccumulator += ToolLoopEvidence.RoundResult(call.name, status, outcome.spoken)
                     }
                     is ToolOutcome.NeedsConfirmation -> {
                         pendingConfirmation = outcome.call
                         confirmationPrompt = outcome.prompt
                     }
                 }
+                // § PASSAGGIO 2 §1 — same per-family evidence tracking as
+                // `executeAndTrack`, so this round's real status (not just
+                // "some tool of this family ran") feeds GroundingGate above.
+                status?.let { s -> RelevantToolSelector.familyOf(call.name)?.let { fam -> turn.noteFamilyEvidence(fam, s) } }
                 if (confirmationPrompt != null) break
             }
             confirmationPrompt?.let { return it }
 
+            // § PASSAGGIO 2 §4 — "SUCCESS_EMPTY -> deterministic honest empty
+            // message or equivalent controlled path": when every result
+            // gathered so far is a confidently-known SUCCESS_EMPTY, speak the
+            // tool's own already-deterministic text directly instead of
+            // spending another model round letting a small FAST model
+            // paraphrase "no data" into something that could sound like it
+            // found data.
+            ToolLoopEvidence.deterministicEmptyPresentationOrNull(evidenceAccumulator)?.let { return it }
+
             // One more round so the model can turn raw tool output into a
             // natural sentence instead of the caller composing it by hand.
-            currentText = "Risultato degli strumenti eseguiti:\n${toolResults.toString().trim()}\n\n" +
-                "Se serve un altro strumento richiedilo in tool_calls, altrimenti componi ora la risposta " +
-                "finale per Simone in assistant_text, in linguaggio naturale, e lascia tool_calls vuoto."
+            // § PASSAGGIO 2 §2 (JARVIS-05) — built from the ORIGINAL
+            // `transcript` and the FULL accumulated evidence across every
+            // round so far, never just this round's results replacing both.
+            currentText = ToolLoopEvidence.buildContinuation(transcript, evidenceAccumulator)
             contextBlock = ""
         }
     }
@@ -960,13 +1031,52 @@ class ConversationalJarvisEngine @Inject constructor(
      * naming what is actually missing, instead of the previous one-size
      * refusal — the multi-source spec's explicit ask ("se una manca,
      * risposta onesta che identifica il dato mancante").
+     *
+     * § JARVIS Implementation Master Plan PASSAGGIO 2 §4 — [details] (when
+     * non-empty) additionally distinguishes PERMISSION_MISSING/
+     * DATA_UNAVAILABLE/SOURCE_FAILURE/TOOL_FAILURE/disallowed-STALE by their
+     * real [ToolOutcomeStatus], never a single generic refusal for all of
+     * them; a family with `status == null` (legacy/unknown fidelity — no
+     * structured evidence at all) keeps the original wording. [reason] stays
+     * the fallback for a caller that has no [details] at all (kept
+     * source-compatible with any earlier caller shape).
      */
+    private fun groundingFailClosedMessage(details: List<GroundingGate.UnmetFamily>, reason: String): String {
+        if (details.isEmpty()) return groundingFailClosedMessage(reason)
+        return details.joinToString(" ") { unmetFamilyMessage(it) }
+    }
+
     private fun groundingFailClosedMessage(reason: String): String {
         val names = reason.removePrefix(GroundingGate.UNMET_FAMILY_REASON_PREFIX)
             .split(",")
             .filter { it.isNotBlank() }
         if (names.isEmpty()) return GROUNDING_FAIL_CLOSED_MESSAGE
         return "Non ho ancora ${names.joinToString(" e ") { familyLabel(it) }}: non posso rispondere con certezza."
+    }
+
+    private fun unmetFamilyMessage(unmet: GroundingGate.UnmetFamily): String {
+        val label = familyLabel(unmet.family)
+        return when (unmet.status) {
+            ToolOutcomeStatus.PERMISSION_MISSING ->
+                "Non ho ancora il permesso per accedere a $label: puoi concederlo nelle impostazioni."
+            ToolOutcomeStatus.DATA_UNAVAILABLE ->
+                // § phrased to avoid Italian singular/plural verb agreement
+                // with `label` (some family labels are singular, e.g. "lo
+                // stato del dispositivo", most are plural) — "riesco ad
+                // ottenere X" needs no agreement with X either way.
+                "Non riesco ad ottenere $label in questo momento."
+            ToolOutcomeStatus.SOURCE_FAILURE ->
+                "Non riesco a raggiungere la fonte di $label in questo momento."
+            ToolOutcomeStatus.TOOL_FAILURE ->
+                "Non sono riuscito a leggere $label in questo momento."
+            ToolOutcomeStatus.STALE ->
+                "Ho solo un dato non aggiornato per $label: non posso usarlo per rispondere con certezza."
+            // Legacy/unknown fidelity (no structured evidence at all) or a
+            // status that should never reach this branch (already ok=true in
+            // GroundingGate.decide) — same generic wording as before PASSAGGIO 2.
+            ToolOutcomeStatus.SUCCESS_DATA, ToolOutcomeStatus.SUCCESS_EMPTY, ToolOutcomeStatus.PARTIAL, null ->
+                "Non ho ancora $label: non posso rispondere con certezza."
+        }
     }
 
     private fun familyLabel(familyName: String): String = when (familyName) {
@@ -1021,6 +1131,30 @@ class ConversationalJarvisEngine @Inject constructor(
         /** Of [requiredGroundingFamilies], the ones a real tool of that exact family actually executed successfully for — the ONLY way to satisfy one (§ FASE 2A.6 §1 rules 1-6). */
         val satisfiedGroundingFamilies = mutableSetOf<ToolFamily>()
         var groundingBlockReason: String? = null
+
+        // § JARVIS Implementation Master Plan PASSAGGIO 2 §1 — the real
+        // ToolOutcomeStatus for each family a tool of that family actually
+        // executed for this turn, read by GroundingGate.decide's
+        // evidenceByFamily. Populated by both executeAndTrack (deterministic
+        // paths) and runBrainLoop's own per-round loop via
+        // [noteFamilyEvidence].
+        private val _familyEvidence = mutableMapOf<ToolFamily, ToolOutcomeStatus>()
+        val familyEvidence: Map<ToolFamily, ToolOutcomeStatus> get() = _familyEvidence
+
+        /**
+         * Records [status] for [family], never downgrading an already-good
+         * ([ToolOutcomeTier.NORMAL]/[ToolOutcomeTier.DEGRADED]) status to a
+         * later [ToolOutcomeTier.UNAVAILABLE] one from an unrelated retry —
+         * the same "once satisfied, stays satisfied for the turn" monotonic
+         * rule [satisfiedGroundingFamilies] already followed, just now
+         * carrying the real status instead of a bare boolean.
+         */
+        fun noteFamilyEvidence(family: ToolFamily, status: ToolOutcomeStatus) {
+            val current = _familyEvidence[family]
+            val currentIsGood = current != null && current.tier() != ToolOutcomeTier.UNAVAILABLE
+            if (!currentIsGood) _familyEvidence[family] = status
+        }
+
         val toolFailureCodes = ArrayList<String>()
         var networkAvailable: Boolean? = null
 
@@ -1156,6 +1290,12 @@ class ConversationalJarvisEngine @Inject constructor(
         const val GROUNDING_FAIL_CLOSED_MESSAGE = "Non riesco ad accedere a quel dato in questo momento."
         const val MALFORMED_OUTPUT_MESSAGE =
             "Non sono riuscito a formulare una risposta chiara. Puoi ripetere la richiesta?"
+
+        // § JARVIS Implementation Master Plan PASSAGGIO 2 §3 — diagnostic-only
+        // reason code for PresentationGuard.isInternalSchemaLeak catching a
+        // nested protocol-shaped object inside `assistant_text` itself; the
+        // user-facing text is still MALFORMED_OUTPUT_MESSAGE, never this code.
+        const val INTERNAL_SCHEMA_LEAK_REASON = "internal_schema_leak"
 
         // § FASE 2A.7/2A.8 RELEASE GATE 3/H — honest, deterministic answer for
         // a forecast further out than `WeatherDaysAhead.MAX_SUPPORTED_DAYS_AHEAD`

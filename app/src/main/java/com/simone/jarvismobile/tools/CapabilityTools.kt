@@ -382,6 +382,25 @@ class GetDeviceInfoTool(private val context: Context) : Tool {
         else -> ToolResult.Failure("invalid_metric")
     }
 
+    /**
+     * § JARVIS Implementation Master Plan — PASSAGGIO 2 §5, the one
+     * additional simple read-only vertical slice (alongside Health's already-
+     * migrated weekly result): a synchronous local Android API read has no
+     * concept of a remote source/staleness/coverage gap, so every field
+     * beyond [ToolOutcomeStatus.SUCCESS_DATA] itself stays null (§ never
+     * inventing metadata a source doesn't actually provide) — this proves
+     * [GroundingGate] consuming a real SUCCESS_DATA status end-to-end,
+     * complementing PASSAGGIO 1's SUCCESS_EMPTY slice.
+     */
+    private fun successData(spoken: String, vararg pairs: Pair<String, String>): ToolResult = ToolResult.Success(
+        JsonObject((pairs.toList() + ("spoken" to spoken)).associate { it.first to JsonPrimitive(it.second) }),
+        evidence = StructuredToolResult.successData(
+            payload = JsonObject(pairs.toMap().mapValues { JsonPrimitive(it.value) }),
+            sourceId = "android_os",
+            retrievedAt = System.currentTimeMillis(),
+        ),
+    )
+
     private fun ramResult(): ToolResult {
         val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
             ?: return ToolResult.Failure("no_activity_service")
@@ -390,10 +409,10 @@ class GetDeviceInfoTool(private val context: Context) : Tool {
         val totalGb = info.totalMem / BYTES_PER_GB
         val availGb = info.availMem / BYTES_PER_GB
         val spoken = "Il telefono ha ${gb(totalGb)} GB di RAM totale, di cui circa ${gb(availGb)} GB disponibili ora."
-        return ok(
+        return successData(
+            spoken,
             "total_ram_gb" to "%.2f".format(Locale.ROOT, totalGb),
             "available_ram_gb" to "%.2f".format(Locale.ROOT, availGb),
-            "spoken" to spoken,
         )
     }
 
@@ -402,25 +421,25 @@ class GetDeviceInfoTool(private val context: Context) : Tool {
         val totalGb = stat.totalBytes / BYTES_PER_GB
         val freeGb = stat.availableBytes / BYTES_PER_GB
         val spoken = "Il telefono ha ${gb(totalGb)} GB di spazio di archiviazione totale, di cui ${gb(freeGb)} GB liberi."
-        return ok(
+        return successData(
+            spoken,
             "total_storage_gb" to "%.2f".format(Locale.ROOT, totalGb),
             "free_storage_gb" to "%.2f".format(Locale.ROOT, freeGb),
-            "spoken" to spoken,
         )
     }
 
     private fun androidVersionResult(): ToolResult {
         val spoken = "Il telefono usa Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})."
-        return ok(
+        return successData(
+            spoken,
             "android_release" to Build.VERSION.RELEASE,
             "android_sdk_int" to Build.VERSION.SDK_INT.toString(),
-            "spoken" to spoken,
         )
     }
 
     private fun deviceModelResult(): ToolResult {
         val spoken = "Il telefono è un ${Build.MANUFACTURER} ${Build.MODEL}."
-        return ok("manufacturer" to Build.MANUFACTURER, "model" to Build.MODEL, "spoken" to spoken)
+        return successData(spoken, "manufacturer" to Build.MANUFACTURER, "model" to Build.MODEL)
     }
 
     private fun gb(value: Double): String = "%.1f".format(Locale.ITALIAN, value)
