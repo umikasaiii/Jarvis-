@@ -2,10 +2,14 @@ package com.simone.jarvismobile.tools
 
 import android.util.Log
 import com.simone.jarvismobile.core.protocol.ToolCall
+import com.simone.jarvismobile.core.tools.StructuredToolResult
+import com.simone.jarvismobile.core.tools.ToolOutcomeStatus
 import com.simone.jarvismobile.core.tools.ToolRegistry
 import com.simone.jarvismobile.core.tools.ToolRejection
 import com.simone.jarvismobile.core.tools.ToolResolution
 import com.simone.jarvismobile.core.tools.ToolResult
+import com.simone.jarvismobile.core.tools.resolveOutcomeStatus
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.JsonObject
@@ -20,16 +24,35 @@ sealed interface ToolOutcome {
      * tool's full structured output (e.g. a newly created entry's `id`) for
      * callers that need more than the spoken sentence — today only
      * `ConversationManager`, tracking which agenda entry a fast-path
-     * `add_reminder`/`add_task` call just created. Every other caller keeps
-     * reading only [spoken], unaffected by this field's addition.
+     * `add_reminder`/`add_task` call just created.
+     *
+     * [evidence] (§ JARVIS Implementation Master Plan PASSAGGIO 1) is the
+     * SAME [StructuredToolResult] the underlying [ToolResult.Success]
+     * carried, when the tool sets one — null for every tool not yet
+     * migrated, so [spoken] remains the only channel those callers ever
+     * needed (§11: the old renderer may keep using [spoken] as-is; the
+     * structured result survives alongside it, never replacing it here).
      */
-    data class Done(val spoken: String, val raw: JsonObject = JsonObject(emptyMap())) : ToolOutcome
+    data class Done(val spoken: String, val raw: JsonObject = JsonObject(emptyMap()), val evidence: StructuredToolResult? = null) : ToolOutcome
 
     /** The tool needs explicit user confirmation before it may run. */
     data class NeedsConfirmation(val call: ToolCall, val prompt: String) : ToolOutcome
 
-    /** Could not run; [spoken] explains it plainly, [code] is technical. */
-    data class Failed(val code: String, val spoken: String) : ToolOutcome
+    /** Could not run; [spoken] explains it plainly, [code] is technical. [evidence] as in [Done] — carries the real [ToolOutcomeStatus] when known, never guessed beyond [resolveOutcomeStatus]'s honest fallback. */
+    data class Failed(val code: String, val spoken: String, val evidence: StructuredToolResult? = null) : ToolOutcome
+}
+
+/**
+ * § PASSAGGIO 1 §18 — the real status this outcome represents, falling back
+ * to [resolveOutcomeStatus]'s honest legacy mapping when the underlying tool
+ * hasn't set [ToolOutcome.Done.evidence]/[ToolOutcome.Failed.evidence] yet.
+ * `NeedsConfirmation` has no data outcome of its own (§13 — side-effect gate,
+ * out of this phase's scope), so it returns null.
+ */
+fun ToolOutcome.statusOrNull(): ToolOutcomeStatus? = when (this) {
+    is ToolOutcome.Done -> resolveOutcomeStatus(evidence, wasSuccess = true)
+    is ToolOutcome.Failed -> resolveOutcomeStatus(evidence, wasSuccess = false)
+    is ToolOutcome.NeedsConfirmation -> null
 }
 
 /**
@@ -53,6 +76,7 @@ class ToolRunner @Inject constructor(
             is ToolResolution.Rejected -> ToolOutcome.Failed(
                 code = rejectionCode(resolution.reason),
                 spoken = rejectionMessage(resolution.reason),
+                evidence = rejectionEvidence(resolution.reason),
             )
 
             is ToolResolution.Approved -> {
@@ -78,18 +102,34 @@ class ToolRunner @Inject constructor(
                                     ?.let { "Risultato: ${prettyNumber(it)}" }
                                 ?: "Fatto."
                             Log.i(TAG, "tool_ok ${tool.name}")
-                            ToolOutcome.Done(spoken, raw = result.output)
+                            ToolOutcome.Done(spoken, raw = result.output, evidence = result.evidence)
                         }
                         is ToolResult.Failure -> {
                             Log.w(TAG, "tool_fail ${tool.name} ${result.code}")
-                            ToolOutcome.Failed(result.code, failureMessage(tool.name, result.code))
+                            ToolOutcome.Failed(result.code, failureMessage(tool.name, result.code), evidence = result.evidence)
                         }
                     }
                 } catch (e: TimeoutCancellationException) {
-                    ToolOutcome.Failed("timeout", "L'operazione ha impiegato troppo tempo.")
+                    ToolOutcome.Failed(
+                        "timeout", "L'operazione ha impiegato troppo tempo.",
+                        evidence = StructuredToolResult.toolFailure(reasonCode = "timeout", retryable = true),
+                    )
+                } catch (e: CancellationException) {
+                    // § PASSAGGIO 1 §17 — real (non-timeout) cancellation is NOT
+                    // a tool failure: the generic `catch (e: Exception)` below
+                    // would otherwise catch it too (`CancellationException` IS
+                    // an `Exception`) and turn a user-cancelled turn into a
+                    // spoken "non sono riuscito a completare l'operazione" —
+                    // the exact class of bug `util/RunCancellable.kt` already
+                    // documents elsewhere in this project. Propagate, per
+                    // structured concurrency, never swallow it here.
+                    throw e
                 } catch (e: Exception) {
                     Log.w(TAG, "tool_crash ${tool.name} ${e.javaClass.simpleName}")
-                    ToolOutcome.Failed("crash", "Non sono riuscito a completare l'operazione.")
+                    ToolOutcome.Failed(
+                        "crash", "Non sono riuscito a completare l'operazione.",
+                        evidence = StructuredToolResult.toolFailure(reasonCode = "crash"),
+                    )
                 }
             }
         }
@@ -109,6 +149,20 @@ class ToolRunner @Inject constructor(
         is ToolRejection.Unknown -> "unknown_tool"
         is ToolRejection.InvalidArguments -> "invalid_arguments"
         is ToolRejection.NetworkRequiredButOffline -> "offline"
+    }
+
+    /**
+     * § PASSAGGIO 1 — a rejection before execution is still a real, typed
+     * outcome: offline is a known, retryable [ToolOutcomeStatus.DATA_UNAVAILABLE]
+     * gap (retrying once online works), while an unknown tool/invalid
+     * arguments are [ToolOutcomeStatus.TOOL_FAILURE] (retrying the identical
+     * call would fail identically again).
+     */
+    private fun rejectionEvidence(r: ToolRejection): StructuredToolResult = when (r) {
+        is ToolRejection.NetworkRequiredButOffline ->
+            StructuredToolResult.dataUnavailable(reasonCode = "offline", retryable = true)
+        is ToolRejection.Unknown, is ToolRejection.InvalidArguments ->
+            StructuredToolResult.toolFailure(reasonCode = rejectionCode(r), retryable = false)
     }
 
     private fun rejectionMessage(r: ToolRejection): String = when (r) {

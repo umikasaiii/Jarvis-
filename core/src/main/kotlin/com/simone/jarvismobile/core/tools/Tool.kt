@@ -2,11 +2,21 @@ package com.simone.jarvismobile.core.tools
 
 import kotlinx.serialization.json.JsonObject
 
-/** Structured result of executing a [Tool]. Never throws across the boundary. */
+/**
+ * Structured result of executing a [Tool]. Never throws across the boundary.
+ *
+ * [Success.evidence]/[Failure.evidence] (§ JARVIS Implementation Master Plan
+ * PASSAGGIO 1) are ADDITIVE, default-null fields — every existing tool that
+ * builds a bare `Success(output)`/`Failure(code)` keeps compiling and
+ * behaving exactly as before. A tool that wants to distinguish real data
+ * from a genuinely empty result, a stale cache, a missing permission, or a
+ * true source failure (instead of collapsing all of them into this same
+ * `Success`/`Failure` split) sets [StructuredToolResult] to carry that.
+ */
 sealed interface ToolResult {
-    data class Success(val output: JsonObject) : ToolResult
+    data class Success(val output: JsonObject, val evidence: StructuredToolResult? = null) : ToolResult
     /** [code] is a technical error code; [message] must not contain personal data. */
-    data class Failure(val code: String, val message: String = "") : ToolResult
+    data class Failure(val code: String, val message: String = "", val evidence: StructuredToolResult? = null) : ToolResult
 }
 
 /**

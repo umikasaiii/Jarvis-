@@ -277,6 +277,18 @@ fun DiagnosticsScreen(
                                     style = MaterialTheme.typography.bodySmall,
                                 )
                             }
+                            // § JARVIS Implementation Master Plan PASSAGGIO 1 —
+                            // il vero esito di ogni tool eseguito questo turno
+                            // (SUCCESS_DATA/SUCCESS_EMPTY/STALE/DATA_UNAVAILABLE/
+                            // PERMISSION_MISSING/SOURCE_FAILURE/TOOL_FAILURE/PARTIAL),
+                            // mai il payload — vuoto finché nessun tool eseguito
+                            // ha ancora impostato un `StructuredToolResult`.
+                            if (turn.toolOutcomeStatuses.isNotEmpty()) {
+                                Text(
+                                    "esitiTool=${turn.toolOutcomeStatuses.joinToString(",")}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
                         }
                     }
                 }

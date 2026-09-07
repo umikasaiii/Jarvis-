@@ -162,4 +162,18 @@ data class EngineTurnDiagnostics(
     val semanticTotalMs: Long? = null,
     /** Non-null only on the FIRST embedding call after the model was (re)loaded — the one-time cost of a cold TFLite interpreter/tokenizer, never charged to a later turn's own latency. */
     val modelColdStartMs: Long? = null,
+    // § JARVIS Implementation Master Plan PASSAGGIO 1 (Structured Tool
+    // Results + Outcome Taxonomy Foundation) — additive, default to the
+    // previous no-op value so no other constructor call site breaks.
+    /**
+     * [com.simone.jarvismobile.core.tools.ToolOutcomeStatus] name for each
+     * tool call this turn actually executed, in call order — one entry per
+     * `ToolOutcome.Done`/`ToolOutcome.Failed` that carried a
+     * `StructuredToolResult` (a legacy tool not yet migrated still resolves
+     * to a status via `resolveOutcomeStatus`'s honest fallback, so this is
+     * never empty just because a tool hasn't set evidence yet). A fixed
+     * enum-name vocabulary only — never a payload value, never personal data
+     * (§16).
+     */
+    val toolOutcomeStatuses: List<String> = emptyList(),
 )

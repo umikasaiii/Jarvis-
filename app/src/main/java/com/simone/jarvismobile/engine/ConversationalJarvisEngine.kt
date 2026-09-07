@@ -42,6 +42,7 @@ import com.simone.jarvismobile.tools.AgendaRouting
 import com.simone.jarvismobile.tools.CommandMatcher
 import com.simone.jarvismobile.tools.Match
 import com.simone.jarvismobile.tools.ToolOutcome
+import com.simone.jarvismobile.tools.statusOrNull
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -731,6 +732,7 @@ class ConversationalJarvisEngine @Inject constructor(
         }
         val outcome = toolRouter.execute(call, turn.budget, online = isOnline(), confirmed = confirmed)
         conversationManager.onToolExecuted(call, outcome)
+        outcome.statusOrNull()?.let { turn.toolOutcomeStatuses += it.name }
         return when (outcome) {
             is ToolOutcome.Done -> {
                 turn.toolsExecuted += call.name
@@ -917,7 +919,9 @@ class ConversationalJarvisEngine @Inject constructor(
                     toolResults.append("Ho eseguito il numero massimo di operazioni per questo turno.\n")
                     break
                 }
-                when (val outcome = toolRouter.execute(call, turn.budget, online = isOnline(), confirmed = false)) {
+                val outcome = toolRouter.execute(call, turn.budget, online = isOnline(), confirmed = false)
+                outcome.statusOrNull()?.let { turn.toolOutcomeStatuses += it.name }
+                when (outcome) {
                     is ToolOutcome.Done -> {
                         turn.toolsExecuted += call.name
                         // § FASE 2A.6 §1 rule 5 — only the FAMILY the request
@@ -1060,6 +1064,11 @@ class ConversationalJarvisEngine @Inject constructor(
         var semanticTotalMs: Long? = null
         var modelColdStartMs: Long? = null
 
+        // § JARVIS Implementation Master Plan PASSAGGIO 1 — see
+        // EngineTurnDiagnostics' own doc comment for the contract
+        // (status enum names only, in call order, never a payload value).
+        val toolOutcomeStatuses = ArrayList<String>()
+
         /** Never includes the reply text itself — only counts/booleans, per [EngineTurnDiagnostics]'s contract. */
         fun toDiagnostics(): EngineTurnDiagnostics {
             val now = System.currentTimeMillis()
@@ -1098,6 +1107,7 @@ class ConversationalJarvisEngine @Inject constructor(
                 groundingBlockReason = groundingBlockReason,
                 toolFailureCodes = toolFailureCodes,
                 networkAvailable = networkAvailable,
+                toolOutcomeStatuses = toolOutcomeStatuses,
                 semanticEnabled = semanticEnabled,
                 semanticSource = semanticSource,
                 semanticIntent = semanticIntent,

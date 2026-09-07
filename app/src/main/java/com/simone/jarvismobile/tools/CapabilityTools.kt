@@ -9,6 +9,7 @@ import com.simone.jarvismobile.core.health.HealthAggregation
 import com.simone.jarvismobile.core.health.HealthMetric
 import com.simone.jarvismobile.core.health.HealthRange
 import com.simone.jarvismobile.core.tools.SensitivityLevel
+import com.simone.jarvismobile.core.tools.StructuredToolResult
 import com.simone.jarvismobile.core.tools.Tool
 import com.simone.jarvismobile.core.tools.ToolPolicy
 import com.simone.jarvismobile.core.tools.ToolResult
@@ -266,7 +267,34 @@ class GetHealthSummaryTool(private val health: HealthConnectManager) : Tool {
     private fun weeklySleepResult(snapshot: HealthConnectManager.HealthSnapshot, aggregation: HealthAggregation): ToolResult {
         val daysWithSleep = snapshot.daily.count { it.sleepHours != null }
         val daysMissing = snapshot.daily.size - daysWithSleep
-        if (daysWithSleep == 0) return ToolResult.Failure("health_no_data")
+        if (daysWithSleep == 0) {
+            // § JARVIS Implementation Master Plan PASSAGGIO 1 §7 — Health
+            // Connect WAS reachable, the permission WAS granted (both already
+            // checked in `execute()` above), and the query genuinely ran
+            // against the whole week's coverage (`snapshot.daily`, not a
+            // partial fetch): zero real sleep records this week is a real,
+            // successful answer ("you have no sleep data"), never a
+            // source/tool failure. This used to be
+            // `ToolResult.Failure("health_no_data")`, which made
+            // `GroundingGate` treat HEALTH as an unsatisfied family and
+            // block an honestly answerable turn — the exact "empty vs
+            // failure" bug this phase's outcome taxonomy exists to close.
+            val spoken = "Non ho registrato dati di sonno per nessun giorno di questa settimana."
+            return ToolResult.Success(
+                JsonObject(
+                    mapOf(
+                        "range" to JsonPrimitive("week"),
+                        "days_with_sleep_data" to JsonPrimitive(0),
+                        "spoken" to JsonPrimitive(spoken),
+                    ),
+                ),
+                evidence = StructuredToolResult.successEmpty(
+                    sourceId = "health_connect",
+                    retrievedAt = System.currentTimeMillis(),
+                    requestedRange = "week",
+                ),
+            )
+        }
 
         val totalSleepHours = snapshot.daily.mapNotNull { it.sleepHours }.sum()
         val avgSleep = snapshot.averages.avgSleepPerNight
@@ -296,7 +324,20 @@ class GetHealthSummaryTool(private val health: HealthConnectManager) : Tool {
     }
 
     private fun weeklyBpmResult(snapshot: HealthConnectManager.HealthSnapshot): ToolResult {
-        val avgBpm = snapshot.averages.avgHeartRateBpm ?: return ToolResult.Failure("health_no_data")
+        // § PASSAGGIO 1 §7 — same empty-vs-failure fix as `weeklySleepResult`:
+        // no resting-heart-rate sample this week, with Health Connect
+        // reachable and permitted, is a genuine SUCCESS_EMPTY, not a failure.
+        val avgBpm = snapshot.averages.avgHeartRateBpm ?: run {
+            val spoken = "Non ho registrato la frequenza cardiaca a riposo per nessun giorno di questa settimana."
+            return ToolResult.Success(
+                JsonObject(mapOf("range" to JsonPrimitive("week"), "spoken" to JsonPrimitive(spoken))),
+                evidence = StructuredToolResult.successEmpty(
+                    sourceId = "health_connect",
+                    retrievedAt = System.currentTimeMillis(),
+                    requestedRange = "week",
+                ),
+            )
+        }
         val spoken = "In media la tua frequenza cardiaca a riposo questa settimana è stata $avgBpm bpm."
         return ok("range" to "week", "avg_resting_bpm" to avgBpm.toString(), "spoken" to spoken)
     }
