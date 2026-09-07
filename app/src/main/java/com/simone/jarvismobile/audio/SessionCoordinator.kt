@@ -2052,6 +2052,18 @@ class SessionCoordinator @Inject constructor(
     }
 
     fun newConversation() {
+        // § JARVIS Implementation Master Plan — PASSAGGIO 3 (Session Epoch +
+        // Reset + Stale Callback Safety), findings JARVIS-07/JARVIS-16. Called
+        // FIRST, before anything below: it bumps ConversationManager's own
+        // epoch immediately (§2 reset order — invalidate before depending on
+        // any cancellation of the OTHER engine's in-flight turn actually
+        // taking effect), and clears the Conversational engine's own pending
+        // confirmation/disambiguation. This was a real gap before this phase:
+        // "Nuova conversazione" reset Classic mode's pending*/activeSystems/
+        // activeEpochs below but never touched ConversationalJarvisEngine/
+        // ConversationManager at all — an old "sì/no"/disambiguation/semantic
+        // frame from Motore = Conversazionale could silently outlive a reset.
+        conversationalEngine.reset()
         router.resetConversation()
         pendingConfirmation = null
         pendingSlot = null

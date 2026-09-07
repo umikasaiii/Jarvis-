@@ -1,6 +1,7 @@
 package com.simone.jarvismobile.engine
 
 import com.simone.jarvismobile.agenda.AgendaRepository
+import com.simone.jarvismobile.core.engine.SessionEpoch
 import com.simone.jarvismobile.core.memory.MemoryEntry
 import com.simone.jarvismobile.core.memory.MemoryTier
 import com.simone.jarvismobile.core.protocol.ToolCall
@@ -48,6 +49,45 @@ class ConversationManager @Inject constructor(
     private val agenda: AgendaRepository,
     private val memoryEngine: MemoryEngine,
 ) {
+    // § JARVIS Implementation Master Plan — PASSAGGIO 3 (Session Epoch +
+    // Reset + Stale Callback Safety), findings JARVIS-07/JARVIS-16. This
+    // class is the authoritative owner of ACTIVE session state (§9) — never
+    // the durable transcript (`ChatStore`) or accepted personal memory
+    // (`MemoryEngine`), both reset separately by whichever caller's UX
+    // defines that operation. [sessionEpoch] (`:core`, pure, tested directly
+    // — see SessionEpochTest) is bumped by [reset] alone; every mutator below
+    // that a turn/job could still be trying to commit AFTER a reset (a native
+    // call that ignores cancellation and returns late — see `ToolRunner`/
+    // `JarvisBrain`'s own doc comments on this exact class of race) takes the
+    // epoch the CALLER captured at ITS turn's start and refuses to commit
+    // when it no longer matches [currentEpoch] — the ONE reusable staleness
+    // check this phase asks for, not a scattered ad-hoc boolean per field.
+    private val sessionEpoch = SessionEpoch()
+
+    /** The session's current epoch. A turn/job should capture this once, at its own start, and pass it back into the mutators below. */
+    fun currentEpoch(): Long = sessionEpoch.current()
+
+    /** True when [epoch] (captured earlier by some in-flight turn/job) is still current — see the class doc comment. */
+    fun isEpochCurrent(epoch: Long): Boolean = sessionEpoch.isCurrent(epoch)
+
+    /**
+     * § PASSAGGIO 3 §2 — reset ORDER matters: the epoch is bumped FIRST, so
+     * ANY commit already in flight from before this call — however it later
+     * completes — is rejected by [isEpochCurrent] the moment it tries to
+     * land, without this method ever having to depend on some other job's
+     * cancellation actually taking effect. Clearing the pending
+     * task/topic/frame second (§4) invalidates inherited context for the
+     * NEXT turn; neither step touches [agenda] or [memoryEngine] — resetting
+     * a conversation is not the same operation as forgetting personal
+     * memory (§ authoritative constraint).
+     */
+    fun reset() {
+        sessionEpoch.invalidate()
+        pending = null
+        lastKnowledgeTopic = null
+        lastSemanticFrame = null
+    }
+
     @Volatile private var pending: PendingTask? = null
 
     /** The current pending task, or null if there is none or it has gone stale. */
@@ -97,7 +137,9 @@ class ConversationManager @Inject constructor(
         return t.topic
     }
 
-    fun noteKnowledgeTopic(topic: String) {
+    /** [epoch] must be the value the calling turn captured via [currentEpoch] at its own start — see the class doc comment. */
+    fun noteKnowledgeTopic(topic: String, epoch: Long) {
+        if (!isEpochCurrent(epoch)) return
         lastKnowledgeTopic = LastKnowledgeTopic(topic, System.currentTimeMillis())
     }
 
@@ -126,7 +168,9 @@ class ConversationManager @Inject constructor(
         return f.frame
     }
 
-    fun noteSemanticFrame(frame: SemanticFrame) {
+    /** [epoch] must be the value the calling turn captured via [currentEpoch] at its own start — see the class doc comment. */
+    fun noteSemanticFrame(frame: SemanticFrame, epoch: Long) {
+        if (!isEpochCurrent(epoch)) return
         lastSemanticFrame = LastSemanticFrame(frame, System.currentTimeMillis())
     }
 
@@ -152,8 +196,11 @@ class ConversationManager @Inject constructor(
      * writes that create or touch a single entry update the pending task;
      * anything else (a read-only tool, a non-agenda tool) leaves it untouched
      * so an unrelated aside in the middle of a correction doesn't lose it.
+     * [epoch] must be the value the calling turn captured via [currentEpoch]
+     * at its own start — see the class doc comment.
      */
-    suspend fun onToolExecuted(call: ToolCall, outcome: ToolOutcome) {
+    suspend fun onToolExecuted(call: ToolCall, outcome: ToolOutcome, epoch: Long) {
+        if (!isEpochCurrent(epoch)) return
         if (outcome !is ToolOutcome.Done) return
         if (call.name !in AGENDA_ENTRY_TOOLS) return
 

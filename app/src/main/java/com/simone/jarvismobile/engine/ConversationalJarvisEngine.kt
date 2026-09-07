@@ -6,6 +6,7 @@ import com.simone.jarvismobile.context.ContextEngine
 import com.simone.jarvismobile.core.agenda.ItalianDateTimeParser
 import com.simone.jarvismobile.core.engine.BrainReply
 import com.simone.jarvismobile.core.engine.EngineTurnDiagnostics
+import com.simone.jarvismobile.core.engine.EpochScoped
 import com.simone.jarvismobile.core.engine.GroundingGate
 import com.simone.jarvismobile.core.engine.JarvisEngineMode
 import com.simone.jarvismobile.core.engine.ParseOutcome
@@ -114,11 +115,45 @@ class ConversationalJarvisEngine @Inject constructor(
      */
     private fun isOnline(): Boolean = contextEngine.state.value.networkAvailable == true
 
+    // § JARVIS Implementation Master Plan — PASSAGGIO 3 (Session Epoch +
+    // Reset + Stale Callback Safety), finding JARVIS-07. [EpochScoped] (from
+    // `:core` — see its own doc comment; reused verbatim here, never a second
+    // per-class copy of the same shape, per §5 "extend rather than add a
+    // second identity system") binds a pending value to the
+    // [ConversationManager.currentEpoch] active when it was asked — never
+    // the SAME session concept as ConversationManager's own epoch-guarded
+    // fields (that class owns ACTIVE session state; this is this engine's
+    // own local waiting-on-a-reply state), but bound to it: after [reset]
+    // bumps ConversationManager's epoch, a value stamped with the old one
+    // reads back as stale on its very next use — an old "sì/no" or "quale
+    // dei due?" can never silently authorize whatever the user says first in
+    // a NEW conversation (§3: "pending authorization is ephemeral" — this is
+    // also already true across process death for free, since these are
+    // plain in-memory fields with no persistence layer).
+
     /** A tool call this engine itself is waiting on the user to confirm/deny. */
-    @Volatile private var pendingConfirmation: ToolCall? = null
+    @Volatile private var pendingConfirmation: EpochScoped<ToolCall>? = null
 
     /** An [AgendaIntentRouter] "which one did you mean?" question awaiting a reply. */
-    @Volatile private var pendingDisambiguation: PendingDisambiguation? = null
+    @Volatile private var pendingDisambiguation: EpochScoped<PendingDisambiguation>? = null
+
+    /**
+     * § PASSAGGIO 3 §2 — this engine's own reset entry point, called by
+     * `SessionCoordinator.newConversation()`. [ConversationManager.reset]
+     * bumps the epoch FIRST (reset order: invalidate before depending on any
+     * cancellation actually taking effect), so even a pending value this
+     * call does not explicitly null out here would already read as stale;
+     * clearing them anyway is the explicit, non-relied-upon belt-and-braces
+     * step §2 also asks for. Never touches personal memory or the durable
+     * transcript — `SessionCoordinator`/`ChatStore`/`MemoryEngine` remain
+     * responsible for those, reset separately by whatever UX action defines
+     * that operation (§4/§9).
+     */
+    fun reset() {
+        conversationManager.reset()
+        pendingConfirmation = null
+        pendingDisambiguation = null
+    }
 
     private val _diagnostics = MutableStateFlow<List<EngineTurnDiagnostics>>(emptyList())
     val diagnostics: StateFlow<List<EngineTurnDiagnostics>> = _diagnostics.asStateFlow()
@@ -134,7 +169,17 @@ class ConversationalJarvisEngine @Inject constructor(
      * silently defeat by swallowing the exception here first).
      */
     override suspend fun handle(transcript: String): String {
-        val turn = TurnState(startedAt = System.currentTimeMillis(), cap = settings.jarvisToolLoopCap.first())
+        // § PASSAGGIO 3 §1 — captured ONCE, at this turn's very start: every
+        // commit this turn later makes into ConversationManager's active
+        // session state carries this same value, so a reset that happens
+        // while this turn's own suspend chain is still unwinding (§6: a
+        // cancellation request does not guarantee the underlying native call
+        // has actually stopped) is detected at the commit point, not assumed.
+        val turn = TurnState(
+            startedAt = System.currentTimeMillis(),
+            cap = settings.jarvisToolLoopCap.first(),
+            epoch = conversationManager.currentEpoch(),
+        )
         // § FASE 2A.6 §10 — one snapshot for the whole turn, not re-read per
         // branch: what a network-requiring tool would actually be gated on
         // right now, regardless of whether one is attempted this turn.
@@ -322,7 +367,7 @@ class ConversationalJarvisEngine @Inject constructor(
         turn.inheritedSlots = merge.inheritedSlots.map { it.name }
         turn.currentOverridesPrevious = merge.currentOverridesPrevious
         turn.semanticConfidence = frame.confidence
-        conversationManager.noteSemanticFrame(frame)
+        conversationManager.noteSemanticFrame(frame, turn.epoch)
 
         return when (val outcome = SemanticRouter.routeFrame(frame)) {
             SemanticRoutingOutcome.HandoffToLlm -> {
@@ -507,7 +552,15 @@ class ConversationalJarvisEngine @Inject constructor(
 
     /** If this engine itself is waiting on a yes/no, resolve it before anything else. */
     private suspend fun handlePendingConfirmation(transcript: String, turn: TurnState): String? {
-        val call = pendingConfirmation ?: return null
+        val scoped = pendingConfirmation ?: return null
+        pendingConfirmation = null
+        // § PASSAGGIO 3 §3 — a reset since this confirmation was asked means
+        // it belongs to a superseded session: it must NOT silently authorize
+        // whatever the user says first in the new one. Treated exactly like
+        // "no pending at all" (falls through to the rest of `handle()`),
+        // never like an explicit "no".
+        if (!conversationManager.isEpochCurrent(scoped.epoch)) return null
+        val call = scoped.value
         // § logging temporaneo obbligatorio, audit "Conversational mode non
         // tenta più Core" — se questo compare per un messaggio che non è una
         // risposta sì/no reale (es. "Ciao"), un turno precedente ha lasciato
@@ -520,7 +573,6 @@ class ConversationalJarvisEngine @Inject constructor(
         // può verificare senza adb se un turno è stato intercettato qui
         // invece di raggiungere mai runBrainLoop/tryRemoteReply.
         remoteChatState.setLastRoute("LOCAL (bypass: conferma sospesa)")
-        pendingConfirmation = null
         if (IntentAliases.isCancellationOfPendingAction(transcript) || IntentAliases.isNegative(transcript)) {
             return "Va bene, annullato."
         }
@@ -533,7 +585,14 @@ class ConversationalJarvisEngine @Inject constructor(
 
     /** If JARVIS just asked "which one did you mean?", this message answers it. */
     private suspend fun handlePendingDisambiguation(transcript: String, turn: TurnState): String? {
-        val pending = pendingDisambiguation ?: return null
+        val scoped = pendingDisambiguation ?: return null
+        pendingDisambiguation = null
+        // § PASSAGGIO 3 §3 — same reasoning as handlePendingConfirmation: a
+        // reset since this question was asked means it belongs to a
+        // superseded session, never an active one the current message could
+        // silently answer.
+        if (!conversationManager.isEpochCurrent(scoped.epoch)) return null
+        val pending = scoped.value
         // § logging temporaneo obbligatorio, audit "Conversational mode non
         // tenta più Core" — stesso principio di ENGINE_BRANCH=pending_confirmation
         // sopra: se compare per un messaggio come "Ciao" (non una risposta
@@ -542,7 +601,6 @@ class ConversationalJarvisEngine @Inject constructor(
         Log.i(TAG, "ENGINE_BRANCH=pending_disambiguation candidates=${pending.candidateIds.size}")
         turn.routingPath = "PENDING_DISAMBIGUATION"
         remoteChatState.setLastRoute("LOCAL (bypass: disambiguazione sospesa)")
-        pendingDisambiguation = null
         if (IntentAliases.isCancellationOfPendingAction(transcript) || IntentAliases.isNegative(transcript)) {
             return "Va bene, lascio stare."
         }
@@ -556,7 +614,7 @@ class ConversationalJarvisEngine @Inject constructor(
                 // messaggio dell'utente è una domanda qualunque non correlata,
                 // verrà intercettato di nuovo qui, non da runBrainLoop.
                 Log.i(TAG, "ENGINE_DISAMBIGUATION_STUCK candidates=${resolved.candidateIds.size}")
-                pendingDisambiguation = PendingDisambiguation(resolved.candidateIds, resolved.pending)
+                pendingDisambiguation = EpochScoped(PendingDisambiguation(resolved.candidateIds, resolved.pending), turn.epoch)
                 resolved.question
             }
             is AgendaRouting.NotFound -> resolved.spoken
@@ -629,7 +687,7 @@ class ConversationalJarvisEngine @Inject constructor(
                 Log.i(TAG, "ENGINE_BRANCH=structured_path (disambiguate, candidates=${routing.candidateIds.size})")
                 remoteChatState.setLastRoute("LOCAL (bypass: disambiguazione agenda)")
                 turn.routingPath = "STRUCTURED_AGENDA"
-                pendingDisambiguation = PendingDisambiguation(routing.candidateIds, routing.pending)
+                pendingDisambiguation = EpochScoped(PendingDisambiguation(routing.candidateIds, routing.pending), turn.epoch)
                 routing.question
             }
             is AgendaRouting.NotFound -> {
@@ -736,7 +794,7 @@ class ConversationalJarvisEngine @Inject constructor(
             if (fam in GROUNDED_FAMILIES) turn.requiredGroundingFamilies = turn.requiredGroundingFamilies + fam
         }
         val outcome = toolRouter.execute(call, turn.budget, online = isOnline(), confirmed = confirmed)
-        conversationManager.onToolExecuted(call, outcome)
+        conversationManager.onToolExecuted(call, outcome, turn.epoch)
         val status = outcome.statusOrNull()
         status?.let { turn.toolOutcomeStatuses += it.name }
         // § PASSAGGIO 2 §1 — the real StructuredToolResult status, not just
@@ -757,7 +815,7 @@ class ConversationalJarvisEngine @Inject constructor(
                 outcome.spoken
             }
             is ToolOutcome.NeedsConfirmation -> {
-                pendingConfirmation = outcome.call
+                pendingConfirmation = EpochScoped(outcome.call, turn.epoch)
                 outcome.prompt
             }
         }
@@ -790,7 +848,7 @@ class ConversationalJarvisEngine @Inject constructor(
         // that keyword set is deliberately quantity-phrase-only) so a
         // following bare partitive ("Quanta ne ho?") has something to
         // resolve against.
-        DeviceInfoFollowUp.extractTopic(transcript)?.let { conversationManager.noteKnowledgeTopic(it) }
+        DeviceInfoFollowUp.extractTopic(transcript)?.let { conversationManager.noteKnowledgeTopic(it, turn.epoch) }
         val reasoningMode = settings.jarvisReasoningMode.first()
         val slot = brain.resolveSlot(reasoningMode, transcript)
         val assembled = contextAssembler.assemble(transcript, conversationManager.snapshotText())
@@ -985,7 +1043,7 @@ class ConversationalJarvisEngine @Inject constructor(
                         // specifically required can satisfy it; a tool from an
                         // unrelated family executing successfully never does.
                         RelevantToolSelector.familyOf(call.name)?.let { turn.satisfiedGroundingFamilies += it }
-                        conversationManager.onToolExecuted(call, outcome)
+                        conversationManager.onToolExecuted(call, outcome, turn.epoch)
                         evidenceAccumulator += ToolLoopEvidence.RoundResult(call.name, status, outcome.spoken)
                     }
                     is ToolOutcome.Failed -> {
@@ -994,7 +1052,7 @@ class ConversationalJarvisEngine @Inject constructor(
                         evidenceAccumulator += ToolLoopEvidence.RoundResult(call.name, status, outcome.spoken)
                     }
                     is ToolOutcome.NeedsConfirmation -> {
-                        pendingConfirmation = outcome.call
+                        pendingConfirmation = EpochScoped(outcome.call, turn.epoch)
                         confirmationPrompt = outcome.prompt
                     }
                 }
@@ -1099,7 +1157,8 @@ class ConversationalJarvisEngine @Inject constructor(
     private data class PendingDisambiguation(val candidateIds: List<String>, val args: Map<String, String>)
 
     /** Per-turn mutable bookkeeping, collapsed into [EngineTurnDiagnostics] at the end. */
-    private class TurnState(val startedAt: Long, cap: Int) {
+    /** [epoch] — see PASSAGGIO 3's doc comment at its capture site in [handle]. */
+    private class TurnState(val startedAt: Long, cap: Int, val epoch: Long) {
         val budget = ToolCallBudget(cap)
         val toolsRequested = ArrayList<String>()
         val toolsExecuted = ArrayList<String>()
