@@ -98,6 +98,23 @@ object HealthDailySeries {
     }
 
     /**
+     * § JARVIS Implementation Master Plan — PASSAGGIO 5 §1/§6 — the exact
+     * scope "this week" means, extracted from what was previously duplicated
+     * inline in `app/`'s `HealthConnectManager.computeAverages` so every
+     * "weekly" consumer (the average AND the raw total/coverage count a
+     * weekly tool result reports) shares one definition. Matters concretely
+     * after a wide historical sync ([HealthConnectManager.syncHistorical]):
+     * without this filter, [daily] can hold far more than [windowDays]+1
+     * entries, and a "this week" claim would silently count/sum dates that
+     * were never part of the requested range — exactly the requested-vs-
+     * covered-range ambiguity this phase exists to close.
+     */
+    fun windowed(daily: List<DailyHealthReading>, today: LocalDate, windowDays: Int = DEFAULT_WINDOW_DAYS): List<DailyHealthReading> {
+        val windowStart = today.minusDays(windowDays.toLong())
+        return daily.filter { !it.date.isBefore(windowStart) && !it.date.isAfter(today) }
+    }
+
+    /**
      * Averages over [daily], excluding [today]: today is still in progress
      * for BPM (more readings may still arrive) and, per an explicit user
      * request, the "weekly" average must mean the days *before* today, not a

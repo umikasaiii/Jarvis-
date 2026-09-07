@@ -6,6 +6,9 @@ import android.os.Build
 import android.os.Environment
 import android.os.StatFs
 import com.simone.jarvismobile.core.health.HealthAggregation
+import com.simone.jarvismobile.core.health.HealthCoverage
+import com.simone.jarvismobile.core.health.HealthDailySeries
+import com.simone.jarvismobile.core.health.HealthDayCoverage
 import com.simone.jarvismobile.core.health.HealthMetric
 import com.simone.jarvismobile.core.health.HealthRange
 import com.simone.jarvismobile.core.tools.SensitivityLevel
@@ -49,6 +52,18 @@ private fun JsonObject.int(key: String): Int? = str(key)?.trim()?.toIntOrNull()
 
 private fun ok(vararg pairs: Pair<String, String>): ToolResult =
     ToolResult.Success(JsonObject(pairs.associate { it.first to JsonPrimitive(it.second) }))
+
+/**
+ * § JARVIS Implementation Master Plan — PASSAGGIO 5 — [HealthCoverage] (`:core`)
+ * operates on [com.simone.jarvismobile.core.health.DailyHealthReading], a
+ * distinct (structurally identical, textually different) type from
+ * [HealthConnectManager.DailyHealthReading] — the same map-to-core-then-back
+ * pattern already established by [HealthConnectManager.mergeDaily]/
+ * [HealthConnectManager.weeklyWindow], reused here instead of a second
+ * conversion helper.
+ */
+private fun HealthConnectManager.DailyHealthReading.toCore() =
+    com.simone.jarvismobile.core.health.DailyHealthReading(date, heartRateBpm, sleepHours)
 
 /**
  * Real weather, today or up to 3 days ahead, from the same
@@ -179,6 +194,16 @@ class GetWeatherTool(private val weather: WeatherManager) : Tool {
  * extraction stays separate from this tool's own execution). Any argument
  * absent/unrecognized defaults to the previous safe behavior (`week`/`total`),
  * so another caller offering this tool with no arguments at all is unaffected.
+ *
+ * § JARVIS Implementation Master Plan — PASSAGGIO 5 (Health Range + Coverage +
+ * Freshness Foundation, JARVIS-09/C33). This is the one migrated read path:
+ * REQUESTED range vs. COVERED range (was this date/week ever actually
+ * queried?) vs. real records vs. freshness are now kept explicit end to end,
+ * closing the exact ambiguity `nightResult()` used to leave open — a date
+ * never queried and a date queried-but-genuinely-empty both used to become
+ * the identical `Failure("health_no_data")`. See
+ * [com.simone.jarvismobile.core.health.HealthCoverage]/[com.simone.jarvismobile.core.health.HealthRangeCoverage]
+ * (`:core`, pure, tested) for the coverage model itself.
  */
 class GetHealthSummaryTool(private val health: HealthConnectManager) : Tool {
     override val name = "get_health_summary"
@@ -201,11 +226,51 @@ class GetHealthSummaryTool(private val health: HealthConnectManager) : Tool {
     }
 
     override suspend fun execute(arguments: JsonObject): ToolResult {
-        if (!health.isAvailable) return ToolResult.Failure("health_unavailable")
-        if (!health.hasPermissions()) return ToolResult.Failure("health_permission_missing")
+        // § PASSAGGIO 5 §3 — three distinct, never-collapsed reasons a
+        // request cannot proceed at all: the Health Connect SDK itself isn't
+        // present on this device (DATA_UNAVAILABLE — nothing wrong happened,
+        // the capability simply doesn't exist here), the permission was
+        // never granted/was revoked (PERMISSION_MISSING), or a genuine
+        // read/sync exception occurred (SOURCE_FAILURE, checked below once we
+        // know a refresh actually failed rather than just never having run).
+        if (!health.isAvailable) {
+            return ToolResult.Failure(
+                "health_unavailable",
+                evidence = StructuredToolResult.dataUnavailable(
+                    sourceId = SOURCE_ID,
+                    reasonCode = "health_connect_not_available",
+                    retryable = false,
+                ),
+            )
+        }
+        if (!health.hasPermissions()) {
+            return ToolResult.Failure(
+                "health_permission_missing",
+                evidence = StructuredToolResult.permissionMissing(sourceId = SOURCE_ID, reasonCode = "permission_not_granted"),
+            )
+        }
 
-        val snapshot = health.refresh() ?: health.cachedSnapshot()
-            ?: return ToolResult.Failure("health_unavailable")
+        val refreshed = health.refresh()
+        val snapshot = refreshed ?: health.cachedSnapshot()
+        if (snapshot == null) {
+            // A real exception during the read/sync (recorded by
+            // HealthConnectManager's own diagnostic, never inferred) is a
+            // genuine SOURCE_FAILURE; no error recorded at all — this device
+            // has simply never synced successfully yet — is a coverage gap,
+            // DATA_UNAVAILABLE, never presented as a crash.
+            val lastError = health.diagnostic.value?.lastErrorType
+            return if (lastError != null) {
+                ToolResult.Failure(
+                    "health_source_failure",
+                    evidence = StructuredToolResult.sourceFailure(sourceId = SOURCE_ID, reasonCode = lastError, retryable = true),
+                )
+            } else {
+                ToolResult.Failure(
+                    "health_unavailable",
+                    evidence = StructuredToolResult.dataUnavailable(sourceId = SOURCE_ID, reasonCode = "not_synced_yet", retryable = true),
+                )
+            }
+        }
 
         val metric = if (arguments.str("metric") == "resting_heart_rate") {
             HealthMetric.RESTING_HEART_RATE
@@ -234,51 +299,111 @@ class GetHealthSummaryTool(private val health: HealthConnectManager) : Tool {
      * falls back to the weekly average — a missing single-night reading is a
      * genuinely different answer ("no data for that night"), not "here is
      * the week instead".
+     *
+     * § PASSAGGIO 5 §2/§3 — [com.simone.jarvismobile.core.health.HealthCoverage.resolveDay]
+     * now distinguishes the two cases the old `firstOrNull { it.date == date }
+     * ?: Failure("health_no_data")` collapsed into one: [date] genuinely never
+     * queried ([HealthDayCoverage.NotCovered], a coverage gap — DATA_UNAVAILABLE)
+     * vs. [date] queried and the metric field is simply `null`
+     * ([HealthDayCoverage.Covered] with a null field — SUCCESS_EMPTY, a real
+     * "no data that night" answer).
      */
     private fun nightResult(snapshot: HealthConnectManager.HealthSnapshot, date: LocalDate, metric: HealthMetric): ToolResult {
-        val day = snapshot.daily.firstOrNull { it.date == date } ?: return ToolResult.Failure("health_no_data")
         val dateLabel = date.format(DateTimeFormatter.ofLocalizedDate(FormatStyle.LONG).withLocale(Locale.ITALIAN))
+        val coverage = HealthCoverage.resolveDay(snapshot.daily.map { it.toCore() }, date)
+        if (coverage !is HealthDayCoverage.Covered) {
+            return ToolResult.Failure(
+                "health_range_not_covered",
+                evidence = StructuredToolResult.dataUnavailable(sourceId = SOURCE_ID, reasonCode = "range_not_covered", retryable = true),
+            )
+        }
+        val day = coverage.reading
         return when (metric) {
             HealthMetric.SLEEP_DURATION -> {
-                val hours = day.sleepHours ?: return ToolResult.Failure("health_no_data")
-                val totalMinutes = (hours * 60).roundToInt()
-                val spoken = "Il $dateLabel hai dormito ${totalMinutes / 60}h ${totalMinutes % 60}min."
-                ok("range" to date.toString(), "sleep_hours" to hours.toString(), "spoken" to spoken)
+                val hours = day.sleepHours
+                if (hours == null) {
+                    emptyResult(date.toString(), "Non risultano dati di sonno per il $dateLabel.", snapshot.updatedAtMs)
+                } else {
+                    val totalMinutes = (hours * 60).roundToInt()
+                    val spoken = "Il $dateLabel hai dormito ${totalMinutes / 60}h ${totalMinutes % 60}min."
+                    dataResult(date.toString(), spoken, snapshot.updatedAtMs, date.toString(), "sleep_hours" to hours.toString())
+                }
             }
             HealthMetric.RESTING_HEART_RATE -> {
-                val bpm = day.heartRateBpm ?: return ToolResult.Failure("health_no_data")
-                val spoken = "Il $dateLabel la tua frequenza cardiaca a riposo era $bpm bpm."
-                ok("range" to date.toString(), "resting_bpm" to bpm.toString(), "spoken" to spoken)
+                val bpm = day.heartRateBpm
+                if (bpm == null) {
+                    emptyResult(date.toString(), "Non risulta la frequenza cardiaca a riposo per il $dateLabel.", snapshot.updatedAtMs)
+                } else {
+                    val spoken = "Il $dateLabel la tua frequenza cardiaca a riposo era $bpm bpm."
+                    dataResult(date.toString(), spoken, snapshot.updatedAtMs, date.toString(), "resting_bpm" to bpm.toString())
+                }
             }
         }
     }
 
+    /** A genuinely empty (covered, zero records) single-day/night result — never used for an uncovered date. */
+    private fun emptyResult(range: String, spoken: String, retrievedAt: Long?): ToolResult = ToolResult.Success(
+        JsonObject(mapOf("range" to JsonPrimitive(range), "spoken" to JsonPrimitive(spoken))),
+        evidence = StructuredToolResult.successEmpty(sourceId = SOURCE_ID, retrievedAt = retrievedAt, requestedRange = range),
+    )
+
+    /** A genuine single-day/night record. */
+    private fun dataResult(range: String, spoken: String, retrievedAt: Long?, coverage: String?, field: Pair<String, String>): ToolResult = ToolResult.Success(
+        JsonObject(mapOf("range" to JsonPrimitive(range), field.first to JsonPrimitive(field.second), "spoken" to JsonPrimitive(spoken))),
+        evidence = StructuredToolResult.successData(
+            payload = JsonObject(mapOf(field.first to JsonPrimitive(field.second))),
+            sourceId = SOURCE_ID, retrievedAt = retrievedAt, coverage = coverage,
+        ),
+    )
+
+    /**
+     * § PASSAGGIO 5 §1/§6 — [windowed] is [HealthConnectManager.weeklyWindow]
+     * (the exact same "this week" scope the Home tile's average already uses)
+     * so a wider cache (after a historical sync) never lets a "this week"
+     * claim silently count more days than were actually requested.
+     */
     private fun weeklyResult(snapshot: HealthConnectManager.HealthSnapshot, metric: HealthMetric, aggregation: HealthAggregation): ToolResult {
+        val windowed = health.weeklyWindow(snapshot.daily)
+        val requestedDays = HealthDailySeries.DEFAULT_WINDOW_DAYS + 1
         return when (metric) {
-            HealthMetric.SLEEP_DURATION -> weeklySleepResult(snapshot, aggregation)
+            HealthMetric.SLEEP_DURATION -> weeklySleepResult(snapshot, windowed, requestedDays, aggregation)
             // A "total" resting heart rate across a week has no meaningful
             // reading (summing BPM samples is not a real quantity) — the
             // average is the only sensible weekly view for this metric,
             // regardless of which aggregation was asked for.
-            HealthMetric.RESTING_HEART_RATE -> weeklyBpmResult(snapshot)
+            HealthMetric.RESTING_HEART_RATE -> weeklyBpmResult(snapshot, windowed, requestedDays)
         }
     }
 
-    private fun weeklySleepResult(snapshot: HealthConnectManager.HealthSnapshot, aggregation: HealthAggregation): ToolResult {
-        val daysWithSleep = snapshot.daily.count { it.sleepHours != null }
-        val daysMissing = snapshot.daily.size - daysWithSleep
-        if (daysWithSleep == 0) {
+    private fun weeklySleepResult(
+        snapshot: HealthConnectManager.HealthSnapshot,
+        windowed: List<HealthConnectManager.DailyHealthReading>,
+        requestedDays: Int,
+        aggregation: HealthAggregation,
+    ): ToolResult {
+        val coverage = HealthCoverage.resolveRange(windowed.map { it.toCore() }, requestedDays) { it.sleepHours != null }
+        val coverageLabel = "${coverage.coveredDays}/${coverage.requestedDays}"
+
+        if (!coverage.hasAnyCoverage) {
+            // § PASSAGGIO 5 §1/§3 — the whole requested week was never
+            // queried at all (e.g. the cache is older than the window now
+            // being asked about) — a real coverage gap, never presented as
+            // "you slept zero hours".
+            return ToolResult.Failure(
+                "health_range_not_covered",
+                evidence = StructuredToolResult.dataUnavailable(sourceId = SOURCE_ID, reasonCode = "range_not_covered", retryable = true),
+            )
+        }
+        if (!coverage.hasAnyData) {
             // § JARVIS Implementation Master Plan PASSAGGIO 1 §7 — Health
-            // Connect WAS reachable, the permission WAS granted (both already
-            // checked in `execute()` above), and the query genuinely ran
-            // against the whole week's coverage (`snapshot.daily`, not a
-            // partial fetch): zero real sleep records this week is a real,
-            // successful answer ("you have no sleep data"), never a
-            // source/tool failure. This used to be
-            // `ToolResult.Failure("health_no_data")`, which made
-            // `GroundingGate` treat HEALTH as an unsatisfied family and
-            // block an honestly answerable turn — the exact "empty vs
-            // failure" bug this phase's outcome taxonomy exists to close.
+            // Connect WAS reachable, the permission WAS granted, and the
+            // query genuinely ran against real (if possibly partial)
+            // coverage: zero real sleep records is a real, successful
+            // answer ("you have no sleep data"), never a source/tool
+            // failure. This used to be `ToolResult.Failure("health_no_data")`,
+            // which made `GroundingGate` treat HEALTH as an unsatisfied
+            // family and block an honestly answerable turn — the exact
+            // "empty vs failure" bug this phase's outcome taxonomy exists to close.
             val spoken = "Non ho registrato dati di sonno per nessun giorno di questa settimana."
             return ToolResult.Success(
                 JsonObject(
@@ -289,57 +414,133 @@ class GetHealthSummaryTool(private val health: HealthConnectManager) : Tool {
                     ),
                 ),
                 evidence = StructuredToolResult.successEmpty(
-                    sourceId = "health_connect",
-                    retrievedAt = System.currentTimeMillis(),
+                    sourceId = SOURCE_ID,
+                    retrievedAt = snapshot.updatedAtMs,
                     requestedRange = "week",
+                    coverage = coverageLabel,
                 ),
             )
         }
 
-        val totalSleepHours = snapshot.daily.mapNotNull { it.sleepHours }.sum()
+        val totalSleepHours = windowed.mapNotNull { it.sleepHours }.sum()
         val avgSleep = snapshot.averages.avgSleepPerNight
+        val daysWithSleep = coverage.daysWithData
+        val daysMissing = coverage.coveredDays - daysWithSleep
 
+        // § PASSAGGIO 5 §3/§7 — a coverage gap (some days of the week never
+        // queried) is disclosed explicitly, distinct from `missingNote`
+        // (days that WERE queried but simply hold no record).
+        val partialNote = if (!coverage.isFullyCovered) {
+            " Copertura parziale: dati sincronizzati solo per ${coverage.coveredDays} giorni su ${coverage.requestedDays}."
+        } else {
+            ""
+        }
         val missingNote = if (daysMissing > 0) " ($daysMissing senza dato, mai contati come zero)" else ""
         val spoken = when (aggregation) {
             HealthAggregation.TOTAL -> {
                 val totalMinutes = (totalSleepHours * 60).roundToInt()
                 "Questa settimana hai dormito in totale ${totalMinutes / 60}h ${totalMinutes % 60}min, " +
-                    "dati reali per $daysWithSleep notti su ${snapshot.daily.size}$missingNote."
+                    "dati reali per $daysWithSleep notti su ${coverage.coveredDays}$missingNote.$partialNote"
             }
             HealthAggregation.AVERAGE -> {
-                if (avgSleep == null) return ToolResult.Failure("health_no_data")
+                if (avgSleep == null) {
+                    // Real data exists for the window (`hasAnyData` above),
+                    // but none of it falls on a past day the average can use
+                    // (§ `HealthDailySeries.computeAverages` excludes today) —
+                    // a genuine empty answer for THIS aggregation, never a failure.
+                    val spokenEmpty = "Non ho dati di sonno sufficienti per calcolare una media questa settimana."
+                    return ToolResult.Success(
+                        JsonObject(mapOf("range" to JsonPrimitive("week"), "spoken" to JsonPrimitive(spokenEmpty))),
+                        evidence = StructuredToolResult.successEmpty(
+                            sourceId = SOURCE_ID, retrievedAt = snapshot.updatedAtMs, requestedRange = "week", coverage = coverageLabel,
+                        ),
+                    )
+                }
                 "In media hai dormito ${avgSleep.toMinutes() / 60}h ${avgSleep.toMinutes() % 60}min a notte, " +
-                    "dati reali per $daysWithSleep notti su ${snapshot.daily.size}$missingNote."
+                    "dati reali per $daysWithSleep notti su ${coverage.coveredDays}$missingNote.$partialNote"
             }
         }
-        return ok(
-            "range" to "week",
-            "aggregation" to aggregation.name.lowercase(),
-            "days_with_sleep_data" to daysWithSleep.toString(),
-            "days_missing" to daysMissing.toString(),
-            "total_sleep_hours" to totalSleepHours.toString(),
-            "avg_sleep_minutes" to (avgSleep?.toMinutes() ?: 0L).toString(),
-            "spoken" to spoken,
+        val payload = JsonObject(
+            mapOf(
+                "days_with_sleep_data" to JsonPrimitive(daysWithSleep.toString()),
+                "days_covered" to JsonPrimitive(coverage.coveredDays.toString()),
+                "total_sleep_hours" to JsonPrimitive(totalSleepHours.toString()),
+                "avg_sleep_minutes" to JsonPrimitive((avgSleep?.toMinutes() ?: 0L).toString()),
+            ),
+        )
+        return ToolResult.Success(
+            JsonObject(
+                mapOf(
+                    "range" to JsonPrimitive("week"),
+                    "aggregation" to JsonPrimitive(aggregation.name.lowercase()),
+                    "days_with_sleep_data" to JsonPrimitive(daysWithSleep.toString()),
+                    "days_missing" to JsonPrimitive(daysMissing.toString()),
+                    "total_sleep_hours" to JsonPrimitive(totalSleepHours.toString()),
+                    "avg_sleep_minutes" to JsonPrimitive((avgSleep?.toMinutes() ?: 0L).toString()),
+                    "spoken" to JsonPrimitive(spoken),
+                ),
+            ),
+            evidence = if (coverage.isFullyCovered) {
+                StructuredToolResult.successData(payload = payload, sourceId = SOURCE_ID, retrievedAt = snapshot.updatedAtMs, coverage = coverageLabel)
+            } else {
+                // § §1/§3/§11-test-11 — PARTIAL: the days that WERE covered
+                // are real and returned above, but the range as a whole was
+                // not fully queried — never presented with full-range
+                // certainty.
+                StructuredToolResult.partial(payload = payload, partialFailureReasons = listOf("range_partially_covered"), sourceId = SOURCE_ID)
+            },
         )
     }
 
-    private fun weeklyBpmResult(snapshot: HealthConnectManager.HealthSnapshot): ToolResult {
+    private fun weeklyBpmResult(
+        snapshot: HealthConnectManager.HealthSnapshot,
+        windowed: List<HealthConnectManager.DailyHealthReading>,
+        requestedDays: Int,
+    ): ToolResult {
+        val coverage = HealthCoverage.resolveRange(windowed.map { it.toCore() }, requestedDays) { it.heartRateBpm != null }
+        val coverageLabel = "${coverage.coveredDays}/${coverage.requestedDays}"
+
+        if (!coverage.hasAnyCoverage) {
+            return ToolResult.Failure(
+                "health_range_not_covered",
+                evidence = StructuredToolResult.dataUnavailable(sourceId = SOURCE_ID, reasonCode = "range_not_covered", retryable = true),
+            )
+        }
         // § PASSAGGIO 1 §7 — same empty-vs-failure fix as `weeklySleepResult`:
-        // no resting-heart-rate sample this week, with Health Connect
-        // reachable and permitted, is a genuine SUCCESS_EMPTY, not a failure.
+        // no resting-heart-rate sample this (possibly partial) week, with
+        // Health Connect reachable and permitted, is a genuine SUCCESS_EMPTY,
+        // not a failure.
         val avgBpm = snapshot.averages.avgHeartRateBpm ?: run {
             val spoken = "Non ho registrato la frequenza cardiaca a riposo per nessun giorno di questa settimana."
             return ToolResult.Success(
                 JsonObject(mapOf("range" to JsonPrimitive("week"), "spoken" to JsonPrimitive(spoken))),
                 evidence = StructuredToolResult.successEmpty(
-                    sourceId = "health_connect",
-                    retrievedAt = System.currentTimeMillis(),
+                    sourceId = SOURCE_ID,
+                    retrievedAt = snapshot.updatedAtMs,
                     requestedRange = "week",
+                    coverage = coverageLabel,
                 ),
             )
         }
-        val spoken = "In media la tua frequenza cardiaca a riposo questa settimana è stata $avgBpm bpm."
-        return ok("range" to "week", "avg_resting_bpm" to avgBpm.toString(), "spoken" to spoken)
+        val partialNote = if (!coverage.isFullyCovered) {
+            " Copertura parziale: dati sincronizzati solo per ${coverage.coveredDays} giorni su ${coverage.requestedDays}."
+        } else {
+            ""
+        }
+        val spoken = "In media la tua frequenza cardiaca a riposo questa settimana è stata $avgBpm bpm.$partialNote"
+        val payload = JsonObject(mapOf("avg_resting_bpm" to JsonPrimitive(avgBpm.toString())))
+        return ToolResult.Success(
+            JsonObject(mapOf("range" to JsonPrimitive("week"), "avg_resting_bpm" to JsonPrimitive(avgBpm.toString()), "spoken" to JsonPrimitive(spoken))),
+            evidence = if (coverage.isFullyCovered) {
+                StructuredToolResult.successData(payload = payload, sourceId = SOURCE_ID, retrievedAt = snapshot.updatedAtMs, coverage = coverageLabel)
+            } else {
+                StructuredToolResult.partial(payload = payload, partialFailureReasons = listOf("range_partially_covered"), sourceId = SOURCE_ID)
+            },
+        )
+    }
+
+    private companion object {
+        const val SOURCE_ID = "health_connect"
     }
 }
 

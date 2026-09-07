@@ -196,6 +196,19 @@ class ToolRunner @Inject constructor(
         "health_unavailable" -> "Non riesco ad accedere a Health Connect in questo momento."
         "health_permission_missing" ->
             "Non ho ancora il permesso per leggere i dati di Health Connect. Puoi concederlo in Impostazioni."
+        // § JARVIS Implementation Master Plan PASSAGGIO 5 — a genuine
+        // read/sync exception (SOURCE_FAILURE), distinct from the generic
+        // "unavailable" above and never presented as an empty result.
+        "health_source_failure" -> "Ho avuto un problema a leggere i dati di Health Connect in questo momento."
+        // § PASSAGGIO 5 — the requested date/range was never actually
+        // queried/cached (DATA_UNAVAILABLE) — distinct from a genuinely
+        // covered-but-empty result, which now answers honestly instead of
+        // failing (see GetHealthSummaryTool's SUCCESS_EMPTY paths).
+        "health_range_not_covered" -> "Non ho ancora sincronizzato i dati di Health Connect per quel periodo."
+        // Retained only for any lingering caller of the old, now-unused
+        // reason code — superseded by "health_range_not_covered" above and
+        // the honest SUCCESS_EMPTY results GetHealthSummaryTool now returns
+        // directly for a covered-but-empty query.
         "health_no_data" -> "Health Connect non ha ancora nessun dato reale per questo periodo."
         // § JARVIS Implementation Master Plan PASSAGGIO 4 — same honest,
         // deterministic pattern: a genuine local-storage read failure,

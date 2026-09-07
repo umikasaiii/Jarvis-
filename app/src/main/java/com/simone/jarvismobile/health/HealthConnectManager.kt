@@ -364,12 +364,17 @@ class HealthConnectManager @Inject constructor(
      * esplicita dell'utente (tasto "Sincronizza", [syncHistorical]): un
      * recupero storico non deve mai diluire la media settimanale mostrata
      * nel tile Home con giorni molto più vecchi.
+     *
+     * § PASSAGGIO 5 §1/§6 — la finestra è ora [HealthDailySeries.windowed]
+     * (`:core`, testata), non più duplicata qui: la stessa definizione di
+     * "questa settimana" esposta anche da [weeklyWindow] per il tool di
+     * lettura (che la usa per decidere copertura/PARTIAL), cosicché Home e
+     * Chat non possano mai divergere su cosa "settimana" significhi.
      */
     private fun computeAverages(daily: List<DailyHealthReading>, today: LocalDate): WeeklyHealthAverages {
-        val windowStart = today.minusDays(HealthDailySeries.DEFAULT_WINDOW_DAYS.toLong())
-        val windowed = daily.filter { !it.date.isBefore(windowStart) }
-        val coreDaily = windowed.map { com.simone.jarvismobile.core.health.DailyHealthReading(it.date, it.heartRateBpm, it.sleepHours) }
-        val averages = HealthDailySeries.computeAverages(coreDaily, today)
+        val coreDaily = daily.map { com.simone.jarvismobile.core.health.DailyHealthReading(it.date, it.heartRateBpm, it.sleepHours) }
+        val windowed = HealthDailySeries.windowed(coreDaily, today)
+        val averages = HealthDailySeries.computeAverages(windowed, today)
         return WeeklyHealthAverages(averages.avgHeartRateBpm, averages.avgSleepPerNight)
     }
 
@@ -386,6 +391,18 @@ class HealthConnectManager @Inject constructor(
         fun toCore(d: DailyHealthReading) = com.simone.jarvismobile.core.health.DailyHealthReading(d.date, d.heartRateBpm, d.sleepHours)
         val merged = HealthDailySeries.mergeDaily(existing.map(::toCore), fresh.map(::toCore))
         return merged.map { DailyHealthReading(it.date, it.heartRateBpm, it.sleepHours) }
+    }
+
+    /**
+     * § PASSAGGIO 5 §1/§6 — same [HealthDailySeries.windowed] the weekly
+     * average already uses internally (see [computeAverages]), exposed so
+     * [com.simone.jarvismobile.tools.GetHealthSummaryTool]'s weekly result
+     * never re-derives its own "this week" filter — one definition, reused by
+     * both the Home tile average and the Chat tool's coverage/count logic.
+     */
+    fun weeklyWindow(daily: List<DailyHealthReading>, today: LocalDate = LocalDate.now()): List<DailyHealthReading> {
+        val coreDaily = daily.map { com.simone.jarvismobile.core.health.DailyHealthReading(it.date, it.heartRateBpm, it.sleepHours) }
+        return HealthDailySeries.windowed(coreDaily, today).map { DailyHealthReading(it.date, it.heartRateBpm, it.sleepHours) }
     }
 
     private suspend fun refreshWithWindow(windowDays: Int): HealthSnapshot? {

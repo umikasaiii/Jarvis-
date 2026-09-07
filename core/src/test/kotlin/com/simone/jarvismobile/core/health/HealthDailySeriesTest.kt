@@ -286,4 +286,52 @@ class HealthDailySeriesTest {
         val existing = listOf(DailyHealthReading(LocalDate.of(2026, 9, 1), 50L, 7.0))
         assertEquals(existing, HealthDailySeries.mergeDaily(existing, emptyList()))
     }
+
+    // --- windowed: § JARVIS Implementation Master Plan PASSAGGIO 5 §1/§6 -----
+
+    @Test
+    fun `windowed keeps only the last windowDays plus one entries anchored to today`() {
+        val today = LocalDate.of(2026, 9, 10)
+        val daily = (0..30).map { daysAgo -> DailyHealthReading(today.minusDays(daysAgo.toLong()), 55L, 7.0) }
+        val windowed = HealthDailySeries.windowed(daily, today, windowDays = 7)
+        assertEquals(8, windowed.size)
+        assertEquals(today.minusDays(7), windowed.minOf { it.date })
+        assertEquals(today, windowed.maxOf { it.date })
+    }
+
+    @Test
+    fun `windowed drops dates outside the window even when the cache is much wider - a historical sync never dilutes this week`() {
+        val today = LocalDate.of(2026, 9, 10)
+        val daily = listOf(
+            DailyHealthReading(LocalDate.of(2026, 8, 1), 60L, 8.0), // recovered by a historical sync, well outside the week
+            DailyHealthReading(today.minusDays(3), 55L, 7.0),
+            DailyHealthReading(today, 58L, 6.5),
+        )
+        val windowed = HealthDailySeries.windowed(daily, today, windowDays = 7)
+        assertEquals(listOf(today.minusDays(3), today), windowed.map { it.date })
+    }
+
+    @Test
+    fun `windowed never includes a date after today, even if one were present`() {
+        val today = LocalDate.of(2026, 9, 10)
+        val daily = listOf(DailyHealthReading(today.plusDays(1), 60L, 7.0), DailyHealthReading(today, 58L, 7.0))
+        val windowed = HealthDailySeries.windowed(daily, today, windowDays = 7)
+        assertEquals(listOf(today), windowed.map { it.date })
+    }
+
+    @Test
+    fun `windowed can return fewer than windowDays plus one entries when the cache itself is that sparse - the real coverage gap after a stale cache`() {
+        // § the concrete scenario a coverage-gap week represents: the cache
+        // was last refreshed several days ago (anchored to an OLDER "today"),
+        // and no successful refresh has happened since - the most recent
+        // days, never part of that older window, are genuinely absent.
+        val staleToday = LocalDate.of(2026, 9, 5)
+        val daily = (0..7).map { daysAgo -> DailyHealthReading(staleToday.minusDays(daysAgo.toLong()), 55L, 7.0) }
+        val realToday = LocalDate.of(2026, 9, 10)
+        val windowed = HealthDailySeries.windowed(daily, realToday, windowDays = 7)
+        // Only 2026-09-03..2026-09-05 (3 days) still overlap the new window
+        // [2026-09-03..2026-09-10]; 2026-09-06..2026-09-10 were never queried.
+        assertEquals(3, windowed.size)
+        assertEquals(LocalDate.of(2026, 9, 5), windowed.maxOf { it.date })
+    }
 }
