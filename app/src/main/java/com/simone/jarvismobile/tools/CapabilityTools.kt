@@ -18,6 +18,7 @@ import com.simone.jarvismobile.core.tools.ToolPolicy
 import com.simone.jarvismobile.core.tools.ToolResult
 import com.simone.jarvismobile.core.presentation.WeatherPhrasing
 import com.simone.jarvismobile.core.weather.WeatherDaysAhead
+import com.simone.jarvismobile.core.weather.WeatherTemperaturePolicy
 import com.simone.jarvismobile.core.weather.italianLabel
 import com.simone.jarvismobile.health.HealthConnectManager
 import com.simone.jarvismobile.weather.WeatherManager
@@ -50,9 +51,6 @@ private fun JsonObject.str(key: String): String? =
 
 private fun JsonObject.int(key: String): Int? = str(key)?.trim()?.toIntOrNull()
 
-private fun ok(vararg pairs: Pair<String, String>): ToolResult =
-    ToolResult.Success(JsonObject(pairs.associate { it.first to JsonPrimitive(it.second) }))
-
 /**
  * § JARVIS Implementation Master Plan — PASSAGGIO 5 — [HealthCoverage] (`:core`)
  * operates on [com.simone.jarvismobile.core.health.DailyHealthReading], a
@@ -66,13 +64,30 @@ private fun HealthConnectManager.DailyHealthReading.toCore() =
     com.simone.jarvismobile.core.health.DailyHealthReading(date, heartRateBpm, sleepHours)
 
 /**
- * Real weather, today or up to 3 days ahead, from the same
- * [WeatherManager]/Open-Meteo pipeline the Ares dashboard already renders —
- * never a second weather source, never a guess. Returns [ToolResult.Failure]
- * (never a fabricated forecast) whenever the setting is off, no coordinate
- * could be resolved, or the fetch itself failed — [WeatherManager.fetchWeeklyOutlook]
- * already collapses all three into `null` by its own documented contract, so
- * this tool cannot and does not try to guess which one happened.
+ * Real weather, today or up to
+ * [com.simone.jarvismobile.core.weather.WeatherDaysAhead.MAX_SUPPORTED_DAYS_AHEAD]
+ * days ahead, from the same [WeatherManager]/Open-Meteo pipeline the Ares
+ * dashboard already renders — never a second weather source, never a guess.
+ *
+ * § JARVIS Implementation Master Plan — PASSAGGIO 7 (Weather Location +
+ * Temporal Range + Freshness + Qualitative Policy, JARVIS-06/-15). The real
+ * gap this pass closes: every failure cause (weather setting off, no
+ * location resolvable, a genuine provider/network failure) used to collapse
+ * into the identical `Failure("weather_unavailable")` with no evidence at
+ * all, and a forecast cached for one location could silently be read back
+ * for another (fixed at the cache layer, see [WeatherManager.cachedOutlook]).
+ * [unavailableResult] now reads [WeatherManager.fetchDiagnostic] (populated
+ * by the SAME call that just returned `null`) to tell DATA_UNAVAILABLE
+ * (weather off, or no location resolvable) apart from SOURCE_FAILURE (a
+ * location WAS resolved, the real provider call failed) — never guessed.
+ *
+ * §5 qualitative policy: every successful day result also carries a
+ * deterministic, versioned hot/cold classification
+ * ([com.simone.jarvismobile.core.weather.WeatherTemperaturePolicy]) in its
+ * structured payload ALONGSIDE the real numbers already in `spoken` — never
+ * replacing them, so a caller asking "farà caldo?" can answer from a real
+ * app-owned policy instead of the model's own unaudited judgement, while the
+ * exact supporting temperature always stays traceable.
  */
 class GetWeatherTool(private val weather: WeatherManager) : Tool {
     override val name = "get_weather"
@@ -107,13 +122,12 @@ class GetWeatherTool(private val weather: WeatherManager) : Tool {
         // `fetchExtendedDay` — never a second weather source, never a
         // silently-clamped nearer day.
         if (daysAhead <= 3) {
-            val outlook = weather.fetchWeeklyOutlook() ?: return ToolResult.Failure("weather_unavailable")
-            val spoken = if (daysAhead == 0) {
-                if (outlook.currentCategory == null && outlook.currentTempC == null) {
-                    return ToolResult.Failure("weather_unavailable")
-                }
-                spokenFor(
+            val outlook = weather.fetchWeeklyOutlook() ?: return unavailableResult()
+            return if (daysAhead == 0) {
+                dayResult(
                     dayLabel = dayLabel,
+                    range = "today",
+                    isCurrentDay = true,
                     category = outlook.currentCategory?.italianLabel,
                     currentTempC = outlook.currentTempC,
                     tempMaxC = null,
@@ -121,27 +135,146 @@ class GetWeatherTool(private val weather: WeatherManager) : Tool {
                     windKmh = outlook.currentWindKmh,
                 )
             } else {
-                val day = outlook.upcoming.getOrNull(daysAhead - 1) ?: return ToolResult.Failure("weather_unavailable")
-                spokenForDay(dayLabel, day) ?: return ToolResult.Failure("weather_unavailable")
+                val day = outlook.upcoming.getOrNull(daysAhead - 1)
+                    // § PASSAGGIO 7 §4 — this specific requested day is absent
+                    // from an otherwise-successful multi-day response: a real
+                    // coverage gap, never presented as a crash or a guess.
+                    ?: return ToolResult.Failure(
+                        "weather_unavailable",
+                        evidence = StructuredToolResult.dataUnavailable(
+                            sourceId = weather.fetchDiagnostic.value?.locationTag,
+                            reasonCode = "day_not_in_response",
+                            retryable = true,
+                        ),
+                    )
+                dayResult(
+                    dayLabel = dayLabel,
+                    range = "day_$daysAhead",
+                    isCurrentDay = false,
+                    category = day.category?.italianLabel,
+                    currentTempC = null,
+                    tempMaxC = day.tempMaxC,
+                    tempMinC = day.tempMinC,
+                    windKmh = day.windKmh,
+                )
             }
-            return ok("day" to dayLabel, "spoken" to spoken.trim())
         }
 
-        val day = weather.fetchExtendedDay(daysAhead) ?: return ToolResult.Failure("weather_unavailable")
-        val spoken = spokenForDay(dayLabel, day) ?: return ToolResult.Failure("weather_unavailable")
-        return ok("day" to dayLabel, "spoken" to spoken.trim())
-    }
-
-    /** Shared rendering for any future day (both the home-backed 1-3 range and the extended 4+ range) — same fields, one place. */
-    private fun spokenForDay(dayLabel: String, day: com.simone.jarvismobile.weather.DayOutlook): String? {
-        if (day.category == null && day.tempMaxC == null && day.tempMinC == null) return null
-        return spokenFor(
+        val day = weather.fetchExtendedDay(daysAhead) ?: return unavailableResult()
+        return dayResult(
             dayLabel = dayLabel,
+            range = "day_$daysAhead",
+            isCurrentDay = false,
             category = day.category?.italianLabel,
             currentTempC = null,
             tempMaxC = day.tempMaxC,
             tempMinC = day.tempMinC,
             windKmh = day.windKmh,
+        )
+    }
+
+    /**
+     * § PASSAGGIO 7 §4 — the one place that decides DATA_UNAVAILABLE
+     * (weather disabled, or no location resolvable at all right now) vs
+     * SOURCE_FAILURE (a location WAS resolved, the real provider call
+     * failed) from [WeatherManager.fetchDiagnostic] — populated by the SAME
+     * fetch call that just returned `null`, never a stale value from an
+     * earlier, unrelated attempt (see [WeatherManager.fetchWeeklyOutlook]'s
+     * own doc comment). Never turns a provider/network failure into a
+     * fabricated forecast or a silent "non farà caldo".
+     */
+    private fun unavailableResult(): ToolResult {
+        val diagnostic = weather.fetchDiagnostic.value
+        return when {
+            diagnostic == null || diagnostic.lastErrorType == "weather_disabled" ->
+                ToolResult.Failure(
+                    "weather_disabled",
+                    evidence = StructuredToolResult.dataUnavailable(reasonCode = "weather_disabled", retryable = false),
+                )
+            diagnostic.locationTag == null ->
+                ToolResult.Failure(
+                    "weather_unavailable",
+                    evidence = StructuredToolResult.dataUnavailable(reasonCode = "location_unavailable", retryable = true),
+                )
+            diagnostic.lastErrorType != null ->
+                ToolResult.Failure(
+                    "weather_source_failure",
+                    evidence = StructuredToolResult.sourceFailure(
+                        sourceId = diagnostic.locationTag,
+                        reasonCode = diagnostic.lastErrorType,
+                        retryable = true,
+                    ),
+                )
+            else ->
+                ToolResult.Failure(
+                    "weather_unavailable",
+                    evidence = StructuredToolResult.dataUnavailable(sourceId = diagnostic.locationTag, reasonCode = "unknown", retryable = true),
+                )
+        }
+    }
+
+    /**
+     * One day's real result, shared by "oggi" (current conditions,
+     * [isCurrentDay] = true), days 1-3 (the home-backed outlook), and 4+ (the
+     * extended horizon). [category]/temperature fields are the "essential"
+     * ones that already gated success/failure before this pass ([category]
+     * plus either [currentTempC] when [isCurrentDay], or both
+     * [tempMaxC]/[tempMinC] otherwise) — that exact boundary is UNCHANGED:
+     * zero of them present is still the same DATA_UNAVAILABLE this tool
+     * always returned as a failure; what's new is that SOME-but-not-ALL
+     * present is now labelled PARTIAL (§ PASSAGGIO 7 §4/§10-test-9) instead
+     * of silently reported as a flat, undifferentiated success — [windKmh]
+     * stays purely informational, exactly as before (its absence alone
+     * never affects the status).
+     */
+    private fun dayResult(
+        dayLabel: String,
+        range: String,
+        isCurrentDay: Boolean,
+        category: String?,
+        currentTempC: Double?,
+        tempMaxC: Double?,
+        tempMinC: Double?,
+        windKmh: Double?,
+    ): ToolResult {
+        val essential = if (isCurrentDay) listOfNotNull(category, currentTempC) else listOfNotNull(category, tempMaxC, tempMinC)
+        val essentialTotal = if (isCurrentDay) 2 else 3
+        if (essential.isEmpty()) {
+            return ToolResult.Failure(
+                "weather_unavailable",
+                evidence = StructuredToolResult.dataUnavailable(reasonCode = "day_fields_absent", retryable = true),
+            )
+        }
+        val spoken = spokenFor(dayLabel, category, currentTempC, tempMaxC, tempMinC, windKmh).trim()
+        val referenceTempC = tempMaxC ?: currentTempC
+        val qualitative = referenceTempC?.let { WeatherTemperaturePolicy.classify(it) }
+        val payload = JsonObject(
+            buildMap {
+                put("day", JsonPrimitive(dayLabel))
+                put("spoken", JsonPrimitive(spoken))
+                if (qualitative != null) {
+                    put("qualitative_band", JsonPrimitive(qualitative.band.name.lowercase()))
+                    put("qualitative_band_label", JsonPrimitive(qualitative.band.italianLabel))
+                    put("qualitative_supporting_temp_c", JsonPrimitive(qualitative.supportingTempC.toString()))
+                    put("qualitative_policy_version", JsonPrimitive(qualitative.policyVersion.toString()))
+                }
+            },
+        )
+        return ToolResult.Success(
+            payload,
+            evidence = if (essential.size < essentialTotal) {
+                // § §4/§10-test-9 — some but not all essential fields present:
+                // a genuine partial forecast, never presented with full-range
+                // certainty.
+                StructuredToolResult.partial(payload = payload, partialFailureReasons = listOf("day_partially_covered"), sourceId = weather.fetchDiagnostic.value?.locationTag)
+            } else {
+                StructuredToolResult.successData(
+                    payload = payload,
+                    sourceId = weather.fetchDiagnostic.value?.locationTag,
+                    retrievedAt = weather.fetchDiagnostic.value?.succeededAtMs,
+                    coverage = range,
+                )
+            },
         )
     }
 

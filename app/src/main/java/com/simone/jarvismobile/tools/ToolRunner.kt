@@ -193,6 +193,13 @@ class ToolRunner @Inject constructor(
         // un silenzio; queste sono le uniche risposte oneste quando il meteo
         // reale o Health Connect non sono davvero raggiungibili in questo momento.
         "weather_unavailable" -> "Non riesco ad accedere ai dati meteo in questo momento."
+        // § JARVIS Implementation Master Plan PASSAGGIO 7 — distinct from the
+        // generic "unavailable" above: the user has turned the weather
+        // capability off entirely (a setting, not a failure), and a genuine
+        // provider/network failure (never presented as an empty/negative
+        // forecast).
+        "weather_disabled" -> "Il meteo non è attivo. Puoi accenderlo in Impostazioni › Meteo."
+        "weather_source_failure" -> "Ho avuto un problema a leggere i dati meteo in questo momento."
         "health_unavailable" -> "Non riesco ad accedere a Health Connect in questo momento."
         "health_permission_missing" ->
             "Non ho ancora il permesso per leggere i dati di Health Connect. Puoi concederlo in Impostazioni."

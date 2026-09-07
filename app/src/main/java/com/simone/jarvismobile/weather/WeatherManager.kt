@@ -10,6 +10,7 @@ import androidx.core.content.ContextCompat
 import com.simone.jarvismobile.automation.rule.PlaceRepository
 import com.simone.jarvismobile.context.ContextEngine
 import com.simone.jarvismobile.core.weather.RainDecision
+import com.simone.jarvismobile.core.weather.WeatherLocationKey
 import com.simone.jarvismobile.data.SettingsRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -51,14 +52,37 @@ class WeatherManager @Inject constructor(
     private val _lastQueryPoint = MutableStateFlow<Pair<Double, Double>?>(null)
     val lastQueryPoint: StateFlow<Pair<Double, Double>?> = _lastQueryPoint.asStateFlow()
 
+    /**
+     * § JARVIS Implementation Master Plan — PASSAGGIO 7 §1/§3/§4 (JARVIS-06/
+     * -15). The real outcome of the most recent [fetchWeeklyOutlook]/
+     * [fetchExtendedDay] attempt (the two paths `GetWeatherTool` calls) — read
+     * by the tool to distinguish DATA_UNAVAILABLE (no location resolvable)
+     * from SOURCE_FAILURE (a location WAS resolved, the real provider call
+     * failed) instead of collapsing both into the same `null`. Deliberately
+     * separate from [lastQueryPoint] above, which stays scoped to [refresh]'s
+     * own periodic rain/no-rain tick, exactly as already documented there —
+     * never repurposed. [locationTag] is the same privacy-safe tag persisted
+     * in the cache ([WeatherOutlookCache]), never a precise coordinate.
+     */
+    data class FetchDiagnostic(
+        val locationTag: String?,
+        val attemptedAtMs: Long,
+        val succeededAtMs: Long?,
+        val lastErrorType: String?,
+    )
+
+    private val _fetchDiagnostic = MutableStateFlow<FetchDiagnostic?>(null)
+    val fetchDiagnostic: StateFlow<FetchDiagnostic?> = _fetchDiagnostic.asStateFlow()
+
     @SuppressLint("MissingPermission")
     suspend fun refresh() {
         if (!settings.weatherEnabled.first()) return
-        val point = resolvePoint() ?: run {
+        val resolved = resolvePoint() ?: run {
             Log.i(TAG, "weather_skip_no_fix")
             _lastQueryPoint.value = null
             return
         }
+        val point = resolved.point
         _lastQueryPoint.value = point
         val forecast = source.fetchRain(point.first, point.second)
         contextEngine.onWeather(
@@ -75,7 +99,7 @@ class WeatherManager @Inject constructor(
         // same as any other "unknown stays unknown" fallback in this class.
         val outlook = source.fetchWeeklyOutlook(point.first, point.second)
         if (outlook != null) {
-            settings.setWeatherOutlookCache(outlook.toCacheJson(System.currentTimeMillis()))
+            settings.setWeatherOutlookCache(outlook.toCacheJson(System.currentTimeMillis(), resolved.locationKey.asCacheTag()))
         }
     }
 
@@ -87,27 +111,54 @@ class WeatherManager @Inject constructor(
      * never affects [lastQueryPoint] or the rain/no-rain signal, only
      * returns a richer forecast for the UI to render directly. Null when
      * weather is off, no fix is available, or the fetch itself fails —
-     * never a guessed outlook.
+     * never a guessed outlook. § PASSAGGIO 7 §4 — every attempt (whether it
+     * resolves a location or not) updates [fetchDiagnostic] first, so a
+     * caller reading it right after a `null` return always sees the real
+     * reason, never a stale value from an earlier, unrelated call.
      */
     @SuppressLint("MissingPermission")
     suspend fun fetchWeeklyOutlook(): WeeklyOutlook? {
-        if (!settings.weatherEnabled.first()) return null
-        val point = resolvePoint() ?: return null
-        val outlook = source.fetchWeeklyOutlook(point.first, point.second)
-        if (outlook != null) {
-            settings.setWeatherOutlookCache(outlook.toCacheJson(System.currentTimeMillis()))
+        if (!settings.weatherEnabled.first()) {
+            _fetchDiagnostic.value = FetchDiagnostic(null, System.currentTimeMillis(), null, "weather_disabled")
+            return null
         }
-        return outlook
+        val resolved = resolvePoint() ?: run {
+            _fetchDiagnostic.value = FetchDiagnostic(null, System.currentTimeMillis(), null, null)
+            return null
+        }
+        _fetchDiagnostic.value = FetchDiagnostic(resolved.locationKey.asCacheTag(), System.currentTimeMillis(), null, null)
+        val outlook = source.fetchWeeklyOutlook(resolved.latitude, resolved.longitude)
+        return if (outlook != null) {
+            val nowMs = System.currentTimeMillis()
+            settings.setWeatherOutlookCache(outlook.toCacheJson(nowMs, resolved.locationKey.asCacheTag()))
+            _fetchDiagnostic.value = _fetchDiagnostic.value?.copy(succeededAtMs = nowMs)
+            outlook
+        } else {
+            _fetchDiagnostic.value = _fetchDiagnostic.value?.copy(lastErrorType = source.lastFetchErrorType())
+            null
+        }
     }
 
     /**
      * The last cached outlook (§ "salvato temporaneamente in locale"), read
      * synchronously-ish so a screen can show *something* the instant it opens
      * instead of a blank card while [fetchWeeklyOutlook] is still in flight.
-     * Never a guess: null when nothing has ever been cached or the stored
-     * JSON fails to decode.
+     * Never a guess: null when nothing has ever been cached, the stored JSON
+     * fails to decode, or — § JARVIS Implementation Master Plan PASSAGGIO 7
+     * §1/§3 (JARVIS-06) — the cache's own location tag does not match the
+     * CURRENTLY resolved location (including an untagged pre-migration
+     * entry, whose location is simply unknown). This is the one place the
+     * real "forecast for location A must never satisfy location B" bug is
+     * closed: previously this function returned whatever was last written,
+     * regardless of whether the user's chosen place (or fallback fix) had
+     * since changed.
      */
-    suspend fun cachedOutlook(): WeeklyOutlook? = outlookFromCacheJson(settings.weatherOutlookCache.first())
+    @SuppressLint("MissingPermission")
+    suspend fun cachedOutlook(): WeeklyOutlook? {
+        val entry = outlookFromCacheJson(settings.weatherOutlookCache.first()) ?: return null
+        val resolved = resolvePoint() ?: return null
+        return entry.outlook.takeIf { entry.locationTag == resolved.locationKey.asCacheTag() }
+    }
 
     /**
      * 24-hour detail for one day (§ tema Atena: tap su un'icona meteo). Same
@@ -118,8 +169,8 @@ class WeatherManager @Inject constructor(
     @SuppressLint("MissingPermission")
     suspend fun fetchHourlyForecast(dayIndex: Int): HourlyForecast? {
         if (!settings.weatherEnabled.first()) return null
-        val point = resolvePoint() ?: return null
-        return source.fetchHourlyForecast(point.first, point.second, dayIndex)
+        val resolved = resolvePoint() ?: return null
+        return source.fetchHourlyForecast(resolved.latitude, resolved.longitude, dayIndex)
     }
 
     /**
@@ -131,26 +182,53 @@ class WeatherManager @Inject constructor(
      * cache: the home presentation horizon (today+3, § "ONE weather source
      * of truth" — same [WeatherSource]/[WeatherManager], just a second,
      * additive request shape, not a second manager) is unaffected by this.
+     * § PASSAGGIO 7 §4 — same [fetchDiagnostic] as [fetchWeeklyOutlook], so
+     * `GetWeatherTool` gets one consistent signal regardless of which of the
+     * two paths a given `days_ahead` took.
      */
     @SuppressLint("MissingPermission")
     suspend fun fetchExtendedDay(daysAhead: Int): DayOutlook? {
-        if (!settings.weatherEnabled.first()) return null
-        val point = resolvePoint() ?: return null
-        return source.fetchExtendedDay(point.first, point.second, daysAhead)
+        if (!settings.weatherEnabled.first()) {
+            _fetchDiagnostic.value = FetchDiagnostic(null, System.currentTimeMillis(), null, "weather_disabled")
+            return null
+        }
+        val resolved = resolvePoint() ?: run {
+            _fetchDiagnostic.value = FetchDiagnostic(null, System.currentTimeMillis(), null, null)
+            return null
+        }
+        _fetchDiagnostic.value = FetchDiagnostic(resolved.locationKey.asCacheTag(), System.currentTimeMillis(), null, null)
+        val day = source.fetchExtendedDay(resolved.latitude, resolved.longitude, daysAhead)
+        if (day != null) {
+            _fetchDiagnostic.value = _fetchDiagnostic.value?.copy(succeededAtMs = System.currentTimeMillis())
+        } else {
+            _fetchDiagnostic.value = _fetchDiagnostic.value?.copy(lastErrorType = source.lastFetchErrorType())
+        }
+        return day
     }
 
-    /** The chosen saved place's coordinate, or the last-known fix as a fallback. */
+    /**
+     * The chosen saved place's coordinate, or the last-known fix as a
+     * fallback — bundled with its [WeatherLocationKey] (§ PASSAGGIO 7 §1) so
+     * every caller that resolves a location also has the stable identity
+     * needed for cache/evidence, without a second DataStore read.
+     */
+    private data class ResolvedLocation(val latitude: Double, val longitude: Double, val locationKey: WeatherLocationKey) {
+        val point: Pair<Double, Double> get() = latitude to longitude
+    }
+
     @SuppressLint("MissingPermission")
-    private suspend fun resolvePoint(): Pair<Double, Double>? {
+    private suspend fun resolvePoint(): ResolvedLocation? {
         val placeId = settings.weatherPlaceId.first()
         if (placeId.isNotBlank()) {
             val place = places.byId(placeId)
-            if (place != null) return place.latitude to place.longitude
+            if (place != null) {
+                return ResolvedLocation(place.latitude, place.longitude, WeatherLocationKey.of(place.latitude, place.longitude, placeId))
+            }
             Log.w(TAG, "weather_place_missing")
         }
         if (!hasFineLocation()) return null
         val fix = lastKnownLocation() ?: return null
-        return fix.latitude to fix.longitude
+        return ResolvedLocation(fix.latitude, fix.longitude, WeatherLocationKey.of(fix.latitude, fix.longitude))
     }
 
     /**

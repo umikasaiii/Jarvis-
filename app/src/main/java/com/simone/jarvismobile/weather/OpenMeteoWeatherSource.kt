@@ -2,6 +2,7 @@ package com.simone.jarvismobile.weather
 
 import android.util.Log
 import com.simone.jarvismobile.core.weather.WeatherCategory
+import com.simone.jarvismobile.core.weather.roundWeatherCoordinate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
@@ -9,7 +10,6 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import java.util.Locale
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -86,9 +86,14 @@ data class HourlyForecast(
  *
  * Deliberately the one place in JARVIS that talks to the network for its own
  * sake — weather forecasting is inherently an online fact, unlike everything
- * else in the app. It never throws: any failure (no network, bad response,
+ * else in the app. Every PUBLIC method here never throws: any failure (no
+ * network, bad response — § PASSAGGIO 7, now including a real non-2xx HTTP
+ * status, previously silently indistinguishable from "decoded to nothing" —
  * timeout) returns null, which the caller treats as "unknown", never as "no
  * rain" — the same three-valued discipline the rest of the engine follows.
+ * [lastFetchErrorType] exposes WHY the most recent `null` happened (§4), for
+ * a caller that needs to distinguish a genuine SOURCE_FAILURE from "nothing
+ * attempted yet" — never a value that changes what `null` itself means here.
  *
  * Open-Meteo is used because it needs no API key and no account (nothing to
  * leak, nothing to configure), and the request carries only latitude/longitude
@@ -118,17 +123,44 @@ class OpenMeteoWeatherSource @Inject constructor() : WeatherSource {
 
     private val json = Json { ignoreUnknownKeys = true }
 
+    /**
+     * § JARVIS Implementation Master Plan — PASSAGGIO 7 §4 (JARVIS-06/-15) —
+     * the real reason class of the most recent failed request across any of
+     * this source's four fetch methods, or null if the last attempted fetch
+     * succeeded (or none has been attempted yet). `@Volatile` because a
+     * caller (WeatherManager) reads it from a different coroutine/dispatcher
+     * than the one that wrote it inside `withContext(Dispatchers.IO)`.
+     * Deliberately ONE shared field across all four methods, the same
+     * accepted approximation [com.simone.jarvismobile.health.HealthConnectManager]'s
+     * own single `_diagnostic` already uses for BPM/sleep — a concurrent call
+     * to a different method could in principle overwrite this before a
+     * caller reads it, a small, disclosed race rather than four separate
+     * fields for a currently single-caller-at-a-time usage pattern.
+     */
+    @Volatile
+    private var lastErrorType: String? = null
+
+    override fun lastFetchErrorType(): String? = lastErrorType
+
     override suspend fun fetchRain(latitude: Double, longitude: Double): RainForecast? =
         withContext(Dispatchers.IO) {
             runCatching { fetchOrThrow(latitude, longitude) }
-                .onFailure { Log.w(TAG, "weather_fetch_failed ${it.javaClass.simpleName}") }
+                .onSuccess { lastErrorType = null }
+                .onFailure {
+                    lastErrorType = errorTag(it)
+                    Log.w(TAG, "weather_fetch_failed ${it.javaClass.simpleName}")
+                }
                 .getOrNull()
         }
 
     override suspend fun fetchWeeklyOutlook(latitude: Double, longitude: Double): WeeklyOutlook? =
         withContext(Dispatchers.IO) {
             runCatching { fetchOutlookOrThrow(latitude, longitude) }
-                .onFailure { Log.w(TAG, "weather_outlook_fetch_failed ${it.javaClass.simpleName}") }
+                .onSuccess { lastErrorType = null }
+                .onFailure {
+                    lastErrorType = errorTag(it)
+                    Log.w(TAG, "weather_outlook_fetch_failed ${it.javaClass.simpleName}")
+                }
                 .getOrNull()
         }
 
@@ -138,7 +170,11 @@ class OpenMeteoWeatherSource @Inject constructor() : WeatherSource {
         dayIndex: Int,
     ): HourlyForecast? = withContext(Dispatchers.IO) {
         runCatching { fetchHourlyOrThrow(latitude, longitude, dayIndex) }
-            .onFailure { Log.w(TAG, "weather_hourly_fetch_failed ${it.javaClass.simpleName}") }
+            .onSuccess { lastErrorType = null }
+            .onFailure {
+                lastErrorType = errorTag(it)
+                Log.w(TAG, "weather_hourly_fetch_failed ${it.javaClass.simpleName}")
+            }
             .getOrNull()
     }
 
@@ -148,9 +184,26 @@ class OpenMeteoWeatherSource @Inject constructor() : WeatherSource {
         daysAhead: Int,
     ): DayOutlook? = withContext(Dispatchers.IO) {
         runCatching { fetchExtendedDayOrThrow(latitude, longitude, daysAhead) }
-            .onFailure { Log.w(TAG, "weather_extended_fetch_failed ${it.javaClass.simpleName}") }
+            .onSuccess { lastErrorType = null }
+            .onFailure {
+                lastErrorType = errorTag(it)
+                Log.w(TAG, "weather_extended_fetch_failed ${it.javaClass.simpleName}")
+            }
             .getOrNull()
     }
+
+    /** `"http_<code>"` for a real HTTP failure (see [WeatherHttpException]), else the plain exception class name — same style already used for Core diagnostics elsewhere in this project. */
+    private fun errorTag(e: Throwable): String = if (e is WeatherHttpException) "http_${e.code}" else e.javaClass.simpleName
+
+    /**
+     * § PASSAGGIO 7 §4 — thrown (never silently swallowed as a plain `null`)
+     * on a non-2xx response, so a real provider-side failure is captured by
+     * the SAME `runCatching`/[errorTag] path as a network exception instead
+     * of being indistinguishable from "the network worked but decoded to
+     * nothing" — the exact SOURCE_FAILURE-vs-everything-else ambiguity this
+     * phase exists to close.
+     */
+    private class WeatherHttpException(val code: Int) : Exception("http_$code")
 
     /** Throws on anything wrong; the caller wraps this in [runCatching]. */
     private fun fetchOrThrow(latitude: Double, longitude: Double): RainForecast? {
@@ -159,7 +212,7 @@ class OpenMeteoWeatherSource @Inject constructor() : WeatherSource {
             "&daily=weathercode,precipitation_sum&timezone=auto&forecast_days=2"
         val request = Request.Builder().url(url).build()
         val response = client.newCall(request).execute()
-        val body = response.use { r -> if (r.isSuccessful) r.body?.string() else null } ?: return null
+        val body = response.use { r -> if (r.isSuccessful) r.body?.string() else throw WeatherHttpException(r.code) } ?: return null
         val parsed = json.decodeFromString(OpenMeteoResponse.serializer(), body)
         val codes = parsed.daily?.weatherCode
         val millimeters = parsed.daily?.precipitationSum
@@ -185,7 +238,7 @@ class OpenMeteoWeatherSource @Inject constructor() : WeatherSource {
             "&current_weather=true&timezone=auto&forecast_days=4"
         val request = Request.Builder().url(url).build()
         val response = client.newCall(request).execute()
-        val body = response.use { r -> if (r.isSuccessful) r.body?.string() else null } ?: return null
+        val body = response.use { r -> if (r.isSuccessful) r.body?.string() else throw WeatherHttpException(r.code) } ?: return null
         val parsed = json.decodeFromString(OpenMeteoOutlookResponse.serializer(), body)
         val daily = parsed.daily
         val current = parsed.currentWeather
@@ -221,7 +274,7 @@ class OpenMeteoWeatherSource @Inject constructor() : WeatherSource {
             "&hourly=temperature_2m,weathercode,is_day&timezone=auto&forecast_days=4"
         val request = Request.Builder().url(url).build()
         val response = client.newCall(request).execute()
-        val body = response.use { r -> if (r.isSuccessful) r.body?.string() else null } ?: return null
+        val body = response.use { r -> if (r.isSuccessful) r.body?.string() else throw WeatherHttpException(r.code) } ?: return null
         val parsed = json.decodeFromString(OpenMeteoHourlyResponse.serializer(), body)
         val hourly = parsed.hourly ?: return null
         val times = hourly.time.orEmpty()
@@ -268,7 +321,7 @@ class OpenMeteoWeatherSource @Inject constructor() : WeatherSource {
             "&timezone=auto&forecast_days=$forecastDays"
         val request = Request.Builder().url(url).build()
         val response = client.newCall(request).execute()
-        val body = response.use { r -> if (r.isSuccessful) r.body?.string() else null } ?: return null
+        val body = response.use { r -> if (r.isSuccessful) r.body?.string() else throw WeatherHttpException(r.code) } ?: return null
         val parsed = json.decodeFromString(OpenMeteoOutlookResponse.serializer(), body)
         val daily = parsed.daily ?: return null
         return DayOutlook(
@@ -282,10 +335,11 @@ class OpenMeteoWeatherSource @Inject constructor() : WeatherSource {
 
     /**
      * ~1.1 km precision (2 decimals): enough for a local forecast, never the
-     * user's exact address.
+     * user's exact address. Delegates to the shared `:core` formula
+     * ([roundWeatherCoordinate]) also used to build [WeatherLocationKey] cache
+     * tags — one rounding rule, never two that could silently drift apart.
      */
-    private fun round(coordinate: Double): String =
-        String.format(Locale.US, "%.2f", coordinate)
+    private fun round(coordinate: Double): String = roundWeatherCoordinate(coordinate)
 
     @Serializable
     private data class OpenMeteoResponse(val daily: Daily? = null)
@@ -375,4 +429,19 @@ interface WeatherSource {
      * supports — never a guessed/clamped day.
      */
     suspend fun fetchExtendedDay(latitude: Double, longitude: Double, daysAhead: Int): DayOutlook?
+
+    /**
+     * § JARVIS Implementation Master Plan — PASSAGGIO 7 §4 (JARVIS-06/-15).
+     * The real reason class of the most recent failed fetch (any of the four
+     * methods above), or null when the last attempted fetch succeeded or none
+     * has been attempted yet — lets a caller (e.g. `GetWeatherTool`) tell a
+     * genuine provider/network SOURCE_FAILURE apart from "the coordinate
+     * couldn't be resolved at all" (DATA_UNAVAILABLE) or "the response
+     * decoded fine but this specific field/day was genuinely absent"
+     * (SUCCESS_EMPTY) — three outcomes a bare `null` return cannot distinguish
+     * on its own. Never a URL, a message, or any personal detail — a plain
+     * exception-class-shaped tag, the same discipline already used for Health
+     * Connect's diagnostic elsewhere in this project.
+     */
+    fun lastFetchErrorType(): String?
 }
