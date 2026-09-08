@@ -80,7 +80,7 @@ data class AutomationPlaceEntity(
  */
 @Entity(
     tableName = "automation_executions",
-    indices = [Index("ruleId"), Index("startedAt")],
+    indices = [Index("ruleId"), Index("startedAt"), Index("idempotencyKey")],
 )
 data class AutomationExecutionEntity(
     @PrimaryKey val executionId: String,
@@ -96,6 +96,15 @@ data class AutomationExecutionEntity(
     /** Action types attempted and their outcome, e.g. "SPEAK:ok,RUN_TOOL:failed". */
     val actionOutcomes: String,
     val dryRun: Boolean = false,
+    /**
+     * [TriggerEvent.idempotencyKey], persisted so a committed FIRE survives a
+     * process restart (§ JARVIS Implementation Master Plan PASSAGGIO 8,
+     * JARVIS-13/23) — Android's at-least-once WorkManager/AlarmManager
+     * delivery means the in-memory dedup map in [AutomationExecutor] alone
+     * cannot catch a redelivery after the app process was killed and
+     * restarted. Null only for rows written before this column existed.
+     */
+    val idempotencyKey: String? = null,
 )
 
 /** Where the vehicle was left (§16). A single current value, not a history. */
@@ -184,6 +193,20 @@ interface AutomationExecutionDao {
 
     @Query("SELECT COUNT(*) FROM automation_executions")
     suspend fun count(): Int
+
+    /**
+     * Whether [key] already has a real (non-dry-run) FIRE committed at or after
+     * [sinceIso] — the durable half of duplicate-occurrence suppression (§
+     * PASSAGGIO 8): this survives a process restart, unlike
+     * [AutomationExecutor]'s in-memory `recentKeys` map, so a re-delivered
+     * WorkManager/AlarmManager occurrence is still caught after the app was
+     * killed and restarted in between.
+     */
+    @Query(
+        "SELECT COUNT(*) FROM automation_executions WHERE idempotencyKey = :key " +
+            "AND decision = 'FIRE' AND dryRun = 0 AND startedAt >= :sinceIso",
+    )
+    suspend fun countCommittedSince(key: String, sinceIso: String): Int
 }
 
 @Dao

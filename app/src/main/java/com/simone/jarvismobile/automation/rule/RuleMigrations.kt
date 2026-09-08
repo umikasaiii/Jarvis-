@@ -109,6 +109,23 @@ object RuleMigrations {
         }
     }
 
+    /**
+     * Adds the durable occurrence-identity column to the execution log (§ JARVIS
+     * Implementation Master Plan PASSAGGIO 8, JARVIS-13/23) — non-destructive,
+     * like every migration in this object: existing rows simply get `NULL`,
+     * which the new dedup query already treats as "never seen", never as a
+     * false match.
+     */
+    val MIGRATION_9_10 = object : Migration(9, 10) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `automation_executions` ADD COLUMN `idempotencyKey` TEXT")
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_automation_executions_idempotencyKey` " +
+                    "ON `automation_executions` (`idempotencyKey`)",
+            )
+        }
+    }
+
     /** Every migration that must be registered on the database builder. */
-    val ALL = arrayOf(MIGRATION_3_4)
+    val ALL = arrayOf(MIGRATION_3_4, MIGRATION_9_10)
 }

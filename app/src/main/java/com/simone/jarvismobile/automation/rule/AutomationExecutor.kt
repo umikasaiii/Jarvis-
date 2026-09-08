@@ -137,7 +137,22 @@ class AutomationExecutor @Inject constructor(
         event: TriggerEvent,
         dryRun: Boolean,
     ): ExecutionReport {
-        val key = event.idempotencyKey(rule.id)
+        val key = event.idempotencyKey(rule.id, rule.updatedAt?.toString())
+
+        // Durable half of duplicate suppression (§ PASSAGGIO 8, JARVIS-13/23):
+        // `recentKeys` above is in-memory only, so it is empty again the moment
+        // the app process is killed and restarted — exactly when Android's
+        // at-least-once WorkManager/AlarmManager infrastructure is most likely
+        // to redeliver the same occurrence. A dry run is a diagnostic test, not
+        // a real firing, so it neither checks nor counts against this history.
+        if (!dryRun && wasAlreadyCommitted(key, event.at)) {
+            return record(
+                rule, event,
+                GateResult(ExecutionDecision.SKIP_DUPLICATE, "occorrenza già eseguita in precedenza"),
+                emptyList(), dryRun,
+            )
+        }
+
         return when (rule.executionPolicy) {
             ExecutionPolicy.SKIP_IF_RUNNING -> {
                 // Claim the key and the running flag together, so two deliveries
@@ -275,6 +290,10 @@ class AutomationExecutor @Inject constructor(
             reason = buildReason(result),
             actions = outcomes,
             dryRun = dryRun,
+            // Computed here, not threaded in by every caller, so no call site
+            // can accidentally log a FIRE without the identity the durable
+            // dedup check in `execute()`/`wasAlreadyCommitted()` depends on.
+            idempotencyKey = event.idempotencyKey(rule.id, rule.updatedAt?.toString()),
         )
         try {
             log.write(report)
@@ -297,6 +316,24 @@ class AutomationExecutor @Inject constructor(
     private fun describe(condition: com.simone.jarvismobile.core.automation.rule.Condition): String =
         condition::class.simpleName ?: "condizione"
 
+    /**
+     * The durable half of duplicate suppression (§ PASSAGGIO 8, JARVIS-13/23):
+     * asks the execution log — which survives a process restart, unlike
+     * [recentKeys] above — whether [key] already committed a real FIRE within
+     * the same dedup window [RuleGate] itself uses. A storage read failure
+     * fails OPEN (never blocks a legitimate firing on a diagnostics hiccup);
+     * it is exactly as safe as a false negative here always was, since the
+     * in-memory/gate-level check already covers the common same-process case.
+     */
+    private suspend fun wasAlreadyCommitted(key: String, at: LocalDateTime): Boolean = try {
+        log.wasCommittedRecently(key, since = at.minusSeconds(RuleGate.DEFAULT_DEDUP_SECONDS))
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Log.w(TAG, "durable_dedup_check_failed ${e.javaClass.simpleName}")
+        false
+    }
+
     private companion object {
         const val TAG = "JarvisAutomation"
 
@@ -315,6 +352,8 @@ data class ExecutionReport(
     val reason: String,
     val actions: List<Pair<String, ActionOutcome>>,
     val dryRun: Boolean,
+    /** [TriggerEvent.idempotencyKey] for this rule/event, persisted alongside. */
+    val idempotencyKey: String? = null,
 ) {
     val succeeded: Boolean
         get() = decision.fired && actions.isNotEmpty() &&

@@ -40,8 +40,16 @@ data class TriggerEvent(
     val at: LocalDateTime,
     val dedupKey: String = "",
 ) {
-    /** Identity of this occurrence for one rule. */
-    fun idempotencyKey(ruleId: String): String = "$ruleId|$type|$dedupKey"
+    /**
+     * Identity of this occurrence for one rule (§ JARVIS Implementation Master
+     * Plan PASSAGGIO 8, JARVIS-13). [ruleRevision] — when given, e.g. the
+     * rule's `updatedAt` — is folded in so an edited rule does not silently
+     * inherit an older edit's occurrence identity; omitted (the default) keeps
+     * the key exactly as before, which is what every dedup window (in-memory
+     * or durable) still compares against for a rule with no revision signal.
+     */
+    fun idempotencyKey(ruleId: String, ruleRevision: String? = null): String =
+        if (ruleRevision.isNullOrEmpty()) "$ruleId|$type|$dedupKey" else "$ruleId|$type|$dedupKey|$ruleRevision"
 }
 
 /** What the engine remembers about a rule's recent past. */
@@ -100,7 +108,7 @@ object RuleGate {
 
         // Duplicate suppression comes before the cooldown: two deliveries of one
         // happening are not "two firings too close together", they are one.
-        val key = event.idempotencyKey(rule.id)
+        val key = event.idempotencyKey(rule.id, rule.updatedAt?.toString())
         history.recentKeys[key]?.let { seenAt ->
             if (Duration.between(seenAt, event.at).seconds < dedupSeconds) {
                 return GateResult(ExecutionDecision.SKIP_DUPLICATE, "evento già gestito")

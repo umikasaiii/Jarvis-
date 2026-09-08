@@ -58,9 +58,20 @@ class ExecutionLogRepository @Inject constructor(
                 reason = report.reason.take(MAX_REASON_CHARS),
                 actionOutcomes = report.outcomeSummary().take(MAX_OUTCOME_CHARS),
                 dryRun = report.dryRun,
+                idempotencyKey = report.idempotencyKey,
             ),
         )
     }
+
+    /**
+     * Whether [idempotencyKey] already committed a real (non-dry-run) FIRE at
+     * or after [since] — the durable dedup check [AutomationExecutor] consults
+     * before running actions, so a re-delivered occurrence is still caught
+     * after the app process was killed and restarted in between (§ JARVIS
+     * Implementation Master Plan PASSAGGIO 8, JARVIS-13/23).
+     */
+    suspend fun wasCommittedRecently(idempotencyKey: String, since: LocalDateTime): Boolean =
+        dao.countCommittedSince(idempotencyKey, since.toString()) > 0
 
     /** Drops entries older than [days]. Called from periodic maintenance. */
     suspend fun prune(days: Long = RETENTION_DAYS, now: LocalDateTime = LocalDateTime.now()): Int =

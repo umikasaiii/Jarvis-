@@ -78,6 +78,23 @@ class ExecutionGateTest {
     }
 
     @Test
+    fun ruleRevisionChangesTheOccurrenceIdentity() {
+        // § PASSAGGIO 8/JARVIS-13 — an edited rule (a new `updatedAt`) must not
+        // silently inherit the occurrence identity of an edit made before it.
+        val e = event(key = "home")
+        assertTrue(e.idempotencyKey("r1", "2026-08-06T22:00") != e.idempotencyKey("r1", "2026-08-06T23:00"))
+    }
+
+    @Test
+    fun omittingTheRevisionKeepsTheOriginalKeyUnchanged() {
+        // Callers that never pass a revision (every existing call site) must see
+        // the exact same key as before this parameter existed.
+        val e = event(key = "home")
+        assertEquals(e.idempotencyKey("r1"), e.idempotencyKey("r1", null))
+        assertEquals(e.idempotencyKey("r1"), e.idempotencyKey("r1", ""))
+    }
+
+    @Test
     fun anEventForAnotherRuleDoesNotSuppressThisOne() {
         val mine = rule(id = "mine")
         val theirs = event(key = "home").idempotencyKey("theirs")
