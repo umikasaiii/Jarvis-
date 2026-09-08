@@ -115,11 +115,14 @@ class BackupRepository @Inject constructor(
      * the time it reaches cutover; process death between staging and the
      * last file replace is the other case this same recovery handles — §I:
      * the staging directory's own leftover presence IS the recovery marker,
-     * since everything in it already passed its checksum) and clears the
-     * derived Weather/Health caches a restored `datastore/` category may
-     * have brought back stale (§C/§K). A no-op on every normal start; called
-     * once at cold start from `JarvisApplication`, BEFORE any other
-     * scheduler/reload that might touch the same restored files (§5).
+     * since everything in it already passed its checksum), PROVES restored
+     * `assistant_tasks` sanitization actually completed (§ PASSAGGIO 10.3
+     * §3/§4/§5 — a successful file cutover alone was not enough), and
+     * clears the derived Weather/Health caches a restored `datastore/`
+     * category may have brought back stale (§C/§K). A no-op on every
+     * normal start; called once at cold start from `JarvisApplication`,
+     * BEFORE any other scheduler/reload that might touch the same restored
+     * files (§5).
      *
      * § PASSAGGIO 10.2 §1 — returns an explicit [RestoreRecoveryOutcome]
      * instead of `Unit`: the caller MUST be able to tell "nothing was
@@ -133,9 +136,17 @@ class BackupRepository @Inject constructor(
      * function pretending everything is fine.
      */
     suspend fun completePendingRestoreRecovery(): RestoreRecoveryOutcome = withContext(Dispatchers.IO) {
+        val sanitizeMarker = RestoreSanitizeCallback.markerFile(context)
+        val cacheMarker = File(root, CLEAR_DERIVED_CACHES_MARKER)
+        // § §5 — a sanitize marker left over from an earlier cold start
+        // whose sanitize kept failing counts as pending work on its own,
+        // even with nothing staged this pass.
         val staged = RestoreStaging.stagedRelPaths(stagingRoot)
-        val hadPendingWork = staged.isNotEmpty() || File(root, CLEAR_DERIVED_CACHES_MARKER).exists()
-        var canonicalCutoverOk = true
+        val hadPendingWork = staged.isNotEmpty() || cacheMarker.exists() || sanitizeMarker.exists()
+
+        var filesCutoverOk = true
+        var sanitizeMarkerPersistedOk = true
+        var cacheMarkerPersistedOk = true
         if (staged.isNotEmpty()) {
             Log.i(TAG, "restore_recovery_resuming entries=${staged.size}")
             var allOk = true
@@ -150,39 +161,66 @@ class BackupRepository @Inject constructor(
                     allOk = false
                 }
             }
+            filesCutoverOk = allOk
             if (allOk) {
-                // Markers are set only now, AFTER a real db/datastore cutover
-                // actually happened in this (cold-start) process — never
-                // speculatively from restore() itself, which never performs
-                // this cutover directly (§4). Sanitization ordering (§5 of
-                // this pass): nothing in this function ever opens `database`/
-                // `openHelper` (it works purely on `File`s), so Room has not
-                // been opened yet in this process when this marker is
-                // written — the marker file therefore already exists on disk
-                // before any consumer launched after this call returns can
-                // possibly perform the FIRST Room open of this process, and
-                // Room's own onOpen() callback (RestoreSanitizeCallback,
-                // PASSAGGIO 10 §J) is guaranteed to run to completion before
-                // that same open serves any query.
-                if (dbCutover) runCatching { RestoreSanitizeCallback.markerFile(context).createNewFile() }
-                if (datastoreCutover) runCatching { File(root, CLEAR_DERIVED_CACHES_MARKER).createNewFile() }
-                RestoreStaging.cleanup(stagingRoot)
-                Log.i(TAG, "restore_recovery_completed")
+                // § §2 — marker persistence IS commit, not a best-effort
+                // diagnostic: RecoveryMarker.persist() reports whether the
+                // marker is DURABLY present afterward, never just whether
+                // createNewFile() itself happened to return true. Written
+                // only now, AFTER a real db/datastore cutover actually
+                // happened in this (cold-start) process — never
+                // speculatively from restore() itself, which never
+                // performs this cutover directly (§4 of PASSAGGIO 10.1).
+                if (dbCutover) sanitizeMarkerPersistedOk = RecoveryMarker.persist(sanitizeMarker)
+                if (datastoreCutover) cacheMarkerPersistedOk = RecoveryMarker.persist(cacheMarker)
+                if (sanitizeMarkerPersistedOk && cacheMarkerPersistedOk) {
+                    // § §7 — staging has now served its purpose: the marker
+                    // file(s) are the durable proof of pending sanitization/
+                    // cache-invalidation from here on, never a second ledger.
+                    RestoreStaging.cleanup(stagingRoot)
+                    Log.i(TAG, "restore_recovery_completed")
+                } else {
+                    Log.w(TAG, "restore_recovery_marker_persist_failed_will_retry")
+                }
             } else {
-                canonicalCutoverOk = false
                 Log.w(TAG, "restore_recovery_incomplete_will_retry")
             }
         }
-        // § §6 — cache-clear ordering: this always runs (even when there was
-        // no staged db/datastore work this pass, to retry a marker left by
-        // an earlier successful cutover whose own cache-clear attempt failed),
-        // and its result feeds the SAME outcome that gates every restored-
-        // state consumer below — a failed clear can never look like full
-        // success just because the canonical db/datastore cutover itself
-        // succeeded.
+
+        // § §3/§4/§5 — a sanitize marker (just persisted above, or left
+        // over from an earlier cold start) means assistant_tasks
+        // sanitization is not yet PROVEN. Safe to deliberately open Room
+        // here — the ONLY place this function does — specifically because
+        // any db/ file cutover due this pass has already completed above
+        // (or none was needed): opening runs every registered migration,
+        // then RestoreSanitizeCallback.onOpen() (the sole sanitizer, never
+        // duplicated here), and this call then confirms the marker was
+        // actually cleared instead of trusting a successful-looking Room
+        // open to mean a successful sanitize.
+        val sanitizeOk = ensureAssistantTasksSanitized(sanitizeMarker)
+
+        // § §6 — cache-clear ordering: this always runs (even when there
+        // was no staged db/datastore work this pass, to retry a marker left
+        // by an earlier successful cutover whose own cache-clear attempt
+        // failed), and its result feeds the SAME outcome that gates every
+        // restored-state consumer below — a failed clear can never look
+        // like full success just because the canonical db/datastore
+        // cutover itself succeeded.
         val cacheClearOk = clearDerivedCachesIfMarked()
-        RestoreRecoveryOutcomeResolver.resolve(hadPendingWork, canonicalCutoverOk, cacheClearOk)
+
+        RestoreRecoveryOutcomeResolver.resolve(
+            hadPendingWork = hadPendingWork,
+            filesCutoverOk = filesCutoverOk,
+            sanitizeMarkerPersistedOk = sanitizeMarkerPersistedOk,
+            cacheMarkerPersistedOk = cacheMarkerPersistedOk,
+            sanitizeOk = sanitizeOk,
+            cacheClearOk = cacheClearOk,
+        )
     }
+
+    /** § §3/§4 — see [RecoveryMarker.ensureClearedByOpening]; `database.openHelper.writableDatabase` is the same already-established open pattern [checkpointWal] uses. */
+    private fun ensureAssistantTasksSanitized(marker: File): Boolean =
+        RecoveryMarker.ensureClearedByOpening(marker) { database.openHelper.writableDatabase }
 
     /**
      * § §9 — the marker is deleted ONLY when the clear actually succeeded;

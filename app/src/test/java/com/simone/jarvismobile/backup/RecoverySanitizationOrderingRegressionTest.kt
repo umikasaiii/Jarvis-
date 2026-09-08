@@ -6,53 +6,82 @@ import org.junit.Test
 import java.io.File
 
 /**
- * § JARVIS Implementation Master Plan PASSAGGIO 10.2 §5 — sanitization
- * ordering. `RestoreSanitizeCallback` runs inside Room's own `onOpen()`
- * (guaranteed by Room to complete before any query on that connection is
- * served), which fires only on the FIRST time this process opens
- * `JarvisDatabase`. That guarantee only protects a just-restored
- * `assistant_tasks` table if [BackupRepository.completePendingRestoreRecovery]
- * — which writes the sanitize marker after a real db cutover — never itself
- * performs that first open (via the injected `database`/`openHelper`, e.g.
- * through `currentDbSchemaVersion()`, which [BackupRepository.restore] does
- * call). If it did, the marker could exist strictly AFTER Room had already
- * been opened once in this process, and `onOpen()` would never fire again
- * to sanitize it.
+ * § JARVIS Implementation Master Plan PASSAGGIO 10.3 §3/§5 — sanitization
+ * ordering, updated from the PASSAGGIO 10.2 version of this same test.
  *
- * This scans the real source of [com.simone.jarvismobile.backup.BackupRepository]'s
- * `completePendingRestoreRecovery`/`cutoverEntryNow`/`clearDerivedCachesIfMarked`
- * functions — the entire code path that runs at cold start before the
- * startup barrier releases — for any reference to the live `database`
- * field or `.openHelper`, which would open Room. A plain file-content
- * check, no Android/Robolectric needed; it is what makes the ordering
- * claim in `completePendingRestoreRecovery`'s own doc comment provable
- * instead of just asserted.
+ * PASSAGGIO 10.2 required that recovery's cold-start path never open Room
+ * at all, relying on whichever consumer happened to open it FIRST after the
+ * barrier released to (maybe) trigger `RestoreSanitizeCallback.onOpen()` —
+ * §1 of PASSAGGIO 10.3 confirmed that reliance was itself the residual gap:
+ * nothing ever checked whether that first open actually cleared the
+ * marker, and a stale marker with no staged work wasn't even recognized as
+ * pending. PASSAGGIO 10.3 makes the Room open a DELIBERATE, PROVEN part of
+ * recovery itself — [BackupRepository.ensureAssistantTasksSanitized] is now
+ * the ONLY place recovery opens Room, and it does so strictly AFTER the
+ * db/datastore file cutover loop (and marker persistence) has already run.
+ *
+ * Two invariants are pinned here, both via a plain scan of the real source
+ * — no Android/Robolectric needed:
+ *  1. [RestoreStaging]'s atomic file-cutover primitive, `cutoverEntryNow`,
+ *     still never references the live `database` field directly — the raw
+ *     file replace itself must stay database-independent, exactly as
+ *     PASSAGGIO 10.1/10.2 required.
+ *  2. Inside `completePendingRestoreRecovery`'s own body, the call to
+ *     `cutoverEntryNow(...)` (the file-cutover loop) textually precedes the
+ *     call to `ensureAssistantTasksSanitized(...)` (the deliberate Room
+ *     open) — proving the required order: cutover → persist marker → open
+ *     Room → sanitize, never the reverse.
  */
 class RecoverySanitizationOrderingRegressionTest {
 
     @Test
-    fun `cold-start recovery path never opens the live Room database`() {
+    fun `cutoverEntryNow never opens the live Room database directly`() {
+        val source = backupRepositorySource().readText()
+        val cutoverBody = functionBody(source, "cutoverEntryNow")
+
+        assertFalse(
+            "cutoverEntryNow now references the live `database` field — the atomic file-cutover " +
+                "primitive must stay database-independent; any Room open belongs only in " +
+                "ensureAssistantTasksSanitized, strictly after cutover has already completed.",
+            Regex("""\bdatabase\.""").containsMatchIn(cutoverBody),
+        )
+        assertFalse(
+            "cutoverEntryNow now references `.openHelper` — same problem.",
+            cutoverBody.contains(".openHelper"),
+        )
+    }
+
+    @Test
+    fun `recovery opens Room to sanitize only after the cutover loop has already run`() {
         val source = backupRepositorySource().readText()
         val recoveryBody = functionBody(source, "completePendingRestoreRecovery")
-        val cutoverBody = functionBody(source, "cutoverEntryNow")
-        val cacheClearBody = functionBody(source, "clearDerivedCachesIfMarked")
 
-        for ((name, body) in listOf(
-            "completePendingRestoreRecovery" to recoveryBody,
-            "cutoverEntryNow" to cutoverBody,
-            "clearDerivedCachesIfMarked" to cacheClearBody,
-        )) {
-            assertFalse(
-                "$name now references the live `database` field — this would open Room's " +
-                    "connection before RestoreSanitizeCallback's marker is written, breaking the " +
-                    "guarantee that onOpen() sanitizes assistant_tasks before any consumer query.",
-                Regex("""\bdatabase\.""").containsMatchIn(body),
-            )
-            assertFalse(
-                "$name now references `.openHelper` — same problem: it would open Room before recovery finishes.",
-                body.contains(".openHelper"),
-            )
-        }
+        val cutoverCallIndex = recoveryBody.indexOf("cutoverEntryNow(")
+        val ensureSanitizedCallIndex = recoveryBody.indexOf("ensureAssistantTasksSanitized(")
+
+        assertTrue("Could not find the cutoverEntryNow( call inside completePendingRestoreRecovery", cutoverCallIndex >= 0)
+        assertTrue(
+            "Could not find the ensureAssistantTasksSanitized( call inside completePendingRestoreRecovery",
+            ensureSanitizedCallIndex >= 0,
+        )
+        assertTrue(
+            "ensureAssistantTasksSanitized(...) — the deliberate Room open — must be called AFTER the " +
+                "cutoverEntryNow(...) file-cutover loop, never before: opening Room before the db file " +
+                "cutover finishes would defeat the whole point of deferring cutover to cold start.",
+            cutoverCallIndex < ensureSanitizedCallIndex,
+        )
+    }
+
+    @Test
+    fun `ensureAssistantTasksSanitized is the one place that deliberately opens Room`() {
+        val source = backupRepositorySource().readText()
+        val ensureBody = functionBody(source, "ensureAssistantTasksSanitized")
+
+        assertTrue(
+            "ensureAssistantTasksSanitized should open Room via database.openHelper — the same " +
+                "already-established pattern checkpointWal() uses, not a new API.",
+            ensureBody.contains("database.openHelper"),
+        )
     }
 
     /** Sanity check the extraction itself actually found real, non-empty bodies (never a silent false pass on zero characters scanned). */
@@ -61,10 +90,10 @@ class RecoverySanitizationOrderingRegressionTest {
         val source = backupRepositorySource().readText()
         assertTrue(functionBody(source, "completePendingRestoreRecovery").length > 100)
         assertTrue(functionBody(source, "cutoverEntryNow").length > 50)
-        assertTrue(functionBody(source, "clearDerivedCachesIfMarked").length > 50)
+        assertTrue(functionBody(source, "ensureAssistantTasksSanitized").length > 10)
     }
 
-    /** Extracts the brace-balanced body of `fun <name>(...) { ... }`, starting from its first `{`. */
+    /** Extracts the brace-balanced body of `fun <name>(...) { ... }` (or `= expr` bodies whose first `{` is the real content), starting from its first `{`. */
     private fun functionBody(source: String, functionName: String): String {
         val signatureIndex = source.indexOf("fun $functionName(")
         check(signatureIndex >= 0) { "Could not find `fun $functionName(` in BackupRepository.kt — has it been renamed?" }
