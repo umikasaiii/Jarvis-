@@ -1,7 +1,7 @@
 package com.simone.jarvismobile.ui.theme
 
 import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.unit.isSp
+import androidx.compose.ui.unit.TextUnitType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -65,8 +65,8 @@ class SegnaleTokensTest {
         // A regression here would mean someone hardcoded a fixed dp size for
         // text, breaking §E's 1.0x/1.3x/2.0x font-scale acceptance — sp
         // values scale with the user setting, dp does not.
-        assertTrue(SegnaleTypography.body.fontSize.isSp)
-        assertTrue(SegnaleTypography.title.fontSize.isSp)
-        assertTrue(SegnaleTypography.caption.fontSize.isSp)
+        assertEquals(TextUnitType.Sp, SegnaleTypography.body.fontSize.type)
+        assertEquals(TextUnitType.Sp, SegnaleTypography.title.fontSize.type)
+        assertEquals(TextUnitType.Sp, SegnaleTypography.caption.fontSize.type)
     }
 }

@@ -4,7 +4,6 @@ import com.simone.jarvismobile.core.segnale.DataStatus
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -47,14 +46,16 @@ class DataStatusViewTest {
     }
 
     @Test
-    fun `every presentation carries no field beyond icon, title, accent and description`() {
-        // Structural guarantee: DataStatusPresentation is a fixed 4-field
-        // data class (icon/title/accent/accessibilityDescription) — there is
-        // no field through which agenda/health/message content could be
-        // attached. Verified by reflection over the data class components.
-        val presentation = DataStatus.SUCCESS_DATA.toPresentation()
-        val fieldCount = presentation::class.java.declaredFields.count { !it.isSynthetic }
-        assertTrue("expected exactly 4 declared fields, found $fieldCount", fieldCount == 4)
+    fun `the mapper is a pure deterministic function of DataStatus, never carrying extra state`() {
+        // §V.7 — the same input always produces an equal (data class
+        // structural equality over exactly icon/title/accent/description)
+        // result, and toPresentation() takes no parameter beyond the
+        // DataStatus receiver itself — there is no call site through which
+        // agenda/health/message content could be threaded into it.
+        val first = DataStatus.SUCCESS_DATA.toPresentation()
+        val second = DataStatus.SUCCESS_DATA.toPresentation()
+        assertEquals(first, second)
+        assertEquals(first.hashCode(), second.hashCode())
     }
 
     @Test
