@@ -1,6 +1,7 @@
 package com.simone.jarvismobile.navigation
 
 import android.content.Context
+import android.util.Log
 import com.simone.jarvismobile.core.navigation.GpsFix
 import com.simone.jarvismobile.core.navigation.LatLng
 import com.simone.jarvismobile.core.navigation.MapMatcher
@@ -13,6 +14,7 @@ import com.simone.jarvismobile.core.navigation.RegionMetadata
 import com.simone.jarvismobile.core.navigation.RegionSelector
 import com.simone.jarvismobile.core.navigation.RerouteCooldown
 import com.simone.jarvismobile.core.navigation.Route
+import com.simone.jarvismobile.core.navigation.RouteGenerationGate
 import com.simone.jarvismobile.core.navigation.RouteOptions
 import com.simone.jarvismobile.core.navigation.RouteProgressCalculator
 import com.simone.jarvismobile.core.navigation.RoutingProfile
@@ -33,6 +35,30 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 enum class GpsStatus { NONE, ACQUIRING, WEAK, OK }
+
+/**
+ * What happened to one route/reroute computation, for diagnostics only (§
+ * JARVIS Implementation Master Plan PASSAGGIO 9 §8/§9) — never itself a
+ * second source of truth: [NavigationRepository.navState]/`route` remain
+ * authoritative, this only labels the *attempt* that produced (or failed to
+ * produce, or lost the race to produce) the current state.
+ */
+enum class RouteComputationOutcome { ACCEPTED, STALE_DISCARDED, FAILED, CANCELLED }
+
+/**
+ * Bounded, privacy-safe snapshot of the last route-computation attempt (§9)
+ * — no coordinates, no route geometry, no destination text, only counts and
+ * labels. Exists so a future device-acceptance check (or a diagnostics
+ * panel, not built here — §13) can tell generation/adapter/outcome apart
+ * without re-deriving them from log lines.
+ */
+data class NavigationDiagnostic(
+    val generation: Long,
+    val adapterUsed: String?,
+    val outcome: RouteComputationOutcome,
+    val routePointCount: Int? = null,
+    val updatedAtMs: Long = System.currentTimeMillis(),
+)
 
 /**
  * The navigation session shared by the UI and (future) foreground service, built
@@ -85,6 +111,10 @@ class NavigationRepository @Inject constructor(
     private val _progress = MutableStateFlow<NavigationProgress?>(null)
     val progress: StateFlow<NavigationProgress?> = _progress.asStateFlow()
 
+    /** § PASSAGGIO 9 — which route/reroute attempt last touched [route]/[navState], and how. */
+    private val _diagnostic = MutableStateFlow<NavigationDiagnostic?>(null)
+    val diagnostic: StateFlow<NavigationDiagnostic?> = _diagnostic.asStateFlow()
+
     /** A transient user-facing message (announcement, recalculating, routing error). */
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
@@ -118,6 +148,17 @@ class NavigationRepository @Inject constructor(
     @Volatile private var progressCalc: RouteProgressCalculator? = null
     private val offRoute = OffRouteDetector()
     private val rerouteCooldown = RerouteCooldown()
+
+    /**
+     * § PASSAGGIO 9 — the single generation owner for every route/reroute
+     * this repository computes. [routeJob] is cancelled whenever a newer
+     * request/reroute/stop supersedes it — a real latency win — but
+     * correctness never depends on that cancellation actually landing: every
+     * publish site below re-checks [routeGate] right before it would touch
+     * [_route]/[_navState] regardless of whether the job was cancellable.
+     */
+    private val routeGate = RouteGenerationGate()
+    private var routeJob: Job? = null
 
     suspend fun refreshRegions() {
         _regions.value = regionStore.installed()
@@ -164,18 +205,26 @@ class NavigationRepository @Inject constructor(
     fun startNavigation(dest: LatLng, opts: RouteOptions = RouteOptions(), prof: RoutingProfile = RoutingProfile.CAR) {
         val from = _fix.value?.location ?: run { _message.value = "Nessuna posizione GPS."; return }
         destination = dest; options = opts; profile = prof
+        // § PASSAGGIO 9 §1/§2 — a new request supersedes whatever was
+        // outstanding: bump the generation first (so a check racing this
+        // call already sees the new owner), THEN cancel the old job as a
+        // latency optimisation only, never as the correctness mechanism.
+        if (routeJob?.isActive == true) {
+            setDiagnostic(routeGate.current(), null, RouteComputationOutcome.CANCELLED, null)
+        }
+        val myGeneration = routeGate.beginGeneration()
+        routeJob?.cancel()
         _navState.value = machine.dispatch(NavEvent.SearchStarted)
-        scope.launch {
+        routeJob = scope.launch {
             val region = _coveringRegion.value
             when (val r = routingEngine.calculateRoute(region, from, dest, prof, opts)) {
-                is RoutingResult.Success -> applyRoute(r.route)
+                is RoutingResult.Success -> publishRoute(myGeneration, r.route, ADAPTER_OFFLINE)
                 is RoutingResult.Failure -> {
                     val online = onlineRouteFallback(from, dest, prof)
                     if (online != null) {
-                        applyRoute(online)
+                        publishRoute(myGeneration, online, ADAPTER_ONLINE)
                     } else {
-                        _navState.value = machine.dispatch(NavEvent.RouteFailed)
-                        _message.value = "Percorso non disponibile offline per questa zona (${r.error})."
+                        publishFailure(myGeneration, "Percorso non disponibile offline per questa zona (${r.error}).")
                     }
                 }
             }
@@ -195,30 +244,76 @@ class NavigationRepository @Inject constructor(
     fun resumeNavigation() { _navState.value = machine.dispatch(NavEvent.Resume) }
 
     fun stopNavigation() {
-        destination = null
-        matcher = null
-        progressCalc = null
-        _route.value = null
-        _progress.value = null
-        announcer.reset()
-        offRoute.reset()
-        rerouteCooldown.reset()
-        _navState.value = machine.dispatch(NavEvent.Stop)
+        val wasActive = routeJob?.isActive == true
+        val supersededGeneration = routeGate.current()
+        routeJob?.cancel()
+        routeJob = null
+        // § PASSAGGIO 9 §3 — invalidates every outstanding generation
+        // atomically with clearing the session below: a publish racing this
+        // call either lands fully first, or sees the bumped epoch and is
+        // discarded — never a torn result.
+        routeGate.stop {
+            destination = null
+            matcher = null
+            progressCalc = null
+            _route.value = null
+            _progress.value = null
+            announcer.reset()
+            offRoute.reset()
+            rerouteCooldown.reset()
+            _navState.value = machine.dispatch(NavEvent.Stop)
+        }
+        if (wasActive) setDiagnostic(supersededGeneration, null, RouteComputationOutcome.CANCELLED, null)
         runCatching { NavigationService.stop(context) }
     }
 
-    private fun applyRoute(route: Route) {
-        _route.value = route
-        val m = MapMatcher(route)
-        matcher = m
-        progressCalc = RouteProgressCalculator(route, m)
-        offRoute.reset()
-        rerouteCooldown.reset()
-        announcer.reset()
-        _navState.value = machine.dispatch(NavEvent.RouteFound)
-        _navState.value = machine.dispatch(NavEvent.StartNavigation)
-        // Keep guidance alive with the screen off (spec §14).
-        runCatching { NavigationService.start(context) }
+    /**
+     * Publishes [route] as the active/current route only if [generation] is
+     * still the one [routeGate] currently accepts (§1) — an older generation
+     * finishing late, even one whose [routeJob] escaped cancellation, is
+     * discarded here rather than overwriting whatever is current now.
+     */
+    private fun publishRoute(generation: Long, route: Route, adapter: String) {
+        val accepted = routeGate.publishIfCurrent(generation) {
+            _route.value = route
+            val m = MapMatcher(route)
+            matcher = m
+            progressCalc = RouteProgressCalculator(route, m)
+            offRoute.reset()
+            rerouteCooldown.reset()
+            announcer.reset()
+            _navState.value = machine.dispatch(NavEvent.RouteFound)
+            _navState.value = machine.dispatch(NavEvent.StartNavigation)
+        }
+        setDiagnostic(
+            generation, adapter,
+            if (accepted) RouteComputationOutcome.ACCEPTED else RouteComputationOutcome.STALE_DISCARDED,
+            route.geometry.size,
+        )
+        if (accepted) {
+            // Keep guidance alive with the screen off (spec §14).
+            runCatching { NavigationService.start(context) }
+        } else {
+            Log.w(TAG, "stale_route_discarded generation=$generation current=${routeGate.current()}")
+        }
+    }
+
+    /**
+     * A genuine computation failure for [generation] — discarded exactly
+     * like a success would be if a newer request has since superseded it
+     * (§1/§8: a stale failure must not overwrite a since-accepted route
+     * with an error message, nor mark a superseded session as failed).
+     */
+    private fun publishFailure(generation: Long, message: String) {
+        val accepted = routeGate.publishIfCurrent(generation) {
+            _navState.value = machine.dispatch(NavEvent.RouteFailed)
+            _message.value = message
+        }
+        setDiagnostic(
+            generation, null,
+            if (accepted) RouteComputationOutcome.FAILED else RouteComputationOutcome.STALE_DISCARDED,
+            null,
+        )
     }
 
     private fun onFix(fix: GpsFix) {
@@ -270,16 +365,30 @@ class NavigationRepository @Inject constructor(
         }
     }
 
+    /**
+     * A reroute is its own new generation (§4): it supersedes whatever the
+     * initial search or a previous reroute left outstanding, exactly like
+     * [startNavigation] supersedes a prior search. On failure the still-usable
+     * current route is deliberately left untouched (only [_message] is set) —
+     * existing policy already never fabricates a replacement, which this pass
+     * preserves rather than changes.
+     */
     private fun recalculate(from: LatLng) {
         val dest = destination ?: return
-        scope.launch {
+        val myGeneration = routeGate.beginGeneration()
+        routeJob?.cancel()
+        routeJob = scope.launch {
             when (val r = routingEngine.recalculateRoute(_coveringRegion.value, from, dest, profile, options)) {
-                is RoutingResult.Success -> applyRecalculatedRoute(r.route)
+                is RoutingResult.Success -> publishRecalculatedRoute(myGeneration, r.route, ADAPTER_OFFLINE)
                 is RoutingResult.Failure -> {
                     val online = onlineRouteFallback(from, dest, profile)
                     if (online != null) {
-                        applyRecalculatedRoute(online)
+                        publishRecalculatedRoute(myGeneration, online, ADAPTER_ONLINE)
                     } else {
+                        // § PASSAGGIO 9 §4 — a failed reroute never fabricates
+                        // a route nor clears the current one; only the
+                        // transient message and diagnostics record it.
+                        setDiagnostic(myGeneration, null, RouteComputationOutcome.FAILED, null)
                         _message.value = "Ricalcolo non riuscito (${r.error})."
                     }
                 }
@@ -287,14 +396,33 @@ class NavigationRepository @Inject constructor(
         }
     }
 
-    private fun applyRecalculatedRoute(route: Route) {
-        _route.value = route
-        val m = MapMatcher(route)
-        matcher = m
-        progressCalc = RouteProgressCalculator(route, m)
-        offRoute.reset()
-        announcer.reset()
-        _navState.value = machine.dispatch(NavEvent.RecalculationDone)
+    private fun publishRecalculatedRoute(generation: Long, route: Route, adapter: String) {
+        val accepted = routeGate.publishIfCurrent(generation) {
+            _route.value = route
+            val m = MapMatcher(route)
+            matcher = m
+            progressCalc = RouteProgressCalculator(route, m)
+            offRoute.reset()
+            announcer.reset()
+            _navState.value = machine.dispatch(NavEvent.RecalculationDone)
+        }
+        setDiagnostic(
+            generation, adapter,
+            if (accepted) RouteComputationOutcome.ACCEPTED else RouteComputationOutcome.STALE_DISCARDED,
+            route.geometry.size,
+        )
+        if (!accepted) {
+            Log.w(TAG, "stale_reroute_discarded generation=$generation current=${routeGate.current()}")
+        }
+    }
+
+    private fun setDiagnostic(
+        generation: Long,
+        adapter: String?,
+        outcome: RouteComputationOutcome,
+        routePointCount: Int?,
+    ) {
+        _diagnostic.value = NavigationDiagnostic(generation, adapter, outcome, routePointCount)
     }
 
     /** Shows a message and speaks it with the offline navigation voice. */
@@ -313,8 +441,11 @@ class NavigationRepository @Inject constructor(
     }
 
     private companion object {
+        const val TAG = "JarvisNavigation"
         const val WEAK_ACCURACY_M = 40f
         const val ARRIVE_THRESHOLD_M = 25.0
         const val ARRIVING_THRESHOLD_M = 150.0
+        const val ADAPTER_OFFLINE = "offline_astar"
+        const val ADAPTER_ONLINE = "online_tomtom"
     }
 }
