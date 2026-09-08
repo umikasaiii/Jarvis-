@@ -1,8 +1,8 @@
 package com.simone.jarvismobile.backup
 
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertTrue
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
 
 /**
  * § JARVIS Implementation Master Plan PASSAGGIO 10 §J — a restored
@@ -21,22 +21,22 @@ class AssistantTaskRestoreSanitizerTest {
     @Test fun everyNonTerminalStatusIsExcludedFromTheExemptSet() {
         val nonTerminal = listOf("QUEUED", "LOADING_MODEL", "UNDERSTANDING", "RETRIEVING_MEMORY", "GENERATING")
         nonTerminal.forEach { status ->
-            assertTrue(status !in AssistantTaskRestoreSanitizer.TERMINAL_STATUSES, "$status must not be terminal")
+            assertTrue("$status must not be terminal", status !in AssistantTaskRestoreSanitizer.TERMINAL_STATUSES)
         }
     }
 
     @Test fun sanitizeSqlTargetsTheRightTableAndNeverDeletesHistory() {
         val sql = AssistantTaskRestoreSanitizer.SANITIZE_SQL
-        assertTrue(sql.startsWith("UPDATE assistant_tasks SET status = 'CANCELLED'"), sql)
-        assertTrue(sql.contains("progress = 0"), sql)
-        assertTrue("DELETE" !in sql.uppercase(), sql)
+        assertTrue(sql, sql.startsWith("UPDATE assistant_tasks SET status = 'CANCELLED'"))
+        assertTrue(sql, sql.contains("progress = 0"))
+        assertTrue(sql, "DELETE" !in sql.uppercase())
     }
 
     @Test fun sanitizeSqlExcludesExactlyTheTerminalStatuses() {
         val sql = AssistantTaskRestoreSanitizer.SANITIZE_SQL
         AssistantTaskRestoreSanitizer.TERMINAL_STATUSES.forEach { status ->
-            assertTrue(sql.contains("'$status'"), "SQL must mention '$status': $sql")
+            assertTrue("SQL must mention '$status': $sql", sql.contains("'$status'"))
         }
-        assertTrue(sql.contains("WHERE status NOT IN ("), sql)
+        assertTrue(sql, sql.contains("WHERE status NOT IN ("))
     }
 }
