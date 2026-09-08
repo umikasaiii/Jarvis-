@@ -120,9 +120,22 @@ class BackupRepository @Inject constructor(
      * have brought back stale (§C/§K). A no-op on every normal start; called
      * once at cold start from `JarvisApplication`, BEFORE any other
      * scheduler/reload that might touch the same restored files (§5).
+     *
+     * § PASSAGGIO 10.2 §1 — returns an explicit [RestoreRecoveryOutcome]
+     * instead of `Unit`: the caller MUST be able to tell "nothing was
+     * pending" and "recovery finished" apart from "recovery is still
+     * incomplete," since only the first two are safe to start restored-
+     * state consumers behind. Never throws [kotlinx.coroutines.CancellationException]
+     * without propagating it (no `runCatching`/`getOrDefault` anywhere in
+     * this function swallows it); any OTHER exception in this function
+     * propagates too — turning it into [RestoreRecoveryOutcome.RECOVERY_FAILED]
+     * is the caller's job (see `JarvisApplication.onCreate()`), not this
+     * function pretending everything is fine.
      */
-    suspend fun completePendingRestoreRecovery() = withContext(Dispatchers.IO) {
+    suspend fun completePendingRestoreRecovery(): RestoreRecoveryOutcome = withContext(Dispatchers.IO) {
         val staged = RestoreStaging.stagedRelPaths(stagingRoot)
+        val hadPendingWork = staged.isNotEmpty() || File(root, CLEAR_DERIVED_CACHES_MARKER).exists()
+        var canonicalCutoverOk = true
         if (staged.isNotEmpty()) {
             Log.i(TAG, "restore_recovery_resuming entries=${staged.size}")
             var allOk = true
@@ -141,16 +154,34 @@ class BackupRepository @Inject constructor(
                 // Markers are set only now, AFTER a real db/datastore cutover
                 // actually happened in this (cold-start) process — never
                 // speculatively from restore() itself, which never performs
-                // this cutover directly (§4).
+                // this cutover directly (§4). Sanitization ordering (§5 of
+                // this pass): nothing in this function ever opens `database`/
+                // `openHelper` (it works purely on `File`s), so Room has not
+                // been opened yet in this process when this marker is
+                // written — the marker file therefore already exists on disk
+                // before any consumer launched after this call returns can
+                // possibly perform the FIRST Room open of this process, and
+                // Room's own onOpen() callback (RestoreSanitizeCallback,
+                // PASSAGGIO 10 §J) is guaranteed to run to completion before
+                // that same open serves any query.
                 if (dbCutover) runCatching { RestoreSanitizeCallback.markerFile(context).createNewFile() }
                 if (datastoreCutover) runCatching { File(root, CLEAR_DERIVED_CACHES_MARKER).createNewFile() }
                 RestoreStaging.cleanup(stagingRoot)
                 Log.i(TAG, "restore_recovery_completed")
             } else {
+                canonicalCutoverOk = false
                 Log.w(TAG, "restore_recovery_incomplete_will_retry")
             }
         }
-        clearDerivedCachesIfMarked()
+        // § §6 — cache-clear ordering: this always runs (even when there was
+        // no staged db/datastore work this pass, to retry a marker left by
+        // an earlier successful cutover whose own cache-clear attempt failed),
+        // and its result feeds the SAME outcome that gates every restored-
+        // state consumer below — a failed clear can never look like full
+        // success just because the canonical db/datastore cutover itself
+        // succeeded.
+        val cacheClearOk = clearDerivedCachesIfMarked()
+        RestoreRecoveryOutcomeResolver.resolve(hadPendingWork, canonicalCutoverOk, cacheClearOk)
     }
 
     /**
@@ -158,10 +189,13 @@ class BackupRepository @Inject constructor(
      * a failure leaves it in place for a safe retry at the next cold start
      * (this function is only ever called once per start, never in a loop,
      * so "retry" here means "next app launch," not a tight spin).
+     *
+     * @return true when there is no unresolved derived-cache-clear marker
+     *   left afterward — either none existed, or the clear just succeeded.
      */
-    private suspend fun clearDerivedCachesIfMarked() {
+    private suspend fun clearDerivedCachesIfMarked(): Boolean {
         val marker = File(root, CLEAR_DERIVED_CACHES_MARKER)
-        if (!marker.exists()) return
+        if (!marker.exists()) return true
         val cleared = runCatching {
             settings.setWeatherOutlookCache("")
             settings.setHealthDailyCache("")
@@ -169,8 +203,10 @@ class BackupRepository @Inject constructor(
         if (cleared) {
             runCatching { marker.delete() }
             Log.i(TAG, "restore_derived_caches_cleared")
+            return true
         } else {
             Log.w(TAG, "restore_derived_caches_clear_failed_will_retry")
+            return false
         }
     }
 

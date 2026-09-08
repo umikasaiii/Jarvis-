@@ -4,12 +4,15 @@ import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.Build
+import android.util.Log
 import com.simone.jarvismobile.audio.ListeningService
 import com.simone.jarvismobile.backup.BackupRepository
 import com.simone.jarvismobile.backup.BackupScheduler
+import com.simone.jarvismobile.backup.RestoreRecoveryOutcome
 import com.simone.jarvismobile.background.JarvisNotifications
 import com.simone.jarvismobile.widget.JarvisWidgetUpdater
 import dagger.hilt.android.HiltAndroidApp
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -42,20 +45,45 @@ class JarvisApplication : Application() {
         super.onCreate()
         createListeningChannel()
         JarvisNotifications.createChannels(this)
-        // Keep the home-screen control widget's status in sync with the assistant.
+        // § JARVIS Implementation Master Plan PASSAGGIO 10.2 §3 — safe to
+        // start before the restore-recovery barrier below: it only observes
+        // SessionCoordinator.state, a plain in-memory ConversationStateMachine
+        // that never reads Room/DataStore-backed canonical state (audited;
+        // pinned by WidgetUpdaterPreBarrierRegressionTest). Notification-
+        // channel creation above is likewise state-independent.
         widgetUpdater.start()
-        // § JARVIS Implementation Master Plan PASSAGGIO 10.1 §5 — restore
-        // recovery is an ORDERING BARRIER, not one coroutine racing the
-        // others below: RuleScheduler/automation/place-reload/proactive/
-        // weather/backup-scheduler could otherwise read or write the very
-        // same restored Room DB / DataStore file before recovery finishes
-        // cutting it over. The smallest possible barrier — a single outer
-        // launch that awaits recovery, then launches every other startup
-        // task as before, preserving their existing mutual concurrency.
-        // completePendingRestoreRecovery() is a fast no-op when no
+        // § PASSAGGIO 10.1 §5 / PASSAGGIO 10.2 §2 — restore recovery is an
+        // ORDERING BARRIER, not one coroutine racing the others below:
+        // RuleScheduler/automation/place-reload/proactive/weather/backup-
+        // scheduler could otherwise read or write the very same restored
+        // Room DB / DataStore file before recovery finishes cutting it
+        // over. PASSAGGIO 10.1 awaited the call but then launched every
+        // other task regardless of what it returned — the residual gap
+        // PASSAGGIO 10.2 closes: the barrier must FAIL SAFE, so startup
+        // only proceeds when the explicit RestoreRecoveryOutcome says it is
+        // safe to. completePendingRestoreRecovery() is a fast no-op when no
         // restore is pending, so normal startup timing is unchanged.
         appScope.launch {
-            runCatching { backupRepository.completePendingRestoreRecovery() }
+            val outcome = try {
+                backupRepository.completePendingRestoreRecovery()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (t: Throwable) {
+                // The function itself never claims success it could not
+                // verify — this is the caller's own fail-safe for the case
+                // it could not even determine an outcome.
+                Log.w(TAG, "restore_recovery_threw ${t.javaClass.simpleName}")
+                RestoreRecoveryOutcome.RECOVERY_FAILED
+            }
+            if (!outcome.startupSafe) {
+                // Privacy-safe: only the enum name, never file contents or
+                // any restored value. Staging/markers are already left
+                // exactly as BackupRepository found them for a later cold
+                // start to retry — nothing here deletes anything or retries
+                // in a loop.
+                Log.w(TAG, "startup_gated_on_incomplete_recovery outcome=$outcome")
+                return@launch
+            }
             // Re-book the nightly backup from saved settings (survives reboots/reinstalls).
             launch { runCatching { backupScheduler.sync() } }
             // Start the automations observer if the user turned it on (app launch is a
@@ -111,5 +139,9 @@ class JarvisApplication : Application() {
             setShowBadge(false)
         }
         manager.createNotificationChannel(channel)
+    }
+
+    private companion object {
+        const val TAG = "JarvisApplication"
     }
 }
