@@ -3,6 +3,7 @@ package com.simone.jarvismobile.backup
 import android.content.Context
 import android.util.Log
 import com.simone.jarvismobile.backup.drive.GoogleDriveBackupProvider
+import com.simone.jarvismobile.core.backup.BackupId
 import com.simone.jarvismobile.core.backup.BackupManifest
 import com.simone.jarvismobile.core.backup.BackupRef
 import com.simone.jarvismobile.core.backup.BackupStatus
@@ -107,6 +108,10 @@ class CloudSyncManager @Inject constructor(
 
     /** Pulls backup [id]'s archive+manifest from the cloud into internal [root], if it lives there. */
     suspend fun importInto(root: File, id: String): Boolean = withContext(Dispatchers.IO) {
+        // § JARVIS Implementation Master Plan PASSAGGIO 10 §F — same reasoning
+        // as ExternalBackupStore.importInto: id ends up in File(root, id) and
+        // may come from a cloud-stored manifest, plaintext and unauthenticated.
+        if (!BackupId.isValid(id)) return@withContext false
         val target = File(root, id)
         if (File(target, "backup.enc").exists() && File(target, "manifest.json").exists()) return@withContext true
         val provider = activeProvider() ?: return@withContext false
@@ -124,6 +129,7 @@ class CloudSyncManager @Inject constructor(
 
     /** Deletes backup [id] from the cloud (a user "Elimina", outside retention). */
     suspend fun remove(id: String) = withContext(Dispatchers.IO) {
+        if (!BackupId.isValid(id)) return@withContext
         val provider = activeProvider() ?: return@withContext
         val refs = runCatching { provider.list() }.getOrDefault(emptyList())
         val ref = refs.firstOrNull { it.backupId == id } ?: return@withContext

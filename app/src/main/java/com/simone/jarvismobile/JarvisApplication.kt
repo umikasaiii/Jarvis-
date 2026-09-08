@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.Build
 import com.simone.jarvismobile.audio.ListeningService
+import com.simone.jarvismobile.backup.BackupRepository
 import com.simone.jarvismobile.backup.BackupScheduler
 import com.simone.jarvismobile.background.JarvisNotifications
 import com.simone.jarvismobile.widget.JarvisWidgetUpdater
@@ -24,6 +25,7 @@ class JarvisApplication : Application() {
 
     @Inject lateinit var widgetUpdater: JarvisWidgetUpdater
     @Inject lateinit var backupScheduler: BackupScheduler
+    @Inject lateinit var backupRepository: BackupRepository
     @Inject lateinit var automationServiceController:
         com.simone.jarvismobile.automation.AutomationServiceController
     @Inject lateinit var proactiveScheduler: com.simone.jarvismobile.proactive.ProactiveScheduler
@@ -44,6 +46,11 @@ class JarvisApplication : Application() {
         widgetUpdater.start()
         // Re-book the nightly backup from saved settings (survives reboots/reinstalls).
         appScope.launch { runCatching { backupScheduler.sync() } }
+        // § JARVIS Implementation Master Plan PASSAGGIO 10 §I/§K — finish an
+        // interrupted restore cutover and clear any derived Weather/Health
+        // cache a restored datastore/ category brought back stale. A no-op
+        // on every normal start; only does anything right after a restore.
+        appScope.launch { runCatching { backupRepository.completePendingRestoreRecovery() } }
         // Start the automations observer if the user turned it on (app launch is a
         // foreground-enough context to start its foreground service).
         appScope.launch { runCatching { automationServiceController.syncFromSettings() } }

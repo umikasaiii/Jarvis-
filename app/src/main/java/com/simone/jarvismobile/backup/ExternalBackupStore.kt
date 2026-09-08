@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import android.util.Log
 import androidx.documentfile.provider.DocumentFile
+import com.simone.jarvismobile.core.backup.BackupId
 import com.simone.jarvismobile.core.backup.BackupManifest
 import com.simone.jarvismobile.core.backup.ManifestCodec
 import com.simone.jarvismobile.data.SettingsRepository
@@ -113,6 +114,11 @@ class ExternalBackupStore @Inject constructor(
      * internal copy already exists.
      */
     suspend fun importInto(root: File, id: String): Boolean = withContext(Dispatchers.IO) {
+        // § JARVIS Implementation Master Plan PASSAGGIO 10 §F — id ultimately
+        // ends up in `File(root, id)`; it may originate from a manifest
+        // mirrored to this external folder, which is plaintext and not
+        // protected by the archive's own AES-GCM authentication.
+        if (!BackupId.isValid(id)) return@withContext false
         val target = File(root, id)
         if (File(target, ENC).exists() && File(target, MANIFEST).exists()) return@withContext true
         val extRoot = backupsRoot(create = false) ?: return@withContext false
@@ -134,6 +140,7 @@ class ExternalBackupStore @Inject constructor(
 
     /** Deletes one backup folder by id (retention, or a user "Elimina"). */
     suspend fun remove(id: String) = withContext(Dispatchers.IO) {
+        if (!BackupId.isValid(id)) return@withContext
         val root = backupsRoot(create = false) ?: return@withContext
         root.findFile(id)?.takeIf { it.isDirectory }?.let { runCatching { it.delete() } }
         Unit

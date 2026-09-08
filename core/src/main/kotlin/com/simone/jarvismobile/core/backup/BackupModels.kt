@@ -45,6 +45,19 @@ data class BackupManifest(
     val totalSizeBytes: Long,
     /** SHA-256 of the encrypted archive, filled once it is written. */
     val archiveSha256: String = "",
+    /**
+     * The Room `jarvis.db` schema version (`PRAGMA user_version`) at backup
+     * time — separate from [schemaVersion], which versions this manifest's
+     * own JSON shape. `0` means "unknown" (no `db/` category included, or a
+     * manifest written before this field existed) and must never be treated
+     * as compatible by itself — see `BackupCompatibility` (§ JARVIS
+     * Implementation Master Plan PASSAGGIO 10 §E/§H): a restore checks this
+     * against the app's currently supported Room version range before ever
+     * touching live storage, so an unsupported future or too-old database
+     * schema is refused up front instead of failing (or silently destructive
+     * fallback-migrating) after cutover.
+     */
+    val dbSchemaVersion: Int = 0,
     val entries: List<BackupEntry> = emptyList(),
 ) {
     /** relPath → sha256 for the real files, used to diff against the next run. */

@@ -76,6 +76,9 @@ class BackupViewModel @Inject constructor(
 
     val state: StateFlow<BackupState> = repository.state
 
+    /** § JARVIS Implementation Master Plan PASSAGGIO 10 §M — bounded restore diagnostics. */
+    val restoreDiagnostic: StateFlow<com.simone.jarvismobile.backup.RestoreDiagnostic?> = repository.restoreDiagnostic
+
     /** Saved places (§ Luoghi, phase 6) offered as the backup's location gate. */
     val savedPlaces: StateFlow<List<AutomationPlaceEntity>> =
         places.observePlaces().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())

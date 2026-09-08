@@ -20,6 +20,7 @@ object ManifestCodec {
         field("status", manifest.status.name); comma()
         field("totalSizeBytes", manifest.totalSizeBytes); comma()
         field("archiveSha256", manifest.archiveSha256); comma()
+        field("dbSchemaVersion", manifest.dbSchemaVersion); comma()
         append("\"entries\":[")
         manifest.entries.forEachIndexed { i, e ->
             if (i > 0) append(',')
@@ -57,6 +58,10 @@ object ManifestCodec {
             status = runCatching { BackupStatus.valueOf(str(root["status"])) }.getOrDefault(BackupStatus.FAILED),
             totalSizeBytes = long(root["totalSizeBytes"]),
             archiveSha256 = str(root["archiveSha256"]),
+            // Absent on a manifest written before this field existed — 0
+            // ("unknown"), never guessed, exactly like an absent/malformed
+            // field anywhere else in this decoder.
+            dbSchemaVersion = int(root["dbSchemaVersion"]),
             entries = entries,
         )
     }

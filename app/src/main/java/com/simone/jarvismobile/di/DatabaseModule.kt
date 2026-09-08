@@ -13,6 +13,7 @@ import com.simone.jarvismobile.automation.rule.ParkingLocationDao
 import com.simone.jarvismobile.automation.rule.RuleMigrations
 import com.simone.jarvismobile.background.AssistantTaskDao
 import com.simone.jarvismobile.background.JarvisDatabase
+import com.simone.jarvismobile.backup.RestoreSanitizeCallback
 import com.simone.jarvismobile.document.DocumentDao
 import com.simone.jarvismobile.engine.memory.ConversationalMemoryDao
 import com.simone.jarvismobile.engine.memory.EngineMemoryMigrations
@@ -40,6 +41,13 @@ object DatabaseModule {
             // document and navigation tables can be regenerated from the vault
             // and the original files).
             .fallbackToDestructiveMigration()
+            // § JARVIS Implementation Master Plan PASSAGGIO 10 §J — Room's own
+            // onOpen() fires only after every migration above has already run,
+            // so this is the one safe point to sanitize a just-restored
+            // assistant_tasks table against its CURRENT (already migrated)
+            // shape. A no-op on every normal start; only runs when
+            // BackupRepository.restore() left its marker behind.
+            .addCallback(RestoreSanitizeCallback(context))
             .build()
 
     @Provides
