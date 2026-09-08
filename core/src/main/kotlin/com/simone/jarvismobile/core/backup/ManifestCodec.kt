@@ -21,6 +21,8 @@ object ManifestCodec {
         field("totalSizeBytes", manifest.totalSizeBytes); comma()
         field("archiveSha256", manifest.archiveSha256); comma()
         field("dbSchemaVersion", manifest.dbSchemaVersion); comma()
+        field("manifestMacVersion", manifest.manifestMacVersion); comma()
+        field("manifestMac", manifest.manifestMac); comma()
         append("\"entries\":[")
         manifest.entries.forEachIndexed { i, e ->
             if (i > 0) append(',')
@@ -62,6 +64,10 @@ object ManifestCodec {
             // ("unknown"), never guessed, exactly like an absent/malformed
             // field anywhere else in this decoder.
             dbSchemaVersion = int(root["dbSchemaVersion"]),
+            // Absent on any pre-10.1 manifest — 0 is the explicit LEGACY
+            // marker, never treated as "authenticated with an empty tag."
+            manifestMacVersion = int(root["manifestMacVersion"]),
+            manifestMac = str(root["manifestMac"]),
             entries = entries,
         )
     }

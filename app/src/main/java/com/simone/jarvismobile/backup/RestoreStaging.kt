@@ -47,11 +47,19 @@ internal object RestoreStaging {
      * written to [stagingRoot] at all (checked before any write), so a
      * caller can safely treat "stage() returned non-empty" as "nothing
      * happened yet."
+     *
+     * § JARVIS Implementation Master Plan PASSAGGIO 10.1 §1 — the invariant
+     * is NO EXPECTED HASH != VERIFIED ENTRY: a missing, blank or malformed
+     * (not a well-formed 64-hex-digit SHA-256) declared hash is a FAILURE,
+     * never a free pass. `stage()` used to treat `expected == null/blank` as
+     * "nothing to check, let it through" — that quietly turned an absent
+     * checksum into an accepted entry, exactly backwards from what §Q#2/#3
+     * requires.
      */
     fun stage(stagingRoot: File, entries: List<Pair<String, ByteArray>>, expectedSha256: Map<String, String>): List<String> {
         val failed = entries.mapNotNull { (relPath, bytes) ->
             val expected = expectedSha256[relPath]
-            if (expected.isNullOrBlank() || sha256(bytes).equals(expected, ignoreCase = true)) null else relPath
+            if (isWellFormedSha256(expected) && sha256(bytes).equals(expected, ignoreCase = true)) null else relPath
         }
         if (failed.isNotEmpty()) return failed
 
@@ -64,11 +72,19 @@ internal object RestoreStaging {
         return emptyList()
     }
 
+    /** A SHA-256 hex digest is exactly 64 hex characters — anything else is malformed, never trusted. */
+    private fun isWellFormedSha256(hash: String?): Boolean =
+        hash != null && hash.length == 64 && hash.all { it.isDigit() || it in 'a'..'f' || it in 'A'..'F' }
+
     /** Reads back one staged entry's bytes, or null if it was never staged. */
     fun readStaged(stagingRoot: File, relPath: String): ByteArray? {
         val f = File(stagingRoot, relPath)
         return if (f.exists()) f.readBytes() else null
     }
+
+    /** The staged [File] for [relPath], or null if it was never staged — for callers that need a File (e.g. atomic cutover), not bytes. */
+    fun stagedFile(stagingRoot: File, relPath: String): File? =
+        File(stagingRoot, relPath).takeIf { it.exists() }
 
     /**
      * Every relPath currently staged under [stagingRoot], for a recovery

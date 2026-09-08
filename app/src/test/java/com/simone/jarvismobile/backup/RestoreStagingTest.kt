@@ -89,15 +89,92 @@ class RestoreStagingTest {
 
     @Test fun stagedRelPathsListsEveryFileMirroringItsRelPath() {
         val staging = tempDir("list")
+        val bytesA = byteArrayOf(1)
+        val bytesB = byteArrayOf(2)
         RestoreStaging.stage(
             staging,
-            listOf("db/jarvis.db" to byteArrayOf(1), "vault/JARVIS/Sub/Note.md" to byteArrayOf(2)),
-            emptyMap(), // no hashes declared → nothing to verify against, both stage
+            listOf("db/jarvis.db" to bytesA, "vault/JARVIS/Sub/Note.md" to bytesB),
+            mapOf("db/jarvis.db" to sha256(bytesA), "vault/JARVIS/Sub/Note.md" to sha256(bytesB)),
         )
 
         val relPaths = RestoreStaging.stagedRelPaths(staging).toSet()
 
         assertEquals(setOf("db/jarvis.db", "vault/JARVIS/Sub/Note.md"), relPaths)
+        RestoreStaging.cleanup(staging)
+    }
+
+    // --- § JARVIS Implementation Master Plan PASSAGGIO 10.1 §1 ---------------
+    // "NO EXPECTED HASH != VERIFIED ENTRY": a missing, blank or malformed
+    // declared hash must be a FAILURE, never a free pass.
+
+    @Test fun stageFailsEveryEntryWhenNoHashesAreDeclaredAtAll() {
+        val staging = tempDir("no-hashes")
+        val entries = listOf("db/jarvis.db" to byteArrayOf(1), "vault/JARVIS/Note.md" to byteArrayOf(2))
+
+        val failed = RestoreStaging.stage(staging, entries, emptyMap())
+
+        assertEquals(setOf("db/jarvis.db", "vault/JARVIS/Note.md"), failed.toSet())
+        assertNull(RestoreStaging.readStaged(staging, "db/jarvis.db"))
+        RestoreStaging.cleanup(staging)
+    }
+
+    @Test fun stageFailsAnEntryWithABlankDeclaredHash() {
+        val staging = tempDir("blank-hash")
+        val bytes = "hello".toByteArray()
+        val entries = listOf("db/jarvis.db" to bytes)
+
+        val failed = RestoreStaging.stage(staging, entries, mapOf("db/jarvis.db" to "   "))
+
+        assertEquals(listOf("db/jarvis.db"), failed)
+        assertNull(RestoreStaging.readStaged(staging, "db/jarvis.db"))
+        RestoreStaging.cleanup(staging)
+    }
+
+    @Test fun stageFailsAnEntryWithAMalformedDeclaredHash() {
+        val staging = tempDir("malformed-hash")
+        val bytes = "hello".toByteArray()
+        // Right length family of mistake avoided on purpose: not 64 hex chars.
+        val entries = listOf("db/jarvis.db" to bytes)
+
+        val failed = RestoreStaging.stage(staging, entries, mapOf("db/jarvis.db" to "not-a-real-hash"))
+
+        assertEquals(listOf("db/jarvis.db"), failed)
+        RestoreStaging.cleanup(staging)
+    }
+
+    @Test fun stageFailsAnEntryWhoseDeclaredHashHasWrongLength() {
+        val staging = tempDir("short-hash")
+        val bytes = "hello".toByteArray()
+        val entries = listOf("db/jarvis.db" to bytes)
+        // A truncated real hash — 63 hex chars — must still fail, not be
+        // accepted as "close enough."
+        val truncated = sha256(bytes).dropLast(1)
+
+        val failed = RestoreStaging.stage(staging, entries, mapOf("db/jarvis.db" to truncated))
+
+        assertEquals(listOf("db/jarvis.db"), failed)
+        RestoreStaging.cleanup(staging)
+    }
+
+    @Test fun stageAcceptsAWellFormedValidHashRegardlessOfCase() {
+        val staging = tempDir("upper-hash")
+        val bytes = "hello".toByteArray()
+        val entries = listOf("db/jarvis.db" to bytes)
+
+        val failed = RestoreStaging.stage(staging, entries, mapOf("db/jarvis.db" to sha256(bytes).uppercase()))
+
+        assertTrue(failed.isEmpty())
+        assertEquals("hello", RestoreStaging.readStaged(staging, "db/jarvis.db")!!.toString(Charsets.UTF_8))
+        RestoreStaging.cleanup(staging)
+    }
+
+    @Test fun stagedFileReturnsTheFileOnlyWhenStaged() {
+        val staging = tempDir("staged-file")
+        val bytes = "hello".toByteArray()
+        RestoreStaging.stage(staging, listOf("db/jarvis.db" to bytes), mapOf("db/jarvis.db" to sha256(bytes)))
+
+        assertTrue(RestoreStaging.stagedFile(staging, "db/jarvis.db") != null)
+        assertNull(RestoreStaging.stagedFile(staging, "db/never_staged.db"))
         RestoreStaging.cleanup(staging)
     }
 

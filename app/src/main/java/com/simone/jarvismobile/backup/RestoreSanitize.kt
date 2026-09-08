@@ -49,8 +49,13 @@ internal class RestoreSanitizeCallback(private val context: Context) : RoomDatab
         super.onOpen(db)
         val marker = markerFile(context)
         if (!marker.exists()) return
-        runCatching { db.execSQL(AssistantTaskRestoreSanitizer.SANITIZE_SQL) }
-        runCatching { marker.delete() }
+        // § JARVIS Implementation Master Plan PASSAGGIO 10.1 §9 — the marker
+        // is deleted ONLY when the sanitize statement actually succeeded; a
+        // failure leaves it in place so the next Room open (the only time
+        // this callback fires) retries it — never a tight loop, since
+        // `onOpen()` runs at most once per process lifetime.
+        val sanitized = runCatching { db.execSQL(AssistantTaskRestoreSanitizer.SANITIZE_SQL) }.isSuccess
+        if (sanitized) runCatching { marker.delete() }
     }
 
     companion object {

@@ -1,6 +1,7 @@
 package com.simone.jarvismobile.backup
 
 import android.content.Context
+import android.database.sqlite.SQLiteDatabase
 import android.util.Log
 import androidx.sqlite.db.SimpleSQLiteQuery
 import com.simone.jarvismobile.BuildConfig
@@ -15,12 +16,14 @@ import com.simone.jarvismobile.core.backup.BackupRef
 import com.simone.jarvismobile.core.backup.BackupStatus
 import com.simone.jarvismobile.core.backup.EntryKind
 import com.simone.jarvismobile.core.backup.Incremental
+import com.simone.jarvismobile.core.backup.ManifestAuthentication
 import com.simone.jarvismobile.core.backup.ManifestCodec
 import com.simone.jarvismobile.core.backup.Retention
 import com.simone.jarvismobile.core.backup.RetentionPolicy
 import com.simone.jarvismobile.data.SettingsRepository
 import com.simone.jarvismobile.memory.VaultRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -105,24 +108,42 @@ class BackupRepository @Inject constructor(
     init { refreshState() }
 
     /**
-     * Finishes an interrupted cutover (process death between staging and the
-     * last file replace — §I: the staging directory's own leftover presence
-     * IS the recovery marker, since everything in it already passed its
-     * checksum) and clears the derived Weather/Health caches a restored
-     * `datastore/` category may have brought back stale (§C/§K). A no-op on
-     * every normal start; called once at cold start from `JarvisApplication`,
-     * the same "harmless re-arm" pattern already used there for schedulers.
+     * Finishes an interrupted or deliberately-deferred cutover (§ JARVIS
+     * Implementation Master Plan PASSAGGIO 10.1 §4/§5 — `db/`/`datastore/`
+     * targets are NEVER cut over from [restore]'s own live process, since
+     * that process has already opened Room's live connection in-process by
+     * the time it reaches cutover; process death between staging and the
+     * last file replace is the other case this same recovery handles — §I:
+     * the staging directory's own leftover presence IS the recovery marker,
+     * since everything in it already passed its checksum) and clears the
+     * derived Weather/Health caches a restored `datastore/` category may
+     * have brought back stale (§C/§K). A no-op on every normal start; called
+     * once at cold start from `JarvisApplication`, BEFORE any other
+     * scheduler/reload that might touch the same restored files (§5).
      */
     suspend fun completePendingRestoreRecovery() = withContext(Dispatchers.IO) {
         val staged = RestoreStaging.stagedRelPaths(stagingRoot)
         if (staged.isNotEmpty()) {
             Log.i(TAG, "restore_recovery_resuming entries=${staged.size}")
             var allOk = true
+            var dbCutover = false
+            var datastoreCutover = false
             for (relPath in staged) {
-                val bytes = RestoreStaging.readStaged(stagingRoot, relPath) ?: continue
-                if (!writeTarget(relPath, bytes)) allOk = false
+                val stagedFile = RestoreStaging.stagedFile(stagingRoot, relPath) ?: continue
+                if (cutoverEntryNow(relPath, stagedFile)) {
+                    if (relPath.startsWith("db/")) dbCutover = true
+                    if (relPath.startsWith("datastore/")) datastoreCutover = true
+                } else {
+                    allOk = false
+                }
             }
             if (allOk) {
+                // Markers are set only now, AFTER a real db/datastore cutover
+                // actually happened in this (cold-start) process — never
+                // speculatively from restore() itself, which never performs
+                // this cutover directly (§4).
+                if (dbCutover) runCatching { RestoreSanitizeCallback.markerFile(context).createNewFile() }
+                if (datastoreCutover) runCatching { File(root, CLEAR_DERIVED_CACHES_MARKER).createNewFile() }
                 RestoreStaging.cleanup(stagingRoot)
                 Log.i(TAG, "restore_recovery_completed")
             } else {
@@ -132,15 +153,25 @@ class BackupRepository @Inject constructor(
         clearDerivedCachesIfMarked()
     }
 
+    /**
+     * § §9 — the marker is deleted ONLY when the clear actually succeeded;
+     * a failure leaves it in place for a safe retry at the next cold start
+     * (this function is only ever called once per start, never in a loop,
+     * so "retry" here means "next app launch," not a tight spin).
+     */
     private suspend fun clearDerivedCachesIfMarked() {
         val marker = File(root, CLEAR_DERIVED_CACHES_MARKER)
         if (!marker.exists()) return
-        runCatching {
+        val cleared = runCatching {
             settings.setWeatherOutlookCache("")
             settings.setHealthDailyCache("")
+        }.isSuccess
+        if (cleared) {
+            runCatching { marker.delete() }
+            Log.i(TAG, "restore_derived_caches_cleared")
+        } else {
+            Log.w(TAG, "restore_derived_caches_clear_failed_will_retry")
         }
-        runCatching { marker.delete() }
-        Log.i(TAG, "restore_derived_caches_cleared")
     }
 
     private data class Src(
@@ -197,7 +228,7 @@ class BackupRepository @Inject constructor(
             plainZip.inputStream().use { input -> enc.outputStream().use { out -> crypto.encrypt(input, out, keys.contentKey()) } }
             plainZip.delete()
 
-            val manifest = BackupManifest(
+            val unsigned = BackupManifest(
                 id = id,
                 createdAt = System.currentTimeMillis(),
                 schemaVersion = ManifestCodec.SCHEMA_VERSION,
@@ -208,6 +239,14 @@ class BackupRepository @Inject constructor(
                 dbSchemaVersion = if (sources.any { it.relPath.startsWith("db/") }) currentDbSchemaVersion() else 0,
                 entries = entries,
             )
+            // § §10 — bind the restore-relevant manifest fields to the same
+            // content key that encrypts the archive, so a tamperer with
+            // write access to the plaintext manifest.json (mirrored to
+            // external/cloud storage) cannot redirect a `storedInBackupId`/
+            // `sha256` pair to a different genuine backup without also
+            // holding that key.
+            val mac = ManifestAuthentication.computeMac(unsigned, keys.contentKey().encoded)
+            val manifest = unsigned.copy(manifestMacVersion = ManifestAuthentication.CURRENT_VERSION, manifestMac = mac)
             File(dir, MANIFEST).writeText(ManifestCodec.encode(manifest))
 
             // Mirror the fresh snapshot to the user's chosen destination folder
@@ -222,6 +261,11 @@ class BackupRepository @Inject constructor(
             refreshState()
             Log.i(TAG, "backup_done id=$id entries=${entries.size} size=$total")
             manifest
+        } catch (e: CancellationException) {
+            // § §7 — a cancelled backup must never be reported as a failed
+            // one, and above all must never swallow the cancellation itself:
+            // `Throwable` below would otherwise catch this too.
+            throw e
         } catch (t: Throwable) {
             Log.w(TAG, "backup_failed ${t.javaClass.simpleName}")
             _state.value = _state.value.copy(running = false, lastError = t.javaClass.simpleName)
@@ -291,6 +335,24 @@ class BackupRepository @Inject constructor(
             return@withContext false
         }
 
+        // § §10 — verify the manifest's own authenticity BEFORE trusting any
+        // field it declares (dbSchemaVersion/archiveSha256/entries below).
+        // manifest.json is plaintext and mirrored to external/cloud storage
+        // the user controls; manifestMacVersion==0 is the explicit LEGACY
+        // policy for every pre-10.1 backup — accepted for backward
+        // compatibility, but never presented as carrying the same integrity
+        // guarantee as an authenticated one.
+        if (manifest.manifestMacVersion >= 1) {
+            val authentic = ManifestAuthentication.verify(manifest, keys.contentKey().encoded)
+            if (!authentic) {
+                publishDiagnostic(id, manifestAccepted = false, failedAtStage = "manifest_tampered")
+                Log.w(TAG, "restore_refused id=$id reason=manifest_tampered")
+                return@withContext false
+            }
+        } else {
+            Log.w(TAG, "restore_manifest_legacy_unauthenticated id=$id")
+        }
+
         // Compatibility is judged against what THIS restore will actually
         // touch, not the whole manifest — a selective restore that never
         // asks for db/ must not be refused over a db schema it will never
@@ -354,7 +416,19 @@ class BackupRepository @Inject constructor(
             return@withContext false
         }
 
-        runBackup() // pre-restore safety snapshot
+        // § §8 — the pre-restore safety backup's result is no longer
+        // discarded: if it fails, restore is refused before cutover (the
+        // one snapshot the user could fall back to would itself be
+        // missing/broken). Cancellation during it now propagates out of
+        // restore() unmodified too, since runBackup() no longer swallows
+        // CancellationException (§7) and this call is no longer wrapped in
+        // anything that would.
+        val safetyBackup = runBackup()
+        if (safetyBackup == null) {
+            publishDiagnostic(id, manifestAccepted = true, compatibility = compatibility, checksumsVerified = true, failedAtStage = "safety_backup")
+            Log.w(TAG, "restore_refused id=$id reason=safety_backup_failed")
+            return@withContext false
+        }
 
         // STAGE: decrypt + verify every wanted entry's OWN sha256 (not just
         // the enclosing archive's) into an isolated directory that shares
@@ -383,38 +457,69 @@ class BackupRepository @Inject constructor(
             return@withContext false
         }
 
-        // CUTOVER: only already-staged, already-verified bytes are written to
-        // live targets from here on. A process death partway through leaves
-        // the staging directory non-empty — its own presence is the recovery
-        // marker `completePendingRestoreRecovery()` looks for at next start,
-        // and re-applying the same verified bytes again is always safe.
-        var ok = true
-        var dbCutover = false
-        var datastoreCutover = false
-        for (entry in wanted) {
-            val staged = RestoreStaging.readStaged(stagingRoot, entry.relPath) ?: continue
-            if (writeTarget(entry.relPath, staged)) {
-                if (entry.relPath.startsWith("db/")) dbCutover = true
-                if (entry.relPath.startsWith("datastore/")) datastoreCutover = true
-            } else {
-                ok = false
+        // § §11 — a legacy dbSchemaVersion==0 (or any claimed value) is
+        // never trusted alone: inspect the STAGED database's real SQLite
+        // schema version directly, one level below BackupCompatibilityClassifier
+        // (left unchanged on purpose — reused Room/SQLite knowledge, not a
+        // new migration framework), before this staged file is ever cut
+        // over live. Runs whenever a db entry is actually staged, not only
+        // for the legacy case, as defense-in-depth.
+        val stagedDb = RestoreStaging.stagedFile(stagingRoot, "db/jarvis.db")
+        if (stagedDb != null) {
+            val realVersion = runCatching { readStagedDbSchemaVersion(stagedDb) }.getOrNull()
+            val current = currentDbSchemaVersion()
+            val withinRange = realVersion != null && realVersion in MIN_SUPPORTED_DB_SCHEMA_VERSION..current
+            val matchesClaim = manifest.dbSchemaVersion <= 0 || realVersion == manifest.dbSchemaVersion
+            if (!withinRange || !matchesClaim) {
+                RestoreStaging.cleanup(stagingRoot)
+                publishDiagnostic(id, manifestAccepted = true, compatibility = compatibility, checksumsVerified = true, stagingSucceeded = false, failedAtStage = "staged_db_schema_version")
+                Log.w(TAG, "restore_refused id=$id reason=staged_db_schema_version real=$realVersion claimed=${manifest.dbSchemaVersion}")
+                return@withContext false
             }
         }
-        RestoreStaging.cleanup(stagingRoot)
 
-        // Pending-action safety (§J): a restored assistant_tasks row can only
-        // be sanitized once Room has re-applied every migration on its own
-        // next open — see RestoreSanitizeCallback. Derived-cache invalidation
-        // (§C/§K) needs the SAME "after this process's DataStore next loads
-        // the restored file fresh" timing, for the same reason — both are
-        // therefore deferred to completePendingRestoreRecovery() at next
-        // cold start rather than attempted here against still-live state.
-        if (dbCutover) runCatching { RestoreSanitizeCallback.markerFile(context).createNewFile() }
-        if (datastoreCutover) runCatching { File(root, CLEAR_DERIVED_CACHES_MARKER).createNewFile() }
+        // CUTOVER: only already-staged, already-verified bytes are written to
+        // live targets from here on.
+        //
+        // § §4 — db/ and datastore/ targets are NEVER cut over from this
+        // live process: by this point `restore()` has already opened Room's
+        // live connection in-process (via currentDbSchemaVersion() above and
+        // in the compatibility check), so this process can never safely
+        // rewrite those files out from under that connection. Those two
+        // categories are always deferred to `completePendingRestoreRecovery()`
+        // at the next cold start — the same existing recovery mechanism,
+        // reused rather than a new close/reopen dance. vault/ and generic
+        // file targets (documents/ etc.) have no live in-process owner and
+        // cut over immediately.
+        //
+        // A process death partway through — or a deliberate deferral above —
+        // leaves the staging directory non-empty. Its own presence is the
+        // recovery marker `completePendingRestoreRecovery()` looks for at
+        // next start, and re-applying the same verified bytes again (live-
+        // safe entries included) is always safe.
+        var ok = true
+        var deferred = false
+        for (entry in wanted) {
+            val staged = RestoreStaging.stagedFile(stagingRoot, entry.relPath) ?: continue
+            if (entry.relPath.startsWith("db/") || entry.relPath.startsWith("datastore/")) {
+                deferred = true
+                continue
+            }
+            if (!cutoverEntryNow(entry.relPath, staged)) ok = false
+        }
+
+        // § §3 — cleanup only runs once every write has actually landed and
+        // nothing is deferred; a failed live-safe write or a deferred db/
+        // datastore cutover both leave the (already fully verified) staging
+        // directory in place so recovery can finish or retry, instead of
+        // unconditionally discarding evidence of an incomplete cutover.
+        if (ok && !deferred) {
+            RestoreStaging.cleanup(stagingRoot)
+        }
 
         publishDiagnostic(
             id, manifestAccepted = true, compatibility = compatibility, checksumsVerified = true,
-            stagingSucceeded = true, cutoverSucceeded = ok, recoveryRequired = false,
+            stagingSucceeded = true, cutoverSucceeded = ok, recoveryRequired = deferred || !ok,
         )
         ok
     }
@@ -468,9 +573,12 @@ class BackupRepository @Inject constructor(
         // self-consistent snapshot; the (now near-empty) sidecars are still
         // copied alongside for byte-identical round-tripping, not because
         // the .db file depends on them anymore.
-        runCatching { checkpointWal() }.onFailure {
-            Log.w(TAG, "wal_checkpoint_failed ${it.javaClass.simpleName}")
-        }
+        // § §6 — fail CLOSED: a checkpoint failure must abort the whole
+        // backup (propagating out to runBackup()'s catch, which reports
+        // failure and never writes a COMPLETED manifest), never continue
+        // silently onto a db copy that might now be missing committed WAL
+        // frames.
+        checkpointWal()
         for (name in listOf("jarvis.db", "jarvis.db-wal", "jarvis.db-shm")) {
             val f = context.getDatabasePath(name)
             if (f.exists()) out += Src("db/$name", EntryKind.FILE, bytes = f.readBytes())
@@ -507,33 +615,41 @@ class BackupRepository @Inject constructor(
         return out
     }
 
-    private suspend fun writeTarget(relPath: String, bytes: ByteArray): Boolean = runCatching {
+    /**
+     * § §2 — the single shared cutover entry point, used by BOTH [restore]'s
+     * live-safe cutover loop and [completePendingRestoreRecovery]'s recovery
+     * loop (the old `writeTarget(relPath, bytes)` — a plain non-atomic
+     * `.writeBytes()` — has been removed entirely). db/ and datastore/
+     * targets go through [RestoreStaging.cutoverOne] (same-directory
+     * temp-file + rename, atomic); vault/ targets go through
+     * [VaultRepository.writeJarvisFile] (unchanged, still not atomic — out
+     * of scope here, see [RestoreStaging]'s own doc comment); any other
+     * relPath is a generic file, also atomic via [RestoreStaging.cutoverOne].
+     */
+    private suspend fun cutoverEntryNow(relPath: String, stagedFile: File): Boolean = runCatching {
         when {
-            relPath.startsWith("db/") -> {
-                context.getDatabasePath(relPath.removePrefix("db/")).apply { parentFile?.mkdirs() }.writeBytes(bytes)
-                true
-            }
-            relPath.startsWith("datastore/") -> {
-                File(context.filesDir, relPath).apply { parentFile?.mkdirs() }.writeBytes(bytes)
-                true
-            }
+            relPath.startsWith("db/") -> RestoreStaging.cutoverOne(stagedFile, context.getDatabasePath(relPath.removePrefix("db/")))
+            relPath.startsWith("datastore/") -> RestoreStaging.cutoverOne(stagedFile, File(context.filesDir, relPath))
             relPath.startsWith("vault/") -> {
                 // Write back only JARVIS-owned files into the vault; the user's own
                 // notes are left untouched (the vault write grant is scoped to
                 // JARVIS/ anyway). A read-only or absent vault simply reports false.
                 val vaultRel = relPath.removePrefix("vault/")
                 if (vaultRel.startsWith("JARVIS/")) {
-                    vault.writeJarvisFile(vaultRel.removePrefix("JARVIS/"), bytes.toString(Charsets.UTF_8))
+                    vault.writeJarvisFile(vaultRel.removePrefix("JARVIS/"), stagedFile.readText())
                 } else {
                     true // not JARVIS-owned; skipped, not an error
                 }
             }
-            else -> {
-                File(context.filesDir, relPath).apply { parentFile?.mkdirs() }.writeBytes(bytes)
-                true
-            }
+            else -> RestoreStaging.cutoverOne(stagedFile, File(context.filesDir, relPath))
         }
     }.getOrDefault(false)
+
+    /** The staged database file's real `PRAGMA user_version` (§ §11) — opened read-only, never live. */
+    private fun readStagedDbSchemaVersion(file: File): Int {
+        val db = SQLiteDatabase.openDatabase(file.path, null, SQLiteDatabase.OPEN_READONLY)
+        return try { db.version } finally { db.close() }
+    }
 
     // --- archive helpers ----------------------------------------------------
 

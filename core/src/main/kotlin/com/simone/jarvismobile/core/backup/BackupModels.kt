@@ -58,6 +58,25 @@ data class BackupManifest(
      * fallback-migrating) after cutover.
      */
     val dbSchemaVersion: Int = 0,
+    /**
+     * `0` on every backup written before PASSAGGIO 10.1 (or if authentication
+     * ever needs to be disabled) — an explicit LEGACY marker, never silently
+     * upgraded to look authenticated. `>=1` names the [ManifestAuthentication]
+     * scheme version [manifestMac] was computed with. manifest.json is
+     * plaintext, mirrored to external/cloud storage the user controls, and is
+     * NOT covered by the archive's own AES-GCM authentication — [manifestMac]
+     * is what actually binds [entries]' `relPath`/`sha256`/`storedInBackupId`
+     * (the fields a restore trusts to decide what to read and where to write
+     * it) to the same content key that encrypts the archive, so tampering
+     * with just this plaintext file — e.g. redirecting `storedInBackupId` to
+     * a different genuine backup and copying that backup's real sha256 — no
+     * longer passes silently. A LEGACY (version 0) manifest has none of this:
+     * restore still accepts it (backward compatibility), but never pretends
+     * it carries the same integrity guarantee.
+     */
+    val manifestMacVersion: Int = 0,
+    /** HMAC-SHA256 (hex) over [ManifestAuthentication.canonicalBytes] using the backup content key. Empty when [manifestMacVersion] is 0. */
+    val manifestMac: String = "",
     val entries: List<BackupEntry> = emptyList(),
 ) {
     /** relPath → sha256 for the real files, used to diff against the next run. */
