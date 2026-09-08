@@ -30,9 +30,14 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.simone.jarvismobile.BuildConfig
 import com.simone.jarvismobile.core.driving.DrivingNavigationMode
+import com.simone.jarvismobile.core.segnale.DataStatus
+import com.simone.jarvismobile.core.tools.ToolOutcomeStatus
 import com.simone.jarvismobile.core.tts.SupertonicQuality
 import com.simone.jarvismobile.driving.DrivingModeActivity
 import com.simone.jarvismobile.navigation.debug.DebugGpsSimulator
+import com.simone.jarvismobile.ui.components.segnale.DataStatusChip
+import com.simone.jarvismobile.ui.theme.SegnaleFoundation
+import com.simone.jarvismobile.ui.theme.rememberSegnaleReducedMotion
 
 /**
  * Minimal diagnostics screen (docs/ARCHITECTURE.md §8 / task §10): shows the
@@ -283,11 +288,26 @@ fun DiagnosticsScreen(
                             // PERMISSION_MISSING/SOURCE_FAILURE/TOOL_FAILURE/PARTIAL),
                             // mai il payload — vuoto finché nessun tool eseguito
                             // ha ancora impostato un `StructuredToolResult`.
+                            //
+                            // § PASSAGGIO 12 §N — SEGNALE P0's one proof
+                            // migration: this used to be a raw
+                            // `"esitiTool=${...joinToString}"` Text line. Same
+                            // real data (`turn.toolOutcomeStatuses`, unchanged
+                            // — nothing about what this screen SHOWS changed),
+                            // now routed through the typed mapper
+                            // (`ToolOutcomeStatus` → `DataStatus` →
+                            // `DataStatusChip`, § core/segnale) instead of a
+                            // string a Composable would otherwise have to
+                            // parse to mean anything (§I: no keyword/string
+                            // parsing for runtime meaning).
                             if (turn.toolOutcomeStatuses.isNotEmpty()) {
-                                Text(
-                                    "esitiTool=${turn.toolOutcomeStatuses.joinToString(",")}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
+                                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    turn.toolOutcomeStatuses.forEach { name ->
+                                        runCatching { ToolOutcomeStatus.valueOf(name) }
+                                            .getOrNull()
+                                            ?.let { outcome -> DataStatusChip(DataStatus.from(outcome)) }
+                                    }
+                                }
                             }
                         }
                     }
@@ -398,6 +418,28 @@ fun DiagnosticsScreen(
                     )
                 }
                 Text("Build in esecuzione: $buildId", style = MaterialTheme.typography.bodySmall)
+            }
+        }
+
+        // § JARVIS Implementation Master Plan PASSAGGIO 12 §Y — bounded
+        // presentation metadata only (§T: never message/agenda/health
+        // contents, coordinates, memory text, tool arguments or secrets).
+        // Extends this existing screen rather than creating a second
+        // Diagnostics subsystem (§Y).
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("SEGNALE (visuale)", style = MaterialTheme.typography.titleMedium)
+                val reducedMotion = rememberSegnaleReducedMotion()
+                Text(
+                    "foundationVersion=${SegnaleFoundation.VERSION} " +
+                        "profilo=${SegnaleFoundation.BASELINE_PROFILE} " +
+                        "motoRidotto=$reducedMotion",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Text(
+                    "fontPrimario=${SegnaleFoundation.FONT_STATUS} fontDisplay=${SegnaleFoundation.FONT_STATUS}",
+                    style = MaterialTheme.typography.bodySmall,
+                )
             }
         }
 
