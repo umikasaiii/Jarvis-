@@ -36,6 +36,15 @@ class JarvisApplication : Application() {
     @Inject lateinit var ruleScheduler: com.simone.jarvismobile.automation.rule.RuleScheduler
     @Inject lateinit var placeRepository: com.simone.jarvismobile.automation.rule.PlaceRepository
     @Inject lateinit var weatherScheduler: com.simone.jarvismobile.weather.WeatherScheduler
+    // § JARVIS Implementation Master Plan PASSAGGIO 11 §F1 — Event Bridge
+    // is architecturally DEFERRED until a concrete consumer exists
+    // (jarvis-protocol defines no event-ingestion endpoint, verified
+    // directly against jarvis-core's real routes). These two fields are
+    // deliberately no longer used from onCreate() below — kept injected,
+    // not deleted, so re-enabling is a one-line uncomment when a real
+    // consumer lands, not a rewrite; see EventBridgeScheduler.sync()/
+    // EventBridge.flushIfOnline(), both already fail-safe/no-op while
+    // EVENT_BRIDGE_REMOTE_TRANSPORT_ENABLED stays false.
     @Inject lateinit var eventBridgeScheduler: com.simone.jarvismobile.corebridge.EventBridgeScheduler
     @Inject lateinit var eventBridge: com.simone.jarvismobile.corebridge.EventBridge
 
@@ -105,25 +114,13 @@ class JarvisApplication : Application() {
             // Re-book the weather refresh if the user opted in; a harmless no-op
             // (cancels any schedule) when the setting is off.
             launch { runCatching { weatherScheduler.sync() } }
-            // Event Bridge (JARVIS Core, § "fondamenta"): re-book the periodic
-            // retry-flush job, a harmless no-op when Core/Event Bridge is off.
-            launch { runCatching { eventBridgeScheduler.sync() } }
-            // First Event Bridge producer — a low-priority, public-context signal;
-            // never blocks startup (publish() is fire-and-forget).
-            launch {
-                runCatching {
-                    eventBridge.publish(
-                        com.simone.jarvismobile.core.bridge.JarvisEvent(
-                            id = java.util.UUID.randomUUID().toString(),
-                            type = com.simone.jarvismobile.core.bridge.JarvisEventType.APP_STARTED,
-                            timestampMs = System.currentTimeMillis(),
-                            source = "JarvisApplication",
-                            priority = com.simone.jarvismobile.core.bridge.EventPriority.LOW,
-                            privacyLevel = com.simone.jarvismobile.core.tools.SensitivityLevel.PUBLIC,
-                        ),
-                    )
-                }
-            }
+            // § PASSAGGIO 11 §F1 — Event Bridge's periodic retry-flush job
+            // and its APP_STARTED producer are deliberately NOT started
+            // here: there is no concrete consumer for either (jarvis-core
+            // has no event-ingestion endpoint), so this normal startup path
+            // no longer books a WorkManager job or enqueues an event that
+            // will only ever sit in local storage until it expires. See
+            // eventBridgeScheduler/eventBridge's doc comments above.
         }
     }
 

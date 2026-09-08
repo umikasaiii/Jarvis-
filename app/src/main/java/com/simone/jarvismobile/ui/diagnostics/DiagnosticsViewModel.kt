@@ -12,8 +12,11 @@ import com.simone.jarvismobile.audio.CaptureResult
 import com.simone.jarvismobile.audio.SessionCoordinator
 import com.simone.jarvismobile.audio.SttResult
 import com.simone.jarvismobile.audio.TtsState
+import com.simone.jarvismobile.automation.rule.AutomationExecutor
+import com.simone.jarvismobile.backup.BackupRepository
 import com.simone.jarvismobile.BuildConfig
 import com.simone.jarvismobile.context.ContextEngine
+import com.simone.jarvismobile.corebridge.CoreConnectionManager
 import com.simone.jarvismobile.core.driving.DrivingNavigationMode
 import com.simone.jarvismobile.core.engine.EngineTurnDiagnostics
 import com.simone.jarvismobile.core.navigation.GpxParser
@@ -22,6 +25,7 @@ import com.simone.jarvismobile.core.tts.SupertonicQuality
 import com.simone.jarvismobile.data.SettingsRepository
 import com.simone.jarvismobile.engine.ConversationalJarvisEngine
 import com.simone.jarvismobile.health.HealthConnectManager
+import com.simone.jarvismobile.navigation.NavigationRepository
 import com.simone.jarvismobile.navigation.debug.DebugGpsSimulator
 import com.simone.jarvismobile.proactive.ProactiveManager
 import com.simone.jarvismobile.tts.AudioFocusGate
@@ -34,6 +38,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -60,6 +65,10 @@ class DiagnosticsViewModel @Inject constructor(
     private val health: HealthConnectManager,
     private val proactive: ProactiveManager,
     private val remoteChatState: RemoteChatState,
+    private val navigation: NavigationRepository,
+    private val backup: BackupRepository,
+    private val automationExecutor: AutomationExecutor,
+    private val coreConnection: CoreConnectionManager,
 ) : AndroidViewModel(application) {
 
     /**
@@ -191,6 +200,32 @@ class DiagnosticsViewModel @Inject constructor(
      * Classic mode has no equivalent feed yet — see `docs/CONVERSATIONAL_ENGINE.md`.
      */
     val engineDiagnostics: StateFlow<List<EngineTurnDiagnostics>> = conversationalEngine.diagnostics
+
+    /**
+     * § JARVIS Implementation Master Plan PASSAGGIO 11 §G — one READ-ONLY
+     * composition of evidence already produced by the stabilized PASSAGGIO
+     * 1–10.3 domains (see [FoundationCheckpointSnapshot]'s own doc for what
+     * is deliberately excluded). Not a second state machine: every input
+     * is a `StateFlow` that already existed on its owning repository/
+     * engine, combined here only so a checkpoint can be read from one
+     * place instead of five.
+     */
+    val foundationCheckpoint: StateFlow<FoundationCheckpointSnapshot> = combine(
+        engineDiagnostics, navigation.diagnostic, backup.restoreDiagnostic,
+        automationExecutor.lastOccurrence, coreConnection.state,
+    ) { turns, nav, restore, automation, coreState ->
+        FoundationCheckpointSnapshot(
+            buildId = BuildConfig.BUILD_ID,
+            lastEngineTurn = turns.lastOrNull(),
+            navigation = nav,
+            restore = restore,
+            automation = automation,
+            coreAvailable = coreState.remoteUsable,
+        )
+    }.stateIn(
+        viewModelScope, SharingStarted.WhileSubscribed(5_000),
+        FoundationCheckpointSnapshot(BuildConfig.BUILD_ID, null, null, null, null, false),
+    )
 
     fun setDrivingNavigationMode(mode: DrivingNavigationMode) {
         viewModelScope.launch { settings.setDrivingNavigationMode(mode) }

@@ -16,6 +16,9 @@ import com.simone.jarvismobile.core.automation.rule.TriggerEvent
 import com.simone.jarvismobile.core.automation.rule.TriggerMatching
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
@@ -24,6 +27,23 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
+
+/**
+ * § JARVIS Implementation Master Plan PASSAGGIO 11 §G — the last automation
+ * occurrence decision, privacy-safe (ruleId is an opaque UUID string, never
+ * a rule name/action content/idempotencyKey's own dedupKey text; see
+ * [TriggerEvent.idempotencyKey]'s own doc for why that value itself is
+ * already privacy-safe). Exists so Foundation diagnostics can show "did the
+ * dedup/commit-state machinery from PASSAGGIO 8/8.1 actually decide
+ * something reasonable just now" without exposing what the rule does.
+ */
+data class AutomationOccurrenceDiagnostic(
+    val ruleId: String,
+    val decision: ExecutionDecision,
+    val commitState: OccurrenceCommitState?,
+    val dryRun: Boolean,
+    val timestampMs: Long,
+)
 
 /**
  * Runs the rules a trigger woke up (§11).
@@ -56,6 +76,11 @@ class AutomationExecutor @Inject constructor(
     private val running = ConcurrentHashMap.newKeySet<String>()
 
     private val fireMutex = Mutex()
+
+    private val _lastOccurrence = MutableStateFlow<AutomationOccurrenceDiagnostic?>(null)
+
+    /** § PASSAGGIO 11 §G — read-only, privacy-safe evidence of the most recent occurrence decision. */
+    val lastOccurrence: StateFlow<AutomationOccurrenceDiagnostic?> = _lastOccurrence.asStateFlow()
 
     /**
      * One lock per rule, so [ExecutionPolicy.QUEUE] can actually queue: the
@@ -117,6 +142,15 @@ class AutomationExecutor @Inject constructor(
 
         for (rule in resolution.winners) {
             reports += execute(rule, event, dryRun)
+        }
+        reports.lastOrNull()?.let { last ->
+            _lastOccurrence.value = AutomationOccurrenceDiagnostic(
+                ruleId = last.rule.id,
+                decision = last.decision,
+                commitState = last.commitState,
+                dryRun = last.dryRun,
+                timestampMs = System.currentTimeMillis(),
+            )
         }
         return reports
     }

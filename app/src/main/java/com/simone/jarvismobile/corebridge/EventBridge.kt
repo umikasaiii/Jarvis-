@@ -12,6 +12,18 @@ import javax.inject.Qualifier
 import javax.inject.Singleton
 
 /**
+ * § JARVIS Implementation Master Plan PASSAGGIO 11 §F1 — Event Bridge is
+ * architecturally DEFERRED until a concrete consumer exists: `jarvis-protocol`
+ * defines no event-ingestion endpoint, so nothing on Core's side has ever
+ * been able to consume what this module produces. Shared (not duplicated)
+ * between [EventBridge.flushIfOnline] and [EventBridgeScheduler.sync] so
+ * every caller — present or future — agrees on whether remote delivery (and
+ * the periodic job that exists only to retry it) is currently meaningful,
+ * without two copies of the same `false` drifting apart.
+ */
+internal const val EVENT_BRIDGE_REMOTE_TRANSPORT_ENABLED = false
+
+/**
  * Qualifies the background [CoroutineScope] [EventBridge.publish] fires its
  * fire-and-forget work on. Pulled out to a real, Hilt-resolvable binding
  * (`di/CoreModule.kt`'s `@Provides`) — not just an inline
@@ -92,7 +104,7 @@ class EventBridge @Inject constructor(
         // nothing queued today is lost once it does. Flip this back on then -
         // do not invent /v1/events, and do not change jarvis-protocol/
         // jarvis-core to fit this Android-side implementation.
-        if (!REMOTE_TRANSPORT_ENABLED) return
+        if (!EVENT_BRIDGE_REMOTE_TRANSPORT_ENABLED) return
         if (!gate.enabled()) return
         val state = gate.coreState()
         if (!state.remoteUsable) return
@@ -111,6 +123,5 @@ class EventBridge @Inject constructor(
 
     private companion object {
         const val TAG = "EventBridge"
-        const val REMOTE_TRANSPORT_ENABLED = false
     }
 }

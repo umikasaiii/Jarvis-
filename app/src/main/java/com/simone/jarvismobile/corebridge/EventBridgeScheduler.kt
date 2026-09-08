@@ -31,9 +31,17 @@ class EventBridgeScheduler @Inject constructor(
 ) {
     private val workManager = WorkManager.getInstance(context)
 
-    /** Re-points the periodic flush at the current settings, or cancels it when Event Bridge/Core is off. */
+    /**
+     * Re-points the periodic flush at the current settings, or cancels it
+     * when Event Bridge/Core is off — or, per § JARVIS Implementation
+     * Master Plan PASSAGGIO 11 §F1, when remote transport itself is
+     * disabled: a periodic job whose only job is retrying a flush that
+     * always no-ops (`EVENT_BRIDGE_REMOTE_TRANSPORT_ENABLED == false`,
+     * since `jarvis-protocol` has no event-ingestion endpoint yet) would
+     * just be resource use for a deferred architecture with no consumer.
+     */
     suspend fun sync() {
-        if (!settings.eventBridgeEnabled.first() || !settings.coreEnabled.first()) {
+        if (!EVENT_BRIDGE_REMOTE_TRANSPORT_ENABLED || !settings.eventBridgeEnabled.first() || !settings.coreEnabled.first()) {
             workManager.cancelUniqueWork(WORK_NAME)
             return
         }
