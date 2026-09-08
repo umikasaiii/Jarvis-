@@ -2,6 +2,7 @@ package com.simone.jarvismobile.navigation
 
 import android.content.Context
 import android.util.Log
+import com.simone.jarvismobile.core.navigation.ActiveRouteSnapshot
 import com.simone.jarvismobile.core.navigation.GpsFix
 import com.simone.jarvismobile.core.navigation.LatLng
 import com.simone.jarvismobile.core.navigation.MapMatcher
@@ -144,8 +145,15 @@ class NavigationRepository @Inject constructor(
     @Volatile private var destination: LatLng? = null
     @Volatile private var options: RouteOptions = RouteOptions()
     @Volatile private var profile: RoutingProfile = RoutingProfile.CAR
-    @Volatile private var matcher: MapMatcher? = null
-    @Volatile private var progressCalc: RouteProgressCalculator? = null
+
+    /**
+     * § PASSAGGIO 9.1 §1 — route/matcher/progress-calculator as ONE atomic,
+     * immutable unit instead of three separately-assigned fields: a single
+     * `@Volatile` reference read can never observe a torn combination the
+     * way three sequential field reads could. [onFix] captures this exactly
+     * once per fix and never re-reads it mid-computation (§3).
+     */
+    @Volatile private var activeSnapshot: ActiveRouteSnapshot? = null
     private val offRoute = OffRouteDetector()
     private val rerouteCooldown = RerouteCooldown()
 
@@ -254,8 +262,7 @@ class NavigationRepository @Inject constructor(
         // discarded — never a torn result.
         routeGate.stop {
             destination = null
-            matcher = null
-            progressCalc = null
+            activeSnapshot = null
             _route.value = null
             _progress.value = null
             announcer.reset()
@@ -274,11 +281,15 @@ class NavigationRepository @Inject constructor(
      * discarded here rather than overwriting whatever is current now.
      */
     private fun publishRoute(generation: Long, route: Route, adapter: String) {
+        // § PASSAGGIO 9.1 §2 — the complete snapshot is built BEFORE
+        // publishing, so there is never an observable "new route + old
+        // matcher/calculator" moment: the single field write below either
+        // lands as one coherent whole or not at all.
+        val m = MapMatcher(route)
+        val snapshot = ActiveRouteSnapshot(generation, route, m, RouteProgressCalculator(route, m))
         val accepted = routeGate.publishIfCurrent(generation) {
             _route.value = route
-            val m = MapMatcher(route)
-            matcher = m
-            progressCalc = RouteProgressCalculator(route, m)
+            activeSnapshot = snapshot
             offRoute.reset()
             rerouteCooldown.reset()
             announcer.reset()
@@ -323,16 +334,25 @@ class NavigationRepository @Inject constructor(
         if (weak) _navState.value = machine.dispatch(NavEvent.GpsLost)
         else if (_navState.value == NavState.GPS_WEAK) _navState.value = machine.dispatch(NavEvent.GpsRestored)
         recomputeCoverage()
+        // GPS observation ends here — everything above is generation-independent
+        // (§ PASSAGGIO 9.1 §3: location observation is not route ownership).
 
-        // Live guidance while navigating.
-        val route = _route.value
-        val m = matcher
-        val calc = progressCalc
-        if ((_navState.value == NavState.NAVIGATING || _navState.value == NavState.ARRIVING) &&
-            route != null && m != null && calc != null
-        ) {
-            val match = m.match(fix)
-            val prog = calc.progress(match, fix)
+        if (_navState.value != NavState.NAVIGATING && _navState.value != NavState.ARRIVING) return
+        // § PASSAGGIO 9.1 §1/§3 — ONE snapshot, captured once, is the only
+        // route-derived data the rest of this fix's processing reads: route,
+        // matcher and progress calculator can never be a torn mixture of two
+        // generations the way three separately-read fields could be.
+        val snapshot = activeSnapshot ?: return
+        val match = snapshot.matcher.match(fix)
+        val prog = snapshot.progressCalculator.progress(match, fix)
+
+        // Every mutation this fix can cause is published as one group, gated
+        // on the snapshot's own generation right before it happens — a STOP
+        // or a newer route/reroute accepted while match()/progress() above
+        // were computing (both pure, no side effects) makes this a no-op
+        // instead of resurrecting or corrupting state for a generation this
+        // fix no longer belongs to (§3/§5).
+        routeGate.publishIfCurrent(snapshot.generation) {
             _progress.value = prog
 
             // Arrival.
@@ -340,7 +360,7 @@ class NavigationRepository @Inject constructor(
                 _navState.value = machine.dispatch(NavEvent.Arrived)
                 announce(announcer.arrival())
                 runCatching { NavigationService.stop(context) }
-                return
+                return@publishIfCurrent
             }
             // ARRIVING: close enough to show it, not yet close enough to declare it.
             if (_navState.value == NavState.NAVIGATING && prog.remainingDistanceMeters <= ARRIVING_THRESHOLD_M) {
@@ -349,13 +369,17 @@ class NavigationRepository @Inject constructor(
 
             // Spoken instruction, anticipated by speed and de-duplicated.
             prog.nextManeuver?.let { mv ->
-                val idx = route.maneuvers.indexOf(mv)
+                val idx = snapshot.route.maneuvers.indexOf(mv)
                 announcer.onProgress(idx, mv, prog.distanceToManeuverMeters, (fix.speedMps ?: 0f).toDouble())
                     ?.let { announce(it) }
             }
 
             // Off-route → recalculate offline, gated by a cooldown (spec §19) so a
             // still-poor fix right after a recalculation can't retrigger instantly.
+            // offRoute/rerouteCooldown are shared, non-generation-scoped mutable
+            // helpers (§7) — mutating them here only ever happens once this
+            // generation is confirmed current, so a stale fix can never advance
+            // state the current generation would otherwise inherit.
             if (offRoute.update(match, fix) && rerouteCooldown.canReroute(fix.timestampMs)) {
                 _navState.value = machine.dispatch(NavEvent.OffRouteConfirmed)
                 rerouteCooldown.markRerouted(fix.timestampMs)
@@ -388,8 +412,7 @@ class NavigationRepository @Inject constructor(
                         // § PASSAGGIO 9 §4 — a failed reroute never fabricates
                         // a route nor clears the current one; only the
                         // transient message and diagnostics record it.
-                        setDiagnostic(myGeneration, null, RouteComputationOutcome.FAILED, null)
-                        _message.value = "Ricalcolo non riuscito (${r.error})."
+                        publishRerouteFailure(myGeneration, "Ricalcolo non riuscito (${r.error}).")
                     }
                 }
             }
@@ -397,11 +420,13 @@ class NavigationRepository @Inject constructor(
     }
 
     private fun publishRecalculatedRoute(generation: Long, route: Route, adapter: String) {
+        // § PASSAGGIO 9.1 §2 — same "build the whole snapshot first" rule as
+        // publishRoute(): never an observable new-route/old-matcher moment.
+        val m = MapMatcher(route)
+        val snapshot = ActiveRouteSnapshot(generation, route, m, RouteProgressCalculator(route, m))
         val accepted = routeGate.publishIfCurrent(generation) {
             _route.value = route
-            val m = MapMatcher(route)
-            matcher = m
-            progressCalc = RouteProgressCalculator(route, m)
+            activeSnapshot = snapshot
             offRoute.reset()
             announcer.reset()
             _navState.value = machine.dispatch(NavEvent.RecalculationDone)
@@ -413,6 +438,29 @@ class NavigationRepository @Inject constructor(
         )
         if (!accepted) {
             Log.w(TAG, "stale_reroute_discarded generation=$generation current=${routeGate.current()}")
+        }
+    }
+
+    /**
+     * A genuine reroute failure for [generation], gated exactly like every
+     * other route-derived write (§6 — RACE 1): without this gate, a reroute
+     * that fails AFTER a newer generation has already been accepted would
+     * still overwrite [_message] as though it were the current attempt's
+     * result. Existing policy — preserved, not changed by this correction —
+     * leaves [_navState] untouched on a reroute failure, only the transient
+     * message is set (a still-valid current route is never cleared here).
+     */
+    private fun publishRerouteFailure(generation: Long, message: String) {
+        val accepted = routeGate.publishIfCurrent(generation) {
+            _message.value = message
+        }
+        setDiagnostic(
+            generation, null,
+            if (accepted) RouteComputationOutcome.FAILED else RouteComputationOutcome.STALE_DISCARDED,
+            null,
+        )
+        if (!accepted) {
+            Log.w(TAG, "stale_reroute_failure_discarded generation=$generation current=${routeGate.current()}")
         }
     }
 
