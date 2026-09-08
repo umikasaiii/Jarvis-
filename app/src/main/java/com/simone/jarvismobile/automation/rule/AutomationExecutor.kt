@@ -2,6 +2,7 @@ package com.simone.jarvismobile.automation.rule
 
 import android.util.Log
 import com.simone.jarvismobile.core.automation.rule.ActionRegistry
+import com.simone.jarvismobile.core.automation.rule.ActionRisk
 import com.simone.jarvismobile.core.automation.rule.AutomationRule
 import com.simone.jarvismobile.core.automation.rule.ConflictResolver
 import com.simone.jarvismobile.core.automation.rule.EvaluationContext
@@ -10,6 +11,7 @@ import com.simone.jarvismobile.core.automation.rule.ExecutionHistory
 import com.simone.jarvismobile.core.automation.rule.ExecutionPolicy
 import com.simone.jarvismobile.core.automation.rule.GateResult
 import com.simone.jarvismobile.core.automation.rule.RuleGate
+import com.simone.jarvismobile.core.automation.rule.RuleSchedule
 import com.simone.jarvismobile.core.automation.rule.TriggerEvent
 import com.simone.jarvismobile.core.automation.rule.TriggerMatching
 import kotlinx.coroutines.CancellationException
@@ -141,16 +143,17 @@ class AutomationExecutor @Inject constructor(
 
         // Durable half of duplicate suppression (§ PASSAGGIO 8, JARVIS-13/23):
         // `recentKeys` above is in-memory only, so it is empty again the moment
-        // the app process is killed and restarted — exactly when Android's
-        // at-least-once WorkManager/AlarmManager infrastructure is most likely
-        // to redeliver the same occurrence. A dry run is a diagnostic test, not
-        // a real firing, so it neither checks nor counts against this history.
-        if (!dryRun && wasAlreadyCommitted(key, event.at)) {
-            return record(
-                rule, event,
-                GateResult(ExecutionDecision.SKIP_DUPLICATE, "occorrenza già eseguita in precedenza"),
-                emptyList(), dryRun,
-            )
+        // the app process is killed and restarted — exactly when a redelivery
+        // of the same occurrence is most likely. A dry run is a diagnostic
+        // test, not a real firing, so it neither checks nor counts against
+        // this history.
+        if (!dryRun) {
+            val reason = blockingReasonFor(durableLookup(log, key, event), rule)
+            if (reason != null) {
+                return record(
+                    rule, event, GateResult(ExecutionDecision.SKIP_DUPLICATE, reason), emptyList(), dryRun,
+                )
+            }
         }
 
         return when (rule.executionPolicy) {
@@ -205,8 +208,10 @@ class AutomationExecutor @Inject constructor(
                 val handler = handlers.handler(spec.type)
                 if (handler == null) {
                     // Declared in the registry but nothing implements it: say so
-                    // rather than counting it as done.
-                    outcomes += spec.type to ActionOutcome.Failed("nessun gestore per ${spec.type}")
+                    // rather than counting it as done. No handler ever ran, so
+                    // this is provably no-effect (§ PASSAGGIO 8.1 §3).
+                    outcomes += spec.type to
+                        ActionOutcome.Failed("nessun gestore per ${spec.type}", provenNoEffect = true)
                     continue
                 }
                 val outcome = try {
@@ -247,6 +252,7 @@ class AutomationExecutor @Inject constructor(
             rule, event,
             GateResult(ExecutionDecision.FIRE, if (dryRun) "prova (dry-run)" else "trigger ${event.type}"),
             outcomes, dryRun,
+            commitState = classifyOccurrenceCommitState(outcomes),
         )
     }
 
@@ -281,6 +287,10 @@ class AutomationExecutor @Inject constructor(
         result: GateResult,
         outcomes: List<Pair<String, ActionOutcome>>,
         dryRun: Boolean,
+        // Only ever real for a FIRE row: see `runActions()`, the sole caller
+        // that has actions to classify. Every skip decision leaves this null —
+        // there is nothing to classify, and a skip never blocks a later retry.
+        commitState: OccurrenceCommitState? = null,
     ): ExecutionReport {
         val report = ExecutionReport(
             executionId = UUID.randomUUID().toString(),
@@ -292,8 +302,9 @@ class AutomationExecutor @Inject constructor(
             dryRun = dryRun,
             // Computed here, not threaded in by every caller, so no call site
             // can accidentally log a FIRE without the identity the durable
-            // dedup check in `execute()`/`wasAlreadyCommitted()` depends on.
+            // dedup check in `execute()`/`durableLookup()` depends on.
             idempotencyKey = event.idempotencyKey(rule.id, rule.updatedAt?.toString()),
+            commitState = commitState,
         )
         try {
             log.write(report)
@@ -316,24 +327,6 @@ class AutomationExecutor @Inject constructor(
     private fun describe(condition: com.simone.jarvismobile.core.automation.rule.Condition): String =
         condition::class.simpleName ?: "condizione"
 
-    /**
-     * The durable half of duplicate suppression (§ PASSAGGIO 8, JARVIS-13/23):
-     * asks the execution log — which survives a process restart, unlike
-     * [recentKeys] above — whether [key] already committed a real FIRE within
-     * the same dedup window [RuleGate] itself uses. A storage read failure
-     * fails OPEN (never blocks a legitimate firing on a diagnostics hiccup);
-     * it is exactly as safe as a false negative here always was, since the
-     * in-memory/gate-level check already covers the common same-process case.
-     */
-    private suspend fun wasAlreadyCommitted(key: String, at: LocalDateTime): Boolean = try {
-        log.wasCommittedRecently(key, since = at.minusSeconds(RuleGate.DEFAULT_DEDUP_SECONDS))
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Exception) {
-        Log.w(TAG, "durable_dedup_check_failed ${e.javaClass.simpleName}")
-        false
-    }
-
     private companion object {
         const val TAG = "JarvisAutomation"
 
@@ -341,6 +334,62 @@ class AutomationExecutor @Inject constructor(
         const val ACTION_TIMEOUT_MS = 15_000L
         const val MAX_REMEMBERED_KEYS = 200
     }
+}
+
+/**
+ * The durable half of duplicate suppression (§ PASSAGGIO 8, JARVIS-13/23;
+ * tri-state and corrected trigger-family window in PASSAGGIO 8.1 §1/§5): asks
+ * [log] — which survives a process restart, unlike [AutomationExecutor]'s
+ * in-memory `recentKeys` — whether [key] already has a blocking commit on
+ * record. A storage read failure resolves to [DurableLookupState.Unknown],
+ * never [DurableLookupState.NotCommitted] — see [blockingReasonFor] for why
+ * an unknown state still blocks a mutating rule. `internal`/top-level (not a
+ * private method on [AutomationExecutor]) so it can be exercised directly in
+ * a plain JVM test against a fake [AutomationExecutionDao], without needing
+ * [AutomationExecutor]'s other, Android-`Context`-dependent constructor args.
+ */
+internal suspend fun durableLookup(
+    log: ExecutionLogRepository,
+    key: String,
+    event: TriggerEvent,
+): DurableLookupState = try {
+    log.durableLookup(
+        idempotencyKey = key,
+        since = event.at.minusSeconds(RuleGate.DEFAULT_DEDUP_SECONDS),
+        // § PASSAGGIO 8.1 §5 — a scheduled-clock occurrence's dedup key IS the
+        // exact scheduled instant (see RuleScheduler.enqueueAt), so it can
+        // never legitimately mean a different, later occurrence; every other
+        // trigger family's key is a stable identity (a place, a mode) that
+        // CAN legitimately recur far later and still needs the time window.
+        occurrenceIsSelfUnique = RuleSchedule.isScheduled(event.type),
+    )
+} catch (e: CancellationException) {
+    throw e
+} catch (e: Exception) {
+    Log.w("JarvisAutomation", "durable_dedup_check_failed ${e.javaClass.simpleName}")
+    DurableLookupState.Unknown
+}
+
+/**
+ * The decision made from [lookup] (§ PASSAGGIO 8.1 §1/§6): a known blocking
+ * commit always blocks; an unreadable dedup state also blocks a mutating
+ * rule (never execute merely because storage is unavailable) — unless every
+ * action of [rule] is registered [ActionRisk.READ_ONLY], in which case
+ * re-attempting can never duplicate a mutation that never happens. No action
+ * in today's [ActionRegistry] carries that risk level, so this exemption is
+ * currently unreachable in practice; it exists so a future read-only action
+ * is safe by construction, not by omission — an explicit, already-existing
+ * classification, not one invented here.
+ */
+internal fun blockingReasonFor(lookup: DurableLookupState, rule: AutomationRule): String? = when (lookup) {
+    DurableLookupState.NotCommitted -> null
+    DurableLookupState.Committed -> "occorrenza già eseguita in precedenza"
+    DurableLookupState.Unknown ->
+        if (ActionRegistry.riskOf(rule.actions) == ActionRisk.READ_ONLY) {
+            null
+        } else {
+            "stato di deduplica non verificabile: rimando per sicurezza"
+        }
 }
 
 /** What one rule did (or did not do) for one event. */
@@ -354,6 +403,8 @@ data class ExecutionReport(
     val dryRun: Boolean,
     /** [TriggerEvent.idempotencyKey] for this rule/event, persisted alongside. */
     val idempotencyKey: String? = null,
+    /** [OccurrenceCommitState] for a FIRE row; null for every other decision. */
+    val commitState: OccurrenceCommitState? = null,
 ) {
     val succeeded: Boolean
         get() = decision.fired && actions.isNotEmpty() &&

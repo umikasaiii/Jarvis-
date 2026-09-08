@@ -126,6 +126,19 @@ object RuleMigrations {
         }
     }
 
+    /**
+     * Adds the occurrence commit-state column (§ JARVIS Implementation Master
+     * Plan PASSAGGIO 8.1 §2) — non-destructive, like every migration in this
+     * object: existing FIRE rows get `NULL`, which every durable-dedup query
+     * added alongside this migration already treats as blocking (the
+     * conservative default), never as a green light to retry.
+     */
+    val MIGRATION_10_11 = object : Migration(10, 11) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `automation_executions` ADD COLUMN `commitState` TEXT")
+        }
+    }
+
     /** Every migration that must be registered on the database builder. */
-    val ALL = arrayOf(MIGRATION_3_4, MIGRATION_9_10)
+    val ALL = arrayOf(MIGRATION_3_4, MIGRATION_9_10, MIGRATION_10_11)
 }

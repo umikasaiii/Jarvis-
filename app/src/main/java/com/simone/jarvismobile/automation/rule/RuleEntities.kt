@@ -105,6 +105,16 @@ data class AutomationExecutionEntity(
      * restarted. Null only for rows written before this column existed.
      */
     val idempotencyKey: String? = null,
+    /**
+     * [OccurrenceCommitState] name, set only on a `decision = FIRE` row (§
+     * PASSAGGIO 8.1 §2) — a FIRE alone only proves the gate allowed an
+     * attempt, never that its side effects actually landed. Null for every
+     * non-FIRE row (nothing to classify) and for rows written before this
+     * column existed, which the durable dedup query treats as blocking —
+     * the same conservative default as an [OccurrenceCommitState.INDETERMINATE]
+     * row, never as [OccurrenceCommitState.RETRYABLE_NO_EFFECT].
+     */
+    val commitState: String? = null,
 )
 
 /** Where the vehicle was left (§16). A single current value, not a history. */
@@ -195,18 +205,34 @@ interface AutomationExecutionDao {
     suspend fun count(): Int
 
     /**
-     * Whether [key] already has a real (non-dry-run) FIRE committed at or after
-     * [sinceIso] — the durable half of duplicate-occurrence suppression (§
-     * PASSAGGIO 8): this survives a process restart, unlike
-     * [AutomationExecutor]'s in-memory `recentKeys` map, so a re-delivered
-     * WorkManager/AlarmManager occurrence is still caught after the app was
-     * killed and restarted in between.
+     * A blocking (COMMITTED or INDETERMINATE — never RETRYABLE_NO_EFFECT) real
+     * FIRE for [key] at or after [sinceIso] (§ PASSAGGIO 8.1 §4). A row with no
+     * `commitState` at all (written before that column existed) is treated as
+     * blocking too — the same conservative default the durable lookup itself
+     * uses for an unreadable state, never assumed safe.
      */
     @Query(
         "SELECT COUNT(*) FROM automation_executions WHERE idempotencyKey = :key " +
-            "AND decision = 'FIRE' AND dryRun = 0 AND startedAt >= :sinceIso",
+            "AND decision = 'FIRE' AND dryRun = 0 " +
+            "AND (commitState IS NULL OR commitState != 'RETRYABLE_NO_EFFECT') " +
+            "AND startedAt >= :sinceIso",
     )
-    suspend fun countCommittedSince(key: String, sinceIso: String): Int
+    suspend fun countBlockingSince(key: String, sinceIso: String): Int
+
+    /**
+     * Same as [countBlockingSince] but with no time bound at all — safe ONLY
+     * for a trigger family whose dedup key already encodes the exact
+     * occurrence instant (§ PASSAGGIO 8.1 §5): for that family the same key
+     * can never legitimately mean a different, later occurrence, so there is
+     * no window to bound the search by, and bounding it anyway would only
+     * risk missing a redelivery that arrives after a slow restart.
+     */
+    @Query(
+        "SELECT COUNT(*) FROM automation_executions WHERE idempotencyKey = :key " +
+            "AND decision = 'FIRE' AND dryRun = 0 " +
+            "AND (commitState IS NULL OR commitState != 'RETRYABLE_NO_EFFECT')",
+    )
+    suspend fun countBlockingEver(key: String): Int
 }
 
 @Dao

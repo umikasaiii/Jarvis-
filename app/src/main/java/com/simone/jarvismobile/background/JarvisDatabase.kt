@@ -36,7 +36,7 @@ import com.simone.jarvismobile.navigation.PlaceFtsEntity
         ArchiveItemEntity::class, ArchiveListEntity::class, ArchiveListItemEntity::class, ArchiveLinkEntity::class,
         ConversationalMemoryEntity::class,
     ],
-    version = 10,
+    version = 11,
     exportSchema = false,
 )
 abstract class JarvisDatabase : RoomDatabase() {

@@ -28,7 +28,18 @@ import javax.inject.Singleton
 sealed interface ActionOutcome {
     data object Done : ActionOutcome
     data class Skipped(val why: String) : ActionOutcome
-    data class Failed(val why: String) : ActionOutcome
+
+    /**
+     * [provenNoEffect] is true ONLY when this specific failure is known, by
+     * construction, to have happened before any side-effecting call was even
+     * attempted — e.g. a missing/unrecognised parameter checked before any
+     * handler ran. Defaults to false: an exception thrown mid-call, a
+     * timeout, or any failure whose origin is not provably pre-effect must
+     * never be assumed safe to retry (§ JARVIS Implementation Master Plan
+     * PASSAGGIO 8.1 §3 — never inferred from the [why] text, only set
+     * explicitly at a call site that can prove it).
+     */
+    data class Failed(val why: String, val provenNoEffect: Boolean = false) : ActionOutcome
 
     val label: String
         get() = when (this) {
@@ -76,7 +87,8 @@ class NotifyActionHandler @Inject constructor(
     override val type = ActionRegistry.SHOW_NOTIFICATION
 
     override suspend fun handle(spec: ActionSpec, dryRun: Boolean): ActionOutcome {
-        val message = spec.param("message") ?: return ActionOutcome.Failed("testo mancante")
+        val message = spec.param("message")
+            ?: return ActionOutcome.Failed("testo mancante", provenNoEffect = true)
         if (dryRun) return ActionOutcome.Skipped("dry-run: mostrerei «${message.take(40)}»")
         // The gate already checked POST_NOTIFICATIONS, but it can be revoked in
         // the moment between that check and this call — and a handler that
@@ -93,7 +105,9 @@ class NotifyActionHandler @Inject constructor(
                 Manifest.permission.POST_NOTIFICATIONS,
             ) != PackageManager.PERMISSION_GRANTED
         ) {
-            return ActionOutcome.Failed("permesso notifiche mancante")
+            // Still before the real notify() call below: nothing has been
+            // attempted yet, so this is provably no-effect too.
+            return ActionOutcome.Failed("permesso notifiche mancante", provenNoEffect = true)
         }
         val notification = JarvisNotifications.styled(
             context = context,
@@ -132,7 +146,8 @@ class SpeakActionHandler @Inject constructor(
     override val type = ActionRegistry.SPEAK
 
     override suspend fun handle(spec: ActionSpec, dryRun: Boolean): ActionOutcome {
-        val message = spec.param("message") ?: return ActionOutcome.Failed("testo mancante")
+        val message = spec.param("message")
+            ?: return ActionOutcome.Failed("testo mancante", provenNoEffect = true)
         if (dryRun) return ActionOutcome.Skipped("dry-run: direi «${message.take(40)}»")
         // Not runCatching: that would swallow a CancellationException and let the
         // engine carry on running actions after a stop.
@@ -159,7 +174,8 @@ class CreateReminderActionHandler @Inject constructor(
     override val type = ActionRegistry.CREATE_REMINDER
 
     override suspend fun handle(spec: ActionSpec, dryRun: Boolean): ActionOutcome {
-        val text = spec.param("text") ?: return ActionOutcome.Failed("testo mancante")
+        val text = spec.param("text")
+            ?: return ActionOutcome.Failed("testo mancante", provenNoEffect = true)
         val date = spec.param("date")?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
             ?: LocalDate.now()
         val time = spec.param("time")?.let { runCatching { LocalTime.parse(it) }.getOrNull() }
@@ -191,12 +207,16 @@ class RunToolActionHandler @Inject constructor(
     override val type = ActionRegistry.RUN_TOOL
 
     override suspend fun handle(spec: ActionSpec, dryRun: Boolean): ActionOutcome {
-        val command = spec.param("command") ?: return ActionOutcome.Failed("comando mancante")
+        // The next three failures all return before `tools.run()` — the one
+        // call in this handler that can have a real side effect — so each is
+        // provably no-effect (§ PASSAGGIO 8.1 §3).
+        val command = spec.param("command")
+            ?: return ActionOutcome.Failed("comando mancante", provenNoEffect = true)
         val match = CommandMatcher.match(command) as? Match.Run
-            ?: return ActionOutcome.Failed("comando non riconosciuto")
+            ?: return ActionOutcome.Failed("comando non riconosciuto", provenNoEffect = true)
         if (match.call.name !in DeferredCommand.ELIGIBLE_TOOLS) {
             Log.w(TAG, "automation_tool_not_allowed ${match.call.name}")
-            return ActionOutcome.Failed("comando non permesso in automatico")
+            return ActionOutcome.Failed("comando non permesso in automatico", provenNoEffect = true)
         }
         if (dryRun) return ActionOutcome.Skipped("dry-run: eseguirei ${match.call.name}")
         val outcome = try {
