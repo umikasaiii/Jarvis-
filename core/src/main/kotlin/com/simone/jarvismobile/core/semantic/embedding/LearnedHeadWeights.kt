@@ -53,6 +53,17 @@ data class ExportedHead(
     val mlp: MlpWeights? = null,
 )
 
+/**
+ * § JARVIS Implementation Master Plan — PASSAGGIO 13 §K. [encoderContract]
+ * and [artifactQualification] are the identity this pass adds — a trained
+ * head produced under encoder contract X must never load against a
+ * runtime using contract Y (§K's own words), and a
+ * [ArtifactQualification.SYNTHETIC_SELFTEST]/[ArtifactQualification.TRAINING_PENDING]
+ * head must never be accepted as production (§N). Both fields are nullable/
+ * defaulted for backward compatibility with a `head_weights.json` written
+ * before this pass (schema version unchanged — see [isCompatibleWithRuntime]'s
+ * own doc on what an absent [encoderContract] means).
+ */
 @Serializable
 data class LearnedHeadExport(
     val schemaVersion: Int,
@@ -61,7 +72,29 @@ data class LearnedHeadExport(
     val domain: ExportedHead,
     val operation: ExportedHead? = null,
     val referenceMode: ExportedHead? = null,
+    /** The [SemanticEncoderContract] this head's training embeddings were produced under — null for an export written before PASSAGGIO 13 (never production-eligible, see [isCompatibleWithRuntime]). */
+    val encoderContract: SemanticEncoderContract? = null,
+    /** Defaults to [ArtifactQualification.TRAINING_PENDING] — an export must explicitly declare [ArtifactQualification.PRODUCTION_ELIGIBLE] to ever be accepted by production runtime (§N). */
+    val artifactQualification: ArtifactQualification = ArtifactQualification.TRAINING_PENDING,
 ) {
+    /**
+     * § PASSAGGIO 13 §K/§N/§Y (test items 6-9). The full production
+     * acceptance gate — replaces the old dimension-only check. Rejects
+     * whenever:
+     * - [artifactQualification] is not [ArtifactQualification.PRODUCTION_ELIGIBLE] (§N);
+     * - [encoderContract] is absent (pre-PASSAGGIO-13 export — no identity to verify, §K);
+     * - [encoderContract] is not [SemanticEncoderContract.isCompatibleWith] [runtimeContract];
+     * - [embeddingDim] does not match [runtimeContract]'s known dimension, when known.
+     */
+    fun isCompatibleWithRuntime(runtimeContract: SemanticEncoderContract): Boolean {
+        if (!artifactQualification.productionEligible) return false
+        val contract = encoderContract ?: return false
+        if (!contract.isCompatibleWith(runtimeContract)) return false
+        val runtimeDim = runtimeContract.embeddingDimension
+        if (runtimeDim != null && runtimeDim != embeddingDim) return false
+        return true
+    }
+
     companion object {
         const val SUPPORTED_SCHEMA_VERSION = 1
         private val json = Json { ignoreUnknownKeys = true }

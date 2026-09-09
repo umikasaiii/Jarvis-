@@ -1,6 +1,7 @@
 package com.simone.jarvismobile.llm
 
 import android.util.Log
+import com.simone.jarvismobile.core.semantic.embedding.EmbeddingMath
 import com.simone.jarvismobile.core.semantic.embedding.EmbeddingVector
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -8,18 +9,21 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
+import org.tensorflow.lite.DataType
 import org.tensorflow.lite.Interpreter
 import java.io.File
+import java.security.MessageDigest
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * § FASE 2A.11 §1 — the real, on-device EmbeddingGemma 300M engine: LiteRT
- * (`org.tensorflow.lite.Interpreter` — the base TFLite runtime, see
- * `libs.versions.toml`'s own note on why `litertlm-android` cannot be reused
- * here) loads `embeddinggemma-300M_seq256_mixed-precision.tflite` and runs
- * one forward pass per [embed] call — never [LlmEngine.generate]'s
- * token-by-token decode loop, which this model doesn't have at all.
+ * § FASE 2A.11 §1, extended by PASSAGGIO 13 §D/§E/§K/§O — the real, on-device
+ * EmbeddingGemma 300M engine: LiteRT (`org.tensorflow.lite.Interpreter` — the
+ * base TFLite runtime, see `libs.versions.toml`'s own note on why
+ * `litertlm-android` cannot be reused here) loads
+ * `embeddinggemma-300M_seq256_mixed-precision.tflite` and runs one forward
+ * pass per [embed] call — never [LlmEngine.generate]'s token-by-token decode
+ * loop, which this model doesn't have at all.
  *
  * **Onestà — input/output tensor reali non verificati in questo ambiente**:
  * né Hugging Face (`litert-community/embeddinggemma-300m`) né la
@@ -30,14 +34,17 @@ import javax.inject.Singleton
  * (`input_ids`/`attention_mask`, entrambi `int32[1,256]` per convenzione
  * pubblica nota) e di output (un embedding a 768 dimensioni, con Matryoshka
  * troncabile a 512/256/128 per lo stesso modello, sempre per conoscenza
- * pubblica). Il codice sotto usa [Interpreter.runForMultipleInputsOutputs]
- * con NOMI di tensore risolti per indice — se l'ordine reale dei tensori del
- * grafo differisse, la prima vera verifica sarà il caricamento su un
- * dispositivo reale (`load()` fallirebbe in modo esplicito e diagnosticabile
- * via [lastLoadDetail], mai un crash silenzioso o un embedding inventato).
- * L'output è gestito difensivamente in base al rango reale del tensore
- * (pooling medio se il grafo restituisce un embedding per token, uso diretto
- * se restituisce già un vettore per frase) — vedi [pool].
+ * pubblica). [validateTensorContract] checks the REAL loaded graph's tensor
+ * count/rank/dtype against that expectation at load time and REJECTS the
+ * load explicitly (never continues to inference) on any mismatch — the
+ * first real verification is still a real device load, but a bad contract
+ * now fails loudly via [lastLoadDetail] instead of crashing or silently
+ * producing garbage embeddings.
+ *
+ * Also today gated closed regardless of tensor shape: [SemanticTokenizer]'s
+ * production implementation is [NotReadyTokenizer] (PASSAGGIO 13 §D — no
+ * real SentencePiece binding has been verified here), so [load] always fails
+ * at the tokenizer step before ever reaching inference.
  */
 @Singleton
 class EmbeddingGemmaEngine @Inject constructor() : SemanticEmbeddingEngine {
@@ -52,11 +59,17 @@ class EmbeddingGemmaEngine @Inject constructor() : SemanticEmbeddingEngine {
     override val lastLoadDetail: StateFlow<String> = _lastLoadDetail
 
     private var interpreter: Interpreter? = null
-    private val tokenizer: SemanticTokenizer = FallbackWhitespaceTokenizer()
+    private val tokenizer: SemanticTokenizer = NotReadyTokenizer()
     private val callMutex = Mutex()
 
     @Volatile private var justLoaded = false
     override var embeddingDimension: Int? = null
+        private set
+
+    override var modelSha256: String? = null
+        private set
+
+    override var tokenizerSha256: String? = null
         private set
 
     override suspend fun load(modelPath: String, tokenizerPath: String, modelName: String): Boolean =
@@ -69,15 +82,39 @@ class EmbeddingGemmaEngine @Inject constructor() : SemanticEmbeddingEngine {
                     _loadState.value = EmbeddingLoadState.ERROR
                     return@withContext false
                 }
+                val tokenizerFile = File(tokenizerPath)
+                if (!tokenizerFile.exists() || tokenizerFile.length() == 0L) {
+                    _lastLoadDetail.value = "tokenizer_file_missing_or_empty"
+                    _loadState.value = EmbeddingLoadState.ERROR
+                    return@withContext false
+                }
+
+                val newInterpreter = Interpreter(modelFile, Interpreter.Options().apply { setNumThreads(4) })
+                val contractIssue = validateTensorContract(newInterpreter)
+                if (contractIssue != null) {
+                    newInterpreter.close()
+                    Log.w(TAG, "embedding_tensor_contract_rejected $contractIssue")
+                    _lastLoadDetail.value = "tensor_contract_rejected:$contractIssue"
+                    _loadState.value = EmbeddingLoadState.ERROR
+                    return@withContext false
+                }
+
+                // § PASSAGGIO 13 §D — never a production tokenizer today, see
+                // [NotReadyTokenizer]'s doc comment. Checked AFTER the tensor
+                // contract so a bad graph is reported as such even before a
+                // real tokenizer exists to reach inference with.
                 if (!tokenizer.load(tokenizerPath)) {
+                    newInterpreter.close()
                     _lastLoadDetail.value = "tokenizer_load_failed"
                     _loadState.value = EmbeddingLoadState.ERROR
                     return@withContext false
                 }
+
                 interpreter?.close()
-                val newInterpreter = Interpreter(modelFile, Interpreter.Options().apply { setNumThreads(4) })
                 val outputShape = newInterpreter.getOutputTensor(0).shape()
                 embeddingDimension = outputShape.lastOrNull()
+                modelSha256 = sha256Of(modelFile)
+                tokenizerSha256 = sha256Of(tokenizerFile)
                 interpreter = newInterpreter
                 justLoaded = true
                 _loadedModelName.value = modelName
@@ -92,10 +129,51 @@ class EmbeddingGemmaEngine @Inject constructor() : SemanticEmbeddingEngine {
             }
         }
 
+    /**
+     * § PASSAGGIO 13 §H — rejects a loaded graph whose real tensor shapes/
+     * dtypes/rank don't match what this engine's [encode]/[pool] code
+     * assumes, BEFORE any inference is ever attempted against it. Returns a
+     * short machine-readable reason string, or `null` if the contract holds.
+     */
+    private fun validateTensorContract(interpreter: Interpreter): String? {
+        val inputCount = interpreter.inputTensorCount
+        if (inputCount < 2) return "input_count=$inputCount expected>=2"
+        for (i in 0 until 2) {
+            val t = interpreter.getInputTensor(i)
+            val shape = t.shape()
+            if (shape.size != 2) return "input[$i]_rank=${shape.size} expected=2"
+            if (t.dataType() != DataType.INT32) return "input[$i]_dtype=${t.dataType()} expected=INT32"
+        }
+        val outputCount = interpreter.outputTensorCount
+        if (outputCount < 1) return "output_count=$outputCount expected>=1"
+        val out = interpreter.getOutputTensor(0)
+        val outShape = out.shape()
+        if (outShape.size != 2 && outShape.size != 3) return "output_rank=${outShape.size} expected=2or3"
+        if (out.dataType() != DataType.FLOAT32) return "output_dtype=${out.dataType()} expected=FLOAT32"
+        val hidden = outShape.lastOrNull() ?: return "output_shape_empty"
+        if (hidden <= 0) return "output_hidden_dim=$hidden expected>0"
+        return null
+    }
+
+    private fun sha256Of(file: File): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { stream ->
+            val buffer = ByteArray(8192)
+            while (true) {
+                val read = stream.read(buffer)
+                if (read < 0) break
+                digest.update(buffer, 0, read)
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
     override fun unload() {
         interpreter?.close()
         interpreter = null
         embeddingDimension = null
+        modelSha256 = null
+        tokenizerSha256 = null
         _loadedModelName.value = null
         _loadState.value = EmbeddingLoadState.UNLOADED
     }
@@ -126,12 +204,17 @@ class EmbeddingGemmaEngine @Inject constructor() : SemanticEmbeddingEngine {
                 val inferenceMs = System.currentTimeMillis() - inferenceStart
 
                 val pooled = pool(rawOutput, outputShape, attentionMask)
+                if (!isFiniteAndNonZero(pooled)) {
+                    Log.w(TAG, "embed_rejected_invalid_output")
+                    return@withContext null
+                }
+                val normalized = EmbeddingMath.l2Normalize(pooled)
                 lastTiming = EmbeddingEngineTiming(
                     tokenizationMs = tokenMs,
                     embeddingMs = inferenceMs,
                     coldStartMs = if (coldStart) System.currentTimeMillis() - startedAt else null,
                 )
-                pooled
+                normalized
             } catch (e: Exception) {
                 Log.w(TAG, "embed_failed ${e.javaClass.simpleName}")
                 null
@@ -141,6 +224,23 @@ class EmbeddingGemmaEngine @Inject constructor() : SemanticEmbeddingEngine {
 
     override var lastTiming: EmbeddingEngineTiming? = null
         private set
+
+    /**
+     * § PASSAGGIO 13 §H — a fail-closed guard rejecting any embedding that
+     * is entirely zero (a degenerate/invalid model output — see
+     * [EmbeddingMath.l2Normalize]'s own note that a zero vector can only
+     * come from a genuinely broken output) or contains a `NaN`/`Infinity`
+     * component (native inference corruption) — never silently poisons a
+     * classification with an unusable vector.
+     */
+    private fun isFiniteAndNonZero(v: EmbeddingVector): Boolean {
+        var sawNonZero = false
+        for (x in v) {
+            if (x.isNaN() || x.isInfinite()) return false
+            if (x != 0f) sawNonZero = true
+        }
+        return sawNonZero
+    }
 
     /**
      * A rank-2 output ([1, hidden]) is already a pooled sentence embedding —

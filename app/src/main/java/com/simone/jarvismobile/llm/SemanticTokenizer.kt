@@ -1,14 +1,11 @@
 package com.simone.jarvismobile.llm
 
-import android.util.Log
-import java.io.File
-
 /**
  * § FASE 2A.11 §1 — turns text into the token id sequence EmbeddingGemma's
  * `.tflite` graph expects, padded/truncated to a fixed sequence length (256,
  * per §1 — `embeddinggemma-300M_seq256_mixed-precision.tflite`'s own name).
  * A separate interface from [EmbeddingGemmaEngine] so a real SentencePiece
- * binding can replace [FallbackWhitespaceTokenizer] without touching the
+ * binding can replace [NotReadyTokenizer] without touching the
  * model-loading/inference code at all.
  */
 interface SemanticTokenizer {
@@ -22,63 +19,34 @@ interface SemanticTokenizer {
 }
 
 /**
- * **Onestà — limite dichiarato, non uno stub silenzioso**: questa NON è
- * un'implementazione reale di SentencePiece. Un vero tokenizer SentencePiece
- * (unigram/BPE) richiederebbe o un binding Java/Kotlin verificato contro
- * Maven Central (nessun accesso di rete in questo ambiente per confermarne
- * le coordinate reali — stesso limite già documentato per Health Connect/
- * TomTom/Valhalla) o una reimplementazione da zero del protobuf
- * `sentencepiece.model` e del suo algoritmo di segmentazione, un lavoro
- * sostanzioso non verificabile senza un compilatore Kotlin/Android reale a
- * disposizione. Questa classe esiste SOLO per rendere il resto della
- * pipeline (caricamento modello, inferenza, classificazione) completo e
- * collegato end-to-end fin da subito — split su spazi + hashing deterministico
- * in un intervallo di vocabolario plausibile, mai gli id reali del vocabolario
- * di EmbeddingGemma. **La qualità semantica reale dipende da un vero
- * tokenizer SentencePiece, non ancora collegato** — vedi il report finale
- * della FASE 2A.11 per il percorso consigliato (una libreria SentencePiece
- * reale, o l'API MediaPipe Tasks Text Embedder se include la tokenizzazione).
+ * § JARVIS Implementation Master Plan — PASSAGGIO 13 §D. The explicit
+ * fail-closed production tokenizer: no real SentencePiece binding for
+ * EmbeddingGemma has been verified in this environment (no network access
+ * to fetch/inspect `litert-community/embeddinggemma-300m`'s real
+ * `sentencepiece.model`, same limit documented throughout `CLAUDE.md`), so
+ * this class NEVER reports ready and NEVER encodes — [load] always returns
+ * `false`, [encode] always returns `null`. [EmbeddingGemmaEngine.load]
+ * therefore always fails at the tokenizer step, keeping the whole semantic
+ * embedding classifier explicitly `SEMANTIC_MODEL_UNAVAILABLE` (§14) rather
+ * than silently running inference against approximate/hashed token ids —
+ * the fail-closed option §D explicitly allows in place of shipping a guessed
+ * tokenizer. This degrades safely: `EmbeddingSemanticClassifier.classify()`
+ * already returns [com.simone.jarvismobile.core.semantic.embedding.SemanticClassificationResult.unavailable],
+ * which the existing adapter turns into
+ * [com.simone.jarvismobile.core.semantic.SemanticInterpretation.Invalid] —
+ * the same safe LLM-reasoning-loop handoff already established since FASE
+ * 2A.9/2A.10, never a keyword-routing resurrection.
  *
- * **Scoperta in fase di audit, rilevante per chi riprenderà questo lavoro**:
- * `core/memory/WordPieceTokenizer.kt` (già in questo repository, per
- * `OnnxEmbedder`/`EmbeddingRepository` — il retrieval semantico della Memory
- * V2) dimostra che un tokenizer a sottoparole scritto a mano, puro Kotlin, è
- * già stato realizzato con successo in questo stesso progetto — quindi
- * un'implementazione reale non è fuori portata in linea di principio. NON
- * riusabile direttamente qui però: WordPiece (greedy longest-match) e
- * SentencePiece unigram (l'algoritmo con cui EmbeddingGemma è stato
- * addestrato) sono algoritmi di segmentazione diversi con vocabolari/id
- * diversi — usare `WordPieceTokenizer` contro `sentencepiece.model`
- * produrrebbe id di token sbagliati (un vero bug di correttezza, non solo di
- * qualità), quindi non tentato alla cieca.
+ * The former `FallbackWhitespaceTokenizer` placeholder (word-split + bounded
+ * hash — never real SentencePiece ids) has been moved to
+ * `app/src/test/.../llm/FallbackWhitespaceTokenizer.kt` as an explicitly
+ * test-fixture-only class, per §D's instruction that such an approximation
+ * must never remain a production fallback.
  */
-class FallbackWhitespaceTokenizer : SemanticTokenizer {
-    override var isReady: Boolean = false
-        private set
+class NotReadyTokenizer : SemanticTokenizer {
+    override val isReady: Boolean = false
 
-    override fun load(tokenizerPath: String): Boolean {
-        val ok = File(tokenizerPath).let { it.exists() && it.length() > 0 }
-        isReady = ok
-        if (!ok) Log.w(TAG, "tokenizer_file_missing_or_empty")
-        return ok
-    }
+    override fun load(tokenizerPath: String): Boolean = false
 
-    override fun encode(text: String, maxSequenceLength: Int): IntArray? {
-        if (!isReady) return null
-        val words = text.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
-        val ids = IntArray(maxSequenceLength) { PAD_TOKEN_ID }
-        for (i in words.indices) {
-            if (i >= maxSequenceLength) break
-            // Deterministic, bounded hash — never a real SentencePiece id;
-            // see the class doc comment's honesty note.
-            ids[i] = 1 + (words[i].lowercase().hashCode().and(0x7fffffff) % (VOCAB_SIZE_UPPER_BOUND - 1))
-        }
-        return ids
-    }
-
-    private companion object {
-        const val TAG = "SemanticTokenizer"
-        const val PAD_TOKEN_ID = 0
-        const val VOCAB_SIZE_UPPER_BOUND = 256_000 // EmbeddingGemma's public vocab size, per its model card
-    }
+    override fun encode(text: String, maxSequenceLength: Int): IntArray? = null
 }

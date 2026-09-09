@@ -29,6 +29,12 @@ interface SemanticEmbeddingEngine {
     /** The fixed output dimension once loaded (768 for EmbeddingGemma 300M's full output) — null before a successful [load]. */
     val embeddingDimension: Int?
 
+    /** § PASSAGGIO 13 §K/§O — SHA-256 of the loaded `.tflite` model file, hex-encoded. Null before a successful [load]. */
+    val modelSha256: String?
+
+    /** § PASSAGGIO 13 §K/§O — SHA-256 of the loaded tokenizer artifact file, hex-encoded. Null before a successful [load]. */
+    val tokenizerSha256: String?
+
     /** Set by the last [embed] call. */
     val lastTiming: EmbeddingEngineTiming?
 

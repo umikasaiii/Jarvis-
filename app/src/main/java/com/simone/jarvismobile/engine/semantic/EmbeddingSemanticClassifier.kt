@@ -12,7 +12,9 @@ import com.simone.jarvismobile.core.semantic.embedding.PrototypeCorpusCodec
 import com.simone.jarvismobile.core.semantic.embedding.PrototypeSemanticClassifierEngine
 import com.simone.jarvismobile.core.semantic.embedding.SemanticClassificationResult
 import com.simone.jarvismobile.core.semantic.embedding.SemanticClassifier
+import com.simone.jarvismobile.core.semantic.embedding.SemanticEncoderContract
 import com.simone.jarvismobile.core.semantic.embedding.SemanticInterpreterTiming
+import com.simone.jarvismobile.core.semantic.embedding.TokenizerFormat
 import com.simone.jarvismobile.data.SettingsRepository
 import com.simone.jarvismobile.llm.EmbeddingLoadState
 import com.simone.jarvismobile.llm.SemanticEmbeddingEngine
@@ -123,10 +125,35 @@ class EmbeddingSemanticClassifier @Inject constructor(
     }
 
     /**
-     * § FASE 2A.11 ADDENDUM §11 — null whenever no real trained head exists
-     * yet (missing asset, malformed JSON, wrong schema version, or a real
-     * embedding call failing for one of the head's own labels) — never a
-     * partially-built/guessed engine.
+     * § JARVIS Implementation Master Plan — PASSAGGIO 13 §K. The runtime's
+     * own [SemanticEncoderContract], built from what [embeddingEngine]
+     * actually has loaded — never invented. [TokenizerFormat.UNVERIFIED]
+     * always, since the production [com.simone.jarvismobile.llm.SemanticTokenizer]
+     * is [com.simone.jarvismobile.llm.NotReadyTokenizer] (§D) — a head
+     * trained under [SemanticEncoderContract.CURRENT] (which declares
+     * `SENTENCEPIECE_UNIGRAM`) can therefore never be compatible with this
+     * runtime today, by construction, until a real verified tokenizer
+     * replaces it.
+     */
+    internal fun runtimeEncoderContract(): SemanticEncoderContract =
+        SemanticEncoderContract.UNVERIFIED.copy(
+            modelSha256 = embeddingEngine.modelSha256,
+            tokenizerSha256 = embeddingEngine.tokenizerSha256,
+            embeddingDimension = embeddingEngine.embeddingDimension,
+        )
+
+    /**
+     * § FASE 2A.11 ADDENDUM §11, extended by PASSAGGIO 13 §K — null whenever
+     * no real trained head exists yet (missing asset, malformed JSON, wrong
+     * schema version, a real embedding call failing for one of the head's
+     * own labels), OR whenever a real head export is present but its own
+     * [com.simone.jarvismobile.core.semantic.embedding.LearnedHeadExport.encoderContract]
+     * is not [SemanticEncoderContract.isCompatibleWith] the runtime's
+     * (mismatched preprocessing/tokenizer/pooling/normalization policy, a
+     * different embedding dimension, or a non-[com.simone.jarvismobile.core.semantic.embedding.ArtifactQualification.PRODUCTION_ELIGIBLE]
+     * artifact) — never a partially-built/guessed engine, and never a bare
+     * dimension-only check that could accept a head trained under an
+     * incompatible contract that merely happens to share a dimension.
      */
     private suspend fun buildLearnedHeadEngine(thresholds: ClassifierThresholds): LearnedHeadClassifierEngine? {
         val json = runCatching {
@@ -136,8 +163,9 @@ class EmbeddingSemanticClassifier @Inject constructor(
             Log.w(TAG, "learned_head_asset_invalid")
             return null
         }
-        if (export.embeddingDim != embeddingEngine.embeddingDimension) {
-            Log.w(TAG, "learned_head_dimension_mismatch expected=${embeddingEngine.embeddingDimension} actual=${export.embeddingDim}")
+        val runtimeContract = runtimeEncoderContract()
+        if (!export.isCompatibleWithRuntime(runtimeContract)) {
+            Log.w(TAG, "learned_head_contract_incompatible qualification=${export.artifactQualification}")
             return null
         }
         return LearnedHeadClassifierEngine(export, thresholds)

@@ -24,7 +24,10 @@ import com.simone.jarvismobile.core.navigation.GpxReplayRoute
 import com.simone.jarvismobile.core.tts.SupertonicQuality
 import com.simone.jarvismobile.data.SettingsRepository
 import com.simone.jarvismobile.engine.ConversationalJarvisEngine
+import com.simone.jarvismobile.engine.semantic.EmbeddingSemanticClassifier
 import com.simone.jarvismobile.health.HealthConnectManager
+import com.simone.jarvismobile.llm.EmbeddingLoadState
+import com.simone.jarvismobile.llm.SemanticEmbeddingEngine
 import com.simone.jarvismobile.navigation.NavigationRepository
 import com.simone.jarvismobile.navigation.debug.DebugGpsSimulator
 import com.simone.jarvismobile.proactive.ProactiveManager
@@ -69,6 +72,8 @@ class DiagnosticsViewModel @Inject constructor(
     private val backup: BackupRepository,
     private val automationExecutor: AutomationExecutor,
     private val coreConnection: CoreConnectionManager,
+    private val semanticEmbeddingEngine: SemanticEmbeddingEngine,
+    private val semanticClassifier: EmbeddingSemanticClassifier,
 ) : AndroidViewModel(application) {
 
     /**
@@ -200,6 +205,40 @@ class DiagnosticsViewModel @Inject constructor(
      * Classic mode has no equivalent feed yet — see `docs/CONVERSATIONAL_ENGINE.md`.
      */
     val engineDiagnostics: StateFlow<List<EngineTurnDiagnostics>> = conversationalEngine.diagnostics
+
+    /**
+     * § JARVIS Implementation Master Plan — PASSAGGIO 13 §T. Bounded encoder
+     * diagnostics only — never raw text, token ids, attention masks, or
+     * embeddings (§T: "never log raw text/token IDs/masks/embeddings/
+     * personal content"). Extends the existing "Motore conversazionale"
+     * diagnostics section (§Y) rather than a second diagnostics subsystem.
+     * Sourced from real state ([SemanticEmbeddingEngine]'s own load
+     * state/hashes/dimension and [EmbeddingSemanticClassifier]'s own active
+     * backend), recomputed whenever the engine's load state, loaded model
+     * name, or last load detail changes.
+     */
+    val semanticEncoderStatus: StateFlow<String> = combine(
+        semanticEmbeddingEngine.loadState,
+        semanticEmbeddingEngine.loadedModelName,
+        semanticEmbeddingEngine.lastLoadDetail,
+    ) { state, modelName, lastDetail ->
+        val contract = semanticClassifier.runtimeEncoderContract()
+        buildString {
+            append("pronto=").append(state == EmbeddingLoadState.LOADED)
+            append(" stato=").append(state)
+            append(" modello=").append(modelName ?: "-")
+            append(" modelSha256=").append(contract.modelSha256?.take(12) ?: "-")
+            append(" tokenizerSha256=").append(contract.tokenizerSha256?.take(12) ?: "-")
+            append(" contractVersion=").append(contract.contractVersion)
+            append(" tokenizerFormat=").append(contract.tokenizerFormat)
+            append(" dim=").append(contract.embeddingDimension ?: "-")
+            append(" maxSeq=").append(contract.maxSequenceLength)
+            append(" pooling=").append(contract.poolingMode)
+            append(" norm=").append(contract.embeddingNormalization)
+            append(" backend=").append(semanticClassifier.activeBackendName() ?: "-")
+            append(" ultimoErrore=").append(lastDetail.ifBlank { "-" })
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
 
     /**
      * § JARVIS Implementation Master Plan PASSAGGIO 11 §G — one READ-ONLY

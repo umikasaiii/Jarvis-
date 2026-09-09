@@ -1,0 +1,65 @@
+{
+  "contractVersion": 1,
+  "vectors": [
+    {
+      "name": "ordinary_italian",
+      "input": "Che tempo fa oggi a Roma?",
+      "expectedCanonical": "Che tempo fa oggi a Roma?"
+    },
+    {
+      "name": "punctuation",
+      "input": "Ciao, come va?! Bene...",
+      "expectedCanonical": "Ciao, come va?! Bene..."
+    },
+    {
+      "name": "apostrophe",
+      "input": "L'appuntamento di oggi",
+      "expectedCanonical": "L'appuntamento di oggi"
+    },
+    {
+      "name": "accented_nfc_compose",
+      "input": "café e perché",
+      "expectedCanonical": "café e perché"
+    },
+    {
+      "name": "uppercase_lowercase",
+      "input": "CIAO come STAI",
+      "expectedCanonical": "CIAO come STAI"
+    },
+    {
+      "name": "repeated_whitespace",
+      "input": "Che    tempo   fa",
+      "expectedCanonical": "Che tempo fa"
+    },
+    {
+      "name": "newline",
+      "input": "Riga uno\nRiga due",
+      "expectedCanonical": "Riga uno Riga due"
+    },
+    {
+      "name": "short_followup",
+      "input": "E domani?",
+      "expectedCanonical": "E domani?"
+    },
+    {
+      "name": "mixed_it_en_technical",
+      "input": "Il deep learning è potente",
+      "expectedCanonical": "Il deep learning è potente"
+    },
+    {
+      "name": "emoji_nonascii",
+      "input": "Bello! 🎉😀",
+      "expectedCanonical": "Bello! 🎉😀"
+    },
+    {
+      "name": "leading_trailing_whitespace",
+      "input": "   Ciao mondo   ",
+      "expectedCanonical": "Ciao mondo"
+    },
+    {
+      "name": "tabs_and_multiple_newlines",
+      "input": "Uno\t\tDue\n\n\nTre",
+      "expectedCanonical": "Uno Due Tre"
+    }
+  ]
+}

@@ -20,28 +20,45 @@ import json
 import os
 import numpy as np
 
+from preprocessing import canonicalize
+
 FAKE_EMBEDDING_DIM = 64
+
+# § JARVIS Implementation Master Plan — PASSAGGIO 13 §O. Bumped whenever
+# ANYTHING about the preprocessing/encoder contract this cache assumes
+# changes — folded into every cache key below, so a stale entry from a
+# different contract (e.g. the old FallbackWhitespaceTokenizer era, which
+# predates this constant entirely) can never be silently reused. No manual
+# "remember to delete the cache" step is required — mirrors
+# `SemanticEncoderContract.CURRENT_CONTRACT_VERSION` (Kotlin side).
+CONTRACT_VERSION = 1
 
 
 class EmbeddingCache:
     """
-    § FASE 2A.11 ADDENDUM §5 — on-disk embedding cache so `dataset ->
-    embedding cache -> train heads` never re-invokes the (real, slow, and in
-    a real environment GPU/CPU-bound) EmbeddingGemma model once per training
-    epoch — embeddings are computed once per (text, model_id) pair and
-    reused by every downstream script (train_heads.py/calibrate.py/
-    report.py/export.py).
+    § FASE 2A.11 ADDENDUM §5, extended by PASSAGGIO 13 §O — on-disk
+    embedding cache so `dataset -> embedding cache -> train heads` never
+    re-invokes the (real, slow, and in a real environment GPU/CPU-bound)
+    EmbeddingGemma model once per training epoch.
 
-    Keyed by sha256(model_id + "\\0" + text) so switching model/tokenizer
-    versions never silently reuses a stale embedding from a different model.
-    Stored as one JSON file mapping key -> list[float] — simple and
-    inspectable; not optimized for millions of rows, which this project's
-    corpus size (thousands, not millions) never approaches.
+    Keyed by sha256(model_id + "\\0" + contract_version + "\\0" + preprocessing
+    contract fields + "\\0" + canonicalized text) — §O's required identity
+    (model, preprocessing/contract version, embedding dimension implied by
+    model_id) all fold into the key, so switching model/tokenizer/contract
+    versions never silently reuses a stale embedding, and a cache built
+    under an OLD contract version is automatically a 100% miss (never a
+    manual "remember to delete the cache" correctness requirement, §O's
+    own words). Text is canonicalized via [preprocessing.canonicalize]
+    BEFORE hashing/embedding — two raw texts that canonicalize to the same
+    string share one cache entry and one embedding, exactly matching the
+    "equivalent input text must produce equivalent model inputs" contract
+    (§C).
     """
 
-    def __init__(self, path: str, model_id: str):
+    def __init__(self, path: str, model_id: str, contract_version: int = CONTRACT_VERSION):
         self.path = path
         self.model_id = model_id
+        self.contract_version = contract_version
         self._data: dict[str, list[float]] = {}
         if os.path.exists(path):
             with open(path, encoding="utf-8") as f:
@@ -49,7 +66,9 @@ class EmbeddingCache:
         self._dirty = False
 
     def _key(self, text: str) -> str:
-        return hashlib.sha256(f"{self.model_id}\0{text}".encode("utf-8")).hexdigest()
+        canonical = canonicalize(text)
+        payload = f"{self.model_id}\0{self.contract_version}\0{canonical}"
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
     def get(self, text: str) -> np.ndarray | None:
         row = self._data.get(self._key(text))
@@ -72,14 +91,18 @@ class EmbeddingCache:
 
 def cached_embedder(embed_fn, cache: EmbeddingCache):
     """Wraps any embed_fn (fake or real) with the on-disk cache above —
-    same call signature (`text -> np.ndarray`), transparent to callers."""
+    same call signature (`text -> np.ndarray`), transparent to callers.
+    Canonicalizes [text] before both the cache lookup and the underlying
+    [embed_fn] call — §C/§G: the SAME preprocessing contract applies
+    whether the result came from cache or a fresh model call."""
 
     def embed(text: str) -> np.ndarray:
-        cached = cache.get(text)
+        canonical = canonicalize(text)
+        cached = cache.get(canonical)
         if cached is not None:
             return cached
-        vec = embed_fn(text)
-        cache.put(text, vec)
+        vec = embed_fn(canonical)
+        cache.put(canonical, vec)
         return vec
 
     return embed

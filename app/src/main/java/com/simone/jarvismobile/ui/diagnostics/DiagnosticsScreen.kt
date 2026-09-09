@@ -443,6 +443,22 @@ fun DiagnosticsScreen(
             }
         }
 
+        // § JARVIS Implementation Master Plan PASSAGGIO 13 §T/§Y — bounded
+        // encoder-contract diagnostics only (ready state, model/tokenizer
+        // hash prefixes, contract version/tokenizer format, embedding
+        // dimension, max sequence length, pooling/normalization mode,
+        // active backend, last load failure category) — never raw text,
+        // token ids, attention masks, or embeddings. Extends this existing
+        // Diagnostics screen rather than a second semantic diagnostics
+        // subsystem.
+        val semanticEncoderStatus by viewModel.semanticEncoderStatus.collectAsStateWithLifecycle()
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Motore semantico (encoder)", style = MaterialTheme.typography.titleMedium)
+                Text(semanticEncoderStatus, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+
         // § segnalazioni ripetute dell'utente di avvisi pioggia sbagliati —
         // dopo tre giri di fix "alla cieca" (fetch/decisione/refresh/staleness)
         // senza un modo per verificarli davvero, questo mostra esattamente

@@ -99,10 +99,55 @@ def export_thresholds(thresholds: dict, out_path: str) -> None:
         json.dump(thresholds, f, indent=2)
 
 
-def export_head_weights(heads, embed_dim: int, out_path: str) -> dict:
+# § JARVIS Implementation Master Plan — PASSAGGIO 13 §K/§N. Plain-dict
+# mirror of `SemanticEncoderContract.kt`'s JSON shape — SAME field names,
+# so `LearnedHeadExport.parseOrNull()` (Kotlin) decodes this `encoderContract`
+# block directly. `mode="fake"` always yields `tokenizerFormat="UNVERIFIED"`
+# (matching `SemanticEncoderContract.UNVERIFIED`, §D) — a synthetic run has
+# no real tokenizer/model to describe, so the exported contract must say so
+# rather than falsely claiming `SENTENCEPIECE_UNIGRAM`.
+def build_encoder_contract(mode: str, embed_dim: int, model_sha256: str | None = None, tokenizer_sha256: str | None = None) -> dict:
+    return {
+        "contractVersion": 1,
+        "tokenizerFormat": "UNVERIFIED" if mode == "fake" else "SENTENCEPIECE_UNIGRAM",
+        "tokenizerSha256": tokenizer_sha256,
+        "modelSha256": model_sha256,
+        "unicodeNormalizationForm": "NFC",
+        "collapseWhitespace": True,
+        "trimText": True,
+        "casingPolicy": "PRESERVE",
+        "taskPrefix": None,
+        "taskPrefixVerified": False,
+        "bosTokenId": None,
+        "eosTokenId": None,
+        "padTokenId": None,
+        "specialTokensVerified": False,
+        "maxSequenceLength": 256,
+        "paddingSide": "RIGHT",
+        "truncationSide": "RIGHT",
+        "poolingMode": "MEAN_MASKED",
+        "embeddingNormalization": "L2",
+        "embeddingDimension": embed_dim,
+    }
+
+
+def export_head_weights(
+    heads, embed_dim: int, out_path: str, mode: str = "fake",
+    model_sha256: str | None = None, tokenizer_sha256: str | None = None,
+) -> dict:
     """Exports ALL trained heads (intent/domain/operation/referenceMode) in
     one file, `head_weights.json` — the format
-    `core/semantic/embedding/LearnedHeadClassifierEngine.kt` loads."""
+    `core/semantic/embedding/LearnedHeadClassifierEngine.kt` loads.
+
+    § PASSAGGIO 13 §N — [mode] must be `"fake"` (self-test, the only mode
+    this environment can run) or `"real"` (a genuine EmbeddingGemma run,
+    never exercised here — see `embed.py`'s honesty note). `"fake"` always
+    exports `artifactQualification="SYNTHETIC_SELFTEST"`, which
+    `LearnedHeadExport.isCompatibleWithRuntime()`/`report.py`'s
+    `learned_head_scorers()` both refuse to treat as production — this
+    project has never shipped a `"real"` export.
+    """
+    qualification = "SYNTHETIC_SELFTEST" if mode == "fake" else "PRODUCTION_ELIGIBLE"
     payload: dict = {
         "schemaVersion": EXPORT_SCHEMA_VERSION,
         "embeddingDim": embed_dim,
@@ -116,6 +161,8 @@ def export_head_weights(heads, embed_dim: int, out_path: str) -> dict:
             export_multiclass_head(heads.reference_mode.model, heads.reference_mode_labels)
             if heads.reference_mode is not None else None
         ),
+        "encoderContract": build_encoder_contract(mode, embed_dim, model_sha256, tokenizer_sha256),
+        "artifactQualification": qualification,
     }
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(payload, f)
@@ -155,5 +202,5 @@ if __name__ == "__main__":
 
     heads = train(corpus, embed_fn)
     from embed import FAKE_EMBEDDING_DIM
-    export_head_weights(heads, FAKE_EMBEDDING_DIM, f"{args.out_dir}/head_weights.json")
-    print(f"wrote {args.out_dir}/head_weights.json")
+    export_head_weights(heads, FAKE_EMBEDDING_DIM, f"{args.out_dir}/head_weights.json", mode="fake")
+    print(f"wrote {args.out_dir}/head_weights.json (artifactQualification=SYNTHETIC_SELFTEST — never production)")
