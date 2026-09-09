@@ -98,21 +98,41 @@ class SegnaleFoundationTest {
     }
 
     // --- §V.8/9/10: reduced motion resolution ---
+    //
+    // § PASSAGGIO 12.1 — precedence contract: system reduced motion always
+    // wins. `userPrefersReducedMotion` (renamed from the old, misleading
+    // `userOverride`) can only ever REQUEST additional reduced motion; it
+    // must never re-enable ornamental motion the system has disabled. Full
+    // six-case truth table required by the correction spec.
 
     @Test
-    fun `reduced motion resolves to system value when system is off and no user override`() {
-        assertFalse(SegnaleMotionPolicy.effectiveReducedMotion(systemReducedMotion = false, userOverride = null))
+    fun `system=false, user=null resolves to false`() {
+        assertFalse(SegnaleMotionPolicy.effectiveReducedMotion(systemReducedMotion = false, userPrefersReducedMotion = null))
     }
 
     @Test
-    fun `reduced motion resolves to system value when system is on`() {
-        assertTrue(SegnaleMotionPolicy.effectiveReducedMotion(systemReducedMotion = true, userOverride = null))
+    fun `system=false, user=false resolves to false`() {
+        assertFalse(SegnaleMotionPolicy.effectiveReducedMotion(systemReducedMotion = false, userPrefersReducedMotion = false))
     }
 
     @Test
-    fun `a user override wins over the system signal in either direction`() {
-        assertTrue(SegnaleMotionPolicy.effectiveReducedMotion(systemReducedMotion = false, userOverride = true))
-        assertFalse(SegnaleMotionPolicy.effectiveReducedMotion(systemReducedMotion = true, userOverride = false))
+    fun `system=false, user=true resolves to true`() {
+        assertTrue(SegnaleMotionPolicy.effectiveReducedMotion(systemReducedMotion = false, userPrefersReducedMotion = true))
+    }
+
+    @Test
+    fun `system=true, user=null resolves to true`() {
+        assertTrue(SegnaleMotionPolicy.effectiveReducedMotion(systemReducedMotion = true, userPrefersReducedMotion = null))
+    }
+
+    @Test
+    fun `system=true, user=false STILL resolves to true — system can never be overridden off`() {
+        assertTrue(SegnaleMotionPolicy.effectiveReducedMotion(systemReducedMotion = true, userPrefersReducedMotion = false))
+    }
+
+    @Test
+    fun `system=true, user=true resolves to true`() {
+        assertTrue(SegnaleMotionPolicy.effectiveReducedMotion(systemReducedMotion = true, userPrefersReducedMotion = true))
     }
 
     // --- §V.11/12/13: quality profile ---

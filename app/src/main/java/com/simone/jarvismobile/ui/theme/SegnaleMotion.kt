@@ -79,15 +79,20 @@ fun <T> segnaleMotionSpec(event: SegnaleMotionEvent, reducedMotion: Boolean) =
  * §K — composes the real Android system "remove animations" signal
  * ([ValueAnimator.areAnimatorsEnabled], the documented API for exactly this
  * preference since API 26 — this app's `minSdk` is 31, so no version guard
- * is needed) with an optional user override via
+ * is needed) with an optional additional user preference via
  * [SegnaleMotionPolicy.effectiveReducedMotion]. No new Settings screen/
- * persisted preference is read here (§K) — [userOverride] is `null` from
- * every current call site.
+ * persisted preference is read here (§K) — [userPrefersReducedMotion] is
+ * `null` from every current call site.
+ *
+ * § PASSAGGIO 12.1 precedence contract: [userPrefersReducedMotion] can only
+ * ever REQUEST additional reduced motion on top of the system signal — it
+ * can never turn reduced motion back off when the system requires it (see
+ * [SegnaleMotionPolicy]'s own doc comment for the full truth table).
  */
 @Composable
-fun rememberSegnaleReducedMotion(userOverride: Boolean? = null): Boolean {
+fun rememberSegnaleReducedMotion(userPrefersReducedMotion: Boolean? = null): Boolean {
     val systemReducedMotion = !ValueAnimator.areAnimatorsEnabled()
-    return remember(systemReducedMotion, userOverride) {
-        SegnaleMotionPolicy.effectiveReducedMotion(systemReducedMotion, userOverride)
+    return remember(systemReducedMotion, userPrefersReducedMotion) {
+        SegnaleMotionPolicy.effectiveReducedMotion(systemReducedMotion, userPrefersReducedMotion)
     }
 }
