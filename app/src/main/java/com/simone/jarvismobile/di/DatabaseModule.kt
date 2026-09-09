@@ -18,6 +18,8 @@ import com.simone.jarvismobile.document.DocumentDao
 import com.simone.jarvismobile.engine.memory.ConversationalMemoryDao
 import com.simone.jarvismobile.engine.memory.EngineMemoryMigrations
 import com.simone.jarvismobile.navigation.NavDao
+import com.simone.jarvismobile.proactive.ProactiveOccurrenceDao
+import com.simone.jarvismobile.proactive.ProactiveOccurrenceMigrations
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -36,7 +38,10 @@ object DatabaseModule {
             // holds automation rules and places, which the user typed and which
             // nothing can rebuild. Losing those to a schema bump is not
             // acceptable, so every version from here must ship a migration.
-            .addMigrations(*RuleMigrations.ALL, *ArchiveMigrations.ALL, *EngineMemoryMigrations.ALL)
+            .addMigrations(
+                *RuleMigrations.ALL, *ArchiveMigrations.ALL, *EngineMemoryMigrations.ALL,
+                *ProactiveOccurrenceMigrations.ALL,
+            )
             // The fallback remains only for the older, cache-only versions (the
             // document and navigation tables can be regenerated from the vault
             // and the original files).
@@ -93,4 +98,8 @@ object DatabaseModule {
     @Provides
     fun provideConversationalMemoryDao(database: JarvisDatabase): ConversationalMemoryDao =
         database.conversationalMemoryDao()
+
+    @Provides
+    fun provideProactiveOccurrenceDao(database: JarvisDatabase): ProactiveOccurrenceDao =
+        database.proactiveOccurrenceDao()
 }

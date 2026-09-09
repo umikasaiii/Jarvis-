@@ -9,10 +9,12 @@ import android.util.Log
 import com.simone.jarvismobile.agenda.AgendaRepository
 import com.simone.jarvismobile.audio.SessionCoordinator
 import com.simone.jarvismobile.context.ContextEngine
+import com.simone.jarvismobile.core.proactive.OccurrenceClaimOutcome
 import com.simone.jarvismobile.core.proactive.ProactiveComposer
 import com.simone.jarvismobile.core.proactive.ProactiveDecision
 import com.simone.jarvismobile.core.proactive.ProactiveGovernor
 import com.simone.jarvismobile.core.proactive.ProactiveKind
+import com.simone.jarvismobile.core.proactive.ProactiveOccurrenceKey
 import com.simone.jarvismobile.core.proactive.ProactiveSettings
 import com.simone.jarvismobile.core.proactive.ProactiveSnapshot
 import com.simone.jarvismobile.core.proactive.ProactiveSuggestion
@@ -44,6 +46,7 @@ class ProactiveManager @Inject constructor(
     private val settings: SettingsRepository,
     private val agenda: AgendaRepository,
     private val store: ProactiveStore,
+    private val occurrenceStore: ProactiveOccurrenceStore,
     private val notifier: ProactiveNotifier,
     private val coordinator: SessionCoordinator,
     private val contextEngine: ContextEngine,
@@ -112,14 +115,43 @@ class ProactiveManager @Inject constructor(
             return
         }
         val today = now.toLocalDate()
-        val candidates = candidatesFor(now, snapshot(today, now), today, isRealUnlock)
+        val nowMs = now.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+
+        // § JARVIS Implementation Master Plan PASSAGGIO 14.1 §E/§F/§G — the ONE
+        // atomic claim gate for the morning-digest logical occurrence. Every
+        // trigger source (NEXT_ALARM/CONFIGURED_TIME/FIRST_UNLOCK/PERIODIC_FALLBACK)
+        // reaches this same method; only the caller that wins the durable claim
+        // may ever compose/speak/deliver today's morning digest — every other
+        // caller sees AlreadyOwned and must not include it as a candidate at all
+        // (§G: a suppressed duplicate performs no side effect whatsoever).
+        val offerMorning = isRealUnlock || !automationEnabled
+        val morningEligible = now.hour >= MORNING_EARLIEST_HOUR && offerMorning
+        val morningKey = if (morningEligible) ProactiveOccurrenceKey.morningDigest(today) else null
+        val morningClaim = morningKey?.let { key ->
+            runCatching {
+                occurrenceStore.claim(key, kind = "MORNING_DIGEST", logicalDate = today, triggerSource = triggerSource, now = nowMs)
+            }.getOrNull()
+        }
+        val morningOwnedThisRun = morningClaim is OccurrenceClaimOutcome.Claimed || morningClaim is OccurrenceClaimOutcome.TakeoverAllowed
+        if (morningKey != null && !morningOwnedThisRun) {
+            Log.i(TAG, "proactive_morning_claim_denied source=$triggerSource claim=$morningClaim")
+        }
+
+        val candidates = candidatesFor(now, snapshot(today, now), today, includeMorning = morningOwnedThisRun)
         if (candidates.isEmpty()) {
+            if (morningKey != null && morningOwnedThisRun) {
+                runCatching { occurrenceStore.markFailedRetryable(morningKey, "no_candidate_this_hour") }
+            }
             recordRun(now, isRealUnlock, triggerSource, config.enabled, automationEnabled, candidateCount = 0, outcome = "no_candidate_this_hour")
             return
         }
         val state = store.load().rolledTo(today)
         when (val decision = ProactiveGovernor.decide(candidates, config, state, now)) {
             is ProactiveDecision.Deliver -> {
+                val deliveringMorning = decision.suggestion.kind == ProactiveKind.MORNING_DIGEST
+                if (deliveringMorning && morningKey != null) {
+                    runCatching { occurrenceStore.markDeliveryAttempt(morningKey) }
+                }
                 notifier.show(decision.suggestion)
                 store.save(decision.newState)
                 // Spoken too, same opt-in path a new-engine SPEAK action uses — an
@@ -127,15 +159,24 @@ class ProactiveManager @Inject constructor(
                 runCatching { coordinator.speakBackgroundResponse(decision.suggestion.message) }
                 Log.i(TAG, "proactive_deliver ${decision.suggestion.kind} source=$triggerSource")
                 recordRun(now, isRealUnlock, triggerSource, config.enabled, automationEnabled, candidates.size, "delivered:${decision.suggestion.kind}")
-                // § FASE 2A.8 RELEASE GATE G — only for a REAL morning-digest
-                // delivery, never for the evening digest or a battery tip.
-                if (decision.suggestion.kind == ProactiveKind.MORNING_DIGEST) {
+                if (deliveringMorning && morningKey != null) {
+                    runCatching { occurrenceStore.markDelivered(morningKey) }
+                    // § FASE 2A.8 RELEASE GATE G — only for a REAL morning-digest
+                    // delivery, never for the evening digest or a battery tip.
                     runCatching { morningTriggerScheduler.schedulePostBriefingRefreshes() }
+                } else if (morningKey != null && morningOwnedThisRun) {
+                    // The governor picked a different candidate this run (budget/
+                    // priority) — release the claim so it isn't wasted (§L: never
+                    // permanently blocks a later legitimate attempt).
+                    runCatching { occurrenceStore.markFailedRetryable(morningKey, "governor_selected_other_candidate") }
                 }
             }
             is ProactiveDecision.Skip -> {
                 Log.i(TAG, "proactive_skip ${decision.reason} source=$triggerSource")
                 recordRun(now, isRealUnlock, triggerSource, config.enabled, automationEnabled, candidates.size, "skip:${decision.reason}")
+                if (morningKey != null && morningOwnedThisRun) {
+                    runCatching { occurrenceStore.markFailedRetryable(morningKey, "skip:${decision.reason}") }
+                }
             }
         }
     }
@@ -182,17 +223,22 @@ class ProactiveManager @Inject constructor(
      * vero sblocco lo offre sempre. Il dedup giornaliero del governor stesso
      * (`MORNING_DIGEST:<date>`) resta l'unico cancello "una volta al
      * giorno" fra i due percorsi.
+     *
+     * [includeMorning] (§ PASSAGGIO 14.1) — whether THIS caller actually won
+     * the atomic occurrence claim for today's morning digest (computed once
+     * in [run], before this method is even called) — never recomputed here,
+     * so the hour/automation-service eligibility check and the claim
+     * ownership check can never drift apart into two different answers.
      */
-    private suspend fun candidatesFor(
+    private fun candidatesFor(
         now: LocalDateTime,
         snap: ProactiveSnapshot,
         today: LocalDate,
-        isRealUnlock: Boolean,
+        includeMorning: Boolean,
     ): List<ProactiveSuggestion> {
         val out = ArrayList<ProactiveSuggestion>()
         val hour = now.hour
-        val offerMorning = isRealUnlock || !settings.automationServiceEnabled.first()
-        if (hour >= MORNING_EARLIEST_HOUR && offerMorning) out += ProactiveComposer.morningDigest(snap, today)
+        if (includeMorning) out += ProactiveComposer.morningDigest(snap, today)
         if (hour in EVENING_FROM..EVENING_TO) {
             ProactiveComposer.batteryBeforeAlarm(snap, today)?.let { out += it }
             ProactiveComposer.eveningDigest(snap, today)?.let { out += it }

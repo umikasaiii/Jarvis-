@@ -26,6 +26,8 @@ import com.simone.jarvismobile.navigation.NavDao
 import com.simone.jarvismobile.navigation.NavFavoriteEntity
 import com.simone.jarvismobile.navigation.NavHistoryEntity
 import com.simone.jarvismobile.navigation.PlaceFtsEntity
+import com.simone.jarvismobile.proactive.ProactiveOccurrenceDao
+import com.simone.jarvismobile.proactive.ProactiveOccurrenceEntity
 
 @Database(
     entities = [
@@ -35,8 +37,9 @@ import com.simone.jarvismobile.navigation.PlaceFtsEntity
         AutomationExecutionEntity::class, ParkingLocationEntity::class,
         ArchiveItemEntity::class, ArchiveListEntity::class, ArchiveListItemEntity::class, ArchiveLinkEntity::class,
         ConversationalMemoryEntity::class,
+        ProactiveOccurrenceEntity::class,
     ],
-    version = 11,
+    version = 12,
     exportSchema = false,
 )
 abstract class JarvisDatabase : RoomDatabase() {
@@ -64,4 +67,8 @@ abstract class JarvisDatabase : RoomDatabase() {
     // Conversational AI engine's Episodic memory tier — same non-destructive
     // migration rule. See EngineMemoryMigrations.MIGRATION_6_7.
     abstract fun conversationalMemoryDao(): ConversationalMemoryDao
+
+    // § JARVIS Implementation Master Plan PASSAGGIO 14.1 — durable, atomic
+    // Morning Brief occurrence claim table. See ProactiveOccurrenceMigrations.
+    abstract fun proactiveOccurrenceDao(): ProactiveOccurrenceDao
 }
