@@ -37,6 +37,12 @@ ALL_DOMAINS = [
 MLP_HIDDEN_UNITS = 24
 MLP_WIN_MARGIN = 0.03  # the MLP must beat linear by at least 3 points to be chosen
 
+# § JARVIS Implementation Master Plan — PASSAGGIO 14 §M/§Y (test item 27) —
+# the ONE seed every MLP fit in this module uses, named so export.py can
+# record the EXACT value that produced a given artifact instead of a
+# hand-maintained duplicate literal drifting out of sync with this one.
+TRAINING_SEED = 0
+
 
 def embed_prototypes(prototypes: list[Prototype], embed_fn) -> np.ndarray:
     return np.stack([embed_fn(p.text) for p in prototypes])
@@ -78,7 +84,7 @@ def _fit_multiclass(X: np.ndarray, y: np.ndarray, X_val: np.ndarray, y_val: np.n
     linear.fit(X, y)
     linear_acc = float(linear.score(X_val, y_val)) if len(X_val) else float(linear.score(X, y))
 
-    mlp = MLPClassifier(hidden_layer_sizes=(MLP_HIDDEN_UNITS,), max_iter=800, random_state=0)
+    mlp = MLPClassifier(hidden_layer_sizes=(MLP_HIDDEN_UNITS,), max_iter=800, random_state=TRAINING_SEED)
     mlp.fit(X, y)
     mlp_acc = float(mlp.score(X_val, y_val)) if len(X_val) else float(mlp.score(X, y))
 
@@ -93,7 +99,7 @@ def _fit_multilabel(X: np.ndarray, y: np.ndarray, X_val: np.ndarray, y_val: np.n
     linear_pred = linear.predict(X_val) if len(X_val) else linear.predict(X)
     linear_acc = float(np.mean(linear_pred == (y_val if len(X_val) else y)))
 
-    mlp = MLPClassifier(hidden_layer_sizes=(MLP_HIDDEN_UNITS,), max_iter=800, random_state=0)
+    mlp = MLPClassifier(hidden_layer_sizes=(MLP_HIDDEN_UNITS,), max_iter=800, random_state=TRAINING_SEED)
     mlp.fit(X, y)
     mlp_pred = mlp.predict(X_val) if len(X_val) else mlp.predict(X)
     mlp_acc = float(np.mean(mlp_pred == (y_val if len(X_val) else y)))

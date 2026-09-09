@@ -27,6 +27,7 @@ Kotlin runtime therefore only ever needs ONE forward-pass implementation
 from __future__ import annotations
 
 import json
+import os
 
 import numpy as np
 from sklearn.linear_model import LogisticRegression
@@ -134,20 +135,30 @@ def build_encoder_contract(mode: str, embed_dim: int, model_sha256: str | None =
 def export_head_weights(
     heads, embed_dim: int, out_path: str, mode: str = "fake",
     model_sha256: str | None = None, tokenizer_sha256: str | None = None,
+    dataset_revision: str | None = None, training_seed: int | None = None,
+    trained_at_iso: str | None = None,
 ) -> dict:
     """Exports ALL trained heads (intent/domain/operation/referenceMode) in
     one file, `head_weights.json` — the format
     `core/semantic/embedding/LearnedHeadClassifierEngine.kt` loads.
 
-    § PASSAGGIO 13 §N — [mode] must be `"fake"` (self-test, the only mode
-    this environment can run) or `"real"` (a genuine EmbeddingGemma run,
-    never exercised here — see `embed.py`'s honesty note). `"fake"` always
-    exports `artifactQualification="SYNTHETIC_SELFTEST"`, which
-    `LearnedHeadExport.isCompatibleWithRuntime()`/`report.py`'s
-    `learned_head_scorers()` both refuse to treat as production — this
-    project has never shipped a `"real"` export.
+    § PASSAGGIO 13 §N, tightened by PASSAGGIO 14 §R/§S — [mode] must be
+    `"fake"` (self-test, the only mode this environment can run) or
+    `"real"` (a genuine, frozen-encoder EmbeddingGemma run — the CALLER,
+    never this function, is responsible for having already passed
+    [production_gate.assert_production_ready] before reaching this point).
+    `"fake"` always exports `artifactQualification="SYNTHETIC_SELFTEST"`.
+    `"real"` exports `artifactQualification="REAL_TRAINED"` — deliberately
+    NEVER `"PRODUCTION_ELIGIBLE"` here: a real, genuinely trained head still
+    has `calibrationStatus="PENDING"` until PASSAGGIO 15's calibration gate
+    re-exports it as `PRODUCTION_ELIGIBLE`/`CALIBRATED` — this function must
+    never claim full production authority on its own. Both
+    `LearnedHeadExport.isCompatibleWithRuntime()` (Kotlin) and `report.py`'s
+    `learned_head_scorers()` refuse anything short of `PRODUCTION_ELIGIBLE`
+    for authoritative use — this project has never shipped either a `"real"`
+    OR a `PRODUCTION_ELIGIBLE` export as of PASSAGGIO 14.
     """
-    qualification = "SYNTHETIC_SELFTEST" if mode == "fake" else "PRODUCTION_ELIGIBLE"
+    qualification = "SYNTHETIC_SELFTEST" if mode == "fake" else "REAL_TRAINED"
     payload: dict = {
         "schemaVersion": EXPORT_SCHEMA_VERSION,
         "embeddingDim": embed_dim,
@@ -163,6 +174,14 @@ def export_head_weights(
         ),
         "encoderContract": build_encoder_contract(mode, embed_dim, model_sha256, tokenizer_sha256),
         "artifactQualification": qualification,
+        # § PASSAGGIO 14 §Q/§R (test items 12, 13-18) — always explicit,
+        # never inferred/omitted; PENDING for every artifact this pass can
+        # produce, real or synthetic, since calibration is PASSAGGIO 15's
+        # scope entirely.
+        "calibrationStatus": "PENDING",
+        "datasetRevision": dataset_revision,
+        "trainingSeed": training_seed,
+        "trainedAtIso": trained_at_iso,
     }
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(payload, f)
@@ -171,22 +190,52 @@ def export_head_weights(
 
 if __name__ == "__main__":
     import argparse
+    import hashlib
+    from datetime import datetime, timezone
 
     from calibrate import calibrate_domain_threshold, calibrate_intent_thresholds
-    from dataset import TRAINING_CORPUS_PATH, load_corpus
-    from embed import fake_embedder
-    from train_heads import train
+    from dataset import TRAINING_CORPUS_PATH, dataset_revision as compute_dataset_revision, load_corpus
+    from embed import CONTRACT_VERSION, EmbeddingCache, cached_embedder, fake_embedder
+    from production_gate import assert_production_ready
+    from train_heads import TRAINING_SEED, train
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--fake", action="store_true")
+    mode_group = parser.add_mutually_exclusive_group(required=True)
+    mode_group.add_argument("--fake", action="store_true", help="synthetic self-test embedder — the only mode runnable without a real EmbeddingGemma artifact")
+    mode_group.add_argument("--real", action="store_true", help="§ PASSAGGIO 14 — a genuine frozen-encoder run; requires --model-dir and a network-enabled environment with the real artifact")
     parser.add_argument("--corpus", default=TRAINING_CORPUS_PATH)
     parser.add_argument("--out-dir", default=".")
+    parser.add_argument("--model-dir", default=None, help="--real only: local directory/identifier the real embedder loads (see embed.real_embedder's own honesty note)")
+    parser.add_argument("--model-sha256", default=None, help="--real only: SHA-256 of the real model artifact file, if known")
+    parser.add_argument("--tokenizer-sha256", default=None, help="--real only: SHA-256 of the real tokenizer artifact file, if known")
+    parser.add_argument("--cache", default=None, help="optional on-disk embedding cache path (either mode)")
     args = parser.parse_args()
-    if not args.fake:
-        raise SystemExit("only --fake (self-test) mode is runnable in this environment — see embed.py's honesty note")
 
     corpus = load_corpus(args.corpus)
-    embed_fn = fake_embedder()
+    dataset_rev = compute_dataset_revision(args.corpus) if os.path.exists(args.corpus) else None
+    trained_at_iso = datetime.now(timezone.utc).isoformat()
+
+    if args.real:
+        if not args.model_dir:
+            raise SystemExit("--real requires --model-dir (the real EmbeddingGemma artifact) — see production_gate.py; REAL_ARTIFACT_GATE must be PASS before this can run")
+        from embed import real_embedder
+        embed_fn = real_embedder(args.model_dir)  # raises RuntimeError here if the artifact/library isn't actually available — never silently substituted
+        assert_production_ready(embed_fn, None)
+        if args.cache:
+            cache = EmbeddingCache(args.cache, model_id=args.model_dir, contract_version=CONTRACT_VERSION)
+            if len(cache) > 0:
+                assert_production_ready(embed_fn, cache)
+            embed_fn = cached_embedder(embed_fn, cache)
+        mode = "real"
+        embed_dim = None  # determined below from a real call
+    else:
+        embed_fn = fake_embedder()
+        if args.cache:
+            cache = EmbeddingCache(args.cache, model_id="fake-embedder", contract_version=CONTRACT_VERSION)
+            embed_fn = cached_embedder(embed_fn, cache)
+        mode = "fake"
+        from embed import FAKE_EMBEDDING_DIM
+        embed_dim = FAKE_EMBEDDING_DIM
 
     calib = calibrate_intent_thresholds(corpus, embed_fn)
     domain_calib = calibrate_domain_threshold(corpus, embed_fn)
@@ -201,6 +250,14 @@ if __name__ == "__main__":
     print(f"wrote {args.out_dir}/thresholds.json: {thresholds}")
 
     heads = train(corpus, embed_fn)
-    from embed import FAKE_EMBEDDING_DIM
-    export_head_weights(heads, FAKE_EMBEDDING_DIM, f"{args.out_dir}/head_weights.json", mode="fake")
-    print(f"wrote {args.out_dir}/head_weights.json (artifactQualification=SYNTHETIC_SELFTEST — never production)")
+    if embed_dim is None:
+        embed_dim = len(embed_fn(corpus.train()[0].text)) if corpus.train() else 0
+    if args.cache:
+        cache.save()
+    payload = export_head_weights(
+        heads, embed_dim, f"{args.out_dir}/head_weights.json", mode=mode,
+        model_sha256=args.model_sha256, tokenizer_sha256=args.tokenizer_sha256,
+        dataset_revision=dataset_rev, training_seed=TRAINING_SEED, trained_at_iso=trained_at_iso,
+    )
+    print(f"wrote {args.out_dir}/head_weights.json (artifactQualification={payload['artifactQualification']}, "
+          f"calibrationStatus={payload['calibrationStatus']}, datasetRevision={dataset_rev})")

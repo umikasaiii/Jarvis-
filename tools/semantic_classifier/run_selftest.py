@@ -91,9 +91,12 @@ def main() -> int:
     export_head_weights(heads, FAKE_EMBEDDING_DIM, "head_weights.selftest.json")
     print("[export] wrote head_weights.selftest.json")
 
-    print("[report] evaluating on held-out TEST and BLIND splits...")
+    print("[report] evaluating on held-out TEST and BLIND splits (prototype/centroid classifier — "
+          "the ONLY classifier this synthetic-embedder self-test can meaningfully exercise; see "
+          "report.py's own PASSAGGIO 13 rewrite for why 'classifier' is now a required, explicit "
+          "argument rather than something build_report() infers)...")
     for split in ("test", "blind"):
-        report = build_report(corpus, embed_fn, thresholds, split=split)
+        report = build_report(corpus, "prototype", embed_fn, thresholds, split=split)
         summary = {
             "split": split,
             "intent_accuracy": report["intent"]["accuracy"],

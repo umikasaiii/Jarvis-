@@ -24,6 +24,17 @@ from preprocessing import canonicalize
 
 FAKE_EMBEDDING_DIM = 64
 
+# § JARVIS Implementation Master Plan — PASSAGGIO 14 §J/§Y. The qualification
+# tag every embedder callable and every on-disk cache carries — the SAME
+# vocabulary as the Kotlin `ArtifactQualification` enum, used by
+# `production_gate.py` to refuse a synthetic embedder/cache from ever
+# contributing to a REAL_TRAINED artifact. "UNKNOWN" is the honest default
+# for a cache file saved before this pass (format 1, no recorded tag) — never
+# silently trusted as REAL.
+QUALIFICATION_REAL = "REAL"
+QUALIFICATION_SYNTHETIC = "SYNTHETIC_SELFTEST"
+QUALIFICATION_UNKNOWN = "UNKNOWN"
+
 # § JARVIS Implementation Master Plan — PASSAGGIO 13 §O. Bumped whenever
 # ANYTHING about the preprocessing/encoder contract this cache assumes
 # changes — folded into every cache key below, so a stale entry from a
@@ -55,14 +66,31 @@ class EmbeddingCache:
     (§C).
     """
 
-    def __init__(self, path: str, model_id: str, contract_version: int = CONTRACT_VERSION):
+    def __init__(
+        self, path: str, model_id: str, contract_version: int = CONTRACT_VERSION,
+        qualification: str = QUALIFICATION_UNKNOWN,
+    ):
         self.path = path
         self.model_id = model_id
         self.contract_version = contract_version
         self._data: dict[str, list[float]] = {}
+        # § PASSAGGIO 14 §J — [qualification] recorded on disk (format 2) so a
+        # LOADED cache's own file is the ground truth of what actually
+        # produced its entries, never the constructor argument of whoever
+        # happens to open it next. A pre-PASSAGGIO-14 cache (format 1, a bare
+        # {key: vector} dict with no metadata) is loaded as
+        # [QUALIFICATION_UNKNOWN] regardless of what's asked here — it never
+        # recorded a real tag, so it can never be trusted as one.
+        self.qualification = qualification
         if os.path.exists(path):
             with open(path, encoding="utf-8") as f:
-                self._data = json.load(f)
+                raw = json.load(f)
+            if isinstance(raw, dict) and raw.get("format") == 2:
+                self.qualification = raw.get("qualification", QUALIFICATION_UNKNOWN)
+                self._data = raw.get("entries", {})
+            else:
+                self.qualification = QUALIFICATION_UNKNOWN
+                self._data = raw
         self._dirty = False
 
     def _key(self, text: str) -> str:
@@ -81,8 +109,15 @@ class EmbeddingCache:
     def save(self) -> None:
         if not self._dirty:
             return
+        payload = {
+            "format": 2,
+            "model_id": self.model_id,
+            "contract_version": self.contract_version,
+            "qualification": self.qualification,
+            "entries": self._data,
+        }
         with open(self.path, "w", encoding="utf-8") as f:
-            json.dump(self._data, f)
+            json.dump(payload, f)
         self._dirty = False
 
     def __len__(self) -> int:
@@ -94,7 +129,21 @@ def cached_embedder(embed_fn, cache: EmbeddingCache):
     same call signature (`text -> np.ndarray`), transparent to callers.
     Canonicalizes [text] before both the cache lookup and the underlying
     [embed_fn] call — §C/§G: the SAME preprocessing contract applies
-    whether the result came from cache or a fresh model call."""
+    whether the result came from cache or a fresh model call.
+
+    § PASSAGGIO 14 §J — a BRAND NEW cache (nothing on disk yet, [cache]'s
+    entry count still zero) adopts [embed_fn]'s own `.qualification` tag
+    (`QUALIFICATION_REAL` for [real_embedder], `QUALIFICATION_SYNTHETIC` for
+    [fake_embedder]) as its own for the life of this run — so a fresh cache
+    built with a real embedder is recorded as REAL from its very first
+    [save], never left at the constructor's default UNKNOWN. A cache that
+    ALREADY had entries on disk keeps whatever qualification it loaded with
+    (§ the loaded file's own tag is ground truth, per [EmbeddingCache]'s own
+    doc) — mixing a synthetic cache with a real embedder never silently
+    upgrades it.
+    """
+    if len(cache) == 0:
+        cache.qualification = getattr(embed_fn, "qualification", QUALIFICATION_UNKNOWN)
 
     def embed(text: str) -> np.ndarray:
         canonical = canonicalize(text)
@@ -134,6 +183,7 @@ def fake_embedder():
         norm = np.linalg.norm(vec)
         return vec / norm if norm > 0 else vec
 
+    embed.qualification = QUALIFICATION_SYNTHETIC  # § PASSAGGIO 14 §J — production_gate.py refuses this on sight.
     return embed
 
 
@@ -158,4 +208,5 @@ def real_embedder(model_dir: str):
     def embed(text: str) -> np.ndarray:
         return np.asarray(model.encode(text, normalize_embeddings=True))
 
+    embed.qualification = QUALIFICATION_REAL  # § PASSAGGIO 14 §J — only reached if a real model actually loaded above.
     return embed

@@ -76,6 +76,17 @@ data class LearnedHeadExport(
     val encoderContract: SemanticEncoderContract? = null,
     /** Defaults to [ArtifactQualification.TRAINING_PENDING] — an export must explicitly declare [ArtifactQualification.PRODUCTION_ELIGIBLE] to ever be accepted by production runtime (§N). */
     val artifactQualification: ArtifactQualification = ArtifactQualification.TRAINING_PENDING,
+
+    // --- PASSAGGIO 14 §R provenance — additive, all defaulted for backward
+    // compatibility with an export written before this pass. ---
+    /** Defaults to [CalibrationStatus.PENDING] — see that enum's own doc for why this is separate from [artifactQualification]. */
+    val calibrationStatus: CalibrationStatus = CalibrationStatus.PENDING,
+    /** SHA-256 of the exact `training_corpus.json` bytes this head was trained on (`dataset.dataset_revision()`) — null when unknown (e.g. a synthetic self-test export, or an export written before this field existed). */
+    val datasetRevision: String? = null,
+    /** The random seed used for this training run, where the training procedure is seed-controlled — null when not recorded. */
+    val trainingSeed: Int? = null,
+    /** UTC ISO-8601 timestamp of when this artifact was produced — null when not recorded. Provenance metadata only, never used for any compatibility decision. */
+    val trainedAtIso: String? = null,
 ) {
     /**
      * § PASSAGGIO 13 §K/§N/§Y (test items 6-9). The full production

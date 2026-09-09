@@ -13,6 +13,7 @@ catches NEAR-duplicates once real embeddings are available).
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from dataclasses import dataclass, field
@@ -62,6 +63,20 @@ class Corpus:
         prototypes.json corpus (no `blind` split there), populated for
         `training_corpus.json`."""
         return self.by_split("blind")
+
+
+def dataset_revision(path: str = TRAINING_CORPUS_PATH) -> str:
+    """§ JARVIS Implementation Master Plan — PASSAGGIO 14 §H/§R. The real
+    SHA-256 of the exact dataset file bytes a training run is fed — recorded
+    on every exported artifact (`LearnedHeadExport.datasetRevision`) so a
+    later reader can prove EXACTLY which dataset produced it, byte for
+    byte — never a version string maintained by hand, which could silently
+    drift out of sync with the actual file."""
+    digest = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def load_corpus(path: str = CORPUS_PATH) -> Corpus:
