@@ -191,6 +191,57 @@ class DiagnosticsViewModel @Inject constructor(
     }
 
     /**
+     * § JARVIS Implementation Master Plan — PASSAGGIO 14.2. The evening
+     * rain/storm alert's own bounded evidence — read-only, never forces a
+     * new evaluation (that only ever happens for real inside the 19-21
+     * evening window, § `ProactiveManager`) — a passive read of the last
+     * real evaluation, so it always reflects what actually ran, never a
+     * manufactured "just tested" result at the wrong hour. For an
+     * any-time, no-waiting-for-real-rain test path see
+     * [simulateWeatherAlert] below.
+     */
+    private val _weatherAlertStatus = MutableStateFlow("")
+    val weatherAlertStatus: StateFlow<String> = _weatherAlertStatus.asStateFlow()
+
+    fun refreshWeatherAlertDiagnostics() {
+        val d = proactive.weatherAlertDiagnostic.value
+        _weatherAlertStatus.value = if (d == null) {
+            "Nessuna valutazione ancora registrata (la finestra serale 19-21 non è ancora scattata oggi)."
+        } else {
+            val fmt = java.time.format.DateTimeFormatter.ofPattern("d MMM HH:mm").withZone(java.time.ZoneId.systemDefault())
+            buildString {
+                append("valutato: ").append(fmt.format(java.time.Instant.ofEpochMilli(d.evaluatedAtMs)))
+                append(" · giorno target: ").append(d.targetLocalDate)
+                append("\nstato dati: ").append(d.dataStatus)
+                append(" · policy v").append(d.policyVersion)
+                append("\npericolo: ").append(d.hazard ?: "nessuno/sconosciuto")
+                append("\ncandidato creato: ").append(d.candidateCreated)
+                append(" · occorrenza claimata: ").append(d.occurrenceClaimed)
+                append("\nesito governor: ").append(d.governorOutcome ?: "non ancora valutato dal governor")
+                append("\nconsegna tentata: ").append(d.deliveryAttempted)
+                append(" · consegnata: ").append(d.delivered)
+            }
+        }
+    }
+
+    /**
+     * § JARVIS Implementation Master Plan PASSAGGIO 14.2 — "safe debug/test
+     * path... inject a NON-PRODUCTION deterministic tomorrow forecast".
+     * Debug-only: the UI only ever calls this from behind a
+     * `BuildConfig.DEBUG` gate (same convention as the GPS simulator panel)
+     * — [ProactiveManager.simulateWeatherAlert] itself never touches the
+     * real weather cache and claims a distinct debug-only occurrence key.
+     */
+    private val _weatherAlertSimulationResult = MutableStateFlow("")
+    val weatherAlertSimulationResult: StateFlow<String> = _weatherAlertSimulationResult.asStateFlow()
+
+    fun simulateWeatherAlert(category: com.simone.jarvismobile.core.weather.WeatherCategory, millimeters: Double?) {
+        viewModelScope.launch {
+            _weatherAlertSimulationResult.value = proactive.simulateWeatherAlert(category, millimeters)
+        }
+    }
+
+    /**
      * Developer-only selector between the shipped Google-Maps overlay and the
      * new in-app navigation while it's being built (spec §1/§21). Defaults to
      * [DrivingNavigationMode.EXTERNAL_MAPS_OVERLAY].

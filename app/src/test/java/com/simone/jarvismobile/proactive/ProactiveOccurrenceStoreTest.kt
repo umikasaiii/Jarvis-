@@ -224,4 +224,37 @@ class ProactiveOccurrenceStoreTest {
         assertEquals("FIRST_UNLOCK", diag.triggerSource)
         assertEquals("claimed", diag.outcome)
     }
+
+    // --- § PASSAGGIO 14.2 — the store is key-agnostic: the exact same
+    // atomic claim/dedup/retry mechanism already proven above for the
+    // morning-digest key works identically for a WEATHER_ALERT-shaped key,
+    // with no changes to ProactiveOccurrenceStore/Dao needed. One targeted
+    // test closes the loop instead of only asserting the key FORMAT (§
+    // ProactiveOccurrenceKeyTest in :core) without proving real reuse. ---
+
+    @Test
+    fun `a weatherAlert-shaped key claims, delivers, and suppresses a second concurrent evaluation - real reuse, not just a matching format`() = runTest {
+        val dao = FakeProactiveOccurrenceDao()
+        val store = ProactiveOccurrenceStore(dao)
+        val weatherKey = "WEATHER_ALERT:2026-09-11"
+
+        val first = store.claim(weatherKey, "WEATHER_ALERT", LocalDate.of(2026, 9, 11), "FIRST_UNLOCK", now)
+        assertEquals(OccurrenceClaimOutcome.Claimed, first)
+
+        // A second, concurrent trigger evaluating the same target day sees
+        // AlreadyOwned and performs no side effect — same guarantee as the
+        // morning digest, proven here for the weather-alert key shape too.
+        val second = store.claim(weatherKey, "WEATHER_ALERT", LocalDate.of(2026, 9, 11), "PERIODIC_FALLBACK", now + 1_000)
+        assertEquals(OccurrenceClaimOutcome.AlreadyOwned(ProactiveOccurrenceState.CLAIMED), second)
+
+        store.markDeliveryAttempt(weatherKey)
+        store.markDelivered(weatherKey)
+        assertEquals(ProactiveOccurrenceState.DELIVERED.name, dao.rowOrNull(weatherKey)!!.state)
+
+        // A later evaluation the same evening (e.g. the hourly re-check)
+        // never redelivers — one occurrence per target day, regardless of
+        // how many times the window re-evaluates.
+        val third = store.claim(weatherKey, "WEATHER_ALERT", LocalDate.of(2026, 9, 11), "CONFIGURED_TIME", now + 3_600_000)
+        assertEquals(OccurrenceClaimOutcome.AlreadyOwned(ProactiveOccurrenceState.DELIVERED), third)
+    }
 }

@@ -126,4 +126,38 @@ class ProactiveOccurrenceTest {
         val composerStyleDedupKey = "${ProactiveKind.MORNING_DIGEST}:$date"
         assertEquals(composerStyleDedupKey, ProactiveOccurrenceKey.morningDigest(date))
     }
+
+    // --- weatherAlert key (§ PASSAGGIO 14.2) -------------------------------
+
+    @Test
+    fun `weatherAlert key is stable for the same target date`() {
+        val a = ProactiveOccurrenceKey.weatherAlert(LocalDate.of(2026, 9, 11))
+        val b = ProactiveOccurrenceKey.weatherAlert(LocalDate.of(2026, 9, 11))
+        assertEquals(a, b)
+    }
+
+    @Test
+    fun `weatherAlert key differs for different target dates`() {
+        val a = ProactiveOccurrenceKey.weatherAlert(LocalDate.of(2026, 9, 11))
+        val b = ProactiveOccurrenceKey.weatherAlert(LocalDate.of(2026, 9, 12))
+        assertTrue(a != b)
+    }
+
+    @Test
+    fun `weatherAlert key never embeds a hazard tier - one occurrence per target day regardless of severity`() {
+        assertEquals("WEATHER_ALERT:2026-09-11", ProactiveOccurrenceKey.weatherAlert(LocalDate.of(2026, 9, 11)))
+    }
+
+    @Test
+    fun `weatherAlert key is distinct from morningDigest key on the same date`() {
+        val date = LocalDate.of(2026, 9, 11)
+        assertTrue(ProactiveOccurrenceKey.weatherAlert(date) != ProactiveOccurrenceKey.morningDigest(date))
+    }
+
+    @Test
+    fun `weatherAlert key format matches the ProactiveComposer weatherAlert dedupKey exactly`() {
+        val date = LocalDate.of(2026, 3, 1)
+        val composerStyleDedupKey = "${ProactiveKind.WEATHER_ALERT}:$date"
+        assertEquals(composerStyleDedupKey, ProactiveOccurrenceKey.weatherAlert(date))
+    }
 }

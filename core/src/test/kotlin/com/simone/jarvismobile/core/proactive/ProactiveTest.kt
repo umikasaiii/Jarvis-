@@ -6,6 +6,7 @@ import java.time.LocalDateTime
 import java.time.LocalTime
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.test.assertIs
@@ -193,5 +194,51 @@ class ProactiveTest {
         assertNull(ProactiveComposer.batteryBeforeAlarm(ProactiveSnapshot(batteryPercent = 10, nextAlarm = LocalTime.of(11, 0)), today))
         val hit = ProactiveComposer.batteryBeforeAlarm(ProactiveSnapshot(batteryPercent = 15, nextAlarm = early), today)
         assertTrue(hit != null && "15%" in hit.message && "06:30" in hit.message)
+    }
+
+    // --- weatherAlert composer (§ PASSAGGIO 14.2) --------------------------
+
+    @Test fun weatherAlertNeverComposedForNoAlert() {
+        assertFailsWith<IllegalArgumentException> {
+            ProactiveComposer.weatherAlert(com.simone.jarvismobile.core.weather.WeatherHazard.NO_ALERT, today.plusDays(1))
+        }
+    }
+
+    @Test fun weatherAlertMessagesAreDistinctPerHazardTier() {
+        val target = today.plusDays(1)
+        val rain = ProactiveComposer.weatherAlert(com.simone.jarvismobile.core.weather.WeatherHazard.RAIN_EXPECTED, target).message
+        val heavy = ProactiveComposer.weatherAlert(com.simone.jarvismobile.core.weather.WeatherHazard.HEAVY_RAIN, target).message
+        val storm = ProactiveComposer.weatherAlert(com.simone.jarvismobile.core.weather.WeatherHazard.THUNDERSTORM, target).message
+        assertTrue(setOf(rain, heavy, storm).size == 3)
+        assertTrue("pioggia" in rain)
+        assertTrue("pioggia" in heavy)
+        assertTrue("temporal" in storm)
+    }
+
+    @Test fun weatherAlertKindAndDedupKeyAreKeyedByTargetDate() {
+        val target = LocalDate.of(2026, 9, 12)
+        val suggestion = ProactiveComposer.weatherAlert(com.simone.jarvismobile.core.weather.WeatherHazard.THUNDERSTORM, target)
+        assertEquals(ProactiveKind.WEATHER_ALERT, suggestion.kind)
+        assertEquals("WEATHER_ALERT:2026-09-12", suggestion.dedupKey)
+    }
+
+    // --- governor: WEATHER_ALERT is quiet-hours exempt ----------------------
+
+    @Test fun weatherAlertIsNeverSilencedByQuietHours() {
+        val alert = ProactiveComposer.weatherAlert(com.simone.jarvismobile.core.weather.WeatherHazard.RAIN_EXPECTED, today.plusDays(1))
+        // 23:00 is inside the default 22:00-08:00 quiet window (same moment `quietHoursStaySilent` uses).
+        val d = ProactiveGovernor.decide(listOf(alert), on(), freshState(), evening)
+        val deliver = assertIs<ProactiveDecision.Deliver>(d)
+        assertEquals(ProactiveKind.WEATHER_ALERT, deliver.suggestion.kind)
+    }
+
+    @Test fun optionalSuggestionsStillYieldToQuietHoursEvenWhenWeatherAlertIsPresent() {
+        // A genuinely optional suggestion in the SAME candidate list as a
+        // quiet-hours-exempt weather alert still cannot itself bypass quiet
+        // hours — only the alert's own eligibility is exempt, not the whole call.
+        val alert = ProactiveComposer.weatherAlert(com.simone.jarvismobile.core.weather.WeatherHazard.RAIN_EXPECTED, today.plusDays(1))
+        val d = ProactiveGovernor.decide(listOf(battery, alert), on(), freshState(), evening)
+        val deliver = assertIs<ProactiveDecision.Deliver>(d)
+        assertEquals(ProactiveKind.WEATHER_ALERT, deliver.suggestion.kind)
     }
 }

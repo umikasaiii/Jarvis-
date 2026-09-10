@@ -14,7 +14,9 @@ import com.simone.jarvismobile.core.context.ContextState
 import com.simone.jarvismobile.core.context.ContextTransition
 import com.simone.jarvismobile.core.context.PlaceFusion
 import com.simone.jarvismobile.core.context.PlaceSignal
+import com.simone.jarvismobile.core.tools.ToolOutcomeStatus
 import com.simone.jarvismobile.core.weather.WeatherCategory
+import com.simone.jarvismobile.core.weather.WeatherFreshnessPolicy
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -137,12 +139,22 @@ class ContextEngine @Inject constructor(
         rainTomorrow: Boolean?,
         todayWeather: WeatherCategory? = null,
         now: LocalDateTime = LocalDateTime.now(),
+        // § JARVIS Implementation Master Plan PASSAGGIO 14.2 — structured
+        // facts for tomorrow (category + expected accumulation), additive
+        // and defaulted so every pre-existing caller is unaffected. Kept
+        // separate from [rainTomorrow]'s pre-collapsed boolean: the evening
+        // rain/storm alert policy needs the hazard TIER, which a plain
+        // boolean cannot express.
+        tomorrowWeather: WeatherCategory? = null,
+        tomorrowMillimeters: Double? = null,
     ) {
         _state.update {
             it.copy(
                 rainToday = rainToday,
                 rainTomorrow = rainTomorrow,
                 todayWeather = todayWeather,
+                tomorrowWeather = tomorrowWeather,
+                tomorrowMillimeters = tomorrowMillimeters,
                 weatherUpdatedAt = now,
                 updatedAt = now,
             )
@@ -185,9 +197,7 @@ class ContextEngine @Inject constructor(
         // A forecast older than the refresh window is worth less than admitting
         // we don't know — the periodic refresher should have replaced it by now,
         // so a stale value usually means the refresher itself is failing.
-        val weatherFresh = s.weatherUpdatedAt?.let {
-            java.time.Duration.between(it, now).toHours() < WEATHER_STALE_HOURS
-        } == true
+        val weatherFresh = !WeatherFreshnessPolicy.isStale(s.weatherUpdatedAt, now)
         return EvaluationContext(
             now = now,
             placeId = s.placeId,
@@ -215,10 +225,35 @@ class ContextEngine @Inject constructor(
      */
     fun todayWeather(now: LocalDateTime = LocalDateTime.now()): WeatherCategory? {
         val s = _state.value
-        val weatherFresh = s.weatherUpdatedAt?.let {
-            java.time.Duration.between(it, now).toHours() < WEATHER_STALE_HOURS
-        } == true
-        return if (weatherFresh) s.todayWeather else null
+        return if (WeatherFreshnessPolicy.isStale(s.weatherUpdatedAt, now)) null else s.todayWeather
+    }
+
+    /**
+     * § JARVIS Implementation Master Plan — PASSAGGIO 14.2. Tomorrow's
+     * structured forecast facts for the evening rain/storm alert policy —
+     * same staleness discipline as [todayWeather] for the VALUES themselves
+     * (null when stale, never a frozen forecast), but also reporting WHY as
+     * a [ToolOutcomeStatus] a diagnostic can show: [ToolOutcomeStatus.DATA_UNAVAILABLE]
+     * when weather has never been pushed at all, [ToolOutcomeStatus.STALE]
+     * when it has but the window has lapsed, [ToolOutcomeStatus.SUCCESS_DATA]
+     * otherwise (which does NOT itself guarantee [category] is non-null — a
+     * successful, fresh push can still genuinely lack a category if the
+     * provider omitted it; that distinction belongs to the policy
+     * consumer, not this accessor).
+     */
+    fun tomorrowForecastFacts(now: LocalDateTime = LocalDateTime.now()): TomorrowForecastFacts {
+        val s = _state.value
+        val stale = WeatherFreshnessPolicy.isStale(s.weatherUpdatedAt, now)
+        val status = when {
+            s.weatherUpdatedAt == null -> ToolOutcomeStatus.DATA_UNAVAILABLE
+            stale -> ToolOutcomeStatus.STALE
+            else -> ToolOutcomeStatus.SUCCESS_DATA
+        }
+        return TomorrowForecastFacts(
+            category = if (stale) null else s.tomorrowWeather,
+            millimeters = if (stale) null else s.tomorrowMillimeters,
+            dataStatus = status,
+        )
     }
 
     /** Privacy-safe line for the diagnostics screen. */
@@ -255,9 +290,23 @@ class ContextEngine @Inject constructor(
 
     private companion object {
         const val TAG = "JarvisContext"
-        const val WEATHER_STALE_HOURS = 6L
     }
 }
+
+/**
+ * § JARVIS Implementation Master Plan — PASSAGGIO 14.2. See
+ * [ContextEngine.tomorrowForecastFacts]. [dataStatus] is one of
+ * [ToolOutcomeStatus.SUCCESS_DATA]/[ToolOutcomeStatus.STALE]/[ToolOutcomeStatus.DATA_UNAVAILABLE]
+ * only — [ToolOutcomeStatus.SOURCE_FAILURE] is NOT decidable from stored
+ * state alone (a failed fetch still leaves the previous values untouched
+ * here); the caller combines this with the weather source's own fetch
+ * diagnostic (`WeatherManager.rainFetchDiagnostic`) for that distinction.
+ */
+data class TomorrowForecastFacts(
+    val category: WeatherCategory?,
+    val millimeters: Double?,
+    val dataStatus: ToolOutcomeStatus,
+)
 
 /**
  * A source of context facts (§2).

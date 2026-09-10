@@ -18,6 +18,11 @@ import com.simone.jarvismobile.core.proactive.ProactiveOccurrenceKey
 import com.simone.jarvismobile.core.proactive.ProactiveSettings
 import com.simone.jarvismobile.core.proactive.ProactiveSnapshot
 import com.simone.jarvismobile.core.proactive.ProactiveSuggestion
+import com.simone.jarvismobile.core.tools.ToolOutcomeStatus
+import com.simone.jarvismobile.core.weather.WeatherAlertEvaluation
+import com.simone.jarvismobile.core.weather.WeatherAlertPolicy
+import com.simone.jarvismobile.core.weather.WeatherCategory
+import com.simone.jarvismobile.core.weather.WeatherHazard
 import com.simone.jarvismobile.data.SettingsRepository
 import com.simone.jarvismobile.health.HealthConnectManager
 import com.simone.jarvismobile.weather.WeatherManager
@@ -107,6 +112,33 @@ class ProactiveManager @Inject constructor(
     private val _lastRun = MutableStateFlow<RunDiagnostic?>(null)
     val lastRun: StateFlow<RunDiagnostic?> = _lastRun.asStateFlow()
 
+    /**
+     * § JARVIS Implementation Master Plan — PASSAGGIO 14.2. Bounded evidence
+     * for the evening rain/storm alert evaluation — "the next real missed
+     * alert must be explainable rather than guessed", per the spec. Never
+     * the briefing/notification text itself, only enum-shaped facts:
+     * [dataStatus] is a [com.simone.jarvismobile.core.tools.ToolOutcomeStatus]
+     * name (SUCCESS_DATA/STALE/SOURCE_FAILURE/DATA_UNAVAILABLE), [hazard] a
+     * [WeatherHazard] name or null when the data status prevented a
+     * decision, [governorOutcome] "delivered" or "suppressed:<reason>" —
+     * null until the governor has actually run this evaluation.
+     */
+    data class WeatherAlertDiagnostic(
+        val evaluatedAtMs: Long,
+        val targetLocalDate: LocalDate,
+        val policyVersion: Int,
+        val dataStatus: String,
+        val hazard: String?,
+        val candidateCreated: Boolean,
+        val occurrenceClaimed: Boolean,
+        val governorOutcome: String?,
+        val deliveryAttempted: Boolean,
+        val delivered: Boolean,
+    )
+
+    private val _weatherAlertDiagnostic = MutableStateFlow<WeatherAlertDiagnostic?>(null)
+    val weatherAlertDiagnostic: StateFlow<WeatherAlertDiagnostic?> = _weatherAlertDiagnostic.asStateFlow()
+
     private suspend fun run(now: LocalDateTime, isRealUnlock: Boolean, triggerSource: String) {
         val config = readSettings()
         val automationEnabled = settings.automationServiceEnabled.first()
@@ -137,7 +169,24 @@ class ProactiveManager @Inject constructor(
             Log.i(TAG, "proactive_morning_claim_denied source=$triggerSource claim=$morningClaim")
         }
 
-        val candidates = candidatesFor(now, snapshot(today, now), today, includeMorning = morningOwnedThisRun)
+        val snap = snapshot(today, now)
+        val candidates = candidatesFor(now, snap, today, includeMorning = morningOwnedThisRun).toMutableList()
+
+        // § JARVIS Implementation Master Plan PASSAGGIO 14.2 — evening
+        // rain/storm alert, evaluated in the SAME evening window
+        // eveningDigest/batteryBeforeAlarm already use below (no second
+        // scheduler): [snapshot] above has already forced a fresh
+        // `weather.refresh()`, so this reads facts as current as this run
+        // can make them.
+        var weatherAlertKey: String? = null
+        if (now.hour in EVENING_FROM..EVENING_TO) {
+            val evalResult = evaluateWeatherAlert(now, today, triggerSource, nowMs)
+            if (evalResult != null) {
+                candidates += evalResult.suggestion
+                weatherAlertKey = evalResult.occurrenceKey
+            }
+        }
+
         if (candidates.isEmpty()) {
             if (morningKey != null && morningOwnedThisRun) {
                 runCatching { occurrenceStore.markFailedRetryable(morningKey, "no_candidate_this_hour") }
@@ -148,9 +197,12 @@ class ProactiveManager @Inject constructor(
         val state = store.load().rolledTo(today)
         when (val decision = ProactiveGovernor.decide(candidates, config, state, now)) {
             is ProactiveDecision.Deliver -> {
-                val deliveringMorning = decision.suggestion.kind == ProactiveKind.MORNING_DIGEST
-                if (deliveringMorning && morningKey != null) {
+                val deliveredKind = decision.suggestion.kind
+                if (deliveredKind == ProactiveKind.MORNING_DIGEST && morningKey != null) {
                     runCatching { occurrenceStore.markDeliveryAttempt(morningKey) }
+                }
+                if (deliveredKind == ProactiveKind.WEATHER_ALERT && weatherAlertKey != null) {
+                    runCatching { occurrenceStore.markDeliveryAttempt(weatherAlertKey) }
                 }
                 notifier.show(decision.suggestion)
                 store.save(decision.newState)
@@ -159,7 +211,7 @@ class ProactiveManager @Inject constructor(
                 runCatching { coordinator.speakBackgroundResponse(decision.suggestion.message) }
                 Log.i(TAG, "proactive_deliver ${decision.suggestion.kind} source=$triggerSource")
                 recordRun(now, isRealUnlock, triggerSource, config.enabled, automationEnabled, candidates.size, "delivered:${decision.suggestion.kind}")
-                if (deliveringMorning && morningKey != null) {
+                if (deliveredKind == ProactiveKind.MORNING_DIGEST && morningKey != null) {
                     runCatching { occurrenceStore.markDelivered(morningKey) }
                     // § FASE 2A.8 RELEASE GATE G — only for a REAL morning-digest
                     // delivery, never for the evening digest or a battery tip.
@@ -170,6 +222,13 @@ class ProactiveManager @Inject constructor(
                     // permanently blocks a later legitimate attempt).
                     runCatching { occurrenceStore.markFailedRetryable(morningKey, "governor_selected_other_candidate") }
                 }
+                if (deliveredKind == ProactiveKind.WEATHER_ALERT && weatherAlertKey != null) {
+                    runCatching { occurrenceStore.markDelivered(weatherAlertKey) }
+                    updateWeatherAlertOutcome("delivered", deliveryAttempted = true, delivered = true)
+                } else if (weatherAlertKey != null) {
+                    runCatching { occurrenceStore.markFailedRetryable(weatherAlertKey, "governor_selected_other_candidate") }
+                    updateWeatherAlertOutcome("suppressed:governor_selected_other_candidate", deliveryAttempted = false, delivered = false)
+                }
             }
             is ProactiveDecision.Skip -> {
                 Log.i(TAG, "proactive_skip ${decision.reason} source=$triggerSource")
@@ -177,8 +236,144 @@ class ProactiveManager @Inject constructor(
                 if (morningKey != null && morningOwnedThisRun) {
                     runCatching { occurrenceStore.markFailedRetryable(morningKey, "skip:${decision.reason}") }
                 }
+                if (weatherAlertKey != null) {
+                    runCatching { occurrenceStore.markFailedRetryable(weatherAlertKey, "skip:${decision.reason}") }
+                    updateWeatherAlertOutcome("suppressed:skip:${decision.reason}", deliveryAttempted = false, delivered = false)
+                }
             }
         }
+    }
+
+    private fun updateWeatherAlertOutcome(governorOutcome: String, deliveryAttempted: Boolean, delivered: Boolean) {
+        _weatherAlertDiagnostic.value = _weatherAlertDiagnostic.value?.copy(
+            governorOutcome = governorOutcome,
+            deliveryAttempted = deliveryAttempted,
+            delivered = delivered,
+        )
+    }
+
+    private data class WeatherAlertEvalResult(val suggestion: ProactiveSuggestion, val occurrenceKey: String)
+
+    /**
+     * § JARVIS Implementation Master Plan — PASSAGGIO 14.2. Structured data
+     * only, reusing the same [com.simone.jarvismobile.core.tools.ToolOutcomeStatus]
+     * vocabulary the rest of this app's tool evidence already uses — never
+     * a keyword/regex search over generated text, never an LLM judgement.
+     * Always publishes a [WeatherAlertDiagnostic] before returning, even on
+     * every early-out branch, so a future missed alert is explainable from
+     * the diagnostic alone. Returns non-null ONLY when a real, atomically
+     * claimed candidate should be added to this run's suggestion list —
+     * every other outcome (data unavailable/stale/source failure, no
+     * hazard, NO_ALERT, or the occurrence already owned by an earlier
+     * evaluation today) is a pure no-op: no candidate, no claim held, no
+     * notification.
+     */
+    private suspend fun evaluateWeatherAlert(
+        now: LocalDateTime,
+        today: LocalDate,
+        triggerSource: String,
+        nowMs: Long,
+    ): WeatherAlertEvalResult? {
+        val targetDate = WeatherAlertPolicy.targetDateFor(today)
+        val weatherEnabled = settings.weatherEnabled.first()
+        val rainDiag = weather.rainFetchDiagnostic.value
+        val facts = contextEngine.tomorrowForecastFacts(now)
+        // Priority: disabled > never-attempted-this-session > a real fetch
+        // failure > whatever ContextEngine's own stored-state freshness
+        // gate says (SUCCESS_DATA/STALE/DATA_UNAVAILABLE) — a failed fetch
+        // is never confused with "fetched fine, nothing forecast" (§
+        // WeatherManager.RainFetchDiagnostic's own doc comment).
+        val dataStatus = when {
+            !weatherEnabled -> ToolOutcomeStatus.DATA_UNAVAILABLE
+            rainDiag == null -> ToolOutcomeStatus.DATA_UNAVAILABLE
+            rainDiag.lastErrorType != null -> ToolOutcomeStatus.SOURCE_FAILURE
+            else -> facts.dataStatus
+        }
+
+        fun publish(hazard: WeatherHazard?, candidateCreated: Boolean, occurrenceClaimed: Boolean) {
+            _weatherAlertDiagnostic.value = WeatherAlertDiagnostic(
+                evaluatedAtMs = System.currentTimeMillis(),
+                targetLocalDate = targetDate,
+                policyVersion = WeatherAlertPolicy.POLICY_VERSION,
+                dataStatus = dataStatus.name,
+                hazard = hazard?.name,
+                candidateCreated = candidateCreated,
+                occurrenceClaimed = occurrenceClaimed,
+                governorOutcome = null,
+                deliveryAttempted = false,
+                delivered = false,
+            )
+        }
+
+        // Never invent "tomorrow it will rain" (or "it will not") from bad
+        // data — represent the failure honestly and let the next scheduled
+        // evaluation (same evening window, up to hourly) retry.
+        if (dataStatus != ToolOutcomeStatus.SUCCESS_DATA) {
+            publish(hazard = null, candidateCreated = false, occurrenceClaimed = false)
+            return null
+        }
+
+        val evaluation = WeatherAlertPolicy.evaluate(facts.category, facts.millimeters)
+        val hazard = (evaluation as? WeatherAlertEvaluation.Decided)?.hazard
+        if (hazard == null || hazard == WeatherHazard.NO_ALERT) {
+            publish(hazard = hazard, candidateCreated = false, occurrenceClaimed = false)
+            return null
+        }
+
+        val occurrenceKey = ProactiveOccurrenceKey.weatherAlert(targetDate)
+        val claim = runCatching {
+            occurrenceStore.claim(occurrenceKey, kind = "WEATHER_ALERT", logicalDate = targetDate, triggerSource = triggerSource, now = nowMs)
+        }.getOrNull()
+        val owned = claim is OccurrenceClaimOutcome.Claimed || claim is OccurrenceClaimOutcome.TakeoverAllowed
+        if (!owned) {
+            Log.i(TAG, "proactive_weather_alert_claim_denied source=$triggerSource claim=$claim")
+            publish(hazard = hazard, candidateCreated = false, occurrenceClaimed = false)
+            return null
+        }
+
+        publish(hazard = hazard, candidateCreated = true, occurrenceClaimed = true)
+        return WeatherAlertEvalResult(ProactiveComposer.weatherAlert(hazard, targetDate), occurrenceKey)
+    }
+
+    /**
+     * § JARVIS Implementation Master Plan — PASSAGGIO 14.2 — "safe debug/test
+     * path... inject a NON-PRODUCTION deterministic tomorrow forecast and
+     * verify the decision pipeline without altering production weather
+     * data." Debug-only by convention (the caller —
+     * [com.simone.jarvismobile.ui.diagnostics.DiagnosticsViewModel] — gates
+     * this behind `BuildConfig.DEBUG`, the same convention already used for
+     * the GPS simulator). [category]/[millimeters] are fixtures fed
+     * straight into [WeatherAlertPolicy] — [WeatherManager]/[ContextEngine]'s
+     * real cached forecast is never read or written here. Claims a
+     * DELIBERATELY DISTINCT occurrence key (`WEATHER_ALERT_DEBUG:`, never
+     * `WEATHER_ALERT:`) so a test run can never suppress — or be suppressed
+     * by — the real evening evaluation running the same night.
+     */
+    suspend fun simulateWeatherAlert(
+        category: WeatherCategory,
+        millimeters: Double?,
+        now: LocalDateTime = LocalDateTime.now(),
+    ): String {
+        val targetDate = WeatherAlertPolicy.targetDateFor(now.toLocalDate())
+        val evaluation = WeatherAlertPolicy.evaluate(category, millimeters)
+        val hazard = (evaluation as? WeatherAlertEvaluation.Decided)?.hazard
+        if (hazard == null || hazard == WeatherHazard.NO_ALERT) {
+            return "Nessun avviso da questo scenario (esito=$evaluation) — mai una consegna simulata per NO_ALERT/sconosciuto."
+        }
+        val occurrenceKey = "WEATHER_ALERT_DEBUG:$targetDate:${hazard.name}"
+        val nowMs = now.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        val claim = runCatching {
+            occurrenceStore.claim(occurrenceKey, kind = "WEATHER_ALERT_DEBUG", logicalDate = targetDate, triggerSource = "DEBUG_SIMULATION", now = nowMs)
+        }.getOrNull()
+        val owned = claim is OccurrenceClaimOutcome.Claimed || claim is OccurrenceClaimOutcome.TakeoverAllowed
+        if (!owned) {
+            return "Questo esatto scenario è già stato simulato e consegnato oggi (claim=$claim) — nessuna nuova notifica."
+        }
+        val suggestion = ProactiveComposer.weatherAlert(hazard, targetDate)
+        runCatching { occurrenceStore.markDeliveryAttempt(occurrenceKey) }
+        notifier.show(suggestion)
+        runCatching { occurrenceStore.markDelivered(occurrenceKey) }
+        return "Notifica simulata inviata — hazard=$hazard targetDate=$targetDate messaggio=\"${suggestion.message}\""
     }
 
     private fun recordRun(

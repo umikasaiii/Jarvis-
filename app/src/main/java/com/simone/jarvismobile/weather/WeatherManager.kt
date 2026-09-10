@@ -74,6 +74,27 @@ class WeatherManager @Inject constructor(
     private val _fetchDiagnostic = MutableStateFlow<FetchDiagnostic?>(null)
     val fetchDiagnostic: StateFlow<FetchDiagnostic?> = _fetchDiagnostic.asStateFlow()
 
+    /**
+     * § JARVIS Implementation Master Plan — PASSAGGIO 14.2. The real outcome
+     * of the most recent [refresh]'s own `fetchRain` call — deliberately a
+     * SEPARATE field from [fetchDiagnostic] above, which that field's own
+     * doc comment already scopes to `fetchWeeklyOutlook`/`fetchExtendedDay`
+     * only (never `refresh`'s periodic rain/no-rain tick). Without this, a
+     * genuine provider/network failure during `refresh()` was
+     * indistinguishable from "fetched fine, nothing forecast" — both left
+     * [com.simone.jarvismobile.context.ContextEngine]'s stored facts null —
+     * exactly the SOURCE_FAILURE-vs-everything-else ambiguity PASSAGGIO 7
+     * already closed for the other two fetch paths.
+     */
+    data class RainFetchDiagnostic(
+        val attemptedAtMs: Long,
+        val succeededAtMs: Long?,
+        val lastErrorType: String?,
+    )
+
+    private val _rainFetchDiagnostic = MutableStateFlow<RainFetchDiagnostic?>(null)
+    val rainFetchDiagnostic: StateFlow<RainFetchDiagnostic?> = _rainFetchDiagnostic.asStateFlow()
+
     @SuppressLint("MissingPermission")
     suspend fun refresh() {
         if (!settings.weatherEnabled.first()) return
@@ -84,11 +105,19 @@ class WeatherManager @Inject constructor(
         }
         val point = resolved.point
         _lastQueryPoint.value = point
+        val attemptedAtMs = System.currentTimeMillis()
         val forecast = source.fetchRain(point.first, point.second)
+        _rainFetchDiagnostic.value = RainFetchDiagnostic(
+            attemptedAtMs = attemptedAtMs,
+            succeededAtMs = if (forecast != null) System.currentTimeMillis() else null,
+            lastErrorType = if (forecast == null) source.lastFetchErrorType() else null,
+        )
         contextEngine.onWeather(
             rainToday = RainDecision.isRainDay(forecast?.todayCategory, forecast?.todayMillimeters),
             rainTomorrow = RainDecision.isRainDay(forecast?.tomorrowCategory, forecast?.tomorrowMillimeters),
             todayWeather = forecast?.todayCategory,
+            tomorrowWeather = forecast?.tomorrowCategory,
+            tomorrowMillimeters = forecast?.tomorrowMillimeters,
         )
         Log.i(TAG, "weather_refreshed ok=${forecast != null}")
 

@@ -38,6 +38,18 @@ data class ContextState(
     val rainTomorrow: Boolean? = null,
     /** Today's dominant weather category — drives the morning greeting emoji. */
     val todayWeather: WeatherCategory? = null,
+    /**
+     * § JARVIS Implementation Master Plan — PASSAGGIO 14.2. Tomorrow's
+     * dominant category and expected accumulation — the structured facts
+     * the evening rain/storm alert policy needs, kept separate from
+     * [rainTomorrow] (which only ever collapses them to a plain boolean via
+     * [com.simone.jarvismobile.core.weather.RainDecision] for the
+     * automation engine/morning greeting) so a hazard tier — plain rain vs.
+     * heavy rain vs. thunderstorm — is never lost upstream of the policy
+     * that needs it.
+     */
+    val tomorrowWeather: WeatherCategory? = null,
+    val tomorrowMillimeters: Double? = null,
     val weatherUpdatedAt: LocalDateTime? = null,
     val updatedAt: LocalDateTime? = null,
 ) {
@@ -50,6 +62,7 @@ data class ContextState(
         append(" bt=").append(if (bluetoothKnown) connectedBluetooth.size.toString() else "?")
         append(" rain=").append(rainToday?.toString() ?: "?").append("/").append(rainTomorrow?.toString() ?: "?")
         append(" cat=").append(todayWeather?.name ?: "?")
+        append(" catDomani=").append(tomorrowWeather?.name ?: "?")
         append(" weatherAt=").append(weatherUpdatedAt?.toString() ?: "mai")
     }
 }

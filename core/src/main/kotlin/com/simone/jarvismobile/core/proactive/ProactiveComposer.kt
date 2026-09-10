@@ -1,6 +1,7 @@
 package com.simone.jarvismobile.core.proactive
 
 import com.simone.jarvismobile.core.weather.WeatherCategory
+import com.simone.jarvismobile.core.weather.WeatherHazard
 import java.time.LocalDate
 
 /**
@@ -106,6 +107,39 @@ object ProactiveComposer {
             message = "Per domani: " + items.joinToString(", ") + ".",
             priority = 40,
             dedupKey = "${ProactiveKind.EVENING_DIGEST}:$today",
+        )
+    }
+
+    /**
+     * § JARVIS Implementation Master Plan — PASSAGGIO 14.2. The evening-before
+     * rain/storm warning — composed only from a decided, real
+     * [WeatherHazard] that is not [WeatherHazard.NO_ALERT]; the caller (§
+     * [com.simone.jarvismobile.proactive.ProactiveManager]) is the one that
+     * decides eligibility from [com.simone.jarvismobile.core.weather.WeatherAlertPolicy],
+     * so [hazard] arrives here already meaningful — [require] documents that
+     * contract instead of silently returning something meaningless.
+     *
+     * Deliberately no time-of-day window in the message: the underlying
+     * forecast is a daily aggregate (§ `WeatherAlertPolicy`), which does not
+     * support one — claiming a window here would overstate the evidence the
+     * app actually has. No emoji, no natural-language parsing anywhere in
+     * the decision that got us here — this function only ever RENDERS an
+     * already-decided [WeatherHazard] enum value, never re-derives one from
+     * text.
+     */
+    fun weatherAlert(hazard: WeatherHazard, targetDate: LocalDate): ProactiveSuggestion {
+        require(hazard != WeatherHazard.NO_ALERT) { "weatherAlert must never be composed for NO_ALERT" }
+        val message = when (hazard) {
+            WeatherHazard.THUNDERSTORM -> "Domani sono previsti temporali."
+            WeatherHazard.HEAVY_RAIN -> "Domani è prevista pioggia intensa."
+            WeatherHazard.RAIN_EXPECTED -> "Domani è prevista pioggia."
+            WeatherHazard.NO_ALERT -> error("unreachable — guarded by require() above")
+        }
+        return ProactiveSuggestion(
+            kind = ProactiveKind.WEATHER_ALERT,
+            message = message,
+            priority = 70,
+            dedupKey = "${ProactiveKind.WEATHER_ALERT}:$targetDate",
         )
     }
 

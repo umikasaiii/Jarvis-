@@ -8,6 +8,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import com.simone.jarvismobile.core.weather.WeatherCategory
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -63,6 +64,8 @@ fun DiagnosticsScreen(
     val weatherStatus by viewModel.weatherStatus.collectAsStateWithLifecycle()
     val healthStatus by viewModel.healthStatus.collectAsStateWithLifecycle()
     val proactiveStatus by viewModel.proactiveStatus.collectAsStateWithLifecycle()
+    val weatherAlertStatus by viewModel.weatherAlertStatus.collectAsStateWithLifecycle()
+    val weatherAlertSimulationResult by viewModel.weatherAlertSimulationResult.collectAsStateWithLifecycle()
     val lastChatRoute by viewModel.lastChatRoute.collectAsStateWithLifecycle()
     val lastRemoteAttempt by viewModel.lastRemoteAttempt.collectAsStateWithLifecycle()
     val buildId = viewModel.buildId
@@ -507,6 +510,45 @@ fun DiagnosticsScreen(
                 }
                 if (proactiveStatus.isNotEmpty()) {
                     Text(proactiveStatus, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+
+        // § JARVIS Implementation Master Plan PASSAGGIO 14.2 — evening
+        // rain/storm alert evidence, same "make it explainable instead of
+        // guessed" principle as the card above. "Controlla adesso" is a
+        // passive read (never forces an evaluation outside the real 19-21
+        // window, § ProactiveManager); the debug-only simulate buttons
+        // below are the "verify the pipeline without waiting for real
+        // rain" path the spec asks for.
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Meteo — avviso pioggia/temporali", style = MaterialTheme.typography.titleMedium)
+                Button(onClick = viewModel::refreshWeatherAlertDiagnostics, modifier = Modifier.fillMaxWidth()) {
+                    Text("Controlla adesso")
+                }
+                if (weatherAlertStatus.isNotEmpty()) {
+                    Text(weatherAlertStatus, style = MaterialTheme.typography.bodySmall)
+                }
+                if (BuildConfig.DEBUG) {
+                    Text("Simula (solo debug, non tocca i dati meteo reali):", style = MaterialTheme.typography.labelSmall)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        OutlinedButton(
+                            modifier = Modifier.weight(1f),
+                            onClick = { viewModel.simulateWeatherAlert(WeatherCategory.CLEAR, null) },
+                        ) { Text("Sereno") }
+                        OutlinedButton(
+                            modifier = Modifier.weight(1f),
+                            onClick = { viewModel.simulateWeatherAlert(WeatherCategory.RAIN, 3.0) },
+                        ) { Text("Pioggia") }
+                        OutlinedButton(
+                            modifier = Modifier.weight(1f),
+                            onClick = { viewModel.simulateWeatherAlert(WeatherCategory.THUNDERSTORM, null) },
+                        ) { Text("Temporale") }
+                    }
+                    if (weatherAlertSimulationResult.isNotEmpty()) {
+                        Text(weatherAlertSimulationResult, style = MaterialTheme.typography.bodySmall)
+                    }
                 }
             }
         }

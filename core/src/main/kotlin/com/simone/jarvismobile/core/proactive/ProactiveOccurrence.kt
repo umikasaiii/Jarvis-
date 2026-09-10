@@ -99,4 +99,24 @@ object ProactiveOccurrenceReconciler {
  */
 object ProactiveOccurrenceKey {
     fun morningDigest(logicalDate: LocalDate): String = "${ProactiveKind.MORNING_DIGEST}:$logicalDate"
+
+    /**
+     * § JARVIS Implementation Master Plan — PASSAGGIO 14.2. Keyed by the
+     * TARGET local date being warned about (tomorrow, at evaluation time —
+     * see [com.simone.jarvismobile.core.weather.WeatherAlertPolicy.targetDateFor]),
+     * never by the evaluation date itself and never by hazard tier: at most
+     * ONE weather-alert notification exists per logical target day,
+     * regardless of how many times the evening window re-evaluates the
+     * forecast or how the hazard classification shifts between
+     * evaluations — the DoD's own "duplicate evaluation same target day →
+     * one occurrence" requirement, taken literally. A stronger forecast
+     * found before this occurrence is claimed/delivered naturally wins
+     * (each evaluation reclassifies from fresh data); a stronger forecast
+     * discovered AFTER today's alert has already been delivered does NOT
+     * re-notify — see [com.simone.jarvismobile.proactive.ProactiveManager]'s
+     * own doc comment for why extending PASSAGGIO 14.1's terminal DELIVERED
+     * state to allow post-delivery escalation was deliberately left out of
+     * this pass.
+     */
+    fun weatherAlert(targetLocalDate: LocalDate): String = "${ProactiveKind.WEATHER_ALERT}:$targetLocalDate"
 }

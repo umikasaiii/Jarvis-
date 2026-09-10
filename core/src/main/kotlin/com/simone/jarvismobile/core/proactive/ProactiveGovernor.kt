@@ -67,6 +67,13 @@ object ProactiveGovernor {
         }
     }
 
-    /** Digest kinds the user explicitly opted into — never muted by quiet hours. */
-    private val QUIET_HOURS_EXEMPT = setOf(ProactiveKind.MORNING_DIGEST, ProactiveKind.EVENING_DIGEST)
+    /**
+     * Digest kinds the user explicitly opted into — never muted by quiet
+     * hours. [ProactiveKind.WEATHER_ALERT] joins them (§ PASSAGGIO 14.2):
+     * a rain/storm warning is not a discretionary tip like
+     * [ProactiveKind.BATTERY_BEFORE_ALARM] — someone with quiet hours
+     * starting at 19:00 (the default evening evaluation window) should
+     * still be told before tomorrow's storm.
+     */
+    private val QUIET_HOURS_EXEMPT = setOf(ProactiveKind.MORNING_DIGEST, ProactiveKind.EVENING_DIGEST, ProactiveKind.WEATHER_ALERT)
 }

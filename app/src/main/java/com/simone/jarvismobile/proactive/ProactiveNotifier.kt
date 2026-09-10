@@ -62,9 +62,12 @@ class ProactiveNotifier @Inject constructor(
         // told, not an optional nudge — it belongs on the same normal, audible
         // channel as agenda reminders and automation results, not the deliberately
         // muted "Suggerimenti" channel that BATTERY_BEFORE_ALARM and future tip-like
-        // kinds stay on.
+        // kinds stay on. § JARVIS Implementation Master Plan PASSAGGIO 14.2 —
+        // WEATHER_ALERT joins them: a rain/storm warning is hazard-relevant
+        // content the user would want to actually notice, not a discretionary tip.
         val isDigest = suggestion.kind == ProactiveKind.MORNING_DIGEST ||
-            suggestion.kind == ProactiveKind.EVENING_DIGEST
+            suggestion.kind == ProactiveKind.EVENING_DIGEST ||
+            suggestion.kind == ProactiveKind.WEATHER_ALERT
         val builder = JarvisNotifications.styled(
             context = context,
             channelId = if (isDigest) JarvisNotifications.CHANNEL_REMINDERS else JarvisNotifications.CHANNEL_SUGGESTIONS,

@@ -18,6 +18,16 @@ enum class ProactiveKind {
 
     /** An end-of-day recap of what's still open / what's tomorrow. */
     EVENING_DIGEST,
+
+    /**
+     * § JARVIS Implementation Master Plan — PASSAGGIO 14.2. An evening-before
+     * warning that meaningful rain or a thunderstorm is forecast for
+     * tomorrow — content the user would want even during quiet hours (§
+     * [ProactiveGovernor]'s `QUIET_HOURS_EXEMPT`, same reasoning already
+     * applied to the digests), never a discretionary tip like
+     * [BATTERY_BEFORE_ALARM].
+     */
+    WEATHER_ALERT,
 }
 
 /** One thing JARVIS could say, already composed. Not yet shown — the governor decides. */

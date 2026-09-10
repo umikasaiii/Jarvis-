@@ -37,6 +37,8 @@ class ProactiveSettingsViewModel @Inject constructor(
         ProactiveKind.MORNING_DIGEST to "Riepilogo mattutino",
         ProactiveKind.BATTERY_BEFORE_ALARM to "Batteria prima della sveglia",
         ProactiveKind.EVENING_DIGEST to "Riepilogo serale",
+        // § JARVIS Implementation Master Plan PASSAGGIO 14.2.
+        ProactiveKind.WEATHER_ALERT to "Avviso pioggia/temporali (la sera prima)",
     )
 
     fun setEnabled(value: Boolean) = viewModelScope.launch {
