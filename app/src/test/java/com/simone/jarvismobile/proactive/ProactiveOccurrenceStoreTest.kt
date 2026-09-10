@@ -257,4 +257,51 @@ class ProactiveOccurrenceStoreTest {
         val third = store.claim(weatherKey, "WEATHER_ALERT", LocalDate.of(2026, 9, 11), "CONFIGURED_TIME", now + 3_600_000)
         assertEquals(OccurrenceClaimOutcome.AlreadyOwned(ProactiveOccurrenceState.DELIVERED), third)
     }
+
+    // --- § MICRO-PATCH 14.2.1 — making the configured briefing time
+    // user-selectable must never let a changed schedule redeliver a
+    // same-day occurrence. The occurrence identity (morningDigest(date)) is
+    // date-only by construction — the scheduling/time layer never
+    // participates in it (§6), so these two tests pin the mandatory
+    // scenario from the spec directly instead of leaving it only implied
+    // by the more general tests above. ---
+
+    @Test
+    fun `08_00 briefing already DELIVERED, user changes the setting to 09_00 - the next CONFIGURED_TIME firing at the new hour is suppressed, not redelivered`() = runTest {
+        val dao = FakeProactiveOccurrenceDao()
+        val store = ProactiveOccurrenceStore(dao)
+
+        // The original 08:00 CONFIGURED_TIME firing claims and delivers today's digest.
+        val original = store.claim(key, "MORNING_DIGEST", date, "CONFIGURED_TIME", now)
+        assertEquals(OccurrenceClaimOutcome.Claimed, original)
+        store.markDeliveryAttempt(key)
+        store.markDelivered(key)
+        assertEquals(ProactiveOccurrenceState.DELIVERED.name, dao.rowOrNull(key)!!.state)
+
+        // The user then changes the setting to 09:00 (ProactiveSettingsViewModel.
+        // setMorningBriefingTime -> MorningTriggerScheduler re-arms the SAME
+        // KEY_CONFIGURED_TIME alarm for the new hour, but the occurrence KEY
+        // computed by ProactiveOccurrenceKey.morningDigest is unaffected — it
+        // is date-only, never a function of the configured hour/minute). The
+        // re-armed alarm fires later the same day, still on the SAME logical
+        // date, and reaches this same claim() call:
+        val laterSameDay = store.claim(key, "MORNING_DIGEST", date, "CONFIGURED_TIME", now + 3_600_000)
+        assertEquals(OccurrenceClaimOutcome.AlreadyOwned(ProactiveOccurrenceState.DELIVERED), laterSameDay)
+
+        // No second delivery attempt was ever recorded.
+        assertEquals(ProactiveOccurrenceState.DELIVERED.name, dao.rowOrNull(key)!!.state)
+    }
+
+    @Test
+    fun `the occurrence key never encodes the configured hour or minute - two different configured times for the same date claim the exact same key`() = runTest {
+        // ProactiveOccurrenceKey.morningDigest(date) (core) takes only a
+        // LocalDate — this pins that a settings change can never fork the
+        // occurrence identity in two, which would defeat the whole claim
+        // mechanism by letting "08:00's occurrence" and "09:00's occurrence"
+        // both exist and both deliver.
+        val keyAt0800Setting = com.simone.jarvismobile.core.proactive.ProactiveOccurrenceKey.morningDigest(date)
+        val keyAt0935Setting = com.simone.jarvismobile.core.proactive.ProactiveOccurrenceKey.morningDigest(date)
+        assertEquals(keyAt0800Setting, keyAt0935Setting)
+        assertEquals(key, keyAt0800Setting)
+    }
 }

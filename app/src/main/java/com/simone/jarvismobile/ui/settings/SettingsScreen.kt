@@ -15,12 +15,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.ui.draw.alpha
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -53,7 +55,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.simone.jarvismobile.core.ai.JarvisCoreState
 import com.simone.jarvismobile.core.engine.JarvisEngineMode
 import com.simone.jarvismobile.core.engine.ReasoningMode
+import com.simone.jarvismobile.core.proactive.ProactiveKind
 import com.simone.jarvismobile.data.SettingsRepository
+import com.simone.jarvismobile.ui.agenda.TaskTimePicker
 import com.simone.jarvismobile.ui.commands.CommandsScreen
 import com.simone.jarvismobile.ui.components.ProModeBadge
 import com.simone.jarvismobile.ui.theme.JarvisThemeId
@@ -1244,6 +1248,9 @@ private fun ProactiveSettingsSection(
     val quietEnd by viewModel.quietEnd.collectAsStateWithLifecycle()
     val disabled by viewModel.disabledKinds.collectAsStateWithLifecycle()
     val muted by viewModel.mutedKinds.collectAsStateWithLifecycle()
+    val morningHour by viewModel.morningBriefingHour.collectAsStateWithLifecycle()
+    val morningMinute by viewModel.morningBriefingMinute.collectAsStateWithLifecycle()
+    var showMorningTimePicker by remember { mutableStateOf(false) }
 
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1295,8 +1302,52 @@ private fun ProactiveSettingsSection(
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
+                // § MICRO-PATCH 14.2.1 — the configurable briefing time, shown
+                // immediately under its own switch. Stays tappable when
+                // Riepilogo mattutino is OFF (so the user can pre-configure it
+                // before re-enabling — same non-blocking convention already
+                // used by every other Proattività setting here) but visually
+                // secondary, per the spec's own wording.
+                if (kind == ProactiveKind.MORNING_DIGEST) {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                            .clickable(onClickLabel = "Modifica orario briefing") { showMorningTimePicker = true }
+                            .alpha(if (on) 1f else 0.6f)
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Column {
+                            Text("Orario briefing", style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                "%02d:%02d".format(morningHour, morningMinute),
+                                style = MaterialTheme.typography.titleMedium,
+                            )
+                        }
+                        TextButton(onClick = { showMorningTimePicker = true }) { Text("Modifica") }
+                    }
+                    Text(
+                        "Usato come orario programmato del briefing; se ti svegli prima " +
+                            "(sblocco reale o sveglia impostata sul telefono), JARVIS te lo " +
+                            "consegna comunque prima di quest'ora, senza aspettarla.",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.alpha(if (on) 1f else 0.6f),
+                    )
+                }
             }
         }
+    }
+    if (showMorningTimePicker) {
+        TaskTimePicker(
+            initial = java.time.LocalTime.of(morningHour, morningMinute),
+            onDismiss = { showMorningTimePicker = false },
+            onPick = { time ->
+                viewModel.setMorningBriefingTime(time.hour, time.minute)
+                showMorningTimePicker = false
+            },
+        )
     }
 }
 
