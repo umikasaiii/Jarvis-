@@ -304,4 +304,229 @@ class ProactiveOccurrenceStoreTest {
         assertEquals(keyAt0800Setting, keyAt0935Setting)
         assertEquals(key, keyAt0800Setting)
     }
+
+    // ==================================================================
+    // § JARVIS Implementation Master Plan — MICRO-PATCH 14.2.2. Real
+    // device failure: three Morning Briefings delivered the same morning
+    // (08:00 no emoji, 08:14 with emoji, 09:00 a third). Root cause found
+    // by code audit, not assumption: ProactiveManager.refreshMorningDigestNotification()
+    // (called only by MorningRefreshWorker, +10min/+60min after a REAL
+    // delivery) composed and posted a notification directly — the ONE
+    // path in the whole app with occurrence claim = NO. Tests below cover
+    // items 1-21 of the mission's required test list that are expressible
+    // at this pure store level (no Android Context needed); items
+    // touching ProactiveManager/ProactiveNotifier/MorningRefreshWorker
+    // themselves are covered by MorningBriefingCanonicalGateRegressionTest.kt
+    // (source-scan) and MorningRefreshGateTest.kt (:core, pure).
+    // ==================================================================
+
+    // --- peek(): read-only, never a claim, never mutates -----------------
+
+    @Test
+    fun `peek on an empty table returns null`() = runTest {
+        val dao = FakeProactiveOccurrenceDao()
+        val store = ProactiveOccurrenceStore(dao)
+        assertNull(store.peek(key)?.state)
+    }
+
+    @Test
+    fun `peek reflects the real current state and owning trigger without claiming`() = runTest {
+        val dao = FakeProactiveOccurrenceDao()
+        val store = ProactiveOccurrenceStore(dao)
+        store.claim(key, "MORNING_DIGEST", date, "CONFIGURED_TIME", now)
+        store.markDeliveryAttempt(key)
+        store.markDelivered(key)
+
+        val snapshot = store.peek(key)
+        assertEquals(ProactiveOccurrenceState.DELIVERED, snapshot?.state)
+        assertEquals("CONFIGURED_TIME", snapshot?.owningTriggerSource)
+    }
+
+    @Test
+    fun `peek never mutates the row - repeated peeks are idempotent`() = runTest {
+        val dao = FakeProactiveOccurrenceDao()
+        val store = ProactiveOccurrenceStore(dao)
+        store.claim(key, "MORNING_DIGEST", date, "FIRST_UNLOCK", now)
+        val before = dao.rowOrNull(key)!!.copy()
+        repeat(3) { store.peek(key) }
+        assertEquals(before, dao.rowOrNull(key))
+    }
+
+    // --- item 1: CONFIGURED_TIME and NEXT_ALARM simultaneous -------------
+
+    @Test
+    fun `test item 1 - CONFIGURED_TIME and NEXT_ALARM claiming at the exact same instant - exactly one wins`() = runTest {
+        val dao = FakeProactiveOccurrenceDao()
+        val store = ProactiveOccurrenceStore(dao)
+        val a = store.claim(key, "MORNING_DIGEST", date, "CONFIGURED_TIME", now)
+        val b = store.claim(key, "MORNING_DIGEST", date, "NEXT_ALARM", now)
+        val outcomes = listOf(a, b)
+        assertEquals(1, outcomes.count { it == OccurrenceClaimOutcome.Claimed })
+        assertEquals(1, outcomes.count { it is OccurrenceClaimOutcome.AlreadyOwned })
+    }
+
+    // --- items 2/3: CONFIGURED_TIME then a later trigger, +14min/+60min --
+
+    @Test
+    fun `test item 2 - CONFIGURED_TIME delivers, FIRST_UNLOCK +14min later sees ALREADY_DELIVERED`() = runTest {
+        val dao = FakeProactiveOccurrenceDao()
+        val store = ProactiveOccurrenceStore(dao)
+        store.claim(key, "MORNING_DIGEST", date, "CONFIGURED_TIME", now)
+        store.markDeliveryAttempt(key)
+        store.markDelivered(key)
+
+        val fourteenMinLater = now + 14 * 60_000L
+        val outcome = store.claim(key, "MORNING_DIGEST", date, "FIRST_UNLOCK", fourteenMinLater)
+        assertEquals(OccurrenceClaimOutcome.AlreadyOwned(ProactiveOccurrenceState.DELIVERED), outcome)
+    }
+
+    @Test
+    fun `test item 3 - CONFIGURED_TIME delivers, PERIODIC_FALLBACK +60min later sees ALREADY_DELIVERED`() = runTest {
+        val dao = FakeProactiveOccurrenceDao()
+        val store = ProactiveOccurrenceStore(dao)
+        store.claim(key, "MORNING_DIGEST", date, "CONFIGURED_TIME", now)
+        store.markDeliveryAttempt(key)
+        store.markDelivered(key)
+
+        val sixtyMinLater = now + 60 * 60_000L
+        val outcome = store.claim(key, "MORNING_DIGEST", date, "PERIODIC_FALLBACK", sixtyMinLater)
+        assertEquals(OccurrenceClaimOutcome.AlreadyOwned(ProactiveOccurrenceState.DELIVERED), outcome)
+    }
+
+    // --- item 4: four trigger sources sequentially over 90 minutes -------
+
+    @Test
+    fun `test item 4 - all four trigger sources sequentially over 90 minutes after delivery - none redeliver`() = runTest {
+        val dao = FakeProactiveOccurrenceDao()
+        val store = ProactiveOccurrenceStore(dao)
+        store.claim(key, "MORNING_DIGEST", date, "CONFIGURED_TIME", now)
+        store.markDeliveryAttempt(key)
+        store.markDelivered(key)
+
+        val laterSources = listOf("NEXT_ALARM", "FIRST_UNLOCK", "PERIODIC_FALLBACK", "MANUAL")
+        laterSources.forEachIndexed { index, source ->
+            val at = now + (index + 1) * 20 * 60_000L // spread across ~90 minutes
+            val outcome = store.claim(key, "MORNING_DIGEST", date, source, at)
+            assertEquals(
+                "trigger source $source at +${(index + 1) * 20}min must see ALREADY_DELIVERED",
+                OccurrenceClaimOutcome.AlreadyOwned(ProactiveOccurrenceState.DELIVERED),
+                outcome,
+            )
+        }
+    }
+
+    // --- item 5: all four trigger sources "concurrently" (same instant) --
+
+    @Test
+    fun `test item 5 - all four trigger sources at the exact same instant before any delivery - exactly one wins the claim`() = runTest {
+        val dao = FakeProactiveOccurrenceDao()
+        val store = ProactiveOccurrenceStore(dao)
+        val sources = listOf("CONFIGURED_TIME", "NEXT_ALARM", "FIRST_UNLOCK", "PERIODIC_FALLBACK")
+        val outcomes = sources.map { store.claim(key, "MORNING_DIGEST", date, it, now) }
+        assertEquals(1, outcomes.count { it == OccurrenceClaimOutcome.Claimed })
+        assertEquals(3, outcomes.count { it is OccurrenceClaimOutcome.AlreadyOwned })
+        // Only one row exists, never a per-source fork.
+        assertEquals(ProactiveOccurrenceState.CLAIMED.name, dao.rowOrNull(key)!!.state)
+    }
+
+    // --- items 6/7: process recreation / reboot between triggers ---------
+
+    @Test
+    fun `test item 6_7 - a new ProactiveOccurrenceStore instance over the SAME dao - simulating process restart or reboot - still honors DELIVERED`() = runTest {
+        val dao = FakeProactiveOccurrenceDao()
+        val firstProcessStore = ProactiveOccurrenceStore(dao)
+        firstProcessStore.claim(key, "MORNING_DIGEST", date, "CONFIGURED_TIME", now)
+        firstProcessStore.markDeliveryAttempt(key)
+        firstProcessStore.markDelivered(key)
+
+        // A fresh Store instance (Hilt would construct a new @Singleton after
+        // a process restart) wrapping the SAME underlying dao/row — exactly
+        // what survives a real process kill or device reboot, since the
+        // occurrence lives in Room, not in-memory.
+        val secondProcessStore = ProactiveOccurrenceStore(dao)
+        val outcome = secondProcessStore.claim(key, "MORNING_DIGEST", date, "NEXT_ALARM", now + 30 * 60_000L)
+        assertEquals(OccurrenceClaimOutcome.AlreadyOwned(ProactiveOccurrenceState.DELIVERED), outcome)
+    }
+
+    // --- items 10/11: stale/old scheduled callback fires after DELIVERED -
+
+    @Test
+    fun `test item 10_11 - a stale callback (old OR new exact alarm identity) firing after DELIVERED is always a harmless no-op`() = runTest {
+        val dao = FakeProactiveOccurrenceDao()
+        val store = ProactiveOccurrenceStore(dao)
+        store.claim(key, "MORNING_DIGEST", date, "CONFIGURED_TIME", now)
+        store.markDeliveryAttempt(key)
+        store.markDelivered(key)
+
+        // MorningTriggerScheduler.scheduleConfiguredTimeTrigger() always
+        // reschedules under the SAME PendingIntent key (KEY_CONFIGURED_TIME,
+        // FLAG_UPDATE_CURRENT — verified by MorningTriggerSchedulerAlarmIdentityRegressionTest),
+        // so "old and new exact alarms" can never both be independently
+        // live — but even if a stale callback fired anyway (defense in
+        // depth, § "persistent occurrence gate FIRST, scheduler
+        // cancellation/replacement SECOND"), it reaches this SAME claim()
+        // call and is suppressed identically regardless of which alarm
+        // instance produced it.
+        val staleCallback = store.claim(key, "MORNING_DIGEST", date, "CONFIGURED_TIME", now + 45 * 60_000L)
+        assertEquals(OccurrenceClaimOutcome.AlreadyOwned(ProactiveOccurrenceState.DELIVERED), staleCallback)
+    }
+
+    // --- item 13: DELIVERED is terminal for EVERY trigger source ---------
+
+    @Test
+    fun `test item 13 - DELIVERED is terminal for every trigger source, parametrized`() = runTest {
+        val allSources = listOf(
+            "NEXT_ALARM", "CONFIGURED_TIME", "FIRST_UNLOCK", "PERIODIC_FALLBACK",
+            "MANUAL", "POST_BRIEFING_REFRESH_+10min", "POST_BRIEFING_REFRESH_+60min",
+        )
+        allSources.forEach { deliveringSource ->
+            val dao = FakeProactiveOccurrenceDao()
+            val store = ProactiveOccurrenceStore(dao)
+            store.claim(key, "MORNING_DIGEST", date, deliveringSource, now)
+            store.markDeliveryAttempt(key)
+            store.markDelivered(key)
+
+            allSources.forEach { laterSource ->
+                val outcome = store.claim(key, "MORNING_DIGEST", date, laterSource, now + 60_000L)
+                assertEquals(
+                    "delivered by $deliveringSource, retried by $laterSource must still be terminal",
+                    OccurrenceClaimOutcome.AlreadyOwned(ProactiveOccurrenceState.DELIVERED),
+                    outcome,
+                )
+            }
+        }
+    }
+
+    // --- item 17: MorningRefreshWorker cannot create another briefing ----
+
+    @Test
+    fun `test item 17 - the refresh gate (peek + MorningRefreshGate) allows a silent refresh only once DELIVERED, never before`() = runTest {
+        val dao = FakeProactiveOccurrenceDao()
+        val store = ProactiveOccurrenceStore(dao)
+
+        // Before any claim at all - MorningRefreshWorker firing on a day the
+        // digest was never even attempted must be a pure no-op.
+        assertFalse(
+            com.simone.jarvismobile.core.proactive.MorningRefreshGate.shouldRefresh(store.peek(key)?.state),
+        )
+
+        store.claim(key, "MORNING_DIGEST", date, "CONFIGURED_TIME", now)
+        // CLAIMED but not yet delivered (e.g. the +10min worker racing a
+        // slow generation/notify) - still must not refresh.
+        assertFalse(
+            com.simone.jarvismobile.core.proactive.MorningRefreshGate.shouldRefresh(store.peek(key)?.state),
+        )
+
+        store.markDeliveryAttempt(key)
+        // DELIVERY_PENDING - still not a real delivery yet.
+        assertFalse(
+            com.simone.jarvismobile.core.proactive.MorningRefreshGate.shouldRefresh(store.peek(key)?.state),
+        )
+
+        store.markDelivered(key)
+        // Only now, genuinely DELIVERED, may a silent refresh proceed.
+        assertTrue(
+            com.simone.jarvismobile.core.proactive.MorningRefreshGate.shouldRefresh(store.peek(key)?.state),
+        )
+    }
 }

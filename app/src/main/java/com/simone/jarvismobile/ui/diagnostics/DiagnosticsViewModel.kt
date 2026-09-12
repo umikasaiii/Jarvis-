@@ -43,6 +43,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -223,6 +224,43 @@ class DiagnosticsViewModel @Inject constructor(
             }
         }
     }
+
+    /**
+     * § JARVIS Implementation Master Plan — MICRO-PATCH 14.2.2 §9. DEVICE
+     * DIAGNOSTIC RECEIPTS — one line per attempted Morning Briefing
+     * delivery/refresh action, from every trigger source, newest first.
+     * Reactive (not a "press a button" read like the two cards above):
+     * [ProactiveManager.morningDeliveryReceipts] updates live as real
+     * triggers fire, so this reflects the actual sequence of events on the
+     * device without the user needing to time a manual check. Never the
+     * briefing text itself — only the bounded, enum-shaped fields
+     * [ProactiveManager.MorningDeliveryReceipt] already restricts itself to.
+     */
+    val morningReceiptsStatus: StateFlow<String> = proactive.morningDeliveryReceipts
+        .map { receipts ->
+            if (receipts.isEmpty()) {
+                "Nessuna ricevuta ancora registrata (nessun trigger del briefing mattutino è scattato in questo processo)."
+            } else {
+                val fmt = java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss").withZone(java.time.ZoneId.systemDefault())
+                receipts.reversed().joinToString("\n\n") { r ->
+                    buildString {
+                        append(fmt.format(java.time.Instant.ofEpochMilli(r.attemptedAtMs)))
+                        append(" ").append(r.triggerSource).append(" (").append(r.schedulerSource).append(")")
+                        append("\nkey=").append(r.occurrenceKey)
+                        append(" claim=").append(r.claimOutcome)
+                        append("\nstato: ").append(r.stateBefore ?: "—").append(" → ").append(r.stateAfter ?: "—")
+                        append("\nrenderer=").append(r.rendererId)
+                        append(" · notificationId=").append(r.notificationId)
+                        append("\nconsegna tentata=").append(r.deliveryAttempted)
+                        append(" · esito=").append(r.deliveryResult)
+                        r.retryReason?.let { append("\nmotivo: ").append(it) }
+                        r.existingOwnerTrigger?.let { append("\nproprietario esistente: ").append(it) }
+                        append("\nsessione=").append(r.sessionDiagnosticId)
+                    }
+                }
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
 
     /**
      * § JARVIS Implementation Master Plan PASSAGGIO 14.2 — "safe debug/test

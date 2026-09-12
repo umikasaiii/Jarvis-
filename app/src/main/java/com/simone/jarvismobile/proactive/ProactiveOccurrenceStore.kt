@@ -101,6 +101,23 @@ class ProactiveOccurrenceStore @Inject constructor(
         result
     }
 
+    /** § MICRO-PATCH 14.2.2 §9 — a bounded, read-only snapshot for diagnostics; never the briefing content. */
+    data class OccurrenceSnapshot(val state: ProactiveOccurrenceState?, val owningTriggerSource: String?)
+
+    /**
+     * § MICRO-PATCH 14.2.2 — a READ-ONLY current-state check, never a claim
+     * attempt: no mutex, no insert/takeover, no [ClaimDiagnostic] update.
+     * For paths that must VERIFY (not compete for) today's occurrence
+     * before acting — e.g. the post-delivery silent content refresh, which
+     * must never compose/post anything unless the real delivery genuinely
+     * already happened (§ [com.simone.jarvismobile.core.proactive.MorningRefreshGate]) —
+     * and for device diagnostic receipts that want to show which trigger
+     * source actually owns an occurrence a later trigger was denied.
+     */
+    suspend fun peek(key: String): OccurrenceSnapshot? = runCatching {
+        dao.find(key)?.let { OccurrenceSnapshot(it.state.toStateOrNull(), it.triggerSource) }
+    }.getOrNull()
+
     private suspend fun reReadAsAlreadyOwned(key: String): OccurrenceClaimOutcome {
         val fresh = dao.find(key)
         return OccurrenceClaimOutcome.AlreadyOwned(fresh?.state?.toStateOrNull() ?: ProactiveOccurrenceState.CLAIMED)

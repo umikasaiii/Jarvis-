@@ -9,12 +9,14 @@ import android.util.Log
 import com.simone.jarvismobile.agenda.AgendaRepository
 import com.simone.jarvismobile.audio.SessionCoordinator
 import com.simone.jarvismobile.context.ContextEngine
+import com.simone.jarvismobile.core.proactive.MorningRefreshGate
 import com.simone.jarvismobile.core.proactive.OccurrenceClaimOutcome
 import com.simone.jarvismobile.core.proactive.ProactiveComposer
 import com.simone.jarvismobile.core.proactive.ProactiveDecision
 import com.simone.jarvismobile.core.proactive.ProactiveGovernor
 import com.simone.jarvismobile.core.proactive.ProactiveKind
 import com.simone.jarvismobile.core.proactive.ProactiveOccurrenceKey
+import com.simone.jarvismobile.core.proactive.ProactiveOccurrenceState
 import com.simone.jarvismobile.core.proactive.ProactiveSettings
 import com.simone.jarvismobile.core.proactive.ProactiveSnapshot
 import com.simone.jarvismobile.core.proactive.ProactiveSuggestion
@@ -36,6 +38,7 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZoneId
+import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -139,6 +142,87 @@ class ProactiveManager @Inject constructor(
     private val _weatherAlertDiagnostic = MutableStateFlow<WeatherAlertDiagnostic?>(null)
     val weatherAlertDiagnostic: StateFlow<WeatherAlertDiagnostic?> = _weatherAlertDiagnostic.asStateFlow()
 
+    /**
+     * § JARVIS Implementation Master Plan — MICRO-PATCH 14.2.2 §9. One
+     * process-lifetime id (not persisted, not a device identifier — just
+     * distinguishes receipts across a process restart in the same session
+     * of debugging), included in every [MorningDeliveryReceipt] so a
+     * developer reading Diagnostics can tell whether two receipts came from
+     * the same running process or from before/after a restart.
+     */
+    private val sessionDiagnosticId: String = UUID.randomUUID().toString().take(8)
+
+    /**
+     * § MICRO-PATCH 14.2.2 §9 — DEVICE DIAGNOSTIC RECEIPT. One entry per
+     * attempted Morning Briefing delivery/refresh action, from EVERY
+     * trigger source and EVERY code path capable of touching today's
+     * occurrence (the real multi-path audit this micro-patch's mission
+     * required) — bounded to [MAX_RECEIPTS] so this can never grow
+     * unbounded across a long-running process. Deliberately carries NO
+     * briefing/agenda/health/weather body text, only enum-shaped/opaque
+     * facts (§14: "metadata only... no briefing body").
+     */
+    data class MorningDeliveryReceipt(
+        val attemptedAtMs: Long,
+        val logicalDate: LocalDate,
+        val occurrenceKey: String,
+        val triggerSource: String,
+        val schedulerSource: String,
+        val scheduledForMs: Long?,
+        val claimOutcome: String,
+        val stateBefore: String?,
+        val stateAfter: String?,
+        val composerId: String,
+        val rendererId: String,
+        val notificationTag: String?,
+        val notificationId: Int?,
+        val deliveryAttempted: Boolean,
+        val deliveryResult: String,
+        val retryReason: String?,
+        val existingOwnerTrigger: String?,
+        val sessionDiagnosticId: String,
+    )
+
+    private val _morningDeliveryReceipts = MutableStateFlow<List<MorningDeliveryReceipt>>(emptyList())
+    val morningDeliveryReceipts: StateFlow<List<MorningDeliveryReceipt>> = _morningDeliveryReceipts.asStateFlow()
+
+    private fun recordMorningReceipt(
+        now: LocalDateTime,
+        occurrenceKey: String,
+        triggerSource: String,
+        schedulerSource: String,
+        scheduledForMs: Long?,
+        claimOutcome: String,
+        stateBefore: ProactiveOccurrenceState?,
+        stateAfter: ProactiveOccurrenceState?,
+        deliveryAttempted: Boolean,
+        deliveryResult: String,
+        retryReason: String? = null,
+        existingOwnerTrigger: String? = null,
+    ) {
+        val receipt = MorningDeliveryReceipt(
+            attemptedAtMs = now.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(),
+            logicalDate = now.toLocalDate(),
+            occurrenceKey = occurrenceKey,
+            triggerSource = triggerSource,
+            schedulerSource = schedulerSource,
+            scheduledForMs = scheduledForMs,
+            claimOutcome = claimOutcome,
+            stateBefore = stateBefore?.name,
+            stateAfter = stateAfter?.name,
+            composerId = MORNING_DIGEST_COMPOSER_ID,
+            rendererId = MORNING_DIGEST_RENDERER_ID,
+            notificationTag = null,
+            notificationId = ProactiveNotifier.notificationId(ProactiveKind.MORNING_DIGEST),
+            deliveryAttempted = deliveryAttempted,
+            deliveryResult = deliveryResult,
+            retryReason = retryReason,
+            existingOwnerTrigger = existingOwnerTrigger,
+            sessionDiagnosticId = sessionDiagnosticId,
+        )
+        _morningDeliveryReceipts.value = (_morningDeliveryReceipts.value + receipt).takeLast(MAX_RECEIPTS)
+    }
+
     private suspend fun run(now: LocalDateTime, isRealUnlock: Boolean, triggerSource: String) {
         val config = readSettings()
         val automationEnabled = settings.automationServiceEnabled.first()
@@ -167,6 +251,20 @@ class ProactiveManager @Inject constructor(
         val morningOwnedThisRun = morningClaim is OccurrenceClaimOutcome.Claimed || morningClaim is OccurrenceClaimOutcome.TakeoverAllowed
         if (morningKey != null && !morningOwnedThisRun) {
             Log.i(TAG, "proactive_morning_claim_denied source=$triggerSource claim=$morningClaim")
+            // § MICRO-PATCH 14.2.2 §9 — an extra read purely for the device
+            // diagnostic receipt (never on the winning/common path): who
+            // actually owns today's occurrence, so a denied trigger's
+            // receipt says WHY (already claimed by which source) instead of
+            // just "denied".
+            val owner = runCatching { occurrenceStore.peek(morningKey) }.getOrNull()
+            recordMorningReceipt(
+                now = now, occurrenceKey = morningKey, triggerSource = triggerSource,
+                schedulerSource = schedulerSourceFor(triggerSource), scheduledForMs = null,
+                claimOutcome = (morningClaim as? OccurrenceClaimOutcome.AlreadyOwned)?.let { "ALREADY_${it.state.name}" } ?: "DENIED",
+                stateBefore = owner?.state, stateAfter = owner?.state,
+                deliveryAttempted = false, deliveryResult = "SKIPPED",
+                existingOwnerTrigger = owner?.owningTriggerSource,
+            )
         }
 
         val snap = snapshot(today, now)
@@ -216,11 +314,26 @@ class ProactiveManager @Inject constructor(
                     // § FASE 2A.8 RELEASE GATE G — only for a REAL morning-digest
                     // delivery, never for the evening digest or a battery tip.
                     runCatching { morningTriggerScheduler.schedulePostBriefingRefreshes() }
+                    recordMorningReceipt(
+                        now = now, occurrenceKey = morningKey, triggerSource = triggerSource,
+                        schedulerSource = schedulerSourceFor(triggerSource), scheduledForMs = null,
+                        claimOutcome = morningClaim.claimLabel(), stateBefore = ProactiveOccurrenceState.CLAIMED,
+                        stateAfter = ProactiveOccurrenceState.DELIVERED,
+                        deliveryAttempted = true, deliveryResult = "DELIVERED",
+                    )
                 } else if (morningKey != null && morningOwnedThisRun) {
                     // The governor picked a different candidate this run (budget/
                     // priority) — release the claim so it isn't wasted (§L: never
                     // permanently blocks a later legitimate attempt).
                     runCatching { occurrenceStore.markFailedRetryable(morningKey, "governor_selected_other_candidate") }
+                    recordMorningReceipt(
+                        now = now, occurrenceKey = morningKey, triggerSource = triggerSource,
+                        schedulerSource = schedulerSourceFor(triggerSource), scheduledForMs = null,
+                        claimOutcome = morningClaim.claimLabel(), stateBefore = ProactiveOccurrenceState.CLAIMED,
+                        stateAfter = ProactiveOccurrenceState.FAILED_RETRYABLE,
+                        deliveryAttempted = false, deliveryResult = "SKIPPED",
+                        retryReason = "governor_selected_other_candidate",
+                    )
                 }
                 if (deliveredKind == ProactiveKind.WEATHER_ALERT && weatherAlertKey != null) {
                     runCatching { occurrenceStore.markDelivered(weatherAlertKey) }
@@ -235,6 +348,14 @@ class ProactiveManager @Inject constructor(
                 recordRun(now, isRealUnlock, triggerSource, config.enabled, automationEnabled, candidates.size, "skip:${decision.reason}")
                 if (morningKey != null && morningOwnedThisRun) {
                     runCatching { occurrenceStore.markFailedRetryable(morningKey, "skip:${decision.reason}") }
+                    recordMorningReceipt(
+                        now = now, occurrenceKey = morningKey, triggerSource = triggerSource,
+                        schedulerSource = schedulerSourceFor(triggerSource), scheduledForMs = null,
+                        claimOutcome = morningClaim.claimLabel(), stateBefore = ProactiveOccurrenceState.CLAIMED,
+                        stateAfter = ProactiveOccurrenceState.FAILED_RETRYABLE,
+                        deliveryAttempted = false, deliveryResult = "SKIPPED",
+                        retryReason = "skip:${decision.reason}",
+                    )
                 }
                 if (weatherAlertKey != null) {
                     runCatching { occurrenceStore.markFailedRetryable(weatherAlertKey, "skip:${decision.reason}") }
@@ -514,23 +635,61 @@ class ProactiveManager @Inject constructor(
     }
 
     /**
-     * § FASE 2A.8 RELEASE GATE G — called only by [MorningRefreshWorker], AFTER
-     * a morning digest was already really delivered today. Re-composes the
-     * digest from freshly refreshed data and re-posts it under the SAME
-     * notification id ([ProactiveNotifier.notificationId] is stable per
-     * [com.simone.jarvismobile.core.proactive.ProactiveKind]) so it replaces
-     * in place rather than stacking a second notification. Deliberately does
-     * NOT go through [ProactiveGovernor.decide] again: that gate's per-day
-     * dedup exists to prevent a SECOND independent decision to deliver
-     * today's digest, which is correct for a new decision but wrong for
-     * refreshing content already shown — and deliberately does NOT re-speak
-     * it (a second spoken briefing minutes later would be intrusive, not
-     * helpful).
+     * § FASE 2A.8 RELEASE GATE G, hardened by MICRO-PATCH 14.2.2 — called
+     * only by [MorningRefreshWorker], AFTER a morning digest was supposedly
+     * already really delivered today. Re-composes the digest from freshly
+     * refreshed data and re-posts it under the SAME notification id
+     * ([ProactiveNotifier.notificationId] is stable per
+     * [com.simone.jarvismobile.core.proactive.ProactiveKind]) so it
+     * replaces in place rather than stacking a second notification.
+     * Deliberately does NOT go through [ProactiveGovernor.decide] again:
+     * that gate's per-day dedup exists to prevent a SECOND independent
+     * decision to deliver today's digest, which is correct for a new
+     * decision but wrong for refreshing content already shown — and
+     * deliberately does NOT re-speak it (a second spoken briefing minutes
+     * later would be intrusive, not helpful).
+     *
+     * § MICRO-PATCH 14.2.2 — REAL DEVICE ROOT CAUSE FIX, two parts:
+     * (1) this was the ONE code path in the whole app that could produce
+     * Morning-Briefing-shaped notification content with NO occurrence
+     * claim/check at all — it ASSUMED (never verified) that today's
+     * occurrence was DELIVERED. [MorningRefreshGate.shouldRefresh] now
+     * verifies that against [occurrenceStore] (a read-only [ProactiveOccurrenceStore.peek],
+     * never a competing claim) before touching the notifier at all — any
+     * other state is a pure no-op, recorded honestly as such.
+     * (2) even when genuinely DELIVERED, the notifier's `show()` call used
+     * to alert exactly like a brand-new delivery whenever the user had
+     * already dismissed the original notification (`setOnlyAlertOnce`
+     * alone does not prevent this) — this is what produced the extra,
+     * differently-worded 08:14/09:00 notifications on real device (weather
+     * had become known between refreshes, hence the emoji difference; see
+     * [MorningRefreshGate]'s doc comment for the full evidence). Now always
+     * `silent = true`: a refresh can update content but can never itself
+     * become a second alert.
      */
-    suspend fun refreshMorningDigestNotification(now: LocalDateTime = LocalDateTime.now()) {
+    suspend fun refreshMorningDigestNotification(now: LocalDateTime = LocalDateTime.now(), triggerSource: String = "POST_BRIEFING_REFRESH") {
         val today = now.toLocalDate()
+        val key = ProactiveOccurrenceKey.morningDigest(today)
+        val current = runCatching { occurrenceStore.peek(key) }.getOrNull()
+        if (!MorningRefreshGate.shouldRefresh(current?.state)) {
+            recordMorningReceipt(
+                now = now, occurrenceKey = key, triggerSource = triggerSource,
+                schedulerSource = "MorningRefreshWorker", scheduledForMs = null,
+                claimOutcome = "NOT_DELIVERED_YET", stateBefore = current?.state, stateAfter = current?.state,
+                deliveryAttempted = false, deliveryResult = "SKIPPED",
+                retryReason = "refresh_gate_denied", existingOwnerTrigger = current?.owningTriggerSource,
+            )
+            return
+        }
         val suggestion = ProactiveComposer.morningDigest(snapshot(today, now), today)
-        notifier.show(suggestion)
+        notifier.show(suggestion, silent = true)
+        recordMorningReceipt(
+            now = now, occurrenceKey = key, triggerSource = triggerSource,
+            schedulerSource = "MorningRefreshWorker", scheduledForMs = null,
+            claimOutcome = "ALREADY_DELIVERED", stateBefore = ProactiveOccurrenceState.DELIVERED,
+            stateAfter = ProactiveOccurrenceState.DELIVERED,
+            deliveryAttempted = true, deliveryResult = "REFRESHED_SILENT",
+        )
     }
 
     private fun isBirthday(text: String): Boolean = text.contains("complean", ignoreCase = true)
@@ -550,6 +709,29 @@ class ProactiveManager @Inject constructor(
 
     private fun clock(t: LocalTime) = "%02d:%02d".format(t.hour, t.minute)
 
+    /** § MICRO-PATCH 14.2.2 §9 — bounded, human-readable label for a [MorningDeliveryReceipt]. */
+    private fun OccurrenceClaimOutcome?.claimLabel(): String = when (this) {
+        is OccurrenceClaimOutcome.Claimed -> "WON"
+        is OccurrenceClaimOutcome.TakeoverAllowed -> "WON_TAKEOVER"
+        is OccurrenceClaimOutcome.AlreadyOwned -> "ALREADY_${state.name}"
+        null -> "UNKNOWN"
+    }
+
+    /**
+     * § MICRO-PATCH 14.2.2 §9/§2 — which real Android component actually
+     * called into [run] for a given [triggerSource], for the "scheduler/
+     * alarm/work identity" column the Delivery Path Matrix requires. Purely
+     * a diagnostic label; [triggerSource] itself (not this) is what the
+     * occurrence claim/governor logic actually uses.
+     */
+    private fun schedulerSourceFor(triggerSource: String): String = when (triggerSource) {
+        "NEXT_ALARM", "CONFIGURED_TIME" -> "MorningTriggerScheduler+AlarmReceiver"
+        "FIRST_UNLOCK" -> "AutomationEventService"
+        "PERIODIC_FALLBACK" -> "ProactiveWorker"
+        "MANUAL" -> "DiagnosticsViewModel"
+        else -> triggerSource
+    }
+
     private companion object {
         const val TAG = "JarvisProactive"
         // Real unlocks between midnight and this hour never count as "waking up"
@@ -557,5 +739,10 @@ class ProactiveManager @Inject constructor(
         const val MORNING_EARLIEST_HOUR = 5
         const val EVENING_FROM = 19
         const val EVENING_TO = 21
+
+        /** § MICRO-PATCH 14.2.2 §3 — proof there is exactly ONE composer/renderer, not several diverging ones. */
+        const val MORNING_DIGEST_COMPOSER_ID = "ProactiveComposer.morningDigest.v1"
+        const val MORNING_DIGEST_RENDERER_ID = "MorningDigestV2"
+        const val MAX_RECEIPTS = 20
     }
 }

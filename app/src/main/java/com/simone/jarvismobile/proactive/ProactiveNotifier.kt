@@ -35,7 +35,22 @@ import javax.inject.Singleton
 class ProactiveNotifier @Inject constructor(
     @ApplicationContext private val context: Context,
 ) {
-    fun show(suggestion: ProactiveSuggestion) {
+    /**
+     * [silent] (§ JARVIS Implementation Master Plan MICRO-PATCH 14.2.2) —
+     * `true` for a post-delivery CONTENT REFRESH only (never a real new
+     * delivery): `setOnlyAlertOnce` alone does NOT guarantee silence — it
+     * only suppresses re-alerting while the notification with this id is
+     * STILL present in the shade; once the user has dismissed/opened it,
+     * Android treats the next `notify()` on the same id as a brand-new
+     * alert (sound/vibration/heads-up), which is the exact real-device
+     * root cause of the extra 08:14/09:00 "briefings" this patch fixes
+     * (see [com.simone.jarvismobile.core.proactive.MorningRefreshGate]'s
+     * doc comment for the full evidence trail). `setSilent(true)`
+     * unconditionally suppresses alerting for THIS post regardless of
+     * dismissal state — the real guarantee a refresh needs. Every genuine
+     * new delivery keeps `silent = false` (default), unchanged.
+     */
+    fun show(suggestion: ProactiveSuggestion, silent: Boolean = false) {
         if (
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
@@ -99,6 +114,7 @@ class ProactiveNotifier @Inject constructor(
             // comunque come nuova e avvisa di nuovo — comportamento corretto,
             // non un bug residuo.
             .setOnlyAlertOnce(true)
+            .setSilent(silent)
         if (!isDigest) builder.addAction(0, "Non avvisarmi più di questo", mute)
         val notification = builder.build()
         runCatching {

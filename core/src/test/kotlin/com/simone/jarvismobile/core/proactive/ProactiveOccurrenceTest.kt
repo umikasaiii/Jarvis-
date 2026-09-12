@@ -38,6 +38,26 @@ class ProactiveOccurrenceTest {
         assertEquals(OccurrenceClaimOutcome.AlreadyOwned(ProactiveOccurrenceState.FAILED_FINAL), outcome)
     }
 
+    /**
+     * § MICRO-PATCH 14.2.2, test item 16: "stale claim takeover does not
+     * duplicate a completed side effect". [ProactiveOccurrenceReconciler.decide]
+     * has NO `triggerSource` parameter at all — the trigger that asks can
+     * never influence the outcome by construction — and DELIVERED is
+     * special-cased in its own branch BEFORE the staleness/age check ever
+     * runs, so no age (however extreme) can ever route a DELIVERED row into
+     * the takeover branch. This is the strongest possible proof: not "we
+     * tested a few large ages", but that the code path computing takeover
+     * eligibility from age is structurally unreachable for DELIVERED.
+     */
+    @Test
+    fun `DELIVERED never reaches the staleness-takeover branch, at any age including years`() {
+        val ages = listOf(0L, 1L, staleAfterMs - 1, staleAfterMs, staleAfterMs + 1, 365L * 24 * 60 * 60 * 1000L)
+        ages.forEach { age ->
+            val outcome = ProactiveOccurrenceReconciler.decide(ProactiveOccurrenceState.DELIVERED, now - age, now, staleAfterMs)
+            assertEquals(OccurrenceClaimOutcome.AlreadyOwned(ProactiveOccurrenceState.DELIVERED), outcome)
+        }
+    }
+
     // --- item 8: FAILED_RETRYABLE may always retry ------------------------
 
     @Test

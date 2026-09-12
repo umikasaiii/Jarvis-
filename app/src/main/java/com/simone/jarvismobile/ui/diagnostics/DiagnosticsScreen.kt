@@ -64,6 +64,7 @@ fun DiagnosticsScreen(
     val weatherStatus by viewModel.weatherStatus.collectAsStateWithLifecycle()
     val healthStatus by viewModel.healthStatus.collectAsStateWithLifecycle()
     val proactiveStatus by viewModel.proactiveStatus.collectAsStateWithLifecycle()
+    val morningReceiptsStatus by viewModel.morningReceiptsStatus.collectAsStateWithLifecycle()
     val weatherAlertStatus by viewModel.weatherAlertStatus.collectAsStateWithLifecycle()
     val weatherAlertSimulationResult by viewModel.weatherAlertSimulationResult.collectAsStateWithLifecycle()
     val lastChatRoute by viewModel.lastChatRoute.collectAsStateWithLifecycle()
@@ -510,6 +511,26 @@ fun DiagnosticsScreen(
                 }
                 if (proactiveStatus.isNotEmpty()) {
                     Text(proactiveStatus, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+
+        // § JARVIS Implementation Master Plan — MICRO-PATCH 14.2.2 §9. DEVICE
+        // DIAGNOSTIC RECEIPTS — every attempted Morning Briefing delivery/
+        // refresh action, newest first, updating live as real triggers fire
+        // (never a "press to test" card like the ones around it — the point
+        // is to show what ACTUALLY happened on this device). Debug-only,
+        // same convention as the weather-alert simulate buttons below.
+        // Never the briefing text — only bounded metadata.
+        if (BuildConfig.DEBUG) {
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Briefing mattutino — ricevute di consegna (debug)", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "Una riga per ogni tentativo, da ogni fonte di trigger — mai il testo del briefing.",
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                    Text(morningReceiptsStatus, style = MaterialTheme.typography.bodySmall)
                 }
             }
         }

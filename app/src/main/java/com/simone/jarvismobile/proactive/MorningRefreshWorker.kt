@@ -50,8 +50,12 @@ class MorningRefreshWorker(
             // Re-composes and re-posts the SAME morning-digest notification
             // (same id, replaces in place) with whatever is fresh now — never
             // re-speaks it (§ deliberate: a second spoken briefing 10-60min
-            // later would be intrusive, not helpful).
-            deps.proactiveManager().refreshMorningDigestNotification()
+            // later would be intrusive, not helpful). § MICRO-PATCH 14.2.2 —
+            // now verifies today's occurrence is genuinely DELIVERED before
+            // touching the notifier at all, and posts silently even when it
+            // is (see refreshMorningDigestNotification's own doc comment for
+            // the real device evidence this closes).
+            deps.proactiveManager().refreshMorningDigestNotification(triggerSource = "POST_BRIEFING_REFRESH_$delayLabel")
             if (healthRefreshed) "refreshed" else "refreshed_no_health_background_permission"
         }.getOrElse { e -> "failed:${e.javaClass.simpleName}" }
 
