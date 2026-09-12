@@ -3,6 +3,37 @@
 Working notes for AI/coding agents (and humans) in this repository. Keep it
 current: goals, constraints, build commands, conventions, and **phase state**.
 
+## JARVIS Master Architecture
+
+Before substantial architectural work, read:
+
+`docs/JARVIS_MASTER_ARCHITECTURE.md`
+
+Treat ACTIVE architectural invariants and ownership rules in that document
+as binding unless the current task explicitly changes them.
+
+If current code, requested work, or another document conflicts with the
+Master Architecture:
+
+1. identify the conflict explicitly;
+2. inspect the current runtime/code evidence;
+3. do not silently create a parallel owner or alternative architecture;
+4. resolve the conflict before substantial implementation.
+
+Never silently introduce:
+
+- a second semantic pipeline;
+- a duplicate scheduler;
+- a parallel source of truth;
+- a second tool-execution path;
+- a second memory authority;
+- a hidden keyword router;
+- a model-output authorization bypass.
+
+The Master Architecture is a living document — update it (per its own §79
+update policy) alongside any change that shifts ownership, roadmap phase,
+source of truth, or a major architectural decision.
+
 ## Product goal
 
 An **offline-first** Italian personal assistant for Android, tuned for an
