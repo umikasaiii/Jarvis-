@@ -4,7 +4,7 @@
 
 - **Project:** JARVIS
 - **Document role:** project map / architectural control plane / living source of project intent
-- **Version:** 1.1
+- **Version:** 1.2
 - **Generated:** 2026-09-13
 - **Primary language:** Italiano
 - **Status:** ACTIVE — living document
@@ -122,7 +122,18 @@ Parent:
 
 Il parent contiene la micro-patch **14.2.2** per il bug reale del Morning Briefing multi-delivery.
 
-Al momento della generazione di questo file, **CI run #433** sullo SHA `6a66d324...` risulta **in progress**. Quindi non dichiarare il latest HEAD CI-verified finché non arriva esito finale.
+**Aggiornamento v1.2**: **CI run #433** sullo SHA esatto `6a66d3247cff01a9dde36fb899196b22c16ff453` è **COMPLETED / SUCCESS** (era `in progress` al momento della generazione v1.1). Stato verificato per questo commit:
+
+```text
+CODE PRESENT          ✅
+CONNECTED             ✅
+AUTOMATED TESTED      ✅
+CI VERIFIED           ✅ Run #433
+DEVICE VERIFIED       ❌
+PRODUCTION READY      ❌
+```
+
+Honor 200: **RETEST REQUIRED** — CI verde non implica device acceptance (invariante §0.1/§62).
 
 ## 2.2 Stop-hook Git false positive noto
 
@@ -983,17 +994,42 @@ Aggiunti bounded device diagnostic receipts.
 
 Il cambio orario di micro-patch 14.2.1 non era la causa del triplo alert. `MorningTriggerScheduler` usa identità stabile per il configured-time alarm e il reschedule sostituisce l’alarm precedente.
 
-## 30.6 Stato attuale Morning Briefing
+## 30.6 Correzione storica — MorningRefreshWorker (regola §81 applicata)
+
+**OLD CONCLUSION** (PASSAGGIO 14.1): `MorningRefreshWorker` era stato inizialmente considerato esonerato dal bug di multi-delivery.
+
+**SUPERSEDED BY REAL DEVICE EVIDENCE + FOLLOW-UP AUDIT** (micro-patch 14.2.2): `MorningRefreshWorker` → `ProactiveManager.refreshMorningDigestNotification()` è stato confermato come l’unico bypass capace di ri-avvisare contenuto Morning-Briefing-shaped senza verifica dell’occurrence claim.
+
+Root cause:
+
+- briefing iniziale ~08:00;
+- refresh a +10 min riemerso intorno alle 08:14;
+- refresh a +60 min riemerso alle 09:00;
+- `setOnlyAlertOnce(true)` insufficiente una volta che la notifica originale era già stata dismessa/letta;
+- la differenza dell'emoji era spiegata da una diversa disponibilità del dato meteo nello snapshot successivo, non da un secondo composer.
+
+Fix:
+
+- `MorningRefreshGate.shouldRefresh(...)`;
+- `ProactiveOccurrenceStore.peek()`;
+- `notifier.show(..., silent = true)`;
+- bounded morning delivery receipts.
+
+La vecchia conclusione resta visibile come **SUPERSEDED**, non cancellata silenziosamente (regola §81).
+
+## 30.7 Stato attuale Morning Briefing
 
 ```text
-CODE FIX 14.2.2        IMPLEMENTED
-REMOTE PUSH             VERIFIED
-LATEST CI #433          IN PROGRESS at document generation
-HONOR 200 RETEST        REQUIRED
-DEVICE ACCEPTANCE       NOT PASSED
+CODE FIX 14.2.2         IMPLEMENTED
+REMOTE PUSH              VERIFIED
+CI #433                  COMPLETED / SUCCESS (SHA 6a66d3247cff01a9dde36fb899196b22c16ff453)
+HONOR 200 RETEST         REQUIRED
+DEVICE ACCEPTANCE        NOT PASSED
 ```
 
-Non dichiarare risolto fino a retest reale.
+**MICRO-PATCH 14.2.2 — riepilogo di stato**: CODE + AUTOMATED TESTS + CI CLOSED. HONOR 200 DEVICE ACCEPTANCE PENDING.
+
+Non dichiarare il fix completamente chiuso/production-ready fino al retest reale su dispositivo.
 
 ---
 
@@ -2144,16 +2180,15 @@ Significa:
 
 Ordine consigliato:
 
-1. attendere esito CI #433 sul latest HEAD;
-2. se green, installare latest build su Honor 200;
-3. eseguire Morning Briefing ROUND 2;
-4. verificare nessun re-alert +10/+60;
-5. controllare diagnostic receipts;
-6. se device PASS, chiudere 14.2.2 lato briefing;
-7. mantenere Pass 14 artifact gate separato;
-8. preparare/eseguire 14B sul PC;
-9. solo dopo real semantic artifact gate procedere verso Pass 15;
-10. Live Voice: progettazione può continuare, full implementation dopo semantic/orchestration foundation.
+1. CI #433 sul latest HEAD è COMPLETED / SUCCESS (§2.1) — installare latest build su Honor 200;
+2. eseguire Morning Briefing ROUND 2;
+3. verificare nessun re-alert +10/+60;
+4. controllare diagnostic receipts;
+5. se device PASS, chiudere 14.2.2 lato briefing;
+6. mantenere Pass 14 artifact gate separato;
+7. preparare/eseguire 14B sul PC;
+8. solo dopo real semantic artifact gate procedere verso Pass 15;
+9. Live Voice: progettazione può continuare, full implementation dopo semantic/orchestration foundation.
 
 ---
 
@@ -3143,6 +3178,16 @@ Un micro-modello è `PRODUCTION READY` solo se:
 
 # 129. MASTER CHANGELOG
 
+## v1.2 — 2026-09-13
+
+Aggiornamento dello **stato verificato di MICRO-PATCH 14.2.2** (correzione documentation-only, nessuna decisione architetturale modificata):
+
+- CI run #433 sullo SHA `6a66d3247cff01a9dde36fb899196b22c16ff453` aggiornato da `IN PROGRESS` a `COMPLETED / SUCCESS` (§2.1, §30.7, §91);
+- stato sintetico portato a `CODE + AUTOMATED TESTS + CI CLOSED` / `HONOR 200 DEVICE ACCEPTANCE PENDING` — non dichiarato production-ready in assenza di retest reale;
+- aggiunta la correzione storica esplicita su `MorningRefreshWorker` (§30.6, regola di non-regressione documentale §81): la conclusione originale di PASSAGGIO 14.1 (worker considerato esonerato) è marcata `SUPERSEDED` dall'evidenza reale su dispositivo + audit di follow-up di micro-patch 14.2.2, mai cancellata silenziosamente.
+
+Nessuna modifica a Reflex Layer, Desert Ant, Live Voice, architettura semantica, stato MiniCPM, Pass 14 artifact gate, protocollo o codice runtime.
+
 ## v1.1 — 2026-09-13
 
 Aggiunto:
@@ -3164,4 +3209,4 @@ Decisione chiave:
 **JARVIS adotta il pattern “specialized reflexes → semantic intelligence → planner/BRAIN escalation”, ma resta vendor-agnostic e non trasforma i micro-modelli in un secondo sistema semantico.**
 
 
-**END OF JARVIS MASTER ARCHITECTURE v1.1**
+**END OF JARVIS MASTER ARCHITECTURE v1.2**
