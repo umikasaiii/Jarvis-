@@ -4,7 +4,7 @@
 
 - **Project:** JARVIS
 - **Document role:** project map / architectural control plane / living source of project intent
-- **Version:** 1.2
+- **Version:** 1.3
 - **Generated:** 2026-09-13
 - **Primary language:** Italiano
 - **Status:** ACTIVE — living document
@@ -537,27 +537,69 @@ Shipped:
 
 # 15. PASS 14B — REAL EXECUTION HANDOFF
 
-**PLANNED.**
+**RUNNER READY — USER-PC REAL EXECUTION PENDING.** (era `PLANNED`)
 
-Obiettivo: eseguire sul PC dell’utente acquisition artifact ufficiale, manifest, SHA-256, tokenizer qualification, encoder qualification, real TRAIN/VALIDATION/TEST embeddings, frozen-encoder learned-head training, validation, TEST una volta, export `REAL_TRAINED`, `CalibrationStatus.PENDING`, BLIND untouched.
+Tooling commit: vedi §67. Obiettivo raggiunto in questo passaggio: preparare
+l'intera catena per eseguire sul PC dell'utente acquisition artifact
+ufficiale, manifest, SHA-256, tokenizer qualification, encoder
+qualification, real TRAIN/VALIDATION/TEST embeddings, frozen-encoder
+learned-head training, validation, TEST una volta, export `REAL_TRAINED`,
+`CalibrationStatus.PENDING`, BLIND untouched — **non ancora eseguito
+davvero**, per lo stesso motivo di Pass 14 (nessun accesso di rete
+all'artefatto ufficiale in questo ambiente).
 
-Vincoli:
+## 15.1 Cosa esiste ora (`tools/semantic_classifier/`)
 
-- fonti publisher-controlled;
+- `artifact_manifest.py` — manifest di provenienza (SHA-256 reale, mai un hash passato a mano);
+- `golden_qualification_corpus.py` — corpus fisso deterministico (19 esempi, inclusi edge case vuoto/whitespace/lunghissimo/emoji);
+- `tokenizer_qualification.py` — TOKENIZER_GATE: carica il vero tokenizer SentencePiece, **introspeziona** (mai assume) il vero `trainer_spec.model_type`;
+- `encoder_qualification.py` — ENCODER_GATE: carica il vero `.tflite` via `ai-edge-litert` (stessa famiglia LiteRT di `EmbeddingGemmaEngine.kt`), verifica shape/finite/non-zero/determinismo/pooling;
+- `preflight.py` — check fail-closed completo prima di ogni lavoro costoso;
+- `generate_embeddings.py` — embedding reali resumable, SOLO train/validation/test, mai blind;
+- `export.py --real` — riscritto per usare manifest + qualification report (mai più un `--model-dir` grezzo), deriva il contratto encoder dai report REALI;
+- `run_test_protocol.py` — valutazione TEST una tantum, si rifiuta di sovrascrivere un report esistente senza `--force` esplicito;
+- `verify_candidate.py` / `build_bundle.py` / `write_receipt.py` — verifica candidato, bundle di verifica, receipt finale nel formato esatto §21;
+- `run_real_training.ps1` — runner Windows a un comando che orchestra tutto quanto sopra in ordine fail-closed;
+- `models/README.md` — istruzioni per l'utente su dove scaricare/posizionare i due file reali.
+
+**Validato per davvero in questa sessione** (non solo scritto): ogni script
+sopra eseguito con successo end-to-end contro un vero (ma giocattolo, non
+EmbeddingGemma) tokenizer SentencePiece + un vero file `.tflite` costruiti
+appositamente in sandbox (PyPI raggiungibile per `sentencepiece`/
+`tensorflow`/`ai-edge-litert`, HuggingFace/Google restano bloccati) — la
+pipeline completa TOKENIZER_GATE→ENCODER_GATE→preflight→
+generate_embeddings→export --real→run_test_protocol→verify_candidate→
+build_bundle→write_receipt gira senza errori, produce `REAL_TRAINED`+
+`CalibrationStatus=PENDING`, e BLIND resta non toccato (verificato: la
+funzione di generazione embedding non chiama mai `corpus.blind()`).
+
+Vincoli (tutti rispettati per costruzione):
+
+- fonti publisher-controlled (§7, documentato in `models/README.md`, non ri-verificabile da questo ambiente);
 - niente mirror random;
-- niente Conda obbligatorio;
+- niente Conda obbligatorio (venv semplice);
 - niente admin;
 - niente Docker;
 - niente token se non richiesto;
 - credenziali mai nel repo;
-- grandi artifact ignored;
-- resumable chunks;
-- weak-PC-safe;
-- frozen encoder;
-- TEST non usato per tuning;
-- BLIND sigillato.
+- grandi artifact ignored (`.gitignore` esteso: `models/*` tranne il README, `real_run/`, `*.tflite`, `embedding_cache*.json`, i report di qualificazione, il manifest);
+- resumable chunks (cache per-esempio con flush ogni 25);
+- weak-PC-safe (batch=1, 2 thread di default, un'unica istanza encoder);
+- frozen encoder (invariato, `train_heads.py` non tocca mai l'encoder);
+- TEST non usato per tuning (`run_test_protocol.py` rifiuta un secondo run senza `--force`, testato);
+- BLIND sigillato (verificato, mai chiamato).
 
-Pass 14 non è completo finché questo run reale non passa.
+## 15.2 Cosa resta da fare
+
+L'unico passo mancante è l'esecuzione reale sul PC Windows dell'utente:
+scaricare i due file ufficiali (§ `models/README.md`), poi
+`.\run_real_training.ps1 -ModelDir ".\models" -OutputDir ".\real_run"`. Lo
+script PowerShell stesso non è stato eseguito in questo ambiente (nessun
+`pwsh` disponibile) — verificato solo per bilanciamento sintattico
+(parentesi/quote) e per revisione manuale, stesso trattamento di ogni altro
+artefatto cross-platform non eseguibile qui.
+
+Pass 14 (e 14B) non sono completi finché questo run reale non passa.
 
 ---
 
@@ -1703,6 +1745,7 @@ Grounding maturity, memory, personal intelligence, context, automations, Live Vo
 | 14.2 | proactive weather alert |
 | 14.2.1 | configurable morning briefing time |
 | 14.2.2 | MorningRefresh multi-alert fix; latest device retest pending |
+| 14B | real EmbeddingGemma execution handoff — Windows runner built + validated end-to-end against a toy artifact; user-PC real execution pending |
 
 ---
 
@@ -1855,10 +1898,13 @@ No secondo resource manager indipendente. **ACTIVE DESIGN RULE**
 - Honor 200 strict retest richiesto.
 
 ### EmbeddingGemma
-- real artifact acquisition/qualification pending;
-- real learned head training pending;
-- calibration pending;
-- blind pending.
+- real artifact acquisition/qualification pending — tooling and Windows
+  runner now READY (§15), validated end-to-end against a toy artifact in
+  this session, but the real official EmbeddingGemma acquisition/
+  qualification itself has not happened yet;
+- real learned head training pending — same reason;
+- calibration pending (PASSAGGIO 15, untouched);
+- blind pending (untouched, verified never called by the new tooling).
 
 ### Semantic device acceptance
 - non chiusa.
@@ -2186,7 +2232,7 @@ Ordine consigliato:
 4. controllare diagnostic receipts;
 5. se device PASS, chiudere 14.2.2 lato briefing;
 6. mantenere Pass 14 artifact gate separato;
-7. preparare/eseguire 14B sul PC;
+7. eseguire 14B sul PC — il runner è ora pronto (§15): `cd tools\semantic_classifier` poi `.\run_real_training.ps1 -ModelDir ".\models" -OutputDir ".\real_run"` dopo aver scaricato i due file reali per `models/README.md`;
 8. solo dopo real semantic artifact gate procedere verso Pass 15;
 9. Live Voice: progettazione può continuare, full implementation dopo semantic/orchestration foundation.
 
@@ -2348,6 +2394,7 @@ ANDROID-FIRST                ACTIVE
 CORE OPTIONAL ENHANCER       ACTIVE
 SEMANTIC PIPELINE            IMPLEMENTED / NOT FULLY QUALIFIED
 REAL EMBEDDINGGEMMA          BLOCKED/PENDING USER-PC RUN
+PASS 14B WINDOWS RUNNER      RUNNER READY / USER-PC REAL EXECUTION PENDING
 LEARNED HEAD REAL            PENDING
 CALIBRATION/OOD              PENDING
 BLIND                        UNTOUCHED
@@ -3178,6 +3225,40 @@ Un micro-modello è `PRODUCTION READY` solo se:
 
 # 129. MASTER CHANGELOG
 
+## v1.3 — 2026-09-13
+
+PASSAGGIO 14B — Real EmbeddingGemma execution handoff, tooling built and
+validated end-to-end in this session (against a real toy SentencePiece+TFLite
+artifact, not yet the real official model — no network access here, same
+limit as PASSAGGIO 14):
+
+- §15 rewritten: `PLANNED` → `RUNNER READY — USER-PC REAL EXECUTION PENDING`;
+- new `tools/semantic_classifier/` scripts: `artifact_manifest.py`,
+  `golden_qualification_corpus.py`, `tokenizer_qualification.py` (real
+  SentencePiece introspection, never assumed), `encoder_qualification.py`
+  (real `.tflite` via `ai-edge-litert`, same LiteRT family as
+  `EmbeddingGemmaEngine.kt`), `preflight.py`, `generate_embeddings.py`
+  (resumable, train/validation/test only, blind untouched),
+  `run_test_protocol.py` (one-time TEST, refuses silent re-runs),
+  `verify_candidate.py`, `build_bundle.py`, `write_receipt.py`;
+- `run_real_training.ps1` — the Windows one-command runner;
+- `embed.py`'s `real_embedder()` corrected to load the actual `.tflite`
+  artifact directly (matching Android's own runtime), not a separate
+  `sentence-transformers` checkpoint (kept as an explicit labeled
+  alternate);
+- `export.py --real` reworked to source the encoder contract from the
+  real qualification reports instead of hardcoding
+  `tokenizerFormat=SENTENCEPIECE_UNIGRAM`;
+- §66/§71/§91/§100 updated to reflect RUNNER READY status;
+- no Kotlin file touched, no Android CI impact, no Morning Briefing/
+  Weather/Agenda/Health/driving/SEGNALE/Live Voice/Reflex Layer/protocol
+  file touched (verified via grep before this update).
+
+Decisione chiave: **il runner esiste e funziona, provato contro un
+artefatto reale (giocattolo) in questa sessione — ma PASSAGGIO 14/14B
+restano non completi finché l'utente non esegue il run reale sul proprio
+PC con l'artefatto ufficiale.**
+
 ## v1.2 — 2026-09-13
 
 Aggiornamento dello **stato verificato di MICRO-PATCH 14.2.2** (correzione documentation-only, nessuna decisione architetturale modificata):
@@ -3209,4 +3290,4 @@ Decisione chiave:
 **JARVIS adotta il pattern “specialized reflexes → semantic intelligence → planner/BRAIN escalation”, ma resta vendor-agnostic e non trasforma i micro-modelli in un secondo sistema semantico.**
 
 
-**END OF JARVIS MASTER ARCHITECTURE v1.2**
+**END OF JARVIS MASTER ARCHITECTURE v1.3**

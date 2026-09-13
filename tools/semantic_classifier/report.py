@@ -130,11 +130,27 @@ class LearnedHeadUnavailableError(RuntimeError):
     the prototype and label it as learned-head performance."""
 
 
-def learned_head_scorers(head_weights_path: str, embed_fn, expected_contract_version: int | None = None):
-    """§ NEW — loads the real exported artifact and evaluates IT, never the
-    sklearn model object it came from. Raises [LearnedHeadUnavailableError]
-    (never returns a substitute) if the file is missing, malformed, or not
-    `PRODUCTION_ELIGIBLE`."""
+def learned_head_scorers(
+    head_weights_path: str, embed_fn, expected_contract_version: int | None = None,
+    allowed_qualifications: tuple[str, ...] = ("PRODUCTION_ELIGIBLE",),
+):
+    """§ NEW, extended by PASSAGGIO 14B §17 — loads the real exported
+    artifact and evaluates IT, never the sklearn model object it came from.
+    Raises [LearnedHeadUnavailableError] (never returns a substitute) if the
+    file is missing, malformed, or not one of [allowed_qualifications].
+
+    [allowed_qualifications] defaults to `("PRODUCTION_ELIGIBLE",)` —
+    unchanged from every existing caller of this function (the CLI below,
+    and any future authoritative/production evaluation). PASSAGGIO 14B's
+    ONE-TIME TEST protocol (`run_test_protocol.py`) is the only caller that
+    passes `("REAL_TRAINED",)` explicitly — a real, frozen-encoder,
+    genuinely-trained-but-not-yet-calibrated candidate is exactly what §17
+    requires evaluating on TEST once, and `PRODUCTION_ELIGIBLE` literally
+    cannot exist yet for any artifact this project has produced (that state
+    is PASSAGGIO 15's calibration gate's to set). `SYNTHETIC_SELFTEST`/
+    `TRAINING_PENDING`/`INCOMPATIBLE` are never in this set from any caller —
+    a synthetic or pending artifact must never be evaluated as if it
+    produced real performance numbers."""
     try:
         with open(head_weights_path, encoding="utf-8") as f:
             raw = f.read()
@@ -145,10 +161,11 @@ def learned_head_scorers(head_weights_path: str, embed_fn, expected_contract_ver
     sha256 = hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
     qualification = export.get("artifactQualification", "TRAINING_PENDING")
-    if qualification != "PRODUCTION_ELIGIBLE":
+    if qualification not in allowed_qualifications:
         raise LearnedHeadUnavailableError(
-            f"learned head at {head_weights_path} is not PRODUCTION_ELIGIBLE (got: {qualification}) — "
-            "refusing to evaluate a synthetic/pending artifact as if it were production performance",
+            f"learned head at {head_weights_path} has artifactQualification={qualification!r}, "
+            f"not one of the allowed {allowed_qualifications!r} — "
+            "refusing to evaluate a synthetic/pending/unexpected-status artifact as if it were real performance",
         )
 
     contract = export.get("encoderContract")
@@ -334,6 +351,7 @@ def build_report(
     split: str = "test",
     head_weights_path: str | None = None,
     expected_contract_version: int | None = None,
+    allowed_qualifications: tuple[str, ...] = ("PRODUCTION_ELIGIBLE",),
 ) -> dict:
     """§ §M — [classifier] must be `"prototype"` or `"learned_head"`,
     explicit at the call site, never inferred/defaulted silently. Raises
@@ -351,7 +369,7 @@ def build_report(
         if head_weights_path is None:
             raise ValueError("head_weights_path is required when classifier='learned_head'")
         score_intent, score_domain, intent_labels, domain_labels, classifier_type, head_sha = (
-            learned_head_scorers(head_weights_path, embed_fn, expected_contract_version)
+            learned_head_scorers(head_weights_path, embed_fn, expected_contract_version, allowed_qualifications)
         )
     else:
         raise ValueError(f"unknown classifier {classifier!r} — must be 'prototype' or 'learned_head'")

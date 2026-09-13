@@ -100,17 +100,63 @@ def export_thresholds(thresholds: dict, out_path: str) -> None:
         json.dump(thresholds, f, indent=2)
 
 
-# § JARVIS Implementation Master Plan — PASSAGGIO 13 §K/§N. Plain-dict
-# mirror of `SemanticEncoderContract.kt`'s JSON shape — SAME field names,
-# so `LearnedHeadExport.parseOrNull()` (Kotlin) decodes this `encoderContract`
-# block directly. `mode="fake"` always yields `tokenizerFormat="UNVERIFIED"`
-# (matching `SemanticEncoderContract.UNVERIFIED`, §D) — a synthetic run has
-# no real tokenizer/model to describe, so the exported contract must say so
-# rather than falsely claiming `SENTENCEPIECE_UNIGRAM`.
-def build_encoder_contract(mode: str, embed_dim: int, model_sha256: str | None = None, tokenizer_sha256: str | None = None) -> dict:
+# § JARVIS Implementation Master Plan — PASSAGGIO 14B §6, tightening
+# PASSAGGIO 13 §K/§N. Plain-dict mirror of `SemanticEncoderContract.kt`'s
+# JSON shape — SAME field names, so `LearnedHeadExport.parseOrNull()`
+# (Kotlin) decodes this `encoderContract` block directly.
+#
+# § §6's explicit instruction ("Do not assume SentencePiece merely because
+# an old commit message mentioned it — tokenizerFormat remains UNVERIFIED
+# until authoritative artifact metadata proves it") means this function
+# must never HARDCODE "SENTENCEPIECE_UNIGRAM" for a real run the way
+# PASSAGGIO 14 originally did — it now reads the REAL introspected value
+# from `tokenizer_qualification.py`'s report (`introspectedModelType`,
+# read directly off the loaded artifact's own proto, never guessed) and
+# maps ONLY a genuinely-confirmed "UNIGRAM" to the matching Kotlin enum
+# value. Any other real value (BPE/WORD/CHAR/an introspection failure) maps
+# to `UNVERIFIED` — honest and conservative, since `SemanticEncoderContract`
+# (Kotlin) has no enum value for those today; extending it is future work,
+# not silently worked around here by mislabeling the real tokenizer.
+_KNOWN_TOKENIZER_FORMAT_MAP = {"UNIGRAM": "SENTENCEPIECE_UNIGRAM"}
+
+
+def build_encoder_contract(
+    mode: str, embed_dim: int, model_sha256: str | None = None, tokenizer_sha256: str | None = None,
+    tokenizer_report: dict | None = None, encoder_report: dict | None = None,
+) -> dict:
+    if mode == "fake" or tokenizer_report is None:
+        return {
+            "contractVersion": 1,
+            "tokenizerFormat": "UNVERIFIED",
+            "tokenizerSha256": tokenizer_sha256,
+            "modelSha256": model_sha256,
+            "unicodeNormalizationForm": "NFC",
+            "collapseWhitespace": True,
+            "trimText": True,
+            "casingPolicy": "PRESERVE",
+            "taskPrefix": None,
+            "taskPrefixVerified": False,
+            "bosTokenId": None,
+            "eosTokenId": None,
+            "padTokenId": None,
+            "specialTokensVerified": False,
+            "maxSequenceLength": 256,
+            "paddingSide": "RIGHT",
+            "truncationSide": "RIGHT",
+            "poolingMode": "MEAN_MASKED",
+            "embeddingNormalization": "L2",
+            "embeddingDimension": embed_dim,
+        }
+
+    # § §6/§12 — real mode, sourced from the two qualification gate reports
+    # that must already have PASSed (preflight.py enforces this before this
+    # function is ever reached in a real run).
+    introspected = tokenizer_report["introspectedModelType"]
+    tokenizer_format = _KNOWN_TOKENIZER_FORMAT_MAP.get(introspected, "UNVERIFIED")
+    special_ids = tokenizer_report["specialTokenIds"]
     return {
         "contractVersion": 1,
-        "tokenizerFormat": "UNVERIFIED" if mode == "fake" else "SENTENCEPIECE_UNIGRAM",
+        "tokenizerFormat": tokenizer_format,
         "tokenizerSha256": tokenizer_sha256,
         "modelSha256": model_sha256,
         "unicodeNormalizationForm": "NFC",
@@ -118,17 +164,17 @@ def build_encoder_contract(mode: str, embed_dim: int, model_sha256: str | None =
         "trimText": True,
         "casingPolicy": "PRESERVE",
         "taskPrefix": None,
-        "taskPrefixVerified": False,
-        "bosTokenId": None,
-        "eosTokenId": None,
-        "padTokenId": None,
-        "specialTokensVerified": False,
-        "maxSequenceLength": 256,
-        "paddingSide": "RIGHT",
-        "truncationSide": "RIGHT",
-        "poolingMode": "MEAN_MASKED",
-        "embeddingNormalization": "L2",
-        "embeddingDimension": embed_dim,
+        "taskPrefixVerified": False,  # § still unverified — no real task-prefix requirement was inspected, even though the tokenizer itself now is
+        "bosTokenId": special_ids.get("bosTokenId"),
+        "eosTokenId": special_ids.get("eosTokenId"),
+        "padTokenId": special_ids.get("padTokenId"),
+        "specialTokensVerified": True,  # § read directly off the real loaded artifact by tokenizer_qualification.py
+        "maxSequenceLength": tokenizer_report.get("maxSequenceLength", 256),
+        "paddingSide": tokenizer_report.get("paddingSide", "RIGHT"),
+        "truncationSide": tokenizer_report.get("truncationSide", "RIGHT"),
+        "poolingMode": (encoder_report or {}).get("poolingMode", "MEAN_MASKED"),
+        "embeddingNormalization": (encoder_report or {}).get("embeddingNormalization", "L2"),
+        "embeddingDimension": (encoder_report or {}).get("embeddingDimension", embed_dim),
     }
 
 
@@ -137,6 +183,7 @@ def export_head_weights(
     model_sha256: str | None = None, tokenizer_sha256: str | None = None,
     dataset_revision: str | None = None, training_seed: int | None = None,
     trained_at_iso: str | None = None,
+    tokenizer_report: dict | None = None, encoder_report: dict | None = None,
 ) -> dict:
     """Exports ALL trained heads (intent/domain/operation/referenceMode) in
     one file, `head_weights.json` — the format
@@ -172,7 +219,10 @@ def export_head_weights(
             export_multiclass_head(heads.reference_mode.model, heads.reference_mode_labels)
             if heads.reference_mode is not None else None
         ),
-        "encoderContract": build_encoder_contract(mode, embed_dim, model_sha256, tokenizer_sha256),
+        "encoderContract": build_encoder_contract(
+            mode, embed_dim, model_sha256, tokenizer_sha256,
+            tokenizer_report=tokenizer_report, encoder_report=encoder_report,
+        ),
         "artifactQualification": qualification,
         # § PASSAGGIO 14 §Q/§R (test items 12, 13-18) — always explicit,
         # never inferred/omitted; PENDING for every artifact this pass can
@@ -202,13 +252,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     mode_group = parser.add_mutually_exclusive_group(required=True)
     mode_group.add_argument("--fake", action="store_true", help="synthetic self-test embedder — the only mode runnable without a real EmbeddingGemma artifact")
-    mode_group.add_argument("--real", action="store_true", help="§ PASSAGGIO 14 — a genuine frozen-encoder run; requires --model-dir and a network-enabled environment with the real artifact")
+    mode_group.add_argument("--real", action="store_true", help="§ PASSAGGIO 14B — a genuine frozen-encoder run; requires --manifest + both qualification reports having already PASSed")
     parser.add_argument("--corpus", default=TRAINING_CORPUS_PATH)
     parser.add_argument("--out-dir", default=".")
-    parser.add_argument("--model-dir", default=None, help="--real only: local directory/identifier the real embedder loads (see embed.real_embedder's own honesty note)")
-    parser.add_argument("--model-sha256", default=None, help="--real only: SHA-256 of the real model artifact file, if known")
-    parser.add_argument("--tokenizer-sha256", default=None, help="--real only: SHA-256 of the real tokenizer artifact file, if known")
-    parser.add_argument("--cache", default=None, help="optional on-disk embedding cache path (either mode)")
+    parser.add_argument("--manifest", default="artifact_manifest.json", help="--real only: the ArtifactManifest built by artifact_manifest.py")
+    parser.add_argument("--tokenizer-report", default="tokenizer_qualification_report.json", help="--real only: TOKENIZER_GATE report, must show status=PASS")
+    parser.add_argument("--encoder-report", default="encoder_qualification_report.json", help="--real only: ENCODER_GATE report, must show status=PASS")
+    parser.add_argument("--cache", default=None, help="optional on-disk embedding cache path (either mode) — pass the SAME path generate_embeddings.py used to reuse its cached real embeddings instead of re-computing them")
     args = parser.parse_args()
 
     corpus = load_corpus(args.corpus)
@@ -216,18 +266,29 @@ if __name__ == "__main__":
     trained_at_iso = datetime.now(timezone.utc).isoformat()
 
     if args.real:
-        if not args.model_dir:
-            raise SystemExit("--real requires --model-dir (the real EmbeddingGemma artifact) — see production_gate.py; REAL_ARTIFACT_GATE must be PASS before this can run")
+        from artifact_manifest import load_manifest, verify_manifest_matches_files
         from embed import real_embedder
-        embed_fn = real_embedder(args.model_dir)  # raises RuntimeError here if the artifact/library isn't actually available — never silently substituted
+
+        manifest = load_manifest(args.manifest)
+        verify_manifest_matches_files(manifest)
+        with open(args.tokenizer_report, encoding="utf-8") as f:
+            tokenizer_report = json.load(f)
+        with open(args.encoder_report, encoding="utf-8") as f:
+            encoder_report = json.load(f)
+        if tokenizer_report.get("status") != "PASS" or encoder_report.get("status") != "PASS":
+            raise SystemExit("--real requires both tokenizer_qualification_report.json and encoder_qualification_report.json to show status=PASS — run those gates first")
+
+        embed_fn = real_embedder(manifest)  # raises RuntimeError here if the artifact/library isn't actually available — never silently substituted
         assert_production_ready(embed_fn, None)
+        model_id = f"{manifest.modelName}:{manifest.modelSha256[:16]}:{manifest.tokenizerSha256[:16]}"
         if args.cache:
-            cache = EmbeddingCache(args.cache, model_id=args.model_dir, contract_version=CONTRACT_VERSION)
+            cache = EmbeddingCache(args.cache, model_id=model_id, contract_version=CONTRACT_VERSION)
             if len(cache) > 0:
                 assert_production_ready(embed_fn, cache)
             embed_fn = cached_embedder(embed_fn, cache)
         mode = "real"
-        embed_dim = None  # determined below from a real call
+        embed_dim = encoder_report.get("embeddingDimension")
+        model_sha256, tokenizer_sha256 = manifest.modelSha256, manifest.tokenizerSha256
     else:
         embed_fn = fake_embedder()
         if args.cache:
@@ -236,6 +297,8 @@ if __name__ == "__main__":
         mode = "fake"
         from embed import FAKE_EMBEDDING_DIM
         embed_dim = FAKE_EMBEDDING_DIM
+        model_sha256 = tokenizer_sha256 = None
+        tokenizer_report = encoder_report = None
 
     calib = calibrate_intent_thresholds(corpus, embed_fn)
     domain_calib = calibrate_domain_threshold(corpus, embed_fn)
@@ -250,14 +313,13 @@ if __name__ == "__main__":
     print(f"wrote {args.out_dir}/thresholds.json: {thresholds}")
 
     heads = train(corpus, embed_fn)
-    if embed_dim is None:
-        embed_dim = len(embed_fn(corpus.train()[0].text)) if corpus.train() else 0
     if args.cache:
         cache.save()
     payload = export_head_weights(
         heads, embed_dim, f"{args.out_dir}/head_weights.json", mode=mode,
-        model_sha256=args.model_sha256, tokenizer_sha256=args.tokenizer_sha256,
+        model_sha256=model_sha256, tokenizer_sha256=tokenizer_sha256,
         dataset_revision=dataset_rev, training_seed=TRAINING_SEED, trained_at_iso=trained_at_iso,
+        tokenizer_report=tokenizer_report, encoder_report=encoder_report,
     )
     print(f"wrote {args.out_dir}/head_weights.json (artifactQualification={payload['artifactQualification']}, "
           f"calibrationStatus={payload['calibrationStatus']}, datasetRevision={dataset_rev})")

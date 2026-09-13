@@ -20,6 +20,23 @@ release/
 __pycache__/
 *.pyc
 
+# § PASSAGGIO 14B — real EmbeddingGemma model/tokenizer artifacts and their
+# run output are large binaries + a user's local machine state, never
+# committed (docs/JARVIS_MASTER_ARCHITECTURE.md §51-style rule: large
+# artifacts stay local). The manifest/reports THEMSELVES are small JSON and
+# not excluded by this rule — only the model/tokenizer files and generated
+# run directories underneath them.
+tools/semantic_classifier/models/*
+!tools/semantic_classifier/models/README.md
+tools/semantic_classifier/real_run/
+tools/semantic_classifier/.venv_pass14b/
+tools/semantic_classifier/*.tflite
+tools/semantic_classifier/*.task
+tools/semantic_classifier/embedding_cache*.json
+tools/semantic_classifier/*_qualification_report.json
+tools/semantic_classifier/artifact_manifest.json
+tools/semantic_classifier/*.selftest.json
+
 # Secrets & personal data — never commit (docs/SECURITY.md, docs/PRIVACY.md)
 *.keystore
 *.jks

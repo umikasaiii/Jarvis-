@@ -1,17 +1,33 @@
-"""§ FASE 2A.11 §13 step 1-2 — loads EmbeddingGemma and embeds the corpus.
+"""§ FASE 2A.11 §13 step 1-2, rewritten by PASSAGGIO 14B §6/§14 — loads
+EmbeddingGemma and embeds the corpus.
 
 **Onestà**: questo ambiente non ha accesso di rete a huggingface.co né a
 dl.google.com (verificato con una richiesta reale, 403 dal proxy — stesso
 limite già documentato in CLAUDE.md per altre integrazioni), quindi il vero
-`litert-community/embeddinggemma-300m` non può essere scaricato né eseguito
-qui. La funzione `real_embedder()` sotto è scritta contro l'API pubblica più
-plausibile (sentence-transformers / transformers, se disponibili in un
-ambiente con accesso di rete) ma NON è mai stata eseguita con pesi reali in
-questa sessione — dichiarato esplicitamente, non nascosto. `fake_embedder()`
-è un embedder sintetico e deterministico (proiezione casuale seedata di un
-bag-of-words) usato SOLO per il self-test end-to-end della pipeline
-(`run_selftest.py`) — dimostra che lo script gira, non che i numeri prodotti
-abbiano significato semantico reale.
+`litert-community/embeddinggemma-300m` non può essere scaricato qui.
+`fake_embedder()` è un embedder sintetico e deterministico (proiezione
+casuale seedata di un bag-of-words) usato SOLO per il self-test end-to-end
+della pipeline (`run_selftest.py`) — dimostra che lo script gira, non che i
+numeri prodotti abbiano significato semantico reale.
+
+`real_embedder()` (PASSAGGIO 14B) loads the REAL artifact via
+`ai-edge-litert` — the SAME LiteRT family Android's
+`com.google.ai.edge.litert:litert` dependency uses (see
+`app/llm/EmbeddingGemmaEngine.kt`) — reusing the EXACT tokenize -> pad/mask
+-> forward -> pool -> normalize helpers already validated against a real
+(if not EmbeddingGemma) `.tflite`+SentencePiece artifact in this session by
+`tokenizer_qualification.py`/`encoder_qualification.py` (not reimplemented
+here, imported). This is a deliberate correction from PASSAGGIO 14's
+`sentence_transformers`-based sketch: a `sentence-transformers` checkpoint
+is a DIFFERENT artifact (different file, different hash, possibly different
+precision/quantization) from the `.tflite` Android actually runs — using it
+for training embeddings would silently break the "same encoder produces
+the same embeddings on both sides" identity this whole contract system
+exists to protect (§C/§K). `real_embedder_sentence_transformers()` is kept
+as an explicit, clearly-labeled ALTERNATE path for the rare case where the
+official repo does not expose a directly-loadable `.tflite` — its docstring
+states plainly that it is NOT guaranteed numerically equivalent to the
+on-device runtime.
 """
 from __future__ import annotations
 
@@ -187,26 +203,75 @@ def fake_embedder():
     return embed
 
 
-def real_embedder(model_dir: str):
+def real_embedder(manifest):
     """
-    § scritta contro l'API pubblica più plausibile per EmbeddingGemma
-    (litert-community/embeddinggemma-300m) via `sentence-transformers` (se
-    il modello è distribuito anche in quel formato) — MAI eseguita con pesi
-    reali in questo ambiente (rete bloccata). Chi riprende questo lavoro con
-    accesso di rete deve verificare/aggiustare questa funzione contro il
-    vero repository prima di fidarsene.
+    § PASSAGGIO 14B §6/§14 — the PRIMARY real-embedding path: loads the real
+    SentencePiece tokenizer + real `.tflite` encoder named in [manifest]
+    (an `artifact_manifest.ArtifactManifest`, already hash-verified by the
+    caller) via `ai_edge_litert.interpreter.Interpreter` — the SAME LiteRT
+    family [EmbeddingGemmaEngine.kt] uses on Android — and reuses the exact
+    tokenize/pad/mask, forward-pass, and pool+normalize helpers already
+    validated by `tokenizer_qualification.py`/`encoder_qualification.py`
+    (imported, never reimplemented) so the vector this function returns is
+    provably the same computation those two gates just qualified, not a
+    parallel implementation that could quietly drift from them.
+
+    Raises `RuntimeError` if `ai-edge-litert`/`sentencepiece` are missing or
+    the artifact fails to load — never silently falls back to a different
+    embedder.
+    """
+    from encoder_qualification import _load_tflite_interpreter, _pool_and_normalize, _validate_tensor_contract
+    from golden_qualification_corpus import MAX_SEQUENCE_LENGTH
+    from tokenizer_qualification import _encode_padded, _load_sentencepiece
+
+    sp = _load_sentencepiece(manifest.tokenizerPath)
+    interpreter = _load_tflite_interpreter(manifest.modelPath)
+    _validate_tensor_contract(interpreter)
+    input_details = interpreter.get_input_details()
+    output_details = interpreter.get_output_details()
+
+    def embed(text: str) -> np.ndarray:
+        ids, mask = _encode_padded(sp, text, MAX_SEQUENCE_LENGTH)
+        interpreter.set_tensor(input_details[0]["index"], np.array([ids], dtype=np.int32))
+        interpreter.set_tensor(input_details[1]["index"], np.array([mask], dtype=np.int32))
+        interpreter.invoke()
+        raw = np.array(interpreter.get_tensor(output_details[0]["index"]))
+        return _pool_and_normalize(raw, np.array([mask], dtype=np.int32))
+
+    embed.qualification = QUALIFICATION_REAL  # § PASSAGGIO 14 §J — only reached if a real artifact actually loaded above.
+    embed.backend = "tflite"
+    return embed
+
+
+def real_embedder_sentence_transformers(model_dir: str):
+    """
+    § PASSAGGIO 14 (original), kept as an explicit ALTERNATE backend —
+    scritta contro l'API pubblica più plausibile per un checkpoint
+    `sentence-transformers` dello stesso modello (se il repository ufficiale
+    non espone direttamente un `.tflite` caricabile fuori da Android, ad
+    esempio se è impacchettato in un bundle `.task` per MediaPipe). MAI
+    eseguita con pesi reali in questo ambiente (rete bloccata).
+
+    **Onestà, importante**: un checkpoint sentence-transformers è un
+    artefatto DIVERSO dal `.tflite` che gira davvero su Android (file
+    diverso, hash diverso, possibile precisione/quantizzazione diversa) —
+    usarlo qui NON garantisce la stessa identità encoder che
+    [real_embedder] (il percorso preferito, §6) garantisce per costruzione.
+    Chi sceglie questo backend deve registrarlo esplicitamente nel manifest
+    (`artifactFormat`) e non può assumere parità con l'esecuzione Android.
     """
     try:
         from sentence_transformers import SentenceTransformer
     except ImportError as e:
         raise RuntimeError(
             "sentence-transformers non installato in questo ambiente — "
-            "necessario solo per un vero embedding, non per il self-test (--fake).",
+            "necessario solo per questo backend alternativo, non per --fake.",
         ) from e
     model = SentenceTransformer(model_dir)
 
     def embed(text: str) -> np.ndarray:
         return np.asarray(model.encode(text, normalize_embeddings=True))
 
-    embed.qualification = QUALIFICATION_REAL  # § PASSAGGIO 14 §J — only reached if a real model actually loaded above.
+    embed.qualification = QUALIFICATION_REAL
+    embed.backend = "sentence_transformers"
     return embed
