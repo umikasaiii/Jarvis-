@@ -48,22 +48,40 @@ class ExactAlarms @Inject constructor(
             true
         }
 
-    fun schedule(key: String, at: LocalDateTime, extras: Map<String, String>): Boolean {
+    fun schedule(key: String, at: LocalDateTime, extras: Map<String, String>): Boolean =
+        scheduleWithOutcome(key, at, extras) != ScheduleOutcome.FAILED
+
+    /**
+     * § JARVIS Implementation Master Plan — MICRO-PATCH 14.2.3 §12. Same
+     * scheduling as [schedule] — never a second code path, [schedule] simply
+     * delegates here — but distinguishes exactly why, for callers that
+     * persist trigger diagnostics: SCHEDULED_EXACT / the permission-missing
+     * inexact fallback / a genuine [SecurityException] / any other failure,
+     * never collapsed into one generic boolean.
+     */
+    fun scheduleWithOutcome(key: String, at: LocalDateTime, extras: Map<String, String>): ScheduleOutcome {
         val triggerAt = at.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
-        val pending = pendingIntent(key, extras, mutable = false) ?: return false
+        val pending = pendingIntent(key, extras, mutable = false) ?: return ScheduleOutcome.FAILED
         return try {
             if (canScheduleExact()) {
                 manager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pending)
+                ScheduleOutcome.SCHEDULED_EXACT
             } else {
                 manager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pending)
                 Log.w(TAG, "exact_alarm_denied key=$key — scheduled inexactly")
+                ScheduleOutcome.SCHEDULED_INEXACT_PERMISSION_MISSING
             }
-            true
+        } catch (e: SecurityException) {
+            Log.w(TAG, "alarm_schedule_security_exception key=$key")
+            ScheduleOutcome.SECURITY_EXCEPTION
         } catch (e: Throwable) {
             Log.w(TAG, "alarm_schedule_failed ${e.javaClass.simpleName}")
-            false
+            ScheduleOutcome.FAILED
         }
     }
+
+    /** § §12 — never collapsed into a generic failure; see [scheduleWithOutcome]. */
+    enum class ScheduleOutcome { SCHEDULED_EXACT, SCHEDULED_INEXACT_PERMISSION_MISSING, SECURITY_EXCEPTION, FAILED }
 
     fun cancel(key: String) {
         val pending = pendingIntent(key, emptyMap(), mutable = false) ?: return

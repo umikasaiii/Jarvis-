@@ -7,6 +7,8 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import com.simone.jarvismobile.alarms.ExactAlarms
+import com.simone.jarvismobile.core.proactive.TriggerEvidenceSource
+import com.simone.jarvismobile.core.proactive.TriggerEvidenceStage
 import com.simone.jarvismobile.data.SettingsRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -62,6 +64,7 @@ class MorningTriggerScheduler @Inject constructor(
     @ApplicationContext private val context: Context,
     private val exactAlarms: ExactAlarms,
     private val settings: SettingsRepository,
+    private val evidence: TriggerEvidenceStore,
 ) {
     /** Re-arms both signals — called at app start/boot, and after either fires (self-healing: a missed `ACTION_NEXT_ALARM_CLOCK_CHANGED` broadcast never leaves NEXT_ALARM stale for more than one cycle). */
     suspend fun scheduleAll() {
@@ -69,12 +72,22 @@ class MorningTriggerScheduler @Inject constructor(
         scheduleConfiguredTimeTrigger()
     }
 
-    /** Re-reads the device's next alarm and (re)schedules the NEXT_ALARM firing, or cancels it if no alarm is set. */
+    /**
+     * Re-reads the device's next alarm and (re)schedules the NEXT_ALARM
+     * firing, or cancels it if no alarm is set. § MICRO-PATCH 14.2.3 §3/§6 —
+     * this is the ONLY place NEXT_ALARM is ever (re)computed, so calling it
+     * again after the device's next alarm changes always reconciles the
+     * schedule to `alarmTriggerTime + configuredOffset`; [ExactAlarms]'s
+     * fixed key + `FLAG_UPDATE_CURRENT` guarantee only ONE PendingIntent
+     * identity ever exists for this signal (verified, not assumed).
+     */
     suspend fun scheduleNextAlarmTrigger() {
         val am = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
         val triggerAtMs = runCatching { am?.nextAlarmClock?.triggerTime }.getOrNull()
+        evidence.record(TriggerEvidenceSource.NEXT_ALARM, TriggerEvidenceStage.NEXT_ALARM_READ, detail = "triggerAtMs=$triggerAtMs")
         if (triggerAtMs == null) {
             exactAlarms.cancel(KEY_NEXT_ALARM)
+            evidence.record(TriggerEvidenceSource.NEXT_ALARM, TriggerEvidenceStage.NEXT_ALARM_ABSENT)
             return
         }
         val offsetMinutes = settings.morningNextAlarmOffsetMinutes.first()
@@ -87,9 +100,11 @@ class MorningTriggerScheduler @Inject constructor(
         // CONFIGURED_TIME/FIRST_UNLOCK remain the signals for today.
         if (!fireAt.isAfter(LocalDateTime.now())) {
             exactAlarms.cancel(KEY_NEXT_ALARM)
+            evidence.record(TriggerEvidenceSource.NEXT_ALARM, TriggerEvidenceStage.NEXT_ALARM_CANCELLED_PAST, detail = "fireAt=$fireAt")
             return
         }
-        exactAlarms.schedule(
+        evidence.record(TriggerEvidenceSource.NEXT_ALARM, TriggerEvidenceStage.NEXT_ALARM_SCHEDULE_ATTEMPTED, detail = "fireAt=$fireAt offsetMinutes=$offsetMinutes")
+        val outcome = exactAlarms.scheduleWithOutcome(
             key = KEY_NEXT_ALARM,
             at = fireAt,
             extras = mapOf(
@@ -98,16 +113,27 @@ class MorningTriggerScheduler @Inject constructor(
                 ExactAlarms.EXTRA_TRIGGER_SOURCE to "NEXT_ALARM",
             ),
         )
+        recordScheduleOutcome(TriggerEvidenceSource.NEXT_ALARM, outcome, TriggerEvidenceStage.NEXT_ALARM_SCHEDULED, TriggerEvidenceStage.NEXT_ALARM_SCHEDULE_FAILED, "fireAt=$fireAt")
     }
 
-    /** Always scheduled — the mandatory fallback, independent of whether any device alarm exists. */
+    /**
+     * Always scheduled — the mandatory fallback, independent of whether any
+     * device alarm exists. § MICRO-PATCH 14.2.3 §3/§6/§9 — this is the ONLY
+     * place CONFIGURED_TIME is ever (re)computed; calling it again after the
+     * setting changes always reschedules the exact alarm to the NEW
+     * persisted hour/minute (the caller, [com.simone.jarvismobile.ui.settings.ProactiveSettingsViewModel],
+     * persists then calls this in the same atomic step — see its own doc
+     * comment for the race this closes).
+     */
     suspend fun scheduleConfiguredTimeTrigger() {
         val hour = settings.morningBriefingHour.first()
         val minute = settings.morningBriefingMinute.first()
+        evidence.record(TriggerEvidenceSource.CONFIGURED_TIME, TriggerEvidenceStage.CONFIGURED_TIME_PERSISTED, detail = "hour=$hour minute=$minute")
         val now = LocalDateTime.now()
         var fireAt = now.toLocalDate().atTime(hour, minute)
         if (!fireAt.isAfter(now)) fireAt = fireAt.plusDays(1)
-        exactAlarms.schedule(
+        evidence.record(TriggerEvidenceSource.CONFIGURED_TIME, TriggerEvidenceStage.CONFIGURED_TIME_SCHEDULE_ATTEMPTED, detail = "fireAt=$fireAt")
+        val outcome = exactAlarms.scheduleWithOutcome(
             key = KEY_CONFIGURED_TIME,
             at = fireAt,
             extras = mapOf(
@@ -116,6 +142,29 @@ class MorningTriggerScheduler @Inject constructor(
                 ExactAlarms.EXTRA_TRIGGER_SOURCE to "CONFIGURED_TIME",
             ),
         )
+        recordScheduleOutcome(TriggerEvidenceSource.CONFIGURED_TIME, outcome, TriggerEvidenceStage.CONFIGURED_TIME_SCHEDULED, TriggerEvidenceStage.CONFIGURED_TIME_SCHEDULE_FAILED, "fireAt=$fireAt")
+    }
+
+    /** § §12 — never a generic pass/fail: the exact-alarm-permission state is recorded as its own distinct checkpoint too. */
+    private suspend fun recordScheduleOutcome(
+        source: TriggerEvidenceSource,
+        outcome: ExactAlarms.ScheduleOutcome,
+        scheduledStage: TriggerEvidenceStage,
+        failedStage: TriggerEvidenceStage,
+        detail: String,
+    ) {
+        when (outcome) {
+            ExactAlarms.ScheduleOutcome.SCHEDULED_EXACT -> evidence.record(source, scheduledStage, detail = "$detail exact=true")
+            ExactAlarms.ScheduleOutcome.SCHEDULED_INEXACT_PERMISSION_MISSING -> {
+                evidence.record(source, scheduledStage, detail = "$detail exact=false")
+                evidence.record(source, TriggerEvidenceStage.EXACT_ALARM_PERMISSION_MISSING)
+            }
+            ExactAlarms.ScheduleOutcome.SECURITY_EXCEPTION -> {
+                evidence.record(source, failedStage, detail = "reason=security_exception")
+                evidence.record(source, TriggerEvidenceStage.EXACT_ALARM_SECURITY_EXCEPTION)
+            }
+            ExactAlarms.ScheduleOutcome.FAILED -> evidence.record(source, failedStage, detail = "reason=pending_intent_or_unknown")
+        }
     }
 
     /**

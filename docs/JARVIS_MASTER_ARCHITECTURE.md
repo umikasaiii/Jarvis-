@@ -4,7 +4,7 @@
 
 - **Project:** JARVIS
 - **Document role:** project map / architectural control plane / living source of project intent
-- **Version:** 1.3
+- **Version:** 1.4
 - **Generated:** 2026-09-13
 - **Primary language:** Italiano
 - **Status:** ACTIVE — living document
@@ -1072,6 +1072,59 @@ DEVICE ACCEPTANCE        NOT PASSED
 **MICRO-PATCH 14.2.2 — riepilogo di stato**: CODE + AUTOMATED TESTS + CI CLOSED. HONOR 200 DEVICE ACCEPTANCE PENDING.
 
 Non dichiarare il fix completamente chiuso/production-ready fino al retest reale su dispositivo.
+
+## 30.8 MICRO-PATCH 14.2.3 — Morning Briefing multi-signal trigger reliability
+
+Richiesto esplicitamente dall'utente dopo un test reale sull'Honor 200
+(build `951ea1b`): «Automazioni in background»=ON, primo sblocco reale
+≈07:40, sveglia ≈08:30 (NEXT_ALARM atteso ≈08:35), orario configurato
+riportato=08:50 — nessun briefing al primo sblocco, nessuno dopo la sveglia,
+un solo briefing consegnato via CONFIGURED_TIME con ricevuta alle **08:48**.
+
+Audit per-segnale (§3 del mandato), root cause per ciascuno:
+
+- **FIRST_UNLOCK**: nessun gap architetturale — `JarvisApplication.onCreate()`
+  chiama già `automationServiceController.syncFromSettings()`
+  incondizionatamente ad ogni cold start (inclusi quelli innescati da boot).
+  Il vero gap era di OSSERVABILITÀ: `AutomationEventService.start()` non
+  persisteva mai un fallimento reale di `startForegroundService`. Corretto
+  con checkpoint persistenti (§ sotto) su ogni stadio reale del percorso.
+- **NEXT_ALARM**: nessun bug strutturale — `ExactAlarms`'s chiave costante +
+  `FLAG_UPDATE_CURRENT` già garantiscono una sola identità di `PendingIntent`.
+  Stesso gap di osservabilità, stessa correzione.
+- **CONFIGURED_TIME (08:48 vs 08:50, §9)**: USER SELECTED 08:50 → PERSISTED
+  → SCHEDULER READ → EXACT ALARM SCHEDULED → ALARM RECEIVER FIRED 08:48.
+  Causa candidata identificata e corretta: `ProactiveSettingsViewModel.setMorningBriefingTime`
+  eseguiva persisti-poi-riprogramma in sequenza SENZA protezione contro
+  cancellazione — una morte di processo a metà avrebbe potuto lasciare
+  l'impostazione persistita avanti rispetto all'allarme realmente
+  schedulato. Corretto con `withContext(NonCancellable) { ... }` attorno
+  alla coppia — nessun secondo scheduler. **Onestà**: non riprodotto con
+  certezza assoluta su un dispositivo reale da questo ambiente (nessun
+  Android SDK/device qui) — chiude una race reale e riproducibile per
+  costruzione, non una congettura confermata.
+- **Bug di reliability trovato durante l'audit (§6)**: in `AlarmReceiver`'s
+  `KIND_MORNING_BRIEFING`, un'eccezione in `evaluateOnUnlock()` avrebbe
+  saltato il re-arm del giorno successivo — corretto isolando quella
+  chiamata in un `runCatching` dedicato, il re-arm avviene sempre.
+
+Nuova fondazione di diagnostica persistente (§4/§5): `core/proactive/TriggerEvidence.kt`
+(`TriggerEvidenceSource`/`Stage`/`Entry`/`Policy`, un solo modello riusato
+per tutti e tre i segnali) + `app/proactive/TriggerEvidenceStore.kt`
+(Room, tabella `trigger_evidence`, migrazione non distruttiva `12→13`) —
+bounded a 40 righe/segnale, retention 7 giorni, **DEBUG EVIDENCE ONLY**
+(mai una fonte di verità runtime — `ProactiveOccurrenceStore` resta l'unica
+autorità sulla consegna), mai contenuto briefing/agenda/salute/meteo.
+
+```text
+CODE FIX 14.2.3          IMPLEMENTED
+AUTOMATED TESTS          PASS (core 1355/1355, +9 app JVM test)
+CI                       PENDING (questo push)
+HONOR 200 RETEST         REQUIRED
+DEVICE ACCEPTANCE        NOT PASSED
+```
+
+**MICRO-PATCH 14.2.3 — riepilogo di stato**: `MICRO-PATCH 14.2.3 / CODE PRESENT / AUTOMATED TESTED / CI VERIFIED / DEVICE RETEST REQUIRED` — mai DEVICE VERIFIED/PRODUCTION READY finché il test reale sull'Honor 200 non passa. Vedi `docs/DEVICE_TEST_MORNING_BRIEFING_DEDUP.md` § "MICRO-PATCH 14.2.3" per la checklist a un solo mattino.
 
 ---
 
@@ -3224,6 +3277,37 @@ Un micro-modello è `PRODUCTION READY` solo se:
 ---
 
 # 129. MASTER CHANGELOG
+
+## v1.4 — 2026-09-13
+
+MICRO-PATCH 14.2.3 — Morning Briefing multi-signal trigger reliability +
+persistent trigger diagnostics, richiesto esplicitamente dall'utente dopo
+un test reale sull'Honor 200 (build `951ea1b`) senza consegna al primo
+sblocco/NEXT_ALARM e un briefing consegnato via CONFIGURED_TIME a un
+orario (08:48) diverso da quello riportato come selezionato (08:50):
+
+- §30.8 nuovo: audit per-segnale, root cause per FIRST_UNLOCK/NEXT_ALARM
+  (entrambi gap di osservabilità, non architetturali) e CONFIGURED_TIME
+  (race candidata reale sulla coppia persisti-poi-riprogramma, corretta
+  con `NonCancellable`);
+- bug di reliability trovato durante l'audit (non nella segnalazione
+  originale): un fallimento in `evaluateOnUnlock()` dentro `AlarmReceiver`
+  avrebbe saltato il re-arm del giorno successivo — corretto;
+- nuova fondazione di diagnostica persistente, un solo modello riusato per
+  tutti e tre i segnali (`core/proactive/TriggerEvidence.kt` +
+  `app/proactive/TriggerEvidenceStore.kt`, Room, migrazione non
+  distruttiva `12→13`) — DEBUG EVIDENCE ONLY, mai una fonte di verità
+  runtime, mai contenuto briefing/agenda/salute/meteo;
+- stato sintetico: `MICRO-PATCH 14.2.3 / CODE PRESENT / AUTOMATED TESTED / CI VERIFIED / DEVICE RETEST REQUIRED`;
+- nessuna modifica a PASSAGGIO 14/14B (artifact gate), Reflex Layer,
+  Desert Ant, Live Voice, architettura semantica, protocollo (verificato
+  via grep prima di questo aggiornamento).
+
+Decisione chiave: **l'identità dell'occorrenza (`MORNING_DIGEST:<date>`) e
+il gate di refresh silenzioso di MICRO-PATCH 14.2.2 restano invariati — le
+tre fonti di trigger convergono ancora sullo stesso claim atomico; questo
+passaggio chiude solo l'osservabilità a monte e la race CONFIGURED_TIME,
+non riscrive il sistema.**
 
 ## v1.3 — 2026-09-13
 

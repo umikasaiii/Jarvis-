@@ -31,6 +31,7 @@ import com.simone.jarvismobile.llm.SemanticEmbeddingEngine
 import com.simone.jarvismobile.navigation.NavigationRepository
 import com.simone.jarvismobile.navigation.debug.DebugGpsSimulator
 import com.simone.jarvismobile.proactive.ProactiveManager
+import com.simone.jarvismobile.proactive.TriggerEvidenceStore
 import com.simone.jarvismobile.tts.AudioFocusGate
 import com.simone.jarvismobile.tts.PcmPlayer
 import com.simone.jarvismobile.tts.SupertonicTtsEngine
@@ -75,6 +76,7 @@ class DiagnosticsViewModel @Inject constructor(
     private val coreConnection: CoreConnectionManager,
     private val semanticEmbeddingEngine: SemanticEmbeddingEngine,
     private val semanticClassifier: EmbeddingSemanticClassifier,
+    private val triggerEvidence: TriggerEvidenceStore,
 ) : AndroidViewModel(application) {
 
     /**
@@ -261,6 +263,56 @@ class DiagnosticsViewModel @Inject constructor(
             }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
+
+    /**
+     * § JARVIS Implementation Master Plan — MICRO-PATCH 14.2.3 §15. The
+     * SERVICE/FIRST_UNLOCK/NEXT_ALARM/CONFIGURED_TIME/OCCURRENCE debug card:
+     * unlike [morningReceiptsStatus] (occurrence-level: who claimed/delivered
+     * today's digest, in-memory-only per MICRO-PATCH 14.2.2), this reads the
+     * PERSISTENT per-signal checkpoints from [TriggerEvidenceStore] (§4/§5) —
+     * survives a process restart, so "no receipt visible" here never has to
+     * be read as "the trigger never fired". A manual "Controlla adesso" read
+     * like the Meteo/Salute cards, never adb.
+     */
+    private val _triggerDiagnosticsStatus = MutableStateFlow("")
+    val triggerDiagnosticsStatus: StateFlow<String> = _triggerDiagnosticsStatus.asStateFlow()
+
+    fun refreshTriggerDiagnostics() {
+        viewModelScope.launch {
+            val fmt = java.time.format.DateTimeFormatter.ofPattern("d MMM HH:mm:ss").withZone(java.time.ZoneId.systemDefault())
+            fun line(e: com.simone.jarvismobile.core.proactive.TriggerEvidenceEntry): String =
+                "  ${fmt.format(java.time.Instant.ofEpochMilli(e.eventAtMs))} ${e.stage}" +
+                    (e.detail?.let { " ($it)" } ?: "") + " [sessione=${e.processSessionId}]"
+
+            val firstUnlock = triggerEvidence.recent(com.simone.jarvismobile.core.proactive.TriggerEvidenceSource.FIRST_UNLOCK, limit = 10)
+            val serviceStages = setOf(
+                com.simone.jarvismobile.core.proactive.TriggerEvidenceStage.AUTOMATION_SETTING_ENABLED,
+                com.simone.jarvismobile.core.proactive.TriggerEvidenceStage.AUTOMATION_SETTING_DISABLED,
+                com.simone.jarvismobile.core.proactive.TriggerEvidenceStage.SERVICE_START_REQUESTED,
+                com.simone.jarvismobile.core.proactive.TriggerEvidenceStage.SERVICE_START_FAILED,
+                com.simone.jarvismobile.core.proactive.TriggerEvidenceStage.SERVICE_STOP_REQUESTED,
+                com.simone.jarvismobile.core.proactive.TriggerEvidenceStage.SERVICE_ON_CREATE,
+                com.simone.jarvismobile.core.proactive.TriggerEvidenceStage.SERVICE_ON_START_COMMAND,
+                com.simone.jarvismobile.core.proactive.TriggerEvidenceStage.RECEIVER_REGISTERED,
+                com.simone.jarvismobile.core.proactive.TriggerEvidenceStage.RECEIVER_REGISTER_FAILED,
+            )
+            val service = firstUnlock.filter { it.stage in serviceStages }
+            val unlock = firstUnlock.filterNot { it.stage in serviceStages }
+            val nextAlarm = triggerEvidence.recent(com.simone.jarvismobile.core.proactive.TriggerEvidenceSource.NEXT_ALARM, limit = 10)
+            val configuredTime = triggerEvidence.recent(com.simone.jarvismobile.core.proactive.TriggerEvidenceSource.CONFIGURED_TIME, limit = 10)
+
+            fun section(title: String, entries: List<com.simone.jarvismobile.core.proactive.TriggerEvidenceEntry>): String =
+                "$title:\n" + if (entries.isEmpty()) "  (nessun checkpoint registrato in questo storico)" else entries.joinToString("\n") { line(it) }
+
+            _triggerDiagnosticsStatus.value = listOf(
+                section("SERVICE", service),
+                section("FIRST_UNLOCK", unlock),
+                section("NEXT_ALARM", nextAlarm),
+                section("CONFIGURED_TIME", configuredTime),
+                "OCCURRENCE:\n  vedi la card \"Briefing mattutino — ricevute di consegna\" qui sopra per lo stato dell'occorrenza di oggi (claim/stato/consegna).",
+            ).joinToString("\n\n")
+        }
+    }
 
     /**
      * § JARVIS Implementation Master Plan PASSAGGIO 14.2 — "safe debug/test

@@ -19,6 +19,9 @@ import com.simone.jarvismobile.automation.rule.RuleScheduler
 import com.simone.jarvismobile.background.JarvisNotifications
 import com.simone.jarvismobile.context.ContextEngine
 import com.simone.jarvismobile.core.automation.rule.TriggerEvent
+import com.simone.jarvismobile.core.proactive.TriggerEvidenceSource
+import com.simone.jarvismobile.core.proactive.TriggerEvidenceStage
+import com.simone.jarvismobile.proactive.TriggerEvidenceStore
 import com.simone.jarvismobile.reminders.ReminderActionReceiver
 import com.simone.jarvismobile.ui.MainActivity
 import dagger.hilt.EntryPoint
@@ -127,10 +130,35 @@ class AlarmReceiver : BroadcastReceiver() {
                 val pending = goAsync()
                 CoroutineScope(Dispatchers.Default).launch {
                     try {
-                        deps.proactiveManager().evaluateOnUnlock(triggerSource = triggerSource)
+                        val evidence = deps.triggerEvidence()
+                        val evidenceSource = if (id == com.simone.jarvismobile.proactive.MorningTriggerScheduler.KEY_NEXT_ALARM) {
+                            TriggerEvidenceSource.NEXT_ALARM
+                        } else {
+                            TriggerEvidenceSource.CONFIGURED_TIME
+                        }
+                        val firedStage = if (evidenceSource == TriggerEvidenceSource.NEXT_ALARM) {
+                            TriggerEvidenceStage.NEXT_ALARM_RECEIVER_FIRED
+                        } else {
+                            TriggerEvidenceStage.CONFIGURED_TIME_RECEIVER_FIRED
+                        }
+                        evidence.record(evidenceSource, firedStage, detail = "triggerSource=$triggerSource")
+                        evidence.record(evidenceSource, TriggerEvidenceStage.PROACTIVE_CALL_ATTEMPTED)
+                        // § MICRO-PATCH 14.2.3 §6 — a failure INSIDE evaluateOnUnlock
+                        // must never skip the re-arm below: without this runCatching,
+                        // an exception here would leave the alarm that just fired
+                        // WITHOUT a successor scheduled for the next occurrence — a
+                        // real systemic-reliability gap found during this audit, not
+                        // just a diagnostics gap.
+                        runCatching { deps.proactiveManager().evaluateOnUnlock(triggerSource = triggerSource) }
+                            .onSuccess { evidence.record(evidenceSource, TriggerEvidenceStage.PROACTIVE_CALL_SUCCEEDED) }
+                            .onFailure {
+                                evidence.record(evidenceSource, TriggerEvidenceStage.PROACTIVE_CALL_FAILED, detail = "error=${it.javaClass.simpleName}")
+                                Log.w(TAG, "alarm_morning_briefing_evaluate_failed ${it.javaClass.simpleName}")
+                            }
                         // Both signals are one-shot exact alarms — re-arm the
                         // NEXT day's occurrence for whichever one just fired,
-                        // exactly like KIND_RULE's own re-arm above.
+                        // exactly like KIND_RULE's own re-arm above. Always
+                        // reached now, even if evaluateOnUnlock above failed.
                         val scheduler = deps.morningTriggerScheduler()
                         when (id) {
                             com.simone.jarvismobile.proactive.MorningTriggerScheduler.KEY_NEXT_ALARM ->
@@ -230,6 +258,7 @@ class AlarmReceiver : BroadcastReceiver() {
         fun weather(): com.simone.jarvismobile.weather.WeatherManager
         fun proactiveManager(): com.simone.jarvismobile.proactive.ProactiveManager
         fun morningTriggerScheduler(): com.simone.jarvismobile.proactive.MorningTriggerScheduler
+        fun triggerEvidence(): TriggerEvidenceStore
     }
 
     private companion object {

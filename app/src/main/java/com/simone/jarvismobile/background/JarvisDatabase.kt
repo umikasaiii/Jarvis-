@@ -28,6 +28,8 @@ import com.simone.jarvismobile.navigation.NavHistoryEntity
 import com.simone.jarvismobile.navigation.PlaceFtsEntity
 import com.simone.jarvismobile.proactive.ProactiveOccurrenceDao
 import com.simone.jarvismobile.proactive.ProactiveOccurrenceEntity
+import com.simone.jarvismobile.proactive.TriggerEvidenceDao
+import com.simone.jarvismobile.proactive.TriggerEvidenceRowEntity
 
 @Database(
     entities = [
@@ -38,8 +40,9 @@ import com.simone.jarvismobile.proactive.ProactiveOccurrenceEntity
         ArchiveItemEntity::class, ArchiveListEntity::class, ArchiveListItemEntity::class, ArchiveLinkEntity::class,
         ConversationalMemoryEntity::class,
         ProactiveOccurrenceEntity::class,
+        TriggerEvidenceRowEntity::class,
     ],
-    version = 12,
+    version = 13,
     exportSchema = false,
 )
 abstract class JarvisDatabase : RoomDatabase() {
@@ -71,4 +74,9 @@ abstract class JarvisDatabase : RoomDatabase() {
     // § JARVIS Implementation Master Plan PASSAGGIO 14.1 — durable, atomic
     // Morning Brief occurrence claim table. See ProactiveOccurrenceMigrations.
     abstract fun proactiveOccurrenceDao(): ProactiveOccurrenceDao
+
+    // § JARVIS Implementation Master Plan MICRO-PATCH 14.2.3 §4/§5 —
+    // persistent, bounded, process-restart-surviving trigger diagnostics
+    // (FIRST_UNLOCK/NEXT_ALARM/CONFIGURED_TIME). See TriggerEvidenceMigrations.
+    abstract fun triggerEvidenceDao(): TriggerEvidenceDao
 }

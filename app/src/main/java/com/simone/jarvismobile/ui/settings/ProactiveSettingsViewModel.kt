@@ -7,10 +7,12 @@ import com.simone.jarvismobile.data.SettingsRepository
 import com.simone.jarvismobile.proactive.MorningTriggerScheduler
 import com.simone.jarvismobile.proactive.ProactiveScheduler
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 /** Backs the «Proattività» settings section. Self-contained so [SettingsViewModel] stays lean. */
@@ -91,8 +93,25 @@ class ProactiveSettingsViewModel @Inject constructor(
      * already-DELIVERED occurrence for today is never redelivered just
      * because the configured hour changed mid-day.
      */
+    /**
+     * § JARVIS Implementation Master Plan — MICRO-PATCH 14.2.3 §6/§9. The
+     * persist-then-reschedule pair is wrapped in [NonCancellable] so a
+     * cancellation of this [viewModelScope] coroutine (most plausibly a
+     * process death between the two suspend calls) can never leave the
+     * persisted setting ahead of the scheduled alarm — the candidate root
+     * cause investigated for the reported 08:48-vs-08:50 discrepancy (§9):
+     * without this guard, an earlier edit's reschedule could be interrupted
+     * after `setMorningBriefingTime` already wrote the NEW value, leaving a
+     * stale alarm from whatever time was configured before. `NonCancellable`
+     * does not create a second scheduler or a new DI-scoped `CoroutineScope`
+     * — it only makes this ALREADY-sequential pair atomic against
+     * cancellation, honoring "SAVE NEW TIME → RECONCILE CONFIGURED_TIME
+     * SCHEDULE" as one step.
+     */
     fun setMorningBriefingTime(hour: Int, minute: Int) = viewModelScope.launch {
-        settings.setMorningBriefingTime(hour, minute)
-        morningTriggerScheduler.scheduleConfiguredTimeTrigger()
+        withContext(NonCancellable) {
+            settings.setMorningBriefingTime(hour, minute)
+            morningTriggerScheduler.scheduleConfiguredTimeTrigger()
+        }
     }
 }

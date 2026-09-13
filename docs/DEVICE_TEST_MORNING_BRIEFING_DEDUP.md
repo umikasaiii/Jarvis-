@@ -219,3 +219,198 @@ dispositivo dell'utente è quello che ha rivelato il bug qui corretto.
 **Stato: FAILED — RETEST REQUIRED.** Non dichiarare PASSED finché il
 checklist aggiornato non è stato eseguito davvero sull'Honor 200 con questa
 build.
+
+## MICRO-PATCH 14.2.3 — DEVICE FAILURE INVESTIGATION + MULTI-SIGNAL RELIABILITY
+
+Round successivo, richiesto esplicitamente dall'utente dopo un nuovo test
+reale sull'Honor 200 (build `951ea1b`): «Automazioni in background»=ON,
+primo sblocco reale ≈07:40, sveglia del telefono ≈08:30 (NEXT_ALARM atteso
+con l'offset predefinito ≈08:35), orario configurato riportato dall'utente
+=08:50 — nessun briefing al primo sblocco, nessun briefing dopo la sveglia,
+un solo briefing arrivato via CONFIGURED_TIME con una ricevuta diagnostica
+alle **08:48** (non 08:50).
+
+### Cosa l'evidenza prova davvero (§2 del mandato)
+
+Il percorso CONFIGURED_TIME a valle (AlarmReceiver→ProactiveManager→claim
+occorrenza→composer→renderer→notifier→DELIVERED) funziona già — nessuna
+riscrittura del sistema è mai stata giustificata. I fallimenti reali sono
+tutti a monte/multi-segnale: (A) FIRST_UNLOCK non ha prodotto alcuna
+consegna osservabile; (B) NEXT_ALARM non ha prodotto alcuna consegna
+osservabile; (C) CONFIGURED_TIME può essere scattato a un orario diverso da
+quello selezionato; (D) le ricevute diagnostiche precedenti (MICRO-PATCH
+14.2.2) sono legate al processo — l'assenza di una vecchia ricevuta non
+prova mai che un trigger non sia scattato, se il processo si è riavviato nel
+frattempo.
+
+### Audit di codice svolto (per ciascun segnale, come richiesto dal §3)
+
+- **FIRST_UNLOCK**: percorso reale `SettingsRepository.automationServiceEnabled`
+  → `AutomationServiceController` → `AutomationEventService.start()`/`onCreate()`
+  /`onStartCommand()`/`registerReceivers()`/`onUnlock()` → `ProactiveManager.evaluateOnUnlock`.
+  Confermato via lettura diretta: `JarvisApplication.onCreate()` chiama
+  **già** `automationServiceController.syncFromSettings()` incondizionatamente
+  ad ogni cold start (inclusi quelli innescati da `BOOT_COMPLETED`, perché
+  Android istanzia sempre `Application.onCreate()` prima di consegnare un
+  broadcast a un receiver di manifest per un processo non ancora vivo) — il
+  servizio foreground viene quindi già ri-avviato ad ogni riavvio,
+  indipendentemente dalla logica propria di `BootReceiver` (che si occupa
+  solo di ri-armare allarmi/regole/luoghi/scheduler mattutino, non del
+  servizio). Il vero gap trovato non era architetturale ma di
+  **osservabilità**: `AutomationEventService.start()`'s vecchio
+  `runCatching{...}.onFailure{Log.w(...)}` non persisteva mai un fallimento
+  reale di `startForegroundService` (es. `ForegroundServiceStartNotAllowedException`
+  su Android 12+) — un silenzioso "sembra ON ma non è mai partito" non era
+  distinguibile da un vero silenzio del trigger. Corretto: `start()` ora
+  ritorna `Boolean`, e `AutomationServiceController`/`AutomationEventService`
+  registrano un checkpoint persistente per ognuno di: impostazione
+  letta ON/OFF, richiesta di avvio/arresto del servizio riuscita o fallita,
+  `onCreate()`/`onStartCommand()` realmente raggiunti, registrazione del
+  receiver riuscita o fallita, `ACTION_USER_PRESENT` realmente osservato,
+  tentativo/esito della chiamata a `evaluateOnUnlock`.
+- **NEXT_ALARM**: percorso reale `AlarmManager.getNextAlarmClock()` →
+  `MorningTriggerScheduler.scheduleNextAlarmTrigger()` → `ExactAlarms` →
+  `AlarmReceiver`. Confermato via lettura diretta di `ExactAlarms.schedule()`:
+  la chiave è una **stringa costante** (`KEY_NEXT_ALARM`, mai derivata da
+  ora/minuto) e l'identità del `PendingIntent` (`Uri.parse("jarvis://alarm/$key")`
+  + `key.hashCode()` + `FLAG_UPDATE_CURRENT`) garantisce strutturalmente
+  che possa esistere **una sola** identità per questo segnale — un
+  reschedule sostituisce sempre l'allarme esistente, non ne crea mai un
+  secondo. `NextAlarmChangedReceiver` esiste già e reagisce a
+  `ACTION_NEXT_ALARM_CLOCK_CHANGED`, con `scheduleAll()` (boot/app-start)
+  come rete di sicurezza se quel broadcast non arrivasse mai su questo
+  specifico OEM. Nessun bug strutturale trovato in questo segnale — il gap
+  era, di nuovo, di osservabilità: nessuna traccia persistente di
+  cosa `AlarmManager.nextAlarmClock` avesse effettivamente riportato, se lo
+  scheduling fosse davvero riuscito, o se il permesso di allarme esatto
+  fosse concesso. Corretto con checkpoint persistenti per: lettura del
+  prossimo allarme di sistema, allarme assente, tentativo di scheduling,
+  scheduling riuscito (esatto o inesatto), fallimento (con eccezione di
+  sicurezza distinta da un fallimento generico), firing del receiver.
+- **CONFIGURED_TIME — l'indagine 08:48 vs 08:50 (§9)**: tracciata la catena
+  reale UI→ViewModel→persistenza→scheduler. `SettingsScreen.kt`'s
+  `TaskTimePicker.onPick` chiama `ProactiveSettingsViewModel.setMorningBriefingTime(hour, minute)`,
+  **l'unico** call site in tutto il codice per queste chiavi (confermato via
+  grep) — che eseguiva `settings.setMorningBriefingTime(hour, minute)` poi
+  `morningTriggerScheduler.scheduleConfiguredTimeTrigger()` **in sequenza,
+  nella stessa coroutine `viewModelScope`, mai in parallelo** — quindi in
+  condizioni normali non esiste alcuna race. **Causa candidata identificata
+  e corretta**: se quella coroutine venisse cancellata (l'ipotesi più
+  plausibile: morte di processo) tra la scrittura DataStore e il completamento
+  della chiamata di reschedule, l'impostazione persistita mostrerebbe già il
+  NUOVO orario mentre l'allarme realmente schedulato resterebbe quello
+  di una modifica PRECEDENTE — esattamente compatibile con "selezionato/
+  riportato 08:50, ma l'allarme che è scattato era 08:48 (impostato in un
+  editing precedente)". Corretto avvolgendo l'intera coppia
+  persisti-poi-riprogramma in `withContext(NonCancellable) { ... }` — rende
+  quel passo atomico contro la cancellazione, senza creare un secondo
+  scheduler né un nuovo `CoroutineScope` con scope DI proprio (§6/§9 del
+  mandato: "SAVE NEW TIME → RECONCILE CONFIGURED_TIME SCHEDULE" come un solo
+  passo). **Onestà, come richiesto esplicitamente**: questa correzione chiude
+  la classe di race più plausibile trovata leggendo il codice reale — non è
+  stato possibile riprodurre l'esatto episodio segnalato dall'utente su un
+  dispositivo reale da questo ambiente (nessun Android SDK/dispositivo qui),
+  quindi non si dichiara con certezza assoluta che questa fosse *la* causa
+  di quello specifico episodio, solo che era una causa reale e riproducibile
+  per costruzione, ora chiusa. Aggiunti anche checkpoint persistenti per:
+  valore persistito letto dallo scheduler, tentativo di scheduling,
+  scheduling riuscito/fallito, firing del receiver.
+- **§6 — un fallimento in `evaluateOnUnlock` non deve mai bloccare il
+  re-arm del giorno successivo**: bug reale trovato durante l'audit (non
+  nella segnalazione originale, ma diretta conseguenza del §6 del mandato):
+  in `AlarmReceiver`'s ramo `KIND_MORNING_BRIEFING`, un'eccezione dentro
+  `evaluateOnUnlock()` avrebbe fatto uscire dal blocco `try` PRIMA di
+  raggiungere il re-arm (`scheduler.scheduleNextAlarmTrigger()`/
+  `scheduleConfiguredTimeTrigger()`) — lasciando il segnale che è appena
+  scattato SENZA un successore per il giorno dopo. Corretto avvolgendo la
+  sola chiamata a `evaluateOnUnlock` in un `runCatching` dedicato: un
+  fallimento lì è ora registrato come `PROACTIVE_CALL_FAILED` ma il re-arm
+  del segnale avviene sempre.
+
+### Diagnostica persistente aggiunta (§4/§5)
+
+Nuovo `core/proactive/TriggerEvidence.kt` (puro, testato) +
+`app/proactive/TriggerEvidenceStore.kt` (Room-backed, migrazione non
+distruttiva `12→13`, tabella `trigger_evidence`) — un modello unico, riusato
+da tutti e tre i segnali (mai duplicato per segnale): `eventAtMs`,
+`processSessionId` (distingue le ricevute prima/dopo un riavvio di
+processo), `source`, `stage` (checkpoint enum), `detail` (fragmento
+`key=value` bounded, MAI testo del briefing/agenda/salute/meteo). Bounded a
+40 righe per segnale con pruning automatico ad ogni scrittura, più una
+ritenzione temporale di 7 giorni. **Esplicitamente DEBUG EVIDENCE ONLY** —
+non è mai consultato da alcun percorso decisionale reale (il claim atomico
+di `ProactiveOccurrenceStore`, PASSAGGIO 14.1, resta l'unica fonte di
+verità su "il briefing di oggi è stato consegnato"). Nuova card Diagnostica
+"Diagnostica trigger briefing mattutino (debug)" (SERVICE/FIRST_UNLOCK/
+NEXT_ALARM/CONFIGURED_TIME, con un pointer alla card ricevute esistente
+per la sezione OCCURRENCE — nessuna duplicazione di quel dato).
+
+### Cosa NON è stato fatto (§16 del mandato, rispettato alla lettera)
+
+Nessun ritardo arbitrario, nessuna compensazione a minuti, nessun debounce
+spacciato per correttezza, nessun ID di notifica casuale, nessun reset
+dello stato dell'occorrenza, nessuna cancellazione dei dati app, nessuna
+disabilitazione di una fonte di trigger, CONFIGURED_TIME non è diventato
+l'unico trigger reale, nessun polling periodico nuovo, nessun secondo
+scheduler/occurrence-store/notification-owner, nessuna logica di trigger
+basata su keyword/testo.
+
+### Test automatizzati aggiunti
+
+`:core` — `TriggerEvidenceTest.kt` (7 test, il bound `sanitizeDetail`).
+`app/src/test` — `TriggerEvidenceStoreTest.kt` (9 test, con
+`FakeTriggerEvidenceDao`: sopravvivenza a un riavvio del "processo" tramite
+una nuova istanza di store sullo stesso dao, isolamento per fonte, pruning
+per fonte senza toccare le altre fonti, sanitizzazione del detail prima
+della persistenza, righe corrotte scartate senza crash, retention
+temporale, mai un'eccezione propagata dal dao che rompa il chiamante,
+sessioni distinte per istanza di store).
+
+### Checklist di accettazione — un solo mattino (§14, i passi minimi richiesti)
+
+Da eseguire in un'unica mattinata reale sull'Honor 200:
+
+1. **Sera prima**: verifica che «Automazioni in background» sia ON e che
+   l'orario briefing configurato sia impostato a un valore noto (es. 08:50).
+   Imposta anche una sveglia di sistema per la mattina.
+2. **La mattina, prima del primo sblocco**: se possibile, forza un riavvio
+   dell'app (kill dal task switcher) per verificare che il servizio si
+   riavvii da solo — apri Diagnostica (debug) subito dopo il riavvio e
+   controlla la card "Diagnostica trigger briefing mattutino": deve mostrare
+   `SERVICE_ON_CREATE`/`SERVICE_ON_START_COMMAND`/`RECEIVER_REGISTERED`
+   recenti sotto SERVICE.
+3. **Al primo sblocco reale** (dopo l'orario minimo configurato): apri
+   Diagnostica → dovresti vedere `USER_PRESENT_OBSERVED` e
+   `PROACTIVE_CALL_ATTEMPTED`/`SUCCEEDED` sotto FIRST_UNLOCK, con un timestamp
+   coerente con l'orario reale di sblocco.
+4. **Quando suona la sveglia di sistema**: dopo l'offset configurato (default
+   +5min), verifica sotto NEXT_ALARM che sia presente
+   `NEXT_ALARM_SCHEDULED`/`NEXT_ALARM_RECEIVER_FIRED` con un `fireAt` coerente
+   con `orario sveglia + offset`.
+5. **All'orario configurato**: verifica sotto CONFIGURED_TIME che
+   `CONFIGURED_TIME_RECEIVER_FIRED` mostri un timestamp che combacia
+   esattamente con l'orario persistito (mai qualche minuto prima/dopo senza
+   una spiegazione visibile nei checkpoint precedenti — `CONFIGURED_TIME_PERSISTED`/
+   `CONFIGURED_TIME_SCHEDULE_ATTEMPTED`/`CONFIGURED_TIME_SCHEDULED` devono
+   mostrare lo stesso orario).
+6. **Esito atteso complessivo**: **esattamente UNA** notifica Morning Briefing
+   consegnata (qualunque sia il segnale che ha vinto il claim — vedi la card
+   ricevute esistente per `claim=WON`), mai zero, mai due.
+7. **Cambio orario a metà giornata**: dopo la consegna, cambia l'orario
+   configurato — verifica (card ricevute) che NON avvenga alcuna nuova
+   consegna oggi (`ALREADY_DELIVERED`), e (card trigger) che
+   `CONFIGURED_TIME_SCHEDULED` mostri il nuovo `fireAt` per DOMANI.
+8. **Cambio sveglia di sistema**: modifica/rimuovi la sveglia — verifica
+   sotto NEXT_ALARM che compaia un nuovo `NEXT_ALARM_READ`/`NEXT_ALARM_SCHEDULED`
+   (o `NEXT_ALARM_ABSENT` se rimossa) entro un ciclo (il broadcast
+   `ACTION_NEXT_ALARM_CLOCK_CHANGED`, o al più il prossimo cold start/
+   `scheduleAll()`).
+
+### Onestà — Honor 200 acceptance (MICRO-PATCH 14.2.3)
+
+Nessuno dei passi 1-8 sopra è stato eseguito da questo ambiente (nessun
+dispositivo Android disponibile qui). **Stato: DEVICE RETEST REQUIRED.**
+La causa dell'episodio specifico 08:48-vs-08:50 non è stata riprodotta con
+certezza assoluta (vedi onestà nella sezione CONFIGURED_TIME sopra) — la
+correzione applicata chiude una race reale e riproducibile per costruzione,
+non una congettura non verificata.

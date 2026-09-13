@@ -27,7 +27,10 @@ import com.simone.jarvismobile.context.ContextEngine
 import com.simone.jarvismobile.core.automation.Trigger
 import com.simone.jarvismobile.core.automation.rule.TriggerEvent
 import com.simone.jarvismobile.core.automation.rule.TriggerRegistry
+import com.simone.jarvismobile.core.proactive.TriggerEvidenceSource
+import com.simone.jarvismobile.core.proactive.TriggerEvidenceStage
 import com.simone.jarvismobile.proactive.ProactiveManager
+import com.simone.jarvismobile.proactive.TriggerEvidenceStore
 import com.simone.jarvismobile.ui.MainActivity
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
@@ -60,6 +63,7 @@ class AutomationEventService : Service() {
     @Inject lateinit var newEngineExecutor: AutomationExecutor
     @Inject lateinit var newEngineContext: ContextEngine
     @Inject lateinit var eventBridge: com.simone.jarvismobile.corebridge.EventBridge
+    @Inject lateinit var evidence: TriggerEvidenceStore
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val lastFired = HashMap<String, Long>()
@@ -75,6 +79,10 @@ class AutomationEventService : Service() {
         super.onCreate()
         createChannel()
         registerReceivers()
+        // § MICRO-PATCH 14.2.3 §4/§11 — a real, persistent checkpoint that
+        // this exact process actually reached Service.onCreate(), so a
+        // missing FIRST_UNLOCK never has to be inferred from silence alone.
+        scope.launch { evidence.record(TriggerEvidenceSource.FIRST_UNLOCK, TriggerEvidenceStage.SERVICE_ON_CREATE) }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -85,6 +93,7 @@ class AutomationEventService : Service() {
         } else {
             startForeground(NOTIFICATION_ID, notification())
         }
+        scope.launch { evidence.record(TriggerEvidenceSource.FIRST_UNLOCK, TriggerEvidenceStage.SERVICE_ON_START_COMMAND) }
         // STICKY so the OS brings the observer back if it reclaims memory.
         return START_STICKY
     }
@@ -134,6 +143,7 @@ class AutomationEventService : Service() {
     }
 
     private fun onUnlock() {
+        scope.launch { evidence.record(TriggerEvidenceSource.FIRST_UNLOCK, TriggerEvidenceStage.USER_PRESENT_OBSERVED) }
         fire { it is Trigger.ScreenUnlocked }
         publishEvent(com.simone.jarvismobile.core.bridge.JarvisEventType.USER_UNLOCKED)
         // Morning unlock: the first unlock of the day at/after the set time.
@@ -153,8 +163,13 @@ class AutomationEventService : Service() {
         // periodic guess. ProactiveGovernor's own per-day dedup is the "only once
         // a day" flag — nothing extra to track here.
         scope.launch {
+            evidence.record(TriggerEvidenceSource.FIRST_UNLOCK, TriggerEvidenceStage.PROACTIVE_CALL_ATTEMPTED)
             runCatching { proactive.evaluateOnUnlock(LocalDateTime.now()) }
-                .onFailure { Log.w("JarvisAutomation", "proactive_unlock_failed ${it.javaClass.simpleName}") }
+                .onSuccess { evidence.record(TriggerEvidenceSource.FIRST_UNLOCK, TriggerEvidenceStage.PROACTIVE_CALL_SUCCEEDED) }
+                .onFailure {
+                    evidence.record(TriggerEvidenceSource.FIRST_UNLOCK, TriggerEvidenceStage.PROACTIVE_CALL_FAILED, detail = "error=${it.javaClass.simpleName}")
+                    Log.w("JarvisAutomation", "proactive_unlock_failed ${it.javaClass.simpleName}")
+                }
         }
         // Same idea for the new (6j) rule-builder engine's FIRST_UNLOCK_OF_DAY
         // trigger. Unlike the block above, no manual day key is tracked here: the
@@ -238,7 +253,17 @@ class AutomationEventService : Service() {
             addAction(Intent.ACTION_HEADSET_PLUG)
             addAction(BluetoothDevice.ACTION_ACL_CONNECTED)
         }
-        ContextCompat.registerReceiver(this, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+        // § MICRO-PATCH 14.2.3 §3/§4 — whether an exception prevented receiver
+        // registration is now a persisted, observable fact, not an assumption.
+        val registered = runCatching {
+            ContextCompat.registerReceiver(this, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+        }.isSuccess
+        scope.launch {
+            evidence.record(
+                TriggerEvidenceSource.FIRST_UNLOCK,
+                if (registered) TriggerEvidenceStage.RECEIVER_REGISTERED else TriggerEvidenceStage.RECEIVER_REGISTER_FAILED,
+            )
+        }
 
         // Mobile data: no clean "user toggled data" broadcast exists, so this
         // reflects cellular-internet availability — best-effort, and honest about it.
@@ -310,11 +335,19 @@ class AutomationEventService : Service() {
         private const val PREFS = "automation_service"
         private const val DEBOUNCE_MS = 3_000L
 
-        fun start(context: Context) {
+        /**
+         * § MICRO-PATCH 14.2.3 §4/§11 — returns whether `startForegroundService`
+         * itself succeeded (never equated with "the service is actually
+         * running" — [AutomationServiceController] persists this as its own
+         * diagnostic checkpoint, distinct from [onCreate]/[onStartCommand]
+         * actually executing, so a silent Android 12+
+         * `ForegroundServiceStartNotAllowedException` shows up instead of
+         * being masked by a bare `Log.w`).
+         */
+        fun start(context: Context): Boolean =
             runCatching {
                 context.startForegroundService(Intent(context, AutomationEventService::class.java))
-            }.onFailure { Log.w("JarvisAutomation", "svc_start_failed ${it.javaClass.simpleName}") }
-        }
+            }.onFailure { Log.w("JarvisAutomation", "svc_start_failed ${it.javaClass.simpleName}") }.isSuccess
 
         fun stop(context: Context) {
             runCatching { context.stopService(Intent(context, AutomationEventService::class.java)) }

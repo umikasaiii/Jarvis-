@@ -65,6 +65,7 @@ fun DiagnosticsScreen(
     val healthStatus by viewModel.healthStatus.collectAsStateWithLifecycle()
     val proactiveStatus by viewModel.proactiveStatus.collectAsStateWithLifecycle()
     val morningReceiptsStatus by viewModel.morningReceiptsStatus.collectAsStateWithLifecycle()
+    val triggerDiagnosticsStatus by viewModel.triggerDiagnosticsStatus.collectAsStateWithLifecycle()
     val weatherAlertStatus by viewModel.weatherAlertStatus.collectAsStateWithLifecycle()
     val weatherAlertSimulationResult by viewModel.weatherAlertSimulationResult.collectAsStateWithLifecycle()
     val lastChatRoute by viewModel.lastChatRoute.collectAsStateWithLifecycle()
@@ -531,6 +532,29 @@ fun DiagnosticsScreen(
                         style = MaterialTheme.typography.labelSmall,
                     )
                     Text(morningReceiptsStatus, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+
+        // § JARVIS Implementation Master Plan — MICRO-PATCH 14.2.3 §15. The
+        // SERVICE/FIRST_UNLOCK/NEXT_ALARM/CONFIGURED_TIME/OCCURRENCE per-
+        // signal debug card — PERSISTENT (survives a process restart, § the
+        // exact gap MICRO-PATCH 14.2.2's in-memory receipts above could not
+        // close), never the briefing text, never adb needed.
+        if (BuildConfig.DEBUG) {
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Diagnostica trigger briefing mattutino (debug)", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "Checkpoint reali per SERVICE/FIRST_UNLOCK/NEXT_ALARM/CONFIGURED_TIME — sopravvivono a un riavvio del processo.",
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                    Button(onClick = viewModel::refreshTriggerDiagnostics, modifier = Modifier.fillMaxWidth()) {
+                        Text("Controlla adesso")
+                    }
+                    if (triggerDiagnosticsStatus.isNotEmpty()) {
+                        Text(triggerDiagnosticsStatus, style = MaterialTheme.typography.bodySmall)
+                    }
                 }
             }
         }
