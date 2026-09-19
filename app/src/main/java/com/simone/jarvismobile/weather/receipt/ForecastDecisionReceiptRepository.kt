@@ -8,6 +8,7 @@ import com.simone.jarvismobile.core.weather.ForecastFactsHash
 import com.simone.jarvismobile.core.weather.WeatherAlertDecisionV2
 import com.simone.jarvismobile.core.weather.WeatherAlertPolicyV2
 import com.simone.jarvismobile.core.weather.WeatherAlertThresholdsV2
+import com.simone.jarvismobile.core.weather.WeatherReceiptRetentionPolicy
 import java.time.Instant
 import java.time.LocalDate
 import java.util.UUID
@@ -147,21 +148,40 @@ class ForecastDecisionReceiptRepository @Inject constructor(
         }.onFailure { e -> Log.w(TAG, "forecast_decision_receipt_append_failed ${e.javaClass.simpleName}") }
     }
 
-    /** §28 — bounded local retention: 90 days AND max 4096 detailed rows, whichever is stricter. */
-    suspend fun prune(retentionDays: Long = RETENTION_DAYS, maxRows: Int = MAX_ROWS) {
+    /**
+     * § WORK PACKAGE D.1 §3 — bounded local retention: 90 days AND max 4096
+     * detailed rows (§28), now genuinely called (see
+     * [com.simone.jarvismobile.proactive.ProactiveWorker], the EXISTING
+     * hourly proactivity maintenance tick — no second scheduler was
+     * created). The cutoff/excess ARITHMETIC is delegated to the pure,
+     * tested [WeatherReceiptRetentionPolicy]; this function stays
+     * responsible only for the I/O around it. A failure here is logged and
+     * swallowed — retention is best-effort maintenance, never allowed to
+     * propagate into (and therefore ever block) the proactivity tick that
+     * happens to trigger it.
+     *
+     * §3 — occurrence/dedup independence: [com.simone.jarvismobile.proactive.ProactiveOccurrenceStore]
+     * lives entirely in the SEPARATE `JarvisDatabase`
+     * ([com.simone.jarvismobile.weather.receipt.WeatherDecisionDatabase] is
+     * its own file) and never reads from [dao] — occurrence claim/dispatch
+     * safety (Work Package A) does not depend on any receipt row surviving,
+     * by construction, not merely by convention. See
+     * `docs/DEVICE_TEST_WEATHER_ALERT.md`'s D.1 addendum for the manual
+     * verification note.
+     */
+    suspend fun prune(retentionDays: Long = WeatherReceiptRetentionPolicy.DEFAULT_RETENTION_DAYS, maxRows: Int = WeatherReceiptRetentionPolicy.DEFAULT_MAX_ROWS) {
         runCatching {
-            val cutoffMs = System.currentTimeMillis() - retentionDays * 24L * 60L * 60L * 1000L
+            val cutoffMs = WeatherReceiptRetentionPolicy.cutoffMs(System.currentTimeMillis(), retentionDays)
             dao.deleteOlderThan(cutoffMs)
             val remaining = dao.count()
-            if (remaining > maxRows) dao.deleteOldestExcess(remaining - maxRows)
+            val excess = WeatherReceiptRetentionPolicy.excessRowCount(remaining, maxRows)
+            if (excess > 0) dao.deleteOldestExcess(excess)
         }.onFailure { e -> Log.w(TAG, "forecast_decision_receipt_prune_failed ${e.javaClass.simpleName}") }
     }
 
     private companion object {
         const val TAG = "WeatherReceipt"
         const val SCHEMA_VERSION = 1
-        const val RETENTION_DAYS = 90L
-        const val MAX_ROWS = 4096
         const val MAX_OUTCOME_EVENTS_JSON_CHARS = 2000
     }
 }

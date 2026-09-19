@@ -28,10 +28,10 @@ import com.simone.jarvismobile.core.proactive.ProactiveTriggerSource
 import com.simone.jarvismobile.core.proactive.ProactiveWeatherFacts
 import com.simone.jarvismobile.core.tools.ToolOutcomeStatus
 import com.simone.jarvismobile.core.weather.ForecastEligibilityReason
+import com.simone.jarvismobile.core.weather.ForecastFacts
+import com.simone.jarvismobile.core.weather.HourlyPrecipitationEvidence
 import com.simone.jarvismobile.core.weather.WeatherAlertDecisionV2
-import com.simone.jarvismobile.core.weather.WeatherAlertEvaluation
 import com.simone.jarvismobile.core.weather.WeatherAlertFreshnessPolicyV2
-import com.simone.jarvismobile.core.weather.WeatherAlertPolicy
 import com.simone.jarvismobile.core.weather.WeatherAlertPolicyV2
 import com.simone.jarvismobile.core.weather.WeatherCategory
 import com.simone.jarvismobile.core.weather.WeatherFailureReason
@@ -702,30 +702,61 @@ class ProactiveManager @Inject constructor(
     }
 
     /**
-     * § JARVIS Implementation Master Plan — PASSAGGIO 14.2 — "safe debug/test
-     * path... inject a NON-PRODUCTION deterministic tomorrow forecast and
-     * verify the decision pipeline without altering production weather
-     * data." Debug-only by convention (the caller —
+     * § JARVIS Implementation Master Plan — PROACTIVITY RELIABILITY CLOSURE
+     * WORK PACKAGE D.1 §4. Safe debug/test path — synthesizes a
+     * NON-PRODUCTION [ForecastFacts] fixture and runs it through the SAME
+     * validation ([WeatherAlertFreshnessPolicyV2]) and the SAME production
+     * policy ([WeatherAlertPolicyV2]) evaluateWeatherAlert() uses — never
+     * [com.simone.jarvismobile.core.weather.WeatherAlertPolicy] (v1),
+     * closing the D.1 gap where the debug simulator exercised a different
+     * policy than production. [WeatherManager]/[ContextEngine]'s real
+     * cached forecast is never read or written here — [category]/
+     * [millimeters] only choose which SYNTHETIC fixture ([syntheticFactsFor])
+     * to build, preserving the exact three debug scenarios the Diagnostics
+     * screen already offers (Sereno/Pioggia/Temporale) without any UI
+     * change. Debug-only by convention (the caller —
      * [com.simone.jarvismobile.ui.diagnostics.DiagnosticsViewModel] — gates
      * this behind `BuildConfig.DEBUG`, the same convention already used for
-     * the GPS simulator). [category]/[millimeters] are fixtures fed
-     * straight into [WeatherAlertPolicy] — [WeatherManager]/[ContextEngine]'s
-     * real cached forecast is never read or written here. Claims a
-     * DELIBERATELY DISTINCT occurrence key (`WEATHER_ALERT_DEBUG:`, never
-     * `WEATHER_ALERT:`) so a test run can never suppress — or be suppressed
-     * by — the real evening evaluation running the same night.
+     * the GPS simulator). Claims a DELIBERATELY DISTINCT occurrence key
+     * (`WEATHER_ALERT_DEBUG:`, never `WEATHER_ALERT:`) so a test run can
+     * never suppress — or be suppressed by — the real evening evaluation
+     * running the same night, and writes a receipt with
+     * `factsSource="synthetic_debug_simulation"` (§32 — "a shadow
+     * evaluation may write a clearly-marked diagnostic receipt but never
+     * become delivery authority") — never `occurrenceKey`-linked to a
+     * production `WEATHER_ALERT:<date>` row.
      */
     suspend fun simulateWeatherAlert(
         category: WeatherCategory,
         millimeters: Double?,
         now: LocalDateTime = LocalDateTime.now(),
     ): String {
-        val targetDate = WeatherAlertPolicy.targetDateFor(now.toLocalDate())
-        val evaluation = WeatherAlertPolicy.evaluate(category, millimeters)
-        val hazard = (evaluation as? WeatherAlertEvaluation.Decided)?.hazard
-        if (hazard == null || hazard == WeatherHazard.NO_ALERT) {
-            return "Nessun avviso da questo scenario (esito=$evaluation) — mai una consegna simulata per NO_ALERT/sconosciuto."
+        val targetDate = now.toLocalDate().plusDays(1)
+        val (facts, hourlyEvidence) = syntheticFactsFor(category, millimeters, targetDate, now)
+        val freshness = WeatherAlertFreshnessPolicyV2.evaluate(
+            facts = facts,
+            expectedTargetDate = targetDate,
+            currentLocationRevision = facts.locationRevision,
+            now = Instant.now(),
+        )
+        if (freshness != ForecastEligibilityReason.ELIGIBLE) {
+            return "Fixture sintetica non valida (freshness=$freshness) — nessuna simulazione possibile."
         }
+        val decision = WeatherAlertPolicyV2.evaluate(facts, hourlyEvidence)
+        runCatching {
+            receiptRepository.record(
+                requestedTargetDate = targetDate, facts = facts, freshness = freshness,
+                requestStatus = "SUCCESS", factsSource = "synthetic_debug_simulation",
+                decision = decision, candidateCreated = decision.hazard != WeatherHazard.NO_ALERT,
+                locationMode = "synthetic_debug", locationMatch = true,
+                occurrenceKey = null, triggerSource = "DEBUG_SIMULATION",
+                notificationNamespace = ProactiveNotifier.TAG_DEBUG,
+            )
+        }
+        if (decision.hazard == WeatherHazard.NO_ALERT) {
+            return "Nessun avviso da questo scenario (esito=${decision.reason}) — mai una consegna simulata per NO_ALERT/sconosciuto."
+        }
+        val hazard = decision.hazard
         val occurrenceKey = "WEATHER_ALERT_DEBUG:$targetDate:${hazard.name}"
         val nowMs = now.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
         val claim = runCatching {
@@ -749,6 +780,66 @@ class ProactiveManager @Inject constructor(
             is ProactiveDispatchOutcome.ApiThrew -> occurrenceStore.markUnknownEffect(occurrenceKey, outcome.exceptionClass, nowMs)
         }
         return "Notifica simulata inviata (esito=$outcome) — hazard=$hazard targetDate=$targetDate messaggio=\"${suggestion.message}\""
+    }
+
+    /**
+     * § WORK PACKAGE D.1 §4. Builds a deterministic, clearly-synthetic
+     * [ForecastFacts] (+ optional aligned hourly evidence for the storm
+     * scenario) matching the three Diagnostics debug buttons — mirrors the
+     * pre-D.1 v1 semantics (CLEAR -> no alert, RAIN+3mm -> a qualifying
+     * candidate, THUNDERSTORM -> a qualifying candidate) so the buttons keep
+     * behaving the same while now genuinely exercising v2. [locationRevision]
+     * is a fixed, obviously-synthetic tag — never a real
+     * [com.simone.jarvismobile.core.weather.WeatherLocationKey].
+     */
+    private fun syntheticFactsFor(
+        category: WeatherCategory,
+        millimeters: Double?,
+        targetDate: LocalDate,
+        now: LocalDateTime,
+    ): Pair<ForecastFacts, List<HourlyPrecipitationEvidence>> {
+        val fetchedAt = now.atZone(ZoneId.systemDefault()).toInstant()
+        val rawCode = when (category) {
+            WeatherCategory.CLEAR -> 0
+            WeatherCategory.PARTLY_CLOUDY -> 2
+            WeatherCategory.CLOUDY -> 3
+            WeatherCategory.RAIN -> 61
+            WeatherCategory.THUNDERSTORM -> 95
+        }
+        val probability = when (category) {
+            WeatherCategory.RAIN, WeatherCategory.THUNDERSTORM -> 85.0
+            else -> 5.0
+        }
+        val liquid = millimeters ?: when (category) {
+            WeatherCategory.RAIN -> 3.0
+            WeatherCategory.THUNDERSTORM -> null
+            else -> 0.0
+        }
+        val facts = ForecastFacts(
+            targetDate = targetDate,
+            providerTimezone = "Europe/Rome",
+            locationRevision = "synthetic:debug",
+            fetchedAt = fetchedAt,
+            rawWeatherCode = rawCode,
+            category = category,
+            precipitationSumMm = liquid,
+            rainSumMm = liquid,
+            showersSumMm = null,
+            snowfallSumCm = null,
+            precipitationProbabilityMaxPercent = probability,
+            precipitationHours = if (category == WeatherCategory.RAIN) 3.0 else 0.0,
+        )
+        val hourlyEvidence = if (category == WeatherCategory.THUNDERSTORM) {
+            listOf(
+                HourlyPrecipitationEvidence(
+                    date = targetDate, hour = 15, rawWeatherCode = 95,
+                    precipitationProbabilityPercent = 85.0, rainMm = 1.0, showersMm = null, precipitationMm = 1.0,
+                ),
+            )
+        } else {
+            emptyList()
+        }
+        return facts to hourlyEvidence
     }
 
     private fun recordRun(
