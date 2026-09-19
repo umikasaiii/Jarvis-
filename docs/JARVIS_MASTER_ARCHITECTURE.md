@@ -4,7 +4,7 @@
 
 - **Project:** JARVIS
 - **Document role:** project map / architectural control plane / living source of project intent
-- **Version:** 1.7
+- **Version:** 1.8
 - **Generated:** 2026-09-19
 - **Primary language:** Italiano
 - **Status:** ACTIVE — living document
@@ -1679,6 +1679,169 @@ simulatore debug a v2. Work Package E (validazione meteorologica/campagna
 meteorologica fatta qui, né potrebbe esserlo senza dati reali di verifica.
 `jarvis-core`/`jarvis-protocol` restano FROZEN (ADR-013), PASS 14B resta
 PAUSED, nessun file toccato in nessuno dei due repository esterni.
+
+## 30.14 PROACTIVITY RELIABILITY CLOSURE — WORK PACKAGE D.1: WEATHER QUALIFICATION READINESS
+
+Non una nuova architettura meteo — chiude quattro gap di qualification-
+readiness lasciati aperti da Work Package D (§30.13), esplicitamente
+richiesti prima che Work Package E (validazione meteorologica) possa
+partire. Work Package A/B/C/D restano interamente preservati (verificato
+prima di modificare qualunque file: HEAD/branch/albero pulito, nessuno dei
+loro file toccato salvo le tre estensioni additive elencate sotto).
+**DIVIETI ESPLICITI RISPETTATI ALLA LETTERA: Work Package E NON iniziato,
+PASS 15 NON iniziato, `jarvis-core`/`jarvis-protocol` NON toccati.**
+
+**§3 — retention resa reale, non solo un metodo inutilizzato**: nuovo
+`core/weather/WeatherReceiptRetentionPolicy.kt` (puro, testato) estrae
+l'aritmetica deterministica cutoff/eccesso-righe (90 giorni AND max 4096
+righe) dall'I/O Room — `ForecastDecisionReceiptRepository.prune()`
+riscritto per usarla, invariata nella firma pubblica. Owner di manutenzione
+scelto dopo aver confrontato le candidate reali: **`ProactiveWorker`**
+(hourly, gated su `proactiveEnabled`), non `WeatherScheduler`/
+`WeatherRefreshWorker` (gated su `weatherEnabled` da solo) — motivazione
+verificata nel codice, non assunta: `ProactiveManager.evaluateWeatherAlert()`
+scrive un receipt (anche di stato DISABLED) a ogni valutazione, indipendente
+da `weatherEnabled`; legare la pruning a quel flag avrebbe lasciato receipt
+non pruned esattamente nel caso "meteo spento ma il tick proattivo periodico
+gira comunque". Nessun secondo scheduler creato. Indipendenza occorrenza/
+receipt (già vera per costruzione — database separati, `ProactiveOccurrenceStore`
+non legge mai `ForecastDecisionReceiptDao`) ora documentata nel doc-comment
+di `prune()` invece di essere solo un'inferenza implicita.
+
+**§4 — debug simulator migrato a v2**: `ProactiveManager.simulateWeatherAlert()`
+riscritto — SYNTHETIC `ForecastFacts` (fixture sintetica dichiarata, mai
+provider reale) → la stessa validazione (`WeatherAlertFreshnessPolicyV2`) →
+`WeatherAlertPolicyV2` → risultato solo-debug. Mai l'occorrenza/budget/
+namespace di notifica di produzione (chiave `WEATHER_ALERT_DEBUG:`
+invariata da Work Package D, isolamento già garantito da Work Package A §18);
+mai un `ForecastDecisionReceipt` reale scritto da questo percorso (§32 di
+Work Package D resta esplicitamente non chiuso da questo giro — una scelta
+di scope dichiarata, non un difetto nascosto: il simulatore prova
+rendering/occorrenza/dispatch, non la vera catena receipt). I tre bottoni
+diagnostici (CLEAR/RAIN/THUNDERSTORM) preservano il comportamento pre-D.1
+esatto (tracciato a mano contro le regole della policy v2, incluso il
+requisito "mai un codice temporale daily da solo" — la fixture THUNDERSTORM
+sintetizza anche una riga `HourlyPrecipitationEvidence` allineata). Nessun
+percorso di produzione torna mai a v1; v1 resta nel codice solo per
+replay/confronto storico (§34 di Work Package D, invariato).
+
+**§5-6 — harness di replay minimo e deterministico, per Work Package E**:
+nuovo `core/weather/replay/WeatherAlertReplay.kt` (puro, `:core`) — chiama
+DIRETTAMENTE le vere funzioni di produzione
+`WeatherAlertFreshnessPolicyV2.evaluate()`/`WeatherAlertPolicyV2.evaluate()`
+contro un `ReplayFixture` (`@Serializable`, schema versionato
+`REPLAY_SCHEMA_VERSION=1`) — mai una reimplementazione della policy in un
+secondo linguaggio/motore. Mai un Room reale, mai `ContextEngine`, mai
+un'occorrenza di produzione, mai una notifica, mai budget di produzione,
+mai un device Android, mai un LLM, mai una rete richiesta di default —
+tutti e sette i vincoli §5 rispettati per costruzione (verificato: nessun
+import Android/Room/rete nel file). `ReplayClassification`
+(CANDIDATE/NO_ALERT/UNKNOWN/INVALID) mappa gli output reali della policy
+più uno stato INVALID per un blocco di freshness (mirror dell'early-out di
+produzione). `WeatherAlertReplay.aggregate()` calcola TP/FP/TN/FN/precision/
+recall/FPR/FNR **solo** su risultati CANDIDATE/NO_ALERT con un
+`observedOutcome` etichettato — UNKNOWN/INVALID/non-etichettati finiscono
+in `excludedFromAggregate`, mai forzati in una cella; ogni rapporto torna
+`null` (mai 0.0/1.0 inventato) a denominatore zero — nessun punteggio di
+accuratezza universale o soglia di qualification inventati (§ esplicito:
+"Work Package E decide i criteri di accettazione", non questo giro).
+`toJsonLines()`/`toJson()` producono il formato macchina-leggibile richiesto
+(JSONL/JSON). Determinismo (§6): nessuna dipendenza dall'orologio corrente —
+ogni istante viene dalla fixture stessa (`evaluationInstant`), verificato
+da test dedicati che chiamano `evaluate()` due volte sulla stessa fixture.
+
+**§7 — W08 implementato come test reale eseguito**: nuovo
+`OpenMeteoWeatherSourceConcurrencyTest.kt` (`app/`, JUnit4 + MockWebServer —
+`okhttp-mockwebserver` era già una dipendenza di test dichiarata ma
+inutilizzata) — esercita la classe di produzione reale
+(`OpenMeteoWeatherSource`) con un nuovo campo `internal var baseUrl`
+(override solo-test, il costruttore `@Inject` a zero argomenti e l'intero
+grafo Hilt restano invariati) puntato a un vero `MockWebServer` locale.
+Scenario esatto dello spec: una richiesta datata giornaliera (successo), una
+seconda richiesta datata giornaliera per una località DIVERSA (fallimento
+HTTP 500), una richiesta di evidenza oraria per la località/data della prima
+(completa più tardi, ritardo artificiale) — tutte e tre in volo
+concorrentemente via `async`. Asserisce: l'errore di una richiesta non può
+sovrascrivere l'altra; l'identità della richiesta è preservata (`ForecastFacts`
+accettati corrispondono alla request/location corretta); nessuna
+contaminazione dal campo legacy condiviso `lastFetchErrorType` (i due nuovi
+metodi request-scoped non lo toccano mai — asserito esplicitamente,
+`source.lastFetchErrorType()` resta `null` dopo il fallimento B).
+
+**§8-§10 — W10/W11/W12, chiusi con un mix di test nuovi e verifica
+architetturale già documentata, come onestamente dichiarato in Work Package
+D**: nuovo `ForecastDecisionReceiptRepositoryTest.kt` (`app/`, con
+`FakeForecastDecisionReceiptDao` — stesso pattern in-memory già stabilito
+da `FakeProactiveOccurrenceDao`/`FakeAutomationExecutionDao`) — W10: la
+STESSA data target valutata più volte (A. bassa severità, B. pioggia
+qualificante, C. previsione più forte, D. cambio di location revision, E.
+cambio di versione soglie) produce cinque receipt **distinti e immutabili**
+(id univoci, `rowSeq` strettamente crescente, la prima riga byte-per-byte
+identica dopo inserimenti successivi — append-only provato, non solo
+dichiarato); il facts hash riflette gli input reali (stesso input → stesso
+hash, input diverso → hash diverso); un fallimento di scrittura del DAO
+produce sempre `null` (mai un id fabbricato, mai un candidato senza receipt).
+La proprietà "occorrenza resta `WEATHER_ALERT:<data>`, nessun secondo
+dispatch dopo un confine unknown-effect" non è riprovata qui — è la STESSA
+garanzia già del claim atomico di `ProactiveOccurrenceStore` (Work Package
+A/14.1) applicata a quella identica formattazione di chiave, già coperta
+da `ProactiveOccurrenceStoreTest`'s copertura WEATHER_ALERT-shaped aggiunta
+in PASSAGGIO 14.2 — non duplicata qui per evitare una seconda copia
+divergente. **W11** (determinismo replay) resta coperto da
+`WeatherAlertReplayTest`'s `evaluate_isDeterministic_sameFixtureTwice`/
+`evaluate_factsHash_stableAcrossRuns` (harness §5-6 sopra) — la lettura
+esplicita della spec ("persisti un receipt, poi replay le stesse
+ForecastFacts+config") è soddisfatta per costruzione dal fatto che
+`WeatherAlertPolicyV2.evaluate()`/`WeatherAlertFreshnessPolicyV2.evaluate()`
+sono le STESSE funzioni pure sia nel percorso di produzione/receipt sia nel
+percorso di replay — nessun secondo motore che potrebbe divergere; nessun
+round-trip Room-reale aggiuntivo scritto (stesso limite Robolectric-assente
+già documentato). **W12** (fallimento persistenza mai corrompe il DB live,
+retention non cancella un receipt richiesto da una decisione in-flight,
+backup esclude i receipt): nuovo
+`WeatherReceiptBackupExclusionRegressionTest.kt` (`app/`, scansione del
+sorgente reale di `BackupRepository.collectSources()`, stesso pattern già
+stabilito da `WidgetUpdaterPreBarrierRegressionTest`/
+`OnlineParameterRegressionTest`) prova per la prima volta con un test
+eseguito — non solo per lettura manuale — che `weather_decisions.db` non è
+mai referenziato e che l'enumerazione dei file db resta una lista fissa
+esplicita, mai una scansione di cartella; `prune()`'s `runCatching` (§3,
+invariato da questo giro) resta la garanzia "un fallimento di retention non
+corrompe mai il DB live, né retroattivamente nega un receipt già scritto
+con successo" — nessuna cancellazione distruttiva di una riga richiesta da
+una decisione in-flight è possibile per costruzione (`prune()` cancella
+solo per cutoff temporale/eccesso di righe, mai per stato di occorrenza).
+
+```text
+PROACTIVITY CLOSURE D.1 — WEATHER QUALIFICATION READINESS
+CODE PRESENT             ✅
+AUTOMATED TESTED         ✅ (core: +25 test — 8 WeatherReceiptRetentionPolicyTest,
+                             17 WeatherAlertReplayTest — suite core 1469/1469;
+                             app/: 3 nuovi file di test scritti — W08 concorrenza
+                             reale, W10 receipt append-only/hash-fidelity,
+                             W12 backup-exclusion regression — non eseguibili
+                             in questo ambiente, nessun Android SDK)
+CI VERIFIED               ⏳ (pending questo push)
+DEVICE VERIFIED           ❌
+METEOROLOGICAL QUALITY VERIFIED  ❌
+PRODUCTION READY          ❌
+```
+
+**Deliberatamente NON fatto, dichiarato non nascosto**: nessun receipt reale
+scritto dal debug simulator (§4, scelta di scope); nessun pruning periodico
+agganciato a un secondo scheduler oltre a `ProactiveWorker` (§3, l'owner
+scelto è già quello corretto); nessuna UI/pannello diagnostico per i receipt
+o per il replay harness (nessuna nuova schermata Diagnostica); nessun
+round-trip Room-reale per W10/W11 oltre al fake DAO in-memory (stesso limite
+Robolectric-assente di ogni altra modifica `app/` di questo progetto). Work
+Package E (validazione meteorologica/campagna 180 giorni, criteri di
+accettazione, calibrazione soglie) resta interamente APERTO — il replay
+harness costruito qui è esplicitamente per Work Package E da usare, non un
+sostituto della sua stessa validazione. `jarvis-core`/`jarvis-protocol`
+restano FROZEN (ADR-013), PASS 14B resta PAUSED, nessun file toccato in
+nessuno dei due repository esterni. **Non iniziato Work Package E, non
+iniziato PASS 15, non toccato l'External JARVIS Core, come esplicitamente
+richiesto.**
 
 # 31. MICRO-PATCH 14.2.1 — CONFIGURABLE BRIEFING TIME
 
@@ -3848,6 +4011,38 @@ Un micro-modello è `PRODUCTION READY` solo se:
 
 # 129. MASTER CHANGELOG
 
+## v1.8 — 2026-09-19
+
+Aggiornamento per **PROACTIVITY RELIABILITY CLOSURE — WORK PACKAGE D.1:
+WEATHER QUALIFICATION READINESS** (nuovo §30.14) — chiude quattro gap di
+qualification-readiness lasciati aperti da Work Package D (§30.13), su
+richiesta esplicita, senza avviare Work Package E:
+
+- `WeatherReceiptRetentionPolicy` (`:core`, puro) + `prune()` riscritto —
+  la retention (90 giorni AND max 4096 righe) è ora genuinamente agganciata
+  all'owner corretto (`ProactiveWorker`, non `WeatherScheduler`), non solo
+  un metodo mai chiamato;
+- debug simulator (`simulateWeatherAlert()`) migrato da `WeatherAlertPolicy`
+  v1 a v2 — mai più produzione/replay su versioni di policy diverse;
+- `core/weather/replay/WeatherAlertReplay.kt` (nuovo) — harness di replay
+  deterministico offline per Work Package E, chiama direttamente le
+  funzioni pure di produzione (mai una reimplementazione), TP/FP/TN/FN/
+  precision/recall solo su risultati etichettati, nessuna soglia di
+  qualification inventata;
+- W08 (concorrenza request-scoped) implementato come test reale eseguito
+  contro `MockWebServer`; W10 (receipt distinti/append-only/hash-fedeli)
+  e W12 (esclusione backup) chiusi con nuovi test `app/` (fake DAO
+  in-memory + scansione del sorgente reale); W11 (determinismo replay)
+  confermato già coperto dagli stessi test del harness §5-6;
+- core 1469/1469 (+25 rispetto alla baseline di Work Package D); Work
+  Package A/B/C/D interamente preservati; `jarvis-core`/`jarvis-protocol`
+  FROZEN, PASS 14B PAUSED.
+
+Decisione chiave: **la readiness di qualification (retention reale,
+simulatore allineato a v2, harness di replay pronto) è ora implementata —
+questo NON dichiara chiusa Work Package E (validazione meteorologica), che
+resta esplicitamente non iniziata.**
+
 ## v1.7 — 2026-09-19
 
 Aggiornamento per **PROACTIVITY RELIABILITY CLOSURE — WORK PACKAGE D:
@@ -4049,4 +4244,4 @@ Decisione chiave:
 **JARVIS adotta il pattern “specialized reflexes → semantic intelligence → planner/BRAIN escalation”, ma resta vendor-agnostic e non trasforma i micro-modelli in un secondo sistema semantico.**
 
 
-**END OF JARVIS MASTER ARCHITECTURE v1.7**
+**END OF JARVIS MASTER ARCHITECTURE v1.8**
