@@ -86,7 +86,12 @@ class TriggerEvidenceStoreTest {
     fun `pruneOld removes entries past the retention window regardless of source`() = runTest {
         val dao = FakeTriggerEvidenceDao()
         val store = TriggerEvidenceStore(dao)
-        val now = 10_000_000L
+        // `now` must be large enough that `now - retentionDays * DAY_MS` (the
+        // real cutoff formula) stays positive - otherwise the cutoff goes
+        // negative and eventAtMs=0L can never be "older" than it, which was
+        // the bug in this test's original constants (10_000_000L, far less
+        // than one day of ms), never a bug in pruneOld() itself.
+        val now = 2_000_000_000L
         dao.insert(TriggerEvidenceRowEntity(eventAtMs = 0L, processSessionId = "abc", source = "FIRST_UNLOCK", stage = "SERVICE_ON_CREATE", detail = null))
         store.record(TriggerEvidenceSource.FIRST_UNLOCK, TriggerEvidenceStage.USER_PRESENT_OBSERVED, now = now)
         store.pruneOld(retentionDays = 1, now = now)

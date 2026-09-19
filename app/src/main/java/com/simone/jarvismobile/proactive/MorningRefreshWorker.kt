@@ -32,7 +32,7 @@ import dagger.hilt.components.SingletonComponent
  * notifies, or mutates morning dispatch ownership in any way: it refreshes
  * the underlying data caches (weather/agenda/Health where permission and
  * lifecycle allow) and nothing else. It MUST NOT compose a MORNING_DIGEST
- * suggestion, call [ProactiveNotifier], call `NotificationManager`, speak
+ * suggestion, call the notifier, call `NotificationManager`, speak
  * the digest, or recreate a dismissed card — the one-shot contract (§9)
  * means no automatic path may ever re-open a day's briefing after dispatch
  * has entered its possibly-side-effecting boundary. Superseding the prior
