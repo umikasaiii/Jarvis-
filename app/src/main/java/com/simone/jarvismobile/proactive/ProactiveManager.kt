@@ -9,19 +9,23 @@ import android.util.Log
 import com.simone.jarvismobile.agenda.AgendaRepository
 import com.simone.jarvismobile.audio.SessionCoordinator
 import com.simone.jarvismobile.context.ContextEngine
+import com.simone.jarvismobile.core.agenda.AgendaEntry
+import com.simone.jarvismobile.core.agenda.AgendaQueryOutcome
 import com.simone.jarvismobile.core.proactive.MorningWindowPolicy
 import com.simone.jarvismobile.core.proactive.OccurrenceClaimOutcome
 import com.simone.jarvismobile.core.proactive.PeriodicFallbackPolicy
 import com.simone.jarvismobile.core.proactive.ProactiveComposer
+import com.simone.jarvismobile.core.proactive.ProactiveDaySection
 import com.simone.jarvismobile.core.proactive.ProactiveDecision
+import com.simone.jarvismobile.core.proactive.ProactiveDigestSnapshot
 import com.simone.jarvismobile.core.proactive.ProactiveGovernor
 import com.simone.jarvismobile.core.proactive.ProactiveKind
 import com.simone.jarvismobile.core.proactive.ProactiveOccurrenceKey
 import com.simone.jarvismobile.core.proactive.ProactiveOccurrenceState
 import com.simone.jarvismobile.core.proactive.ProactiveSettings
-import com.simone.jarvismobile.core.proactive.ProactiveSnapshot
 import com.simone.jarvismobile.core.proactive.ProactiveSuggestion
 import com.simone.jarvismobile.core.proactive.ProactiveTriggerSource
+import com.simone.jarvismobile.core.proactive.ProactiveWeatherFacts
 import com.simone.jarvismobile.core.tools.ToolOutcomeStatus
 import com.simone.jarvismobile.core.weather.WeatherAlertEvaluation
 import com.simone.jarvismobile.core.weather.WeatherAlertPolicy
@@ -31,10 +35,13 @@ import com.simone.jarvismobile.data.SettingsRepository
 import com.simone.jarvismobile.health.HealthConnectManager
 import com.simone.jarvismobile.weather.WeatherManager
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -316,15 +323,22 @@ class ProactiveManager @Inject constructor(
             Log.i(TAG, "proactive_evening_claim_denied source=$triggerSource claim=$eveningClaim")
         }
 
-        val snap = snapshot(today, now)
-        val candidates = candidatesFor(now, snap, today, includeMorning = morningOwnedThisRun, includeEvening = eveningOwnedThisRun).toMutableList()
+        // § §14/§15 — kicked off first, never awaited: the factual snapshot
+        // below reads whatever is already cached, so a slow/offline
+        // provider never blocks dispatch.
+        kickOffBackgroundFreshness()
+        val digest = buildDigestSnapshot(today, now)
+        val candidates = candidatesFor(now, digest, includeMorning = morningOwnedThisRun, includeEvening = eveningOwnedThisRun).toMutableList()
 
         // § JARVIS Implementation Master Plan PASSAGGIO 14.2 — evening
         // rain/storm alert, evaluated in the SAME evening window
         // eveningDigest/batteryBeforeAlarm already use below (no second
-        // scheduler): [snapshot] above has already forced a fresh
-        // `weather.refresh()`, so this reads facts as current as this run
-        // can make them.
+        // scheduler). § WORK PACKAGE C §14/§15 — [kickOffBackgroundFreshness]
+        // above fires the real refresh but is never awaited, so this reads
+        // whatever is already cached; [evaluateWeatherAlert] already grades
+        // its own freshness/failure honestly (never invents a forecast) and
+        // simply retries on the next scheduled evaluation if the data isn't
+        // fresh yet.
         var weatherAlertKey: String? = null
         if (now.hour in EVENING_FROM..EVENING_TO) {
             val evalResult = evaluateWeatherAlert(now, today, triggerSource, nowMs)
@@ -689,17 +703,16 @@ class ProactiveManager @Inject constructor(
      */
     private fun candidatesFor(
         now: LocalDateTime,
-        snap: ProactiveSnapshot,
-        today: LocalDate,
+        digest: ProactiveDigestSnapshot,
         includeMorning: Boolean,
         includeEvening: Boolean,
     ): List<ProactiveSuggestion> {
         val out = ArrayList<ProactiveSuggestion>()
         val hour = now.hour
-        if (includeMorning) out += ProactiveComposer.morningDigest(snap, today)
+        if (includeMorning) out += ProactiveComposer.morningDigest(digest)
         if (hour in EVENING_FROM..EVENING_TO) {
-            ProactiveComposer.batteryBeforeAlarm(snap, today)?.let { out += it }
-            if (includeEvening) ProactiveComposer.eveningDigest(snap, today)?.let { out += it }
+            ProactiveComposer.batteryBeforeAlarm(digest)?.let { out += it }
+            if (includeEvening) out += ProactiveComposer.eveningDigest(digest)
         }
         return out
     }
@@ -717,7 +730,26 @@ class ProactiveManager @Inject constructor(
         )
     }
 
-    private suspend fun snapshot(today: LocalDate, now: LocalDateTime): ProactiveSnapshot {
+    /**
+     * § JARVIS Implementation Master Plan — PROACTIVITY RELIABILITY CLOSURE
+     * WORK PACKAGE C §5/§6/§19 — assembles the one typed [ProactiveDigestSnapshot]
+     * every composer function consumes. This is the ONLY place that talks to
+     * [AgendaRepository]/[ContextEngine] for digest purposes — it never
+     * reimplements date filtering itself (that stays [AgendaRepository]'s
+     * job via [AgendaRepository.queryResult]/`Agenda.filter`) and never
+     * guesses a status: [AgendaQueryOutcome] and [ToolOutcomeStatus] are
+     * carried through verbatim (§6's "EMPTY != FAILURE" invariant).
+     *
+     * §14/§15 — deliberately does NOT await a weather/Health refresh before
+     * building the snapshot: a bounded, already-cached read happens here,
+     * and [kickOffBackgroundFreshness] fires the real refresh independently,
+     * never blocking this notification-critical path. A cold/stale cache at
+     * dispatch time simply renders without the weather emoji (§7/§12) rather
+     * than blocking indefinitely or (forbidden by Work Package A's one-shot
+     * contract) posting now and rewriting later.
+     */
+    private suspend fun buildDigestSnapshot(today: LocalDate, now: LocalDateTime): ProactiveDigestSnapshot {
+        val tomorrow = today.plusDays(1)
         val battery = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         val level = battery?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
         val scale = battery?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
@@ -725,55 +757,83 @@ class ProactiveManager @Inject constructor(
         val status = battery?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
         val charging = status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL
 
-        val entries = runCatching { agenda.reload() }.getOrDefault(agenda.entries.value)
-        val appointments = entries
-            .filter { !it.done && it.date == today && it.time != null }
-            .sortedBy { it.time }
-            .map { "${it.text} ${clock(it.time!!)}" }
-        val tasks = entries
-            .filter { !it.done && it.time == null && (it.date == today || it.starred) && !isBirthday(it.text) }
-            .map { (if (it.starred) "⭐ " else "") + it.text }
-        // No dedicated birthday feature exists (§ honesty ledger): this reads
-        // agenda items the user already wrote for today whose text names a
-        // birthday, so "il compleanno di Marco" on today's date surfaces on its
-        // own line instead of blending into the task list.
-        val birthdays = entries
-            .filter { it.date == today && isBirthday(it.text) }
-            .map { birthdayName(it.text) }
+        val outcome = runCatching { agenda.queryResult(today, day = today, toDay = tomorrow) }
+            .getOrElse { AgendaQueryOutcome.Failure(it.javaClass.simpleName ?: "unknown") }
 
-        // Forces a real refresh before reading, same reasoning already applied
-        // to the rule engine's KIND_RULE firings (§ AlarmReceiver): the
-        // periodic WeatherScheduler worker runs every 3h, but WorkManager can
-        // push a periodic job back for hours across an overnight Doze —
-        // reading only the cache at the very first unlock of the day meant
-        // the morning briefing's weather emoji was routinely missing simply
-        // because the last successful refresh predated the 6h staleness
-        // window (§ segnalazione dell'utente: emoji del meteo assente dal
-        // briefing mattutino). A no-op when weather is off (checked inside
-        // refresh() itself), so this costs nothing for anyone not using it.
-        runCatching { weather.refresh() }
-        // Health Connect BPM/sonno (§ richiesta esplicita dell'utente:
-        // "questi risultati devono aggiornarsi ogni mattina poco dopo il
-        // briefing mattutino") — stesso punto e stesso motivo del refresh
-        // meteo qui sopra: la prima cosa che succede vicino al vero primo
-        // sblocco della giornata. No-op economico quando i permessi non
-        // sono concessi (controllato dentro refresh() stesso).
-        runCatching { health.refresh() }
-        // Reuses ContextEngine's own staleness cutoff, so a refresher that has
-        // stopped working reads as "unknown" here too, not as a frozen forecast.
-        val rain = runCatching { contextEngine.evaluationContext(now = now) }.getOrNull()
-        val weatherCategory = runCatching { contextEngine.todayWeather(now = now) }.getOrNull()
+        fun daySection(date: LocalDate, dayEntries: List<AgendaEntry>): ProactiveDaySection {
+            val appointments = dayEntries
+                .filter { it.time != null && !isBirthday(it.text) }
+                .sortedBy { it.time }
+                .map { "${it.text} ${clock(it.time!!)}" }
+            val datedTasks = dayEntries
+                .filter { it.time == null && !isBirthday(it.text) }
+                .map { (if (it.starred) "⭐ " else "") + it.text }
+            // No dedicated birthday feature exists (§ honesty ledger): this
+            // reads agenda items the user already wrote whose text names a
+            // birthday, so "il compleanno di Marco" surfaces on its own line
+            // instead of blending into the task list — same narrow, existing
+            // mechanism applied to [date], never a new heuristic (§11).
+            val birthdays = dayEntries.filter { isBirthday(it.text) }.map { birthdayName(it.text) }
+            val agendaStatus = if (dayEntries.isEmpty()) ToolOutcomeStatus.SUCCESS_EMPTY else ToolOutcomeStatus.SUCCESS_DATA
+            return ProactiveDaySection(date, agendaStatus, appointments, datedTasks, birthdays)
+        }
 
-        return ProactiveSnapshot(
+        val (todaySection, tomorrowSection, openPriorities) = when (outcome) {
+            is AgendaQueryOutcome.Failure -> Triple(
+                ProactiveDaySection(today, ToolOutcomeStatus.SOURCE_FAILURE),
+                ProactiveDaySection(tomorrow, ToolOutcomeStatus.SOURCE_FAILURE),
+                emptyList<String>(),
+            )
+            is AgendaQueryOutcome.Success -> {
+                val todaySec = daySection(today, outcome.entries.filter { it.date == today })
+                val tomorrowSec = daySection(tomorrow, outcome.entries.filter { it.date == tomorrow })
+                // § §10 — starred, UNDATED tasks only: a star is priority, not
+                // a date, so a task genuinely dated today/tomorrow is already
+                // captured above and never duplicated here. `agenda.entries`
+                // already holds the full unfiltered parse from the same
+                // `queryResult` call above (no second disk read).
+                val priorities = agenda.entries.value
+                    .filter { !it.done && it.starred && it.date == null && !isBirthday(it.text) }
+                    .map { it.text }
+                Triple(todaySec, tomorrowSec, priorities)
+            }
+        }
+
+        val todayFacts = runCatching { contextEngine.todayForecastFacts(now) }.getOrNull()
+        val tomorrowFacts = runCatching { contextEngine.tomorrowForecastFacts(now) }.getOrNull()
+
+        return ProactiveDigestSnapshot(
+            deliveryDate = today,
+            today = todaySection,
+            tomorrow = tomorrowSection,
+            // § §9 — today's still-open dated tasks, carried into the Evening
+            // Digest under their OWN heading — never merged into `tomorrow`,
+            // never automatically re-dated.
+            todayCarryoverForEvening = todaySection.datedTasks,
+            openPriorities = openPriorities,
+            todayWeather = todayFacts?.let { ProactiveWeatherFacts(today, it.category, it.dataStatus, it.rain) },
+            tomorrowWeather = tomorrowFacts?.let { ProactiveWeatherFacts(tomorrow, it.category, it.dataStatus) },
             batteryPercent = percent,
             charging = charging,
             nextAlarm = nextAlarmTime(),
-            todayAppointments = appointments,
-            todayTasks = tasks,
-            birthdaysToday = birthdays,
-            rainToday = rain?.rainToday,
-            todayWeather = weatherCategory,
         )
+    }
+
+    /**
+     * § §14/§15 — fires the real weather/Health refresh independently of the
+     * notification-critical path above: `trigger -> bounded local factual
+     * snapshot -> dispatch`, and separately `-> Health/cache refresh`, as
+     * the spec explicitly allows. Never awaited by [buildDigestSnapshot]. No
+     * second scheduler: this is the same [WeatherManager.refresh]/
+     * [HealthConnectManager.refresh] call [buildDigestSnapshot] used to make
+     * synchronously, only no longer blocking dispatch — future runs (and the
+     * dashboard) see the refreshed cache; an already-DELIVERED occurrence's
+     * rendered snapshot is never touched (Work Package A's one-shot
+     * contract, §16, preserved: nothing here reaches [notifier]/[dispatcher]).
+     */
+    private fun kickOffBackgroundFreshness() {
+        CoroutineScope(Dispatchers.Default).launch { runCatching { weather.refresh() } }
+        CoroutineScope(Dispatchers.Default).launch { runCatching { health.refresh() } }
     }
 
     // § JARVIS Implementation Master Plan — PROACTIVITY RELIABILITY CLOSURE

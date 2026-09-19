@@ -1,5 +1,6 @@
 package com.simone.jarvismobile.core.proactive
 
+import com.simone.jarvismobile.core.tools.ToolOutcomeStatus
 import com.simone.jarvismobile.core.weather.WeatherCategory
 import java.time.LocalDate
 import java.time.LocalTime
@@ -72,31 +73,86 @@ data class ProactiveState(
         if (day == today) this else ProactiveState(today)
 }
 
-/** The everyday signals a suggestion is composed from. All optional/­defaulted. */
-data class ProactiveSnapshot(
+/**
+ * § JARVIS Implementation Master Plan — PROACTIVITY RELIABILITY CLOSURE
+ * WORK PACKAGE C §5 — one date's grounded agenda facts, never inferred from
+ * a list's name or from "now": [date] is explicit and carried alongside the
+ * data, so a composer reading this never has to guess which calendar day
+ * [appointments]/[datedTasks]/[birthdays] actually belong to. [agendaStatus]
+ * is the real outcome of the query that produced this section — reused
+ * verbatim from [com.simone.jarvismobile.core.tools.ToolOutcomeStatus] (§6/§17: no
+ * second grounding vocabulary) — so a composer can tell a genuinely empty
+ * day ([ToolOutcomeStatus.SUCCESS_EMPTY]) from one the agenda source failed
+ * to read ([ToolOutcomeStatus.SOURCE_FAILURE]/[ToolOutcomeStatus.DATA_UNAVAILABLE]):
+ * EMPTY must never be asserted from the latter (§7/§8's critical invariant).
+ */
+data class ProactiveDaySection(
+    val date: LocalDate,
+    val agendaStatus: ToolOutcomeStatus,
+    /** Timed appointments for [date], already formatted ("dentista 15:00"). */
+    val appointments: List<String> = emptyList(),
+    /** Untimed tasks genuinely DATED [date] — never a starred task from another day (§10). */
+    val datedTasks: List<String> = emptyList(),
+    /** Names/entries flagged as [date]'s birthdays, already formatted. */
+    val birthdays: List<String> = emptyList(),
+)
+
+/**
+ * § WORK PACKAGE C §12 — a date-targeted, honestly-graded weather fact.
+ * [status] follows the exact same freshness discipline the rest of this
+ * codebase already uses (see `ContextEngine.todayForecastFacts`/
+ * `tomorrowForecastFacts`): only [ToolOutcomeStatus.SUCCESS_DATA] licenses a
+ * composer to show an emoji or a qualitative clause built from [category]/
+ * [rain] — [ToolOutcomeStatus.STALE]/[ToolOutcomeStatus.DATA_UNAVAILABLE]/
+ * [ToolOutcomeStatus.SOURCE_FAILURE] must never be silently treated as
+ * "known". No new weather confidence semantics are introduced here — this is
+ * Work Package D's territory, deliberately untouched.
+ */
+data class ProactiveWeatherFacts(
+    val targetDate: LocalDate,
+    val category: WeatherCategory? = null,
+    val status: ToolOutcomeStatus = ToolOutcomeStatus.DATA_UNAVAILABLE,
+    val rain: Boolean? = null,
+)
+
+/**
+ * § WORK PACKAGE C §5 — the typed, date-explicit input every digest composer
+ * consumes. Replaces the old ambiguous `ProactiveSnapshot` (which had only
+ * "today*" fields and no notion of a target date at all — the structural
+ * reason the Evening Digest defect in §4 was possible: there was no typed
+ * "tomorrow" data for it to draw from). [deliveryDate] is the calendar day
+ * this snapshot was assembled for (always "today" from the device's own
+ * clock, never re-derived by a composer — § "never silently recompute using
+ * system clock"); [today]/[tomorrow] are self-contained, independently
+ * gradeable sections. [todayCarryoverForEvening] and [openPriorities] are
+ * kept as their OWN fields, never folded into [tomorrow], so a composer can
+ * never accidentally present them as if they were dated tomorrow (§9/§10).
+ */
+data class ProactiveDigestSnapshot(
+    val deliveryDate: LocalDate,
+    val today: ProactiveDaySection,
+    val tomorrow: ProactiveDaySection,
+    /**
+     * § §9 — today's still-open dated tasks, carried into the Evening Digest
+     * under their OWN explicit heading ("Da oggi restano: ..."), never
+     * merged into [tomorrow]'s items and never implicitly re-dated. Empty
+     * when there is nothing left open, or when the product chooses not to
+     * surface carryover at all.
+     */
+    val todayCarryoverForEvening: List<String> = emptyList(),
+    /**
+     * § §10 — starred, UNDATED tasks: a star is priority, not a date. Chosen
+     * policy (documented here, not silently decided): a separate "Priorità
+     * aperte" grouping, never folded into [today]/[tomorrow], never used to
+     * fabricate a deadline for an undated item.
+     */
+    val openPriorities: List<String> = emptyList(),
+    val todayWeather: ProactiveWeatherFacts? = null,
+    val tomorrowWeather: ProactiveWeatherFacts? = null,
     val batteryPercent: Int = -1,
     val charging: Boolean = false,
     /** The next wake alarm, when known — used for "charge before your early alarm". */
     val nextAlarm: LocalTime? = null,
-    /** Today's timed appointments, already formatted ("dentista 15:00"). */
-    val todayAppointments: List<String> = emptyList(),
-    /** Today's due or starred tasks, already formatted. */
-    val todayTasks: List<String> = emptyList(),
-    /** Names/entries flagged as today's birthdays, already formatted. */
-    val birthdaysToday: List<String> = emptyList(),
-    /**
-     * True when rain is forecast for today. Null means "unknown" (offline, or the
-     * weather source not configured) — the digest omits the clause rather than
-     * guessing (§ conditions three-valued rule applies here too).
-     */
-    val rainToday: Boolean? = null,
-    /**
-     * Today's weather category, when known — drives the emoji on "Buongiorno"
-     * (§ ProactiveComposer.morningDigest). Independent of [rainToday]: that
-     * stays a plain boolean for the sentence clause and for whoever reads this
-     * snapshot without caring about the category breakdown.
-     */
-    val todayWeather: WeatherCategory? = null,
 )
 
 /** The governor's verdict: deliver exactly one suggestion, or stay silent with a reason. */

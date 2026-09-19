@@ -229,6 +229,30 @@ class ContextEngine @Inject constructor(
     }
 
     /**
+     * § JARVIS Implementation Master Plan — PROACTIVITY RELIABILITY CLOSURE
+     * WORK PACKAGE C §17 — today's structured forecast facts, mirroring
+     * [tomorrowForecastFacts]'s exact shape and staleness discipline so the
+     * Morning Briefing composer can ground its weather emoji/rain clause the
+     * same honest way the Evening digest already grounds tomorrow's — never
+     * a new weather confidence semantic (Work Package D's territory,
+     * untouched here).
+     */
+    fun todayForecastFacts(now: LocalDateTime = LocalDateTime.now()): TodayForecastFacts {
+        val s = _state.value
+        val stale = WeatherFreshnessPolicy.isStale(s.weatherUpdatedAt, now)
+        val status = when {
+            s.weatherUpdatedAt == null -> ToolOutcomeStatus.DATA_UNAVAILABLE
+            stale -> ToolOutcomeStatus.STALE
+            else -> ToolOutcomeStatus.SUCCESS_DATA
+        }
+        return TodayForecastFacts(
+            category = if (stale) null else s.todayWeather,
+            rain = if (stale) null else s.rainToday,
+            dataStatus = status,
+        )
+    }
+
+    /**
      * § JARVIS Implementation Master Plan — PASSAGGIO 14.2. Tomorrow's
      * structured forecast facts for the evening rain/storm alert policy —
      * same staleness discipline as [todayWeather] for the VALUES themselves
@@ -305,6 +329,18 @@ class ContextEngine @Inject constructor(
 data class TomorrowForecastFacts(
     val category: WeatherCategory?,
     val millimeters: Double?,
+    val dataStatus: ToolOutcomeStatus,
+)
+
+/**
+ * § JARVIS Implementation Master Plan — PROACTIVITY RELIABILITY CLOSURE WORK
+ * PACKAGE C. See [ContextEngine.todayForecastFacts]. Same
+ * [dataStatus]/[TomorrowForecastFacts.dataStatus] caveat applies: a failed
+ * fetch is not decidable from stored state alone.
+ */
+data class TodayForecastFacts(
+    val category: WeatherCategory?,
+    val rain: Boolean?,
     val dataStatus: ToolOutcomeStatus,
 )
 

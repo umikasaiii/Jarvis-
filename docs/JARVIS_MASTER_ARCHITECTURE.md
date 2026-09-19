@@ -4,7 +4,7 @@
 
 - **Project:** JARVIS
 - **Document role:** project map / architectural control plane / living source of project intent
-- **Version:** 1.5
+- **Version:** 1.6
 - **Generated:** 2026-09-19
 - **Primary language:** Italiano
 - **Status:** ACTIVE — living document
@@ -1390,6 +1390,118 @@ SharedPreferences→Room (§16 dell'audit originale, ancora deferito),
 HUAWEI_SLEEP (invariato da FASE 2A.8). PASS 14B resta PAUSED, `jarvis-core`/
 `jarvis-protocol` restano FROZEN (ADR-013) — nessun file toccato in
 nessuno dei due.
+
+## 30.12 PROACTIVITY RELIABILITY CLOSURE — WORK PACKAGE C: FACTUAL MORNING/EVENING PRESENTATION
+
+Implementa il pacchetto C della spec Astra (§0-§29), sui punti NON coperti
+da Work Package A/B (che hanno chiuso solo proprietà del dispaccio e
+affidabilità dei trigger). Work Package A/B restano interamente preservati
+— nessun file di `ProactiveDeliveryDispatcher`/`ProactiveOccurrenceStore`/
+`ProactiveScheduler`/`SourceAlarmReconciler`/`MorningWindowPolicy`/
+`PeriodicFallbackPolicy`/`StaleIntentValidator`/`ExactAlarms` toccato.
+
+**Difetto verificato chiuso (§4)**: `ProactiveComposer.eveningDigest()`
+costruiva `items` da `snapshot.todayAppointments + snapshot.todayTasks` —
+gli UNICI campi che il vecchio `ProactiveSnapshot` possedeva — mentre
+renderizzava "Per domani: ...". Un difetto strutturale: non esisteva alcun
+campo tipizzato "domani" da cui attingere anche volendo.
+
+**Modello temporale tipizzato (§5)**: `ProactiveSnapshot` rimosso per
+intero, sostituito da `core/proactive/ProactiveDaySection`/
+`ProactiveWeatherFacts`/`ProactiveDigestSnapshot` — `deliveryDate`
+esplicito, sezioni `today`/`tomorrow` autonome (data + `ToolOutcomeStatus`
++ appuntamenti/task-datati/compleanni), `todayCarryoverForEvening`/
+`openPriorities` come campi propri mai confusi con `tomorrow`, meteo con
+target date + categoria + status esplicito. Nessun secondo
+`AgendaRepository`/`WeatherManager`; nessuna funzione del composer accetta
+più un `now`/`LocalDate` separato — ogni data viene solo dallo snapshot.
+
+**Autorità agenda invariata (§6)**: `AgendaRepository` resta l'unica
+facciata — `ProactiveManager.buildDigestSnapshot()` chiama
+`agenda.queryResult(today, day=today, toDay=tomorrow)` (API già esistente
+da MP-4) una sola volta per entrambe le sezioni, riusando
+`AgendaQueryOutcome`/`core.tools.ToolOutcomeStatus` (stesso vocabolario di
+PASSAGGIO 1/4/5) — EMPTY != FAILURE applicato sia a oggi sia a domani.
+
+**Morning Briefing (§7)**: legge solo `today` — emoji/pioggia gated su
+`status == SUCCESS_DATA`, "Nessun impegno importante oggi" licenziato solo
+da `SUCCESS_EMPTY`, ogni altro stato rende "Agenda non verificabile al
+momento." — chiude la violazione preesistente (`items.isEmpty()` bastava
+indipendentemente dal motivo).
+
+**Evening Digest (§8, la riscrittura centrale)**: legge solo `tomorrow`,
+non torna più `null` — "Buonasera 🌙" deterministico sempre, "Domani: ..."
+solo da dati genuinamente datati domani, tomorrow verificato-vuoto dice
+"Domani non risultano impegni in agenda.", tomorrow fallito/non disponibile
+dice "Agenda di domani non verificabile al momento." (mai "non risultano
+impegni" su un fallimento).
+
+**Carryover (§9)**: `todayCarryoverForEvening` renderizzato solo sotto "Da
+oggi restano: ...", mai fuso in "Domani:".
+
+**Starred/undated (§10)**: politica scelta — raggruppamento separato
+"Priorità aperte: ..." — un task starred+datato appare nella sua vera
+sezione, uno starred+undated non appare mai sotto oggi/domani.
+
+**Compleanni (§11)**: meccanismo narrow preesistente applicato anche a
+domani — nessun nuovo keyword router.
+
+**Meteo (§12/§13)**: nessuna nuova semantica di confidenza —
+`ContextEngine.todayForecastFacts()` (nuovo, mirror di
+`tomorrowForecastFacts()` già esistente) per oggi; l'emoji di domani siede
+accanto a "Meteo domani: ...", mai al posto di "Buonasera 🌙", mai usata
+come evidenza per `WeatherAlertPolicy` (non toccato) — Work Package D
+resta intatto.
+
+**Health/rete fuori dal percorso critico (§14/§15)**: `ProactiveManager
+.snapshot()` (bloccante su `weather.refresh()`/`health.refresh()` prima di
+comporre) sostituito da `buildDigestSnapshot()` (legge solo cache già
+disponibile) + `kickOffBackgroundFreshness()` (fire-and-forget, stesso
+pattern già in uso in `ProactiveActionReceiver`/`NextAlarmChangedReceiver`
+— nessun secondo scheduler): il refresh reale continua a partire ad ogni
+`run()`, ma non blocca più la composizione/il dispaccio.
+
+**Snapshot immutabile (§16)**: nessuna modifica al dispatcher/claim
+atomico — la composizione resta un calcolo puro fatto una volta per run.
+
+**Composer/manager (§18/§19)**: `ProactiveComposer` resta l'unico
+proprietario della presentazione; `ProactiveManager.buildDigestSnapshot()`
+assembla solo fatti tipizzati, non reimplementa mai il filtro date, non
+genera mai prosa.
+
+```text
+PROACTIVITY CLOSURE C — FACTUAL PRESENTATION
+CODE PRESENT             ✅
+AUTOMATED TESTED         ✅ (core — vedi onestà sotto per i limiti)
+CI VERIFIED              PENDING (questo push)
+DEVICE VERIFIED          ❌
+PRODUCTION READY         ❌
+```
+
+**Onestà sui test (§20/§21)**: `ProactiveTest.kt` riscritto per intero
+attorno a un `digestSnapshot()` helper — copre E01 (today/tomorrow mai
+scambiati), E02 (starred-datato-la-prossima-settimana mai presentato come
+domani + priorità separate), E03 (SUCCESS_EMPTY vs failure per entrambe le
+sezioni), E05 (mappatura emoji esatta + saluto sempre deterministico), più
+le voci A-J richieste esplicitamente (morning/evening empty-vs-failure,
+tomorrow-only mai in morning, today-only mai in evening, weather
+sconosciuto/stale mai emoji, confine di mezzanotte esatto, nessun
+ricalcolo dalla system clock). E04 (consumazioni serali concorrenti) ed E06
+(budget/dedup globale) restano garanzie ARCHITETTURALI invariate di Work
+Package A/B (claim atomico, dedup del governor), non nuovi test `:core` di
+questo passaggio — richiederebbero l'infrastruttura Room/Android già
+coperta dai test `ProactiveOccurrenceStoreTest` esistenti; §21-G (nessun
+repost dopo un refresh meteo successivo alla consegna) ed §21-H (Health
+non deve mai bloccare il mattutino) sono garantiti per costruzione da
+§14/§15/§16 ma non hanno un test JVM dedicato — stesso limite
+Robolectric-assente già documentato in questo progetto.
+
+**Deliberatamente NON fatto**: Work Package D (OpenMeteo fields/soglie/
+`ForecastDecisionReceipt`/replay/`WeatherAlertPolicy` v2), consolidamento
+budget/governor SharedPreferences→Room (ancora deferito), scheduling
+(`ProactiveScheduler`/`SourceAlarmReconciler`/`MorningWindowPolicy`/
+`StaleIntentValidator`/`ExactAlarms` — invariati). PASS 14B resta PAUSED,
+`jarvis-core`/`jarvis-protocol` restano FROZEN (ADR-013).
 
 # 31. MICRO-PATCH 14.2.1 — CONFIGURABLE BRIEFING TIME
 
@@ -3559,6 +3671,43 @@ Un micro-modello è `PRODUCTION READY` solo se:
 
 # 129. MASTER CHANGELOG
 
+## v1.6 — 2026-09-19
+
+**Work Package C — Factual Morning/Evening Presentation** implementato
+(§30.12), il terzo dei 5 pacchetti Astra (A/B/C/D/E). Work Package A/B
+restano interamente preservati (nessun file di scheduling/dispatch/occorrenza
+toccato).
+
+- confermato per lettura diretta il difetto §4: `ProactiveComposer
+  .eveningDigest()` costruiva "Per domani: ..." dai soli campi "today*" del
+  vecchio `ProactiveSnapshot` — un difetto strutturale, non un refuso;
+- `ProactiveSnapshot` **rimosso per intero**, sostituito da
+  `ProactiveDaySection`/`ProactiveWeatherFacts`/`ProactiveDigestSnapshot`
+  (`:core`) — date esplicite, mai inferite da "ora" o dal nome di una lista;
+- `AgendaRepository` resta l'unica facciata; `ToolOutcomeStatus`
+  (SUCCESS_DATA/SUCCESS_EMPTY/SOURCE_FAILURE/DATA_UNAVAILABLE) riusato
+  verbatim per oggi E domani — EMPTY != FAILURE su entrambe le sezioni;
+- Morning Briefing legge solo `today`, Evening Digest legge solo `tomorrow`
+  — la relabelizzazione di dati odierni sotto "Domani" non è più possibile
+  per costruzione (nessun campo condiviso resta fra le due sezioni);
+- "Buonasera 🌙" reso deterministico e sempre presente (mai più `null`);
+  tomorrow verificato-vuoto/fallito distinti nel testo;
+- carryover di oggi e priorità aperte (starred+undated) resi campi propri,
+  mai fusi nella clausola "Domani:";
+- meteo: nuovo `ContextEngine.todayForecastFacts()` (mirror simmetrico di
+  `tomorrowForecastFacts()`), nessuna nuova semantica di confidenza — Work
+  Package D resta intatto;
+- Health/meteo tolti dal percorso critico del dispaccio: `snapshot()`
+  bloccante sostituito da `buildDigestSnapshot()` (letture da cache) +
+  `kickOffBackgroundFreshness()` (fire-and-forget, nessun secondo
+  scheduler) — Work Package A's one-shot contract preservato;
+- Work Package D/E esplicitamente NON iniziati.
+
+Decisione chiave: **la presentazione fattuale di mattina/sera è ora
+tipizzata per data esplicita e grounded su uno stato agenda/meteo
+verificato — questo NON dichiara chiusa la correttezza del forecasting
+meteo (Work Package D), che resta esplicitamente aperta.**
+
 ## v1.5 — 2026-09-19
 
 Adozione dell'audit esterno **Proactivity Reliability Closure** (Astra, non
@@ -3694,4 +3843,4 @@ Decisione chiave:
 **JARVIS adotta il pattern “specialized reflexes → semantic intelligence → planner/BRAIN escalation”, ma resta vendor-agnostic e non trasforma i micro-modelli in un secondo sistema semantico.**
 
 
-**END OF JARVIS MASTER ARCHITECTURE v1.5**
+**END OF JARVIS MASTER ARCHITECTURE v1.6**
