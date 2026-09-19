@@ -1643,7 +1643,10 @@ AUTOMATED TESTED         ✅ (core — W01/W02/W03/W04/W05/W06/W07/W09 coperti
                              WeatherAlertPolicyV2/WeatherAlertFreshnessPolicyV2;
                              W08/W10/W11/W12 verificati per costruzione, non
                              da un nuovo test eseguito — vedi onestà sotto)
-CI VERIFIED               ⏳ (questo push)
+CI VERIFIED               ✅ (run #446, commit 317c174 — every step
+                             green on the first push: core tests
+                             1445/1445, assemble, Android unit test,
+                             lint, APK, publish)
 DEVICE VERIFIED          ❌
 METEOROLOGICAL QUALITY VERIFIED  ❌
 PRODUCTION READY          ❌
