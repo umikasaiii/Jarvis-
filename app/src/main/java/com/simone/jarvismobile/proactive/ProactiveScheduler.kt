@@ -275,7 +275,7 @@ class ProactiveScheduler @Inject constructor(
     }
 
     /** § §14 — never a generic pass/fail: the exact-alarm-permission state is recorded as its own distinct checkpoint too. */
-    private fun recordScheduleOutcome(
+    private suspend fun recordScheduleOutcome(
         source: TriggerEvidenceSource,
         outcome: ExactAlarms.ScheduleOutcome,
         scheduledStage: TriggerEvidenceStage,
