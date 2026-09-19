@@ -4,8 +4,8 @@
 
 - **Project:** JARVIS
 - **Document role:** project map / architectural control plane / living source of project intent
-- **Version:** 1.4
-- **Generated:** 2026-09-13
+- **Version:** 1.5
+- **Generated:** 2026-09-19
 - **Primary language:** Italiano
 - **Status:** ACTIVE — living document
 - **Repository target:** `umikasaiii/Jarvis-`
@@ -601,6 +601,22 @@ artefatto cross-platform non eseguibile qui.
 
 Pass 14 (e 14B) non sono completi finché questo run reale non passa.
 
+## 15.3 PASS 14B REAL EXECUTION — PAUSED UNTIL USER PC AVAILABLE
+
+Stato: **PAUSATO** — non un fallimento, semplicemente in attesa che
+l'utente esegua `run_real_training.ps1` sul proprio PC Windows quando
+disponibile. BLIND resta non toccato. Pass 15 (calibrazione) non
+iniziato.
+
+**Problema aperto, non risolto in questa sessione**: `run_real_training.ps1`
+ha un problema di compatibilità di encoding con Windows PowerShell 5.1 —
+un file UTF-8 senza BOM contenente caratteri non-ASCII ha causato
+corruzione del parser sull'ambiente Windows PowerShell 5.1 di destinazione;
+una copia temporanea UTF-8-con-BOM ha permesso di procedere. Tracciato
+come problema di esecuzione PASS 14B aperto, non corretto qui (fuori
+scope per Work Package A — vedi
+`docs/JARVIS_PROACTIVITY_RELIABILITY_CLOSURE_AUDIT.md` §7).
+
 ---
 
 # 16. PASS 15 E SUCCESSIVI — SEMANTICA
@@ -1119,12 +1135,157 @@ autorità sulla consegna), mai contenuto briefing/agenda/salute/meteo.
 ```text
 CODE FIX 14.2.3          IMPLEMENTED
 AUTOMATED TESTS          PASS (core 1355/1355, +9 app JVM test)
-CI                       PENDING (questo push)
-HONOR 200 RETEST         REQUIRED
+CI                       COMPLETED / SUCCESS
+HONOR 200 DEVICE RETEST  DONE — FAILED
 DEVICE ACCEPTANCE        NOT PASSED
 ```
 
-**MICRO-PATCH 14.2.3 — riepilogo di stato**: `MICRO-PATCH 14.2.3 / CODE PRESENT / AUTOMATED TESTED / CI VERIFIED / DEVICE RETEST REQUIRED` — mai DEVICE VERIFIED/PRODUCTION READY finché il test reale sull'Honor 200 non passa. Vedi `docs/DEVICE_TEST_MORNING_BRIEFING_DEDUP.md` § "MICRO-PATCH 14.2.3" per la checklist a un solo mattino.
+**MICRO-PATCH 14.2.3 — riepilogo di stato, corretto (§4 dell'audit di
+chiusura Proattività — la dicitura precedente "DEVICE RETEST REQUIRED"
+implicava che il retest non fosse ancora avvenuto; è avvenuto, ed è
+fallito)**: `MICRO-PATCH 14.2.3 / CODE PRESENT ✅ / AUTOMATED TESTED ✅ /
+CI VERIFIED ✅ / DEVICE VERIFIED ❌ FAILED / PRODUCTION READY ❌`.
+
+Classi di fallimento osservate sul retest reale (Honor 200), senza
+attribuzione di causa esatta oltre a quanto le evidenze provano:
+
+- FIRST_UNLOCK ancora inaffidabile;
+- NEXT_ALARM ancora inaffidabile;
+- l'orario configurato/di fallback spesso domina la consegna effettiva
+  invece dei segnali più tempestivi;
+- una seconda/terza Morning Briefing ancora osservata in alcune mattine;
+- contenuto/emoji può differire fra le consegne osservate nella stessa
+  mattina;
+- il comportamento proattivo meteo ha prodotto sia un avviso utile mancato
+  sia un falso positivo, in occasioni distinte.
+
+## 30.9 PROACTIVITY RELIABILITY CLOSURE — WORK PACKAGE A: SIDE-EFFECT OWNERSHIP
+
+Audit esterno (Astra, non scritto da Claude) persistito in
+`docs/JARVIS_PROACTIVITY_RELIABILITY_CLOSURE_AUDIT.md`, costruito contro
+l'HEAD esatto `7d527d5da96d01a7174190a08dce82577346ea9d`. Introduce un
+piano di rimedio in 5 pacchetti (A/B/C/D/E) — questa passata implementa
+**solo il Pacchetto A**, esplicitamente senza continuare automaticamente
+al Pacchetto B.
+
+**One-shot contract (§9 dell'audit)**: una volta che il dispacciamento di
+`MORNING_DIGEST:<logicalDate>` entra nel confine potenzialmente-con-effetti-
+collaterali, nessun percorso automatico può più tardi pubblicare/
+aggiornare/ricreare il briefing di quel giorno — dismissal, apertura,
+riavvio del processo, edit delle impostazioni, +10/+60, nuovi fatti
+meteo/agenda non devono MAI riaprirlo. UNKNOWN side effect → NO BLIND
+RETRY. Consegna automatica al-più-una-volta con un esito UNKNOWN esplicito,
+non una garanzia impossibile di exactly-once visibile.
+
+**Architettura implementata**:
+
+- **`MorningRefreshWorker` diventa DATA-ONLY (§10, P0)**: rimossa
+  interamente la chiamata a `refreshMorningDigestNotification()` (già
+  rimosso il metodo stesso, §5 sotto) — il worker +10/+60 ora aggiorna
+  solo le cache meteo/agenda/salute, mai compone/notifica/muta la
+  proprietà del dispaccio mattutino.
+- **Un solo proprietario di dispaccio (§11)**: nuovo
+  `app/proactive/ProactiveDeliveryDispatcher.kt` — ottiene il permesso di
+  dispaccio durevole tramite una transizione Room fenced (CAS su
+  `claimedAtMs`), chiama il notifier interno esattamente una volta se e
+  solo se quella transizione tiene, registra l'esito tipizzato fenced.
+  Nessun `notifier.dispatch(suggestion)` diretto in produzione per un kind
+  backed da occorrenza (MORNING_DIGEST/EVENING_DIGEST/WEATHER_ALERT) —
+  verificato da un test di regressione a scansione del sorgente.
+- **`ProactiveNotifier` tipizzato (§12)**: `show()` rimosso, sostituito da
+  `dispatch(suggestion, silent, tag): ProactiveDispatchOutcome` (`Posted`/
+  `BlockedPermission`/`ApiThrew(exceptionClass)`) — mai POSTED interpretato
+  come "l'utente l'ha visto/sentito". Preflight distingue permesso
+  mancante da notifiche globalmente disattivate prima di ogni chiamata
+  Android.
+- **Occurrence state machine estesa, non un secondo ledger (§13)**:
+  `core/proactive/ProactiveOccurrence.kt` guadagna `BLOCKED_PERMISSION`
+  (proven no-effect, sempre riprendibile) e `UNKNOWN_EFFECT` (esito
+  Android genuinamente ignoto, mai un retry cieco — stesso trattamento di
+  `DELIVERY_PENDING`). `ProactiveOccurrenceReconciler.decide` riscritto:
+  **P0-6, correzione alla conclusione superseded di MICRO-PATCH 14.2.2/
+  PASSAGGIO 14.1** ("un `DELIVERY_PENDING` scaduto è sicuro da riprendere")
+  — `DELIVERY_PENDING`/`UNKNOWN_EFFECT` non sono MAI più takeover-eligible
+  per età, a nessuna età. Fencing CAS: i metodi `mark*` del DAO
+  guadagnano `expectedClaimedAtMs` e restituiscono il conteggio di righe
+  interessate (`Int`, non più `Unit`) — un proprietario stale il cui
+  `claimedAtMs` è stato superato da un takeover scrive silenziosamente
+  zero righe. Nessuna migrazione Room richiesta: nuovi stati sono solo
+  nuovi valori stringa nella colonna `state` esistente.
+- **Sera unita alla stessa autorità di occorrenza (§15)**: nuova chiamata
+  di claim per `EVENING_DIGEST:<deliveryDate>` (chiave già esistente in
+  `core`, ora davvero usata) in `ProactiveManager.run()`, gating solo
+  `ProactiveComposer.eveningDigest` — `batteryBeforeAlarm` resta sul
+  proprio dedup SharedPreferences esistente, deliberatamente fuori scope.
+- **Namespace di notifica (§17)**: tag stabili non-null
+  `jarvis.proactive.morning`/`.evening`/`.weather`/`.suggestion`, ID
+  espliciti invariati (mai derivati da ordinale enum).
+- **Isolamento debug (§18)**: `simulateWeatherAlert()` usa un tag/range-id
+  distinti (`jarvis.proactive.debug`) e un prefisso visibile
+  "[SIMULAZIONE]" — mai la proprietà/il budget dell'occorrenza di
+  produzione.
+
+**Deliberatamente NON fatto in questo passaggio (Work Package B/C/D)**:
+consolidamento di `MorningTriggerScheduler` in `ProactiveScheduler`; fix
+del rollover di NEXT_ALARM; osservazione runtime di
+`NEXT_ALARM_CHANGED`; redesign del ciclo di vita FIRST_UNLOCK; contenuto
+Evening/agenda di domani; soglie `WeatherAlertPolicy`; consolidamento
+budget/governor SharedPreferences→Room (§16 dell'audit, deferred a Work
+Package B per lo stesso vincolo di scope). Nessuna di queste rende la
+reliability del trigger mattutino "migliorata" — solo la proprietà del
+side effect lo è.
+
+```text
+PROACTIVITY CLOSURE A — SIDE EFFECT OWNERSHIP
+CODE PRESENT             ✅
+AUTOMATED TESTED         ✅ (core + app JVM, vedi §66)
+CI VERIFIED              PENDING (questo push)
+DEVICE VERIFIED          ❌
+PRODUCTION READY         ❌
+```
+
+Stati separati, mai collassati: affidabilità del trigger mattutino —
+ANCORA APERTA (Work Package B); correttezza fattuale serale — ANCORA
+APERTA (Work Package C); correttezza proattiva meteo — ANCORA APERTA
+(Work Package D). Honor 200 va ritestato solo quando un candidato A+B+C+D
+è pronto insieme, non isolatamente su A.
+
+## 30.10 Conclusioni precedenti marcate SUPERSEDED (regola §81 — mai cancellate silenziosamente)
+
+Per evidenza reale su dispositivo (retest MICRO-PATCH 14.2.3, §30.8) e per
+l'audit esterno persistito in
+`docs/JARVIS_PROACTIVITY_RELIABILITY_CLOSURE_AUDIT.md`, le seguenti
+conclusioni storiche di questo documento sono ora **SUPERSEDED**:
+
+1. **"il refresh silenzioso +10/+60 chiude la duplicazione"** (§30.4,
+   MICRO-PATCH 14.2.2) — SUPERSEDED: il retest reale ha comunque mostrato
+   più consegne nella stessa mattina. Il fix corretto non è un refresh più
+   sicuro ma l'eliminazione del percorso di refresh come mai-side-effecting
+   (§10, questo Work Package).
+2. **"FIRST_UNLOCK non ha un gap architetturale perché la sync di startup
+   esiste"** (§30.8) — SUPERSEDED come garanzia di reliability: il retest
+   mostra FIRST_UNLOCK ancora inaffidabile in pratica, non solo un gap di
+   osservabilità come concluso in MICRO-PATCH 14.2.3.
+3. **"NEXT_ALARM non ha un problema strutturale perché l'identità del
+   PendingIntent è fissa"** (§30.5/§30.8) — SUPERSEDED come garanzia di
+   reliability, stesso motivo del punto 2.
+4. **"NonCancellable rende persisti+schedula atomico rispetto alla morte di
+   processo"** (§30.8, fix CONFIGURED_TIME) — SUPERSEDED come chiusura
+   completa: il retest mostra che l'orario configurato/fallback può ancora
+   dominare la consegna in modo non atteso.
+5. **"il lavoro periodico orario garantisce una consegna vicino all'ora"**
+   (assunzione implicita di PASSAGGIO 14.1/FASE 2A.8) — SUPERSEDED: non
+   garantisce affidabilità end-to-end osservata.
+6. **"un `DELIVERY_PENDING` scaduto è sicuro da riprendere"** (PASSAGGIO
+   14.1/MICRO-PATCH 14.2.2, P0-6) — SUPERSEDED a livello di codice in
+   questo stesso passaggio (§30.9): `ProactiveOccurrenceReconciler.decide`
+   ora non rende MAI takeover-eligible `DELIVERY_PENDING`/`UNKNOWN_EFFECT`
+   per età.
+7. **"il weathercode giornaliero prova confidenza/condizione dominante"**
+   (fase 6j/PASSAGGIO 14.2, uso del solo `weathercode`) — SUPERSEDED come
+   garanzia di correttezza proattiva: il retest ha prodotto sia un avviso
+   mancato sia un falso positivo. Correzione di merito rimandata a Work
+   Package D (§20 dell'audit), non affrontata in questo passaggio.
 
 ---
 
@@ -1750,6 +1911,20 @@ Senza questa prova, non chiamare un comportamento “riproducibile”.
 
 # 65. ROADMAP MASTER — STRUTTURA
 
+## TRACK A — ANDROID COMPLETION (ACTIVE, priorità corrente)
+
+Semantic Intelligence → Android orchestration → grounding → memory →
+context/proactivity → automations → Live Voice → Reflex Layer →
+perception → phone actions → driving → SEGNALE/UI → Android security →
+Honor 200 end-to-end acceptance. Vedi ADR-013: External JARVIS Core
+runtime resta FROZEN finché questo track non chiude.
+
+## TRACK B — CORE ENHANCEMENT (successivo, non iniziato)
+
+Planner/BRAIN più forte, RAG di grandi dimensioni, STT/TTS pesanti, PC
+Actions, modelli più grandi, background intelligence. Puramente
+opzionale — JARVIS Android è già completo senza TRACK B.
+
 ## FASE 0 — Architettura definitiva
 
 - Audit ✅
@@ -1799,6 +1974,7 @@ Grounding maturity, memory, personal intelligence, context, automations, Live Vo
 | 14.2.1 | configurable morning briefing time |
 | 14.2.2 | MorningRefresh multi-alert fix; latest device retest pending |
 | 14B | real EmbeddingGemma execution handoff — Windows runner built + validated end-to-end against a toy artifact; user-PC real execution pending |
+| Proactivity Closure A | side-effect ownership (single dispatcher, typed notifier, CAS-fenced occurrence state machine, evening joins occurrence authority) — automated green, Honor 200 device acceptance pending |
 
 ---
 
@@ -1918,6 +2094,9 @@ No second brain. **ACTIVE DESIGN RULE**
 
 ## ADR-012 — InferenceResourceArbiter unico
 No secondo resource manager indipendente. **ACTIVE DESIGN RULE**
+
+## ADR-013 — External JARVIS Core runtime FROZEN durante ANDROID COMPLETION TRACK
+Adottata in seguito alla Proactivity Reliability Closure Audit (§ `docs/JARVIS_PROACTIVITY_RELIABILITY_CLOSURE_AUDIT.md`) e a MICRO-PATCH 14.2.3 (retest fallito su Honor 200). Nessuna nuova pianificazione Core, nuovo modello BRAIN, nuovo servizio Core, nuova PC Action, nuovo RAG Core, o Event Bridge finché TRACK A (§65) non chiude. Eccezioni permesse: compatibilità protocollo critica, fix di sicurezza critico, tooling offline necessario a qualificare capability Android (PASS 14/14B), tooling utente-PC EmbeddingGemma già in corso (PASS 14B). Architettura: CORE OFF → JARVIS Android resta completo da solo; CORE ON in futuro → solo enhancement opzionale, mai un requisito. **ACTIVE**
 
 ---
 
@@ -3278,6 +3457,45 @@ Un micro-modello è `PRODUCTION READY` solo se:
 
 # 129. MASTER CHANGELOG
 
+## v1.5 — 2026-09-19
+
+Adozione dell'audit esterno **Proactivity Reliability Closure** (Astra, non
+scritto da Claude — persistito senza modifiche in
+`docs/JARVIS_PROACTIVITY_RELIABILITY_CLOSURE_AUDIT.md`, HEAD esatto
+`7d527d5da96d01a7174190a08dce82577346ea9d`) e implementazione di **Work
+Package A — Side Effect Ownership**, il primo di 5 pacchetti (A/B/C/D/E):
+
+- corretta l'inconsistenza interna header/footer (header 1.4 vs footer
+  v1.3) — entrambi ora 1.5;
+- MICRO-PATCH 14.2.3 registrato correttamente come `DEVICE VERIFIED ❌
+  FAILED` (il retest è avvenuto ed è fallito), mai più "DEVICE RETEST
+  REQUIRED" (§30.8);
+- 7 conclusioni storiche marcate esplicitamente `SUPERSEDED`, mai
+  cancellate silenziosamente (§30.10, regola §81);
+- nuovo ADR-013: **External JARVIS Core runtime FROZEN durante ANDROID
+  COMPLETION TRACK** — nuova roadmap TRACK A (Android completion, ACTIVE)
+  / TRACK B (Core enhancement, successivo) in §65;
+- PASS 14B registrato `PAUSED UNTIL USER PC AVAILABLE`; tracciato il
+  problema aperto di encoding PowerShell 5.1 di `run_real_training.ps1`
+  (§15.3) — non corretto in questo passaggio;
+- **Work Package A implementato** (§30.9): un solo `ProactiveDeliveryDispatcher`
+  come proprietario di dispaccio; `ProactiveNotifier` tipizzato
+  (`ProactiveDispatchOutcome`), `show()` rimosso; `ProactiveOccurrenceState`
+  esteso con `BLOCKED_PERMISSION`/`UNKNOWN_EFFECT`; CAS fencing su
+  `claimedAtMs` per ogni transizione mark*; `MorningRefreshWorker` reso
+  data-only (`refreshMorningDigestNotification()` e `MorningRefreshGate`
+  rimossi interamente); Evening Digest unito alla stessa autorità di
+  occorrenza durevole; namespace di notifica stabile
+  (`jarvis.proactive.morning/.evening/.weather/.suggestion`); isolamento
+  debug per `simulateWeatherAlert()`;
+- Work Package B/C/D/E esplicitamente NON iniziati.
+
+Decisione chiave: **la proprietà del side effect di dispaccio proattivo è
+ora a singolo owner e CAS-fenced — questo NON dichiara migliorata
+l'affidabilità del trigger mattutino (Work Package B), la correttezza del
+contenuto serale (Work Package C), o la correttezza proattiva meteo (Work
+Package D), che restano esplicitamente aperte.**
+
 ## v1.4 — 2026-09-13
 
 MICRO-PATCH 14.2.3 — Morning Briefing multi-signal trigger reliability +
@@ -3374,4 +3592,4 @@ Decisione chiave:
 **JARVIS adotta il pattern “specialized reflexes → semantic intelligence → planner/BRAIN escalation”, ma resta vendor-agnostic e non trasforma i micro-modelli in un secondo sistema semantico.**
 
 
-**END OF JARVIS MASTER ARCHITECTURE v1.3**
+**END OF JARVIS MASTER ARCHITECTURE v1.5**

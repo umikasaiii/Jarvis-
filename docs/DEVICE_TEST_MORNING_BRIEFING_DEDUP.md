@@ -408,9 +408,52 @@ Da eseguire in un'unica mattinata reale sull'Honor 200:
 
 ### Onestà — Honor 200 acceptance (MICRO-PATCH 14.2.3)
 
-Nessuno dei passi 1-8 sopra è stato eseguito da questo ambiente (nessun
-dispositivo Android disponibile qui). **Stato: DEVICE RETEST REQUIRED.**
-La causa dell'episodio specifico 08:48-vs-08:50 non è stata riprodotta con
-certezza assoluta (vedi onestà nella sezione CONFIGURED_TIME sopra) — la
-correzione applicata chiude una race reale e riproducibile per costruzione,
-non una congettura non verificata.
+I passi 1-8 sopra sono stati eseguiti dall'utente sull'Honor 200 reale.
+**Esito: FAILED.** FIRST_UNLOCK/NEXT_ALARM ancora inaffidabili, l'orario
+configurato/fallback spesso domina, una seconda/terza Morning Briefing
+ancora osservata in alcune mattine, contenuto/emoji può differire fra
+consegne, il comportamento proattivo meteo ha prodotto sia un avviso
+mancato sia un falso positivo. Stato corretto in
+`docs/JARVIS_MASTER_ARCHITECTURE.md` §30.8: `DEVICE VERIFIED ❌ FAILED`,
+mai più "DEVICE RETEST REQUIRED" (il retest è avvenuto).
+
+## Work Package A — Side Effect Ownership (Proactivity Reliability Closure Audit)
+
+A seguito del fallimento sopra, un audit esterno
+(`docs/JARVIS_PROACTIVITY_RELIABILITY_CLOSURE_AUDIT.md`) ha guidato
+l'implementazione di Work Package A: un solo `ProactiveDeliveryDispatcher`
+come proprietario di dispaccio, `ProactiveNotifier` tipizzato, CAS fencing
+sullo state machine dell'occorrenza, `MorningRefreshWorker` reso
+data-only, Evening Digest unito alla stessa autorità di occorrenza. Vedi
+`docs/JARVIS_MASTER_ARCHITECTURE.md` §30.9 per l'architettura completa.
+
+**Questo Work Package NON affronta l'affidabilità dei trigger stessi**
+(Work Package B) — quindi i sintomi FIRST_UNLOCK/NEXT_ALARM inaffidabili
+osservati sopra restano probabilmente presenti. Ciò che Work Package A
+dovrebbe chiudere è: **una volta che un trigger qualsiasi dispaccia
+davvero il briefing, nessun altro percorso (incluso un refresh +10/+60,
+un riavvio, o un secondo trigger quasi simultaneo) può produrre una
+seconda notifica per lo stesso giorno.**
+
+### Checklist di accettazione mirata — Work Package A (non ancora eseguita)
+
+1. **Dispaccio singolo sotto trigger multipli quasi simultanei**: se
+   possibile, innesca CONFIGURED_TIME e un unlock reale entro pochi
+   secondi l'uno dall'altro — verifica UNA sola notifica Morning Briefing.
+2. **Nessuna seconda notifica dopo dismissal + refresh**: dopo la
+   consegna, apri/dismetti la notifica, attendi il worker +10min — NESSUNA
+   nuova notifica deve comparire (il worker è ora data-only).
+3. **Nessuna notifica dopo un riavvio del processo post-consegna**: forza
+   la chiusura dell'app dopo la consegna, riaprila, attendi un altro
+   trigger dello stesso giorno — nessuna nuova notifica.
+4. **Evening Digest non duplicato**: se attivo, verifica che il digest
+   serale non venga consegnato due volte nella stessa sera.
+5. **Weather Alert debug isolato**: usa il simulatore in Diagnostica — il
+   messaggio deve essere prefissato "[SIMULAZIONE]" e non deve interferire
+   con un vero avviso meteo della stessa sera.
+
+Nessuno di questi 5 passi è stato eseguito da questo ambiente (nessun
+dispositivo Android disponibile qui). **Stato: DEVICE VERIFIED ❌,
+PRODUCTION READY ❌.** Work Package A non chiude i sintomi di reliability
+del trigger stesso (FIRST_UNLOCK/NEXT_ALARM) — solo Work Package B potrà
+farlo.
