@@ -12,8 +12,9 @@ import org.junit.Test
 import java.time.LocalDate
 
 /**
- * § JARVIS Implementation Master Plan — PASSAGGIO 14.1 §V. Store-level
- * integration tests for the durable morning-digest occurrence claim, using
+ * § JARVIS Implementation Master Plan — PASSAGGIO 14.1 §V, extended by
+ * PROACTIVITY RELIABILITY CLOSURE WORK PACKAGE A. Store-level integration
+ * tests for the durable occurrence claim + CAS fencing, using
  * [FakeProactiveOccurrenceDao] — plain JVM, no Robolectric, same pattern as
  * `DurableDedupTest.kt`.
  */
@@ -86,6 +87,22 @@ class ProactiveOccurrenceStoreTest {
     }
 
     @Test
+    fun `BLOCKED_PERMISSION allows an immediate real takeover, like FAILED_RETRYABLE`() = runTest {
+        val dao = FakeProactiveOccurrenceDao()
+        dao.seed(
+            ProactiveOccurrenceEntity(
+                occurrenceKey = key, kind = "MORNING_DIGEST", logicalDate = date.toString(),
+                state = ProactiveOccurrenceState.BLOCKED_PERMISSION.name, triggerSource = "FIRST_UNLOCK",
+                claimedAtMs = now - 1_000, terminalReason = "notification_blocked",
+            ),
+        )
+        val store = ProactiveOccurrenceStore(dao)
+        val outcome = store.claim(key, "MORNING_DIGEST", date, "CONFIGURED_TIME", now)
+        assertEquals(OccurrenceClaimOutcome.TakeoverAllowed, outcome)
+        assertEquals(ProactiveOccurrenceState.CLAIMED.name, dao.rowOrNull(key)!!.state)
+    }
+
+    @Test
     fun `a fresh in-flight row - UNKNOWN outcome window - is never taken over`() = runTest {
         val dao = FakeProactiveOccurrenceDao()
         dao.seed(
@@ -101,7 +118,23 @@ class ProactiveOccurrenceStoreTest {
     }
 
     @Test
-    fun `a stale in-flight row past the staleness threshold allows takeover - crash recovery`() = runTest {
+    fun `a genuinely stale DELIVERY_PENDING row is STILL never taken over, at any age - P0-6`() = runTest {
+        val dao = FakeProactiveOccurrenceDao()
+        val staleAfterMs = 10 * 60 * 1000L
+        dao.seed(
+            ProactiveOccurrenceEntity(
+                occurrenceKey = key, kind = "MORNING_DIGEST", logicalDate = date.toString(),
+                state = ProactiveOccurrenceState.DELIVERY_PENDING.name, triggerSource = "FIRST_UNLOCK",
+                claimedAtMs = now - staleAfterMs - 60_000,
+            ),
+        )
+        val store = ProactiveOccurrenceStore(dao)
+        val outcome = store.claim(key, "MORNING_DIGEST", date, "PERIODIC_FALLBACK", now)
+        assertEquals(OccurrenceClaimOutcome.AlreadyOwned(ProactiveOccurrenceState.DELIVERY_PENDING), outcome)
+    }
+
+    @Test
+    fun `a stale in-flight CLAIMED row past the staleness threshold allows takeover - crash recovery`() = runTest {
         val dao = FakeProactiveOccurrenceDao()
         val staleAfterMs = 10 * 60 * 1000L
         dao.seed(
@@ -133,15 +166,15 @@ class ProactiveOccurrenceStoreTest {
         val store = ProactiveOccurrenceStore(dao)
         store.claim(key, "MORNING_DIGEST", date, "FIRST_UNLOCK", now)
 
-        store.markGenerated(key)
+        assertTrue(store.markGenerated(key, now))
         assertEquals(ProactiveOccurrenceState.GENERATED.name, dao.rowOrNull(key)!!.state)
         assertNotNull(dao.rowOrNull(key)!!.generatedAtMs)
 
-        store.markDeliveryAttempt(key)
+        assertTrue(store.markDeliveryAttempt(key, now))
         assertEquals(ProactiveOccurrenceState.DELIVERY_PENDING.name, dao.rowOrNull(key)!!.state)
         assertNotNull(dao.rowOrNull(key)!!.deliveryAttemptAtMs)
 
-        store.markDelivered(key)
+        assertTrue(store.markDelivered(key, now))
         assertEquals(ProactiveOccurrenceState.DELIVERED.name, dao.rowOrNull(key)!!.state)
         assertNotNull(dao.rowOrNull(key)!!.deliveredAtMs)
     }
@@ -151,11 +184,83 @@ class ProactiveOccurrenceStoreTest {
         val dao = FakeProactiveOccurrenceDao()
         val store = ProactiveOccurrenceStore(dao)
         store.claim(key, "MORNING_DIGEST", date, "FIRST_UNLOCK", now)
-        store.markFailedRetryable(key, "skip:budget_exhausted")
+        assertTrue(store.markFailedRetryable(key, "skip:budget_exhausted", now))
         assertEquals(ProactiveOccurrenceState.FAILED_RETRYABLE.name, dao.rowOrNull(key)!!.state)
 
         val retry = store.claim(key, "MORNING_DIGEST", date, "CONFIGURED_TIME", now + 60_000)
         assertEquals(OccurrenceClaimOutcome.TakeoverAllowed, retry)
+    }
+
+    // --- § WORK PACKAGE A §13 — CAS fencing: a stale owner's write, whose
+    // `claimedAtMs` was superseded by a takeover, must silently no-op
+    // (never overwrite the new owner's progress), and the caller must be
+    // able to tell (return value) that it is no longer the real owner. ---
+
+    @Test
+    fun `a stale owner's markGenerated after a takeover is a fenced no-op - never overwrites the new owner`() = runTest {
+        val dao = FakeProactiveOccurrenceDao()
+        val store = ProactiveOccurrenceStore(dao)
+        val staleAfterMs = 10 * 60 * 1000L
+
+        // Owner A claims, then goes silent (crash) long enough to go stale.
+        store.claim(key, "MORNING_DIGEST", date, "FIRST_UNLOCK", now)
+        val ownerAClaimedAt = now
+
+        // Owner B takes over.
+        val takeoverAt = now + staleAfterMs + 60_000
+        val takeover = store.claim(key, "MORNING_DIGEST", date, "CONFIGURED_TIME", takeoverAt)
+        assertEquals(OccurrenceClaimOutcome.TakeoverAllowed, takeover)
+
+        // Owner A, unaware of the takeover, finally wakes up and tries to
+        // finalize using its OWN stale fencing token — must fail silently.
+        val staleWriteStuck = store.markGenerated(key, ownerAClaimedAt)
+        assertFalse(staleWriteStuck)
+
+        // The new owner B's state is untouched by A's stale write.
+        assertEquals(ProactiveOccurrenceState.CLAIMED.name, dao.rowOrNull(key)!!.state)
+        assertNull(dao.rowOrNull(key)!!.generatedAtMs)
+
+        // B, using the correct fencing token, succeeds normally.
+        assertTrue(store.markGenerated(key, takeoverAt))
+        assertEquals(ProactiveOccurrenceState.GENERATED.name, dao.rowOrNull(key)!!.state)
+    }
+
+    @Test
+    fun `a stale owner cannot finalize markDelivered after a takeover - fencing holds across the whole state machine`() = runTest {
+        val dao = FakeProactiveOccurrenceDao()
+        val store = ProactiveOccurrenceStore(dao)
+        val staleAfterMs = 10 * 60 * 1000L
+
+        store.claim(key, "MORNING_DIGEST", date, "FIRST_UNLOCK", now)
+        val ownerAClaimedAt = now
+        val takeoverAt = now + staleAfterMs + 60_000
+        store.claim(key, "MORNING_DIGEST", date, "CONFIGURED_TIME", takeoverAt)
+
+        assertFalse(store.markDeliveryAttempt(key, ownerAClaimedAt))
+        assertFalse(store.markDelivered(key, ownerAClaimedAt))
+        assertFalse(store.markFailedRetryable(key, "stale_owner_reason", ownerAClaimedAt))
+        // still exactly the state the takeover left it in
+        assertEquals(ProactiveOccurrenceState.CLAIMED.name, dao.rowOrNull(key)!!.state)
+    }
+
+    @Test
+    fun `markBlockedPermission and markUnknownEffect are fenced too, and write the expected terminal state`() = runTest {
+        val dao = FakeProactiveOccurrenceDao()
+        val store = ProactiveOccurrenceStore(dao)
+        store.claim(key, "MORNING_DIGEST", date, "FIRST_UNLOCK", now)
+
+        assertTrue(store.markBlockedPermission(key, "notification_blocked", now))
+        assertEquals(ProactiveOccurrenceState.BLOCKED_PERMISSION.name, dao.rowOrNull(key)!!.state)
+
+        // Re-claim (BLOCKED_PERMISSION is unconditionally takeover-eligible).
+        val retry = store.claim(key, "MORNING_DIGEST", date, "CONFIGURED_TIME", now + 1_000)
+        assertEquals(OccurrenceClaimOutcome.TakeoverAllowed, retry)
+        assertTrue(store.markUnknownEffect(key, "IOException", now + 1_000))
+        assertEquals(ProactiveOccurrenceState.UNKNOWN_EFFECT.name, dao.rowOrNull(key)!!.state)
+
+        // UNKNOWN_EFFECT is never takeover-eligible, at any age.
+        val blindRetry = store.claim(key, "MORNING_DIGEST", date, "PERIODIC_FALLBACK", now + 999_999_999)
+        assertEquals(OccurrenceClaimOutcome.AlreadyOwned(ProactiveOccurrenceState.UNKNOWN_EFFECT), blindRetry)
     }
 
     @Test
@@ -202,10 +307,10 @@ class ProactiveOccurrenceStoreTest {
 
             override suspend fun tryTakeover(key: String, staleCutoffMs: Long, newState: String, triggerSource: String, nowMs: Long): Int = 0
 
-            override suspend fun markGenerated(key: String, state: String, atMs: Long) {}
-            override suspend fun markDeliveryAttempt(key: String, state: String, atMs: Long) {}
-            override suspend fun markDelivered(key: String, state: String, atMs: Long) {}
-            override suspend fun markFailed(key: String, state: String, reason: String?) {}
+            override suspend fun markGenerated(key: String, state: String, atMs: Long, expectedClaimedAtMs: Long): Int = 0
+            override suspend fun markDeliveryAttempt(key: String, state: String, atMs: Long, expectedClaimedAtMs: Long): Int = 0
+            override suspend fun markDelivered(key: String, state: String, atMs: Long, expectedClaimedAtMs: Long): Int = 0
+            override suspend fun markFailed(key: String, state: String, reason: String?, expectedClaimedAtMs: Long): Int = 0
             override suspend fun deleteOlderThan(cutoffMs: Long): Int = 0
         }
         val store = ProactiveOccurrenceStore(dao)
@@ -248,8 +353,8 @@ class ProactiveOccurrenceStoreTest {
         val second = store.claim(weatherKey, "WEATHER_ALERT", LocalDate.of(2026, 9, 11), "PERIODIC_FALLBACK", now + 1_000)
         assertEquals(OccurrenceClaimOutcome.AlreadyOwned(ProactiveOccurrenceState.CLAIMED), second)
 
-        store.markDeliveryAttempt(weatherKey)
-        store.markDelivered(weatherKey)
+        assertTrue(store.markDeliveryAttempt(weatherKey, now))
+        assertTrue(store.markDelivered(weatherKey, now))
         assertEquals(ProactiveOccurrenceState.DELIVERED.name, dao.rowOrNull(weatherKey)!!.state)
 
         // A later evaluation the same evening (e.g. the hourly re-check)
@@ -257,6 +362,25 @@ class ProactiveOccurrenceStoreTest {
         // how many times the window re-evaluates.
         val third = store.claim(weatherKey, "WEATHER_ALERT", LocalDate.of(2026, 9, 11), "CONFIGURED_TIME", now + 3_600_000)
         assertEquals(OccurrenceClaimOutcome.AlreadyOwned(ProactiveOccurrenceState.DELIVERED), third)
+    }
+
+    // --- § WORK PACKAGE A §15 — an eveningDigest-shaped key reuses the
+    // exact same store, unchanged, proving real reuse (not just a matching
+    // key format) for the evening occurrence authority. ---
+
+    @Test
+    fun `an eveningDigest-shaped key claims, delivers, and is terminal - same store, no second ledger`() = runTest {
+        val dao = FakeProactiveOccurrenceDao()
+        val store = ProactiveOccurrenceStore(dao)
+        val eveningKey = "EVENING_DIGEST:2026-09-09"
+
+        val first = store.claim(eveningKey, "EVENING_DIGEST", date, "FIRST_UNLOCK", now)
+        assertEquals(OccurrenceClaimOutcome.Claimed, first)
+        assertTrue(store.markDeliveryAttempt(eveningKey, now))
+        assertTrue(store.markDelivered(eveningKey, now))
+
+        val later = store.claim(eveningKey, "EVENING_DIGEST", date, "PERIODIC_FALLBACK", now + 3_600_000)
+        assertEquals(OccurrenceClaimOutcome.AlreadyOwned(ProactiveOccurrenceState.DELIVERED), later)
     }
 
     // --- § MICRO-PATCH 14.2.1 — making the configured briefing time
@@ -275,8 +399,8 @@ class ProactiveOccurrenceStoreTest {
         // The original 08:00 CONFIGURED_TIME firing claims and delivers today's digest.
         val original = store.claim(key, "MORNING_DIGEST", date, "CONFIGURED_TIME", now)
         assertEquals(OccurrenceClaimOutcome.Claimed, original)
-        store.markDeliveryAttempt(key)
-        store.markDelivered(key)
+        assertTrue(store.markDeliveryAttempt(key, now))
+        assertTrue(store.markDelivered(key, now))
         assertEquals(ProactiveOccurrenceState.DELIVERED.name, dao.rowOrNull(key)!!.state)
 
         // The user then changes the setting to 09:00 (ProactiveSettingsViewModel.
@@ -313,12 +437,11 @@ class ProactiveOccurrenceStoreTest {
     // by code audit, not assumption: ProactiveManager.refreshMorningDigestNotification()
     // (called only by MorningRefreshWorker, +10min/+60min after a REAL
     // delivery) composed and posted a notification directly — the ONE
-    // path in the whole app with occurrence claim = NO. Tests below cover
+    // path in the whole app with occurrence claim = NO. § PROACTIVITY
+    // RELIABILITY CLOSURE WORK PACKAGE A removes that method entirely
+    // (§10) — MorningRefreshWorker is now data-only. Tests below cover
     // items 1-21 of the mission's required test list that are expressible
-    // at this pure store level (no Android Context needed); items
-    // touching ProactiveManager/ProactiveNotifier/MorningRefreshWorker
-    // themselves are covered by MorningBriefingCanonicalGateRegressionTest.kt
-    // (source-scan) and MorningRefreshGateTest.kt (:core, pure).
+    // at this pure store level (no Android Context needed).
     // ==================================================================
 
     // --- peek(): read-only, never a claim, never mutates -----------------
@@ -335,8 +458,8 @@ class ProactiveOccurrenceStoreTest {
         val dao = FakeProactiveOccurrenceDao()
         val store = ProactiveOccurrenceStore(dao)
         store.claim(key, "MORNING_DIGEST", date, "CONFIGURED_TIME", now)
-        store.markDeliveryAttempt(key)
-        store.markDelivered(key)
+        store.markDeliveryAttempt(key, now)
+        store.markDelivered(key, now)
 
         val snapshot = store.peek(key)
         assertEquals(ProactiveOccurrenceState.DELIVERED, snapshot?.state)
@@ -373,8 +496,8 @@ class ProactiveOccurrenceStoreTest {
         val dao = FakeProactiveOccurrenceDao()
         val store = ProactiveOccurrenceStore(dao)
         store.claim(key, "MORNING_DIGEST", date, "CONFIGURED_TIME", now)
-        store.markDeliveryAttempt(key)
-        store.markDelivered(key)
+        store.markDeliveryAttempt(key, now)
+        store.markDelivered(key, now)
 
         val fourteenMinLater = now + 14 * 60_000L
         val outcome = store.claim(key, "MORNING_DIGEST", date, "FIRST_UNLOCK", fourteenMinLater)
@@ -386,8 +509,8 @@ class ProactiveOccurrenceStoreTest {
         val dao = FakeProactiveOccurrenceDao()
         val store = ProactiveOccurrenceStore(dao)
         store.claim(key, "MORNING_DIGEST", date, "CONFIGURED_TIME", now)
-        store.markDeliveryAttempt(key)
-        store.markDelivered(key)
+        store.markDeliveryAttempt(key, now)
+        store.markDelivered(key, now)
 
         val sixtyMinLater = now + 60 * 60_000L
         val outcome = store.claim(key, "MORNING_DIGEST", date, "PERIODIC_FALLBACK", sixtyMinLater)
@@ -401,8 +524,8 @@ class ProactiveOccurrenceStoreTest {
         val dao = FakeProactiveOccurrenceDao()
         val store = ProactiveOccurrenceStore(dao)
         store.claim(key, "MORNING_DIGEST", date, "CONFIGURED_TIME", now)
-        store.markDeliveryAttempt(key)
-        store.markDelivered(key)
+        store.markDeliveryAttempt(key, now)
+        store.markDelivered(key, now)
 
         val laterSources = listOf("NEXT_ALARM", "FIRST_UNLOCK", "PERIODIC_FALLBACK", "MANUAL")
         laterSources.forEachIndexed { index, source ->
@@ -437,8 +560,8 @@ class ProactiveOccurrenceStoreTest {
         val dao = FakeProactiveOccurrenceDao()
         val firstProcessStore = ProactiveOccurrenceStore(dao)
         firstProcessStore.claim(key, "MORNING_DIGEST", date, "CONFIGURED_TIME", now)
-        firstProcessStore.markDeliveryAttempt(key)
-        firstProcessStore.markDelivered(key)
+        firstProcessStore.markDeliveryAttempt(key, now)
+        firstProcessStore.markDelivered(key, now)
 
         // A fresh Store instance (Hilt would construct a new @Singleton after
         // a process restart) wrapping the SAME underlying dao/row — exactly
@@ -456,8 +579,8 @@ class ProactiveOccurrenceStoreTest {
         val dao = FakeProactiveOccurrenceDao()
         val store = ProactiveOccurrenceStore(dao)
         store.claim(key, "MORNING_DIGEST", date, "CONFIGURED_TIME", now)
-        store.markDeliveryAttempt(key)
-        store.markDelivered(key)
+        store.markDeliveryAttempt(key, now)
+        store.markDelivered(key, now)
 
         // MorningTriggerScheduler.scheduleConfiguredTimeTrigger() always
         // reschedules under the SAME PendingIntent key (KEY_CONFIGURED_TIME,
@@ -484,8 +607,8 @@ class ProactiveOccurrenceStoreTest {
             val dao = FakeProactiveOccurrenceDao()
             val store = ProactiveOccurrenceStore(dao)
             store.claim(key, "MORNING_DIGEST", date, deliveringSource, now)
-            store.markDeliveryAttempt(key)
-            store.markDelivered(key)
+            store.markDeliveryAttempt(key, now)
+            store.markDelivered(key, now)
 
             allSources.forEach { laterSource ->
                 val outcome = store.claim(key, "MORNING_DIGEST", date, laterSource, now + 60_000L)
@@ -496,38 +619,5 @@ class ProactiveOccurrenceStoreTest {
                 )
             }
         }
-    }
-
-    // --- item 17: MorningRefreshWorker cannot create another briefing ----
-
-    @Test
-    fun `test item 17 - the refresh gate (peek + MorningRefreshGate) allows a silent refresh only once DELIVERED, never before`() = runTest {
-        val dao = FakeProactiveOccurrenceDao()
-        val store = ProactiveOccurrenceStore(dao)
-
-        // Before any claim at all - MorningRefreshWorker firing on a day the
-        // digest was never even attempted must be a pure no-op.
-        assertFalse(
-            com.simone.jarvismobile.core.proactive.MorningRefreshGate.shouldRefresh(store.peek(key)?.state),
-        )
-
-        store.claim(key, "MORNING_DIGEST", date, "CONFIGURED_TIME", now)
-        // CLAIMED but not yet delivered (e.g. the +10min worker racing a
-        // slow generation/notify) - still must not refresh.
-        assertFalse(
-            com.simone.jarvismobile.core.proactive.MorningRefreshGate.shouldRefresh(store.peek(key)?.state),
-        )
-
-        store.markDeliveryAttempt(key)
-        // DELIVERY_PENDING - still not a real delivery yet.
-        assertFalse(
-            com.simone.jarvismobile.core.proactive.MorningRefreshGate.shouldRefresh(store.peek(key)?.state),
-        )
-
-        store.markDelivered(key)
-        // Only now, genuinely DELIVERED, may a silent refresh proceed.
-        assertTrue(
-            com.simone.jarvismobile.core.proactive.MorningRefreshGate.shouldRefresh(store.peek(key)?.state),
-        )
     }
 }

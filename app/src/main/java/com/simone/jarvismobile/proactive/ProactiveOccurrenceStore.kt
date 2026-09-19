@@ -110,9 +110,9 @@ class ProactiveOccurrenceStore @Inject constructor(
      * For paths that must VERIFY (not compete for) today's occurrence
      * before acting — e.g. the post-delivery silent content refresh, which
      * must never compose/post anything unless the real delivery genuinely
-     * already happened (§ [com.simone.jarvismobile.core.proactive.MorningRefreshGate]) —
-     * and for device diagnostic receipts that want to show which trigger
-     * source actually owns an occurrence a later trigger was denied.
+     * already happened — and for device diagnostic receipts that want to
+     * show which trigger source actually owns an occurrence a later
+     * trigger was denied.
      */
     suspend fun peek(key: String): OccurrenceSnapshot? = runCatching {
         dao.find(key)?.let { OccurrenceSnapshot(it.state.toStateOrNull(), it.triggerSource) }
@@ -123,22 +123,41 @@ class ProactiveOccurrenceStore @Inject constructor(
         return OccurrenceClaimOutcome.AlreadyOwned(fresh?.state?.toStateOrNull() ?: ProactiveOccurrenceState.CLAIMED)
     }
 
-    suspend fun markGenerated(key: String) = runCatching {
-        dao.markGenerated(key, ProactiveOccurrenceState.GENERATED.name, System.currentTimeMillis())
-    }
+    /**
+     * § PROACTIVITY RELIABILITY CLOSURE WORK PACKAGE A (§13) — every mark*
+     * method now requires the caller's [expectedClaimedAtMs] (the fencing
+     * token captured at claim time) and returns whether the write actually
+     * stuck (`true` = exactly one row matched — this caller is still the
+     * real owner; `false` = a takeover changed `claimedAtMs` first, this
+     * write is a stale-owner no-op). Callers MUST treat `false` as "I am no
+     * longer the owner", never retry blindly.
+     */
+    suspend fun markGenerated(key: String, expectedClaimedAtMs: Long): Boolean = runCatching {
+        dao.markGenerated(key, ProactiveOccurrenceState.GENERATED.name, System.currentTimeMillis(), expectedClaimedAtMs) > 0
+    }.getOrDefault(false)
 
-    suspend fun markDeliveryAttempt(key: String) = runCatching {
-        dao.markDeliveryAttempt(key, ProactiveOccurrenceState.DELIVERY_PENDING.name, System.currentTimeMillis())
-    }
+    suspend fun markDeliveryAttempt(key: String, expectedClaimedAtMs: Long): Boolean = runCatching {
+        dao.markDeliveryAttempt(key, ProactiveOccurrenceState.DELIVERY_PENDING.name, System.currentTimeMillis(), expectedClaimedAtMs) > 0
+    }.getOrDefault(false)
 
-    suspend fun markDelivered(key: String) = runCatching {
-        dao.markDelivered(key, ProactiveOccurrenceState.DELIVERED.name, System.currentTimeMillis())
-    }
+    suspend fun markDelivered(key: String, expectedClaimedAtMs: Long): Boolean = runCatching {
+        dao.markDelivered(key, ProactiveOccurrenceState.DELIVERED.name, System.currentTimeMillis(), expectedClaimedAtMs) > 0
+    }.getOrDefault(false)
 
     /** Releases a claim that turned out not to result in a delivery this run (e.g. the governor picked a different candidate, or quiet hours/budget skipped it) — never leaves a claimed-but-abandoned occurrence permanently blocking a later legitimate trigger. */
-    suspend fun markFailedRetryable(key: String, reason: String?) = runCatching {
-        dao.markFailed(key, ProactiveOccurrenceState.FAILED_RETRYABLE.name, reason?.take(MAX_REASON_CHARS))
-    }
+    suspend fun markFailedRetryable(key: String, reason: String?, expectedClaimedAtMs: Long): Boolean = runCatching {
+        dao.markFailed(key, ProactiveOccurrenceState.FAILED_RETRYABLE.name, reason?.take(MAX_REASON_CHARS), expectedClaimedAtMs) > 0
+    }.getOrDefault(false)
+
+    /** § PROACTIVITY RELIABILITY CLOSURE WORK PACKAGE A (§12) — proven no-effect (permission/channel/global-notifications blocked before any Android call was made); always immediately retryable once the blocking condition may have changed. */
+    suspend fun markBlockedPermission(key: String, reason: String?, expectedClaimedAtMs: Long): Boolean = runCatching {
+        dao.markFailed(key, ProactiveOccurrenceState.BLOCKED_PERMISSION.name, reason?.take(MAX_REASON_CHARS), expectedClaimedAtMs) > 0
+    }.getOrDefault(false)
+
+    /** § PROACTIVITY RELIABILITY CLOSURE WORK PACKAGE A (§12/§13) — the Android call was made and either threw or the process disappeared before the outcome was durably recorded; never a blind retry, same treatment as DELIVERY_PENDING. */
+    suspend fun markUnknownEffect(key: String, reason: String?, expectedClaimedAtMs: Long): Boolean = runCatching {
+        dao.markFailed(key, ProactiveOccurrenceState.UNKNOWN_EFFECT.name, reason?.take(MAX_REASON_CHARS), expectedClaimedAtMs) > 0
+    }.getOrDefault(false)
 
     suspend fun pruneOld(retentionDays: Long = RETENTION_DAYS, now: Long = System.currentTimeMillis()) = runCatching {
         dao.deleteOlderThan(now - retentionDays * DAY_MS)

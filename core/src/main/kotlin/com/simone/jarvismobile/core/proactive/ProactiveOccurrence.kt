@@ -18,13 +18,28 @@ enum class ProactiveOccurrenceState {
     /** Atomically claimed by exactly one trigger — no generation/delivery attempted yet. */
     CLAIMED,
 
-    /** The suggestion content was composed — not yet attempted for delivery. */
+    /** The suggestion content was composed — not yet attempted for delivery ("PREPARED" in the Proactivity Reliability Closure Audit's vocabulary). */
     GENERATED,
 
-    /** [com.simone.jarvismobile.core.proactive.ProactiveKind]'s notification post has been (or is about to be) attempted. */
+    /**
+     * § JARVIS Implementation Master Plan — PROACTIVITY RELIABILITY CLOSURE
+     * WORK PACKAGE A (P0-6). "DISPATCH_INTENT" in the audit's vocabulary —
+     * [com.simone.jarvismobile.core.proactive.ProactiveKind]'s notification
+     * post has been committed to and is about to be (or was just) attempted.
+     * **Never stale-takeover-eligible by age alone** (see
+     * [ProactiveOccurrenceReconciler.decide] below) — the audit's own
+     * correction to the superseded MICRO-PATCH 14.2.2/PASSAGGIO 14.1
+     * conclusion that "expired DELIVERY_PENDING is safe to retry": the
+     * Android notification call is OUTSIDE the database transaction, so an
+     * age-based reclaim here could produce a genuine duplicate visible
+     * notification if the original call actually succeeded right before a
+     * crash. A row stuck here forever without human/manual reconciliation
+     * is the deliberate, explicit trade-off ("trades possible omission for
+     * no automatic duplicate").
+     */
     DELIVERY_PENDING,
 
-    /** The visible delivery genuinely happened. Terminal — never retried. */
+    /** The visible delivery genuinely happened ("POSTED" in the audit's vocabulary). Terminal — never retried. */
     DELIVERED,
 
     /** A failure occurred before any visible side effect — safe to retry/take over. */
@@ -32,6 +47,31 @@ enum class ProactiveOccurrenceState {
 
     /** A failure occurred that must never be retried automatically. Terminal. */
     FAILED_FINAL,
+
+    /**
+     * § PROACTIVITY RELIABILITY CLOSURE WORK PACKAGE A — the Android
+     * notification API call was never reached (or a definite pre-dispatch
+     * preflight check — POST_NOTIFICATIONS missing, notifications globally
+     * disabled, channel blocked — rejected it) BEFORE anything was sent.
+     * Proven no-effect, so — unlike [DELIVERY_PENDING] — this IS always
+     * safe to retry once the blocking condition may have changed (e.g. the
+     * user just granted the permission).
+     */
+    BLOCKED_PERMISSION,
+
+    /**
+     * § PROACTIVITY RELIABILITY CLOSURE WORK PACKAGE A. The Android
+     * notification API call was made and either threw or the calling
+     * process disappeared before the outcome could be durably recorded —
+     * genuinely unknown whether the user ever saw anything. Per the
+     * one-shot contract's crash-boundary strengthening ("an unknown outcome
+     * is never automatically retried"), this behaves exactly like
+     * [DELIVERY_PENDING] in [ProactiveOccurrenceReconciler.decide] — never
+     * a blind retry — kept as its own distinct value purely for honest
+     * diagnostics (so a human/future reconciliation path can tell "we
+     * never even tried" apart from "we tried and don't know what happened").
+     */
+    UNKNOWN_EFFECT,
     ;
 
     val isTerminal: Boolean get() = this == DELIVERED || this == FAILED_FINAL
@@ -62,6 +102,22 @@ sealed interface OccurrenceClaimOutcome {
  * insert/update) — this function only decides what SHOULD happen assuming
  * the read it was given is accurate; the store re-validates atomically
  * before ever writing.
+ *
+ * § JARVIS Implementation Master Plan — PROACTIVITY RELIABILITY CLOSURE
+ * WORK PACKAGE A (P0-6, superseding MICRO-PATCH 14.2.2/PASSAGGIO 14.1's
+ * "expired DELIVERY_PENDING is safe to retry" conclusion — see
+ * `docs/JARVIS_PROACTIVITY_RELIABILITY_CLOSURE_AUDIT.md` §2.3): only
+ * [ProactiveOccurrenceState.CLAIMED]/[ProactiveOccurrenceState.GENERATED]
+ * (no dispatch intent committed yet) are ever staleness-based takeover
+ * candidates. [ProactiveOccurrenceState.DELIVERY_PENDING] and
+ * [ProactiveOccurrenceState.UNKNOWN_EFFECT] are UNKNOWN-outcome states —
+ * they NEVER become retryable merely because time passed, at any age,
+ * because the Android notification call they represent is outside this
+ * database's transaction and may have genuinely succeeded.
+ * [ProactiveOccurrenceState.BLOCKED_PERMISSION] is proven NO-EFFECT
+ * (rejected before ever reaching Android), so — like
+ * [ProactiveOccurrenceState.FAILED_RETRYABLE] — it is always immediately
+ * retryable, unconditional on age.
  */
 object ProactiveOccurrenceReconciler {
     fun decide(
@@ -74,10 +130,16 @@ object ProactiveOccurrenceReconciler {
         return when (existingState) {
             ProactiveOccurrenceState.DELIVERED -> OccurrenceClaimOutcome.AlreadyOwned(existingState)
             ProactiveOccurrenceState.FAILED_FINAL -> OccurrenceClaimOutcome.AlreadyOwned(existingState)
+            // §P0-6: an ambiguous in-flight/unknown-outcome dispatch is never
+            // blindly retried, no matter how old — the deliberate at-most-once
+            // trade-off (§4.1 of the audit: "trades possible omission for no
+            // automatic duplicate").
+            ProactiveOccurrenceState.DELIVERY_PENDING -> OccurrenceClaimOutcome.AlreadyOwned(existingState)
+            ProactiveOccurrenceState.UNKNOWN_EFFECT -> OccurrenceClaimOutcome.AlreadyOwned(existingState)
             ProactiveOccurrenceState.FAILED_RETRYABLE -> OccurrenceClaimOutcome.TakeoverAllowed
+            ProactiveOccurrenceState.BLOCKED_PERMISSION -> OccurrenceClaimOutcome.TakeoverAllowed
             ProactiveOccurrenceState.CLAIMED,
             ProactiveOccurrenceState.GENERATED,
-            ProactiveOccurrenceState.DELIVERY_PENDING,
             -> {
                 val age = now - (existingClaimedAtMs ?: now)
                 if (age >= staleAfterMs) OccurrenceClaimOutcome.TakeoverAllowed
@@ -119,4 +181,16 @@ object ProactiveOccurrenceKey {
      * this pass.
      */
     fun weatherAlert(targetLocalDate: LocalDate): String = "${ProactiveKind.WEATHER_ALERT}:$targetLocalDate"
+
+    /**
+     * § JARVIS Implementation Master Plan — PROACTIVITY RELIABILITY CLOSURE
+     * WORK PACKAGE A §15: evening joins the SAME durable occurrence
+     * authority morning already has (P1-6 — "evening has no durable Room
+     * claim", closed here). Keyed by the DELIVERY date (today, evening),
+     * never the agenda TARGET date (tomorrow) — the audit's own
+     * distinction: `EVENING_DIGEST:<deliveryDate>` with the agenda target
+     * date stored/rendered separately by the composer (Work Package C
+     * territory, not this key).
+     */
+    fun eveningDigest(deliveryLocalDate: LocalDate): String = "${ProactiveKind.EVENING_DIGEST}:$deliveryLocalDate"
 }

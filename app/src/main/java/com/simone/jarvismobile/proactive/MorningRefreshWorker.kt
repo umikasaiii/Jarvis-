@@ -26,6 +26,19 @@ import dagger.hilt.components.SingletonComponent
  * a read could silently fail or throw depending on the OEM; skipping it here
  * (while still refreshing weather/agenda, which need no such permission) is
  * the honest degradation the spec asks for, not a guess.
+ *
+ * § JARVIS Implementation Master Plan — PROACTIVITY RELIABILITY CLOSURE
+ * WORK PACKAGE A (§10, P0) — DATA ONLY. This worker no longer composes,
+ * notifies, or mutates morning dispatch ownership in any way: it refreshes
+ * the underlying data caches (weather/agenda/Health where permission and
+ * lifecycle allow) and nothing else. It MUST NOT compose a MORNING_DIGEST
+ * suggestion, call [ProactiveNotifier], call `NotificationManager`, speak
+ * the digest, or recreate a dismissed card — the one-shot contract (§9)
+ * means no automatic path may ever re-open a day's briefing after dispatch
+ * has entered its possibly-side-effecting boundary. Superseding the prior
+ * "silent +10/+60 refresh closes duplication" conclusion, which this same
+ * codebase already found to be an incomplete fix in practice — see
+ * `docs/JARVIS_PROACTIVITY_RELIABILITY_CLOSURE_AUDIT.md` §2.
  */
 class MorningRefreshWorker(
     appContext: Context,
@@ -47,15 +60,8 @@ class MorningRefreshWorker(
             } else {
                 false
             }
-            // Re-composes and re-posts the SAME morning-digest notification
-            // (same id, replaces in place) with whatever is fresh now — never
-            // re-speaks it (§ deliberate: a second spoken briefing 10-60min
-            // later would be intrusive, not helpful). § MICRO-PATCH 14.2.2 —
-            // now verifies today's occurrence is genuinely DELIVERED before
-            // touching the notifier at all, and posts silently even when it
-            // is (see refreshMorningDigestNotification's own doc comment for
-            // the real device evidence this closes).
-            deps.proactiveManager().refreshMorningDigestNotification(triggerSource = "POST_BRIEFING_REFRESH_$delayLabel")
+            // § WORK PACKAGE A §10 — data-only. No composition, no notifier
+            // call, no dispatch-ownership mutation, no re-post, ever.
             if (healthRefreshed) "refreshed" else "refreshed_no_health_background_permission"
         }.getOrElse { e -> "failed:${e.javaClass.simpleName}" }
 
@@ -69,7 +75,6 @@ class MorningRefreshWorker(
         fun health(): HealthConnectManager
         fun weather(): WeatherManager
         fun agenda(): AgendaRepository
-        fun proactiveManager(): ProactiveManager
         fun morningTriggerScheduler(): MorningTriggerScheduler
     }
 

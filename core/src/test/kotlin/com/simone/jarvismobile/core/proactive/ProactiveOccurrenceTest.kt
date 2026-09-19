@@ -98,15 +98,45 @@ class ProactiveOccurrenceTest {
         assertEquals(OccurrenceClaimOutcome.AlreadyOwned(ProactiveOccurrenceState.CLAIMED), outcome)
     }
 
+    /**
+     * § PROACTIVITY RELIABILITY CLOSURE WORK PACKAGE A (P0-6) — SUPERSEDES
+     * the MICRO-PATCH 14.2.2/PASSAGGIO 14.1 conclusion this test used to pin
+     * ("a genuinely stale DELIVERY_PENDING row... allows takeover"). The
+     * audit's correction (§2.3): "Expired DELIVERY_PENDING is safe to
+     * retry" contradicts the one-shot contract's UNKNOWN/no-blind-retry
+     * invariant — the Android notification call this state represents is
+     * OUTSIDE the database transaction, so it may have genuinely succeeded
+     * even if this process never recorded it. No age, however extreme, may
+     * ever route DELIVERY_PENDING into takeover — a row stuck here is the
+     * deliberate at-most-once trade-off, not a bug to "fix" with a timeout.
+     */
     @Test
-    fun `a genuinely stale DELIVERY_PENDING row - the process-death-after-notify crash window - allows takeover`() {
-        // § §M crash window 3: notification delivery requested, process dies
-        // before delivered-state persistence. A later trigger must be able to
-        // reconcile using the SAME occurrence rather than being blocked forever.
-        val outcome = ProactiveOccurrenceReconciler.decide(
-            ProactiveOccurrenceState.DELIVERY_PENDING, now - staleAfterMs - 60_000, now, staleAfterMs,
-        )
+    fun `a genuinely stale DELIVERY_PENDING row is STILL never taken over - never a blind retry, at any age`() {
+        val ages = listOf(0L, staleAfterMs - 1, staleAfterMs, staleAfterMs + 1, staleAfterMs + 60_000, 365L * 24 * 60 * 60 * 1000L)
+        ages.forEach { age ->
+            val outcome = ProactiveOccurrenceReconciler.decide(ProactiveOccurrenceState.DELIVERY_PENDING, now - age, now, staleAfterMs)
+            assertEquals(
+                OccurrenceClaimOutcome.AlreadyOwned(ProactiveOccurrenceState.DELIVERY_PENDING), outcome,
+                "DELIVERY_PENDING at age=$age must never become takeover-eligible",
+            )
+        }
+    }
+
+    // --- new WORK PACKAGE A states: BLOCKED_PERMISSION / UNKNOWN_EFFECT ---
+
+    @Test
+    fun `BLOCKED_PERMISSION is proven no-effect - always immediately retryable, like FAILED_RETRYABLE`() {
+        val outcome = ProactiveOccurrenceReconciler.decide(ProactiveOccurrenceState.BLOCKED_PERMISSION, now, now, staleAfterMs)
         assertEquals(OccurrenceClaimOutcome.TakeoverAllowed, outcome)
+    }
+
+    @Test
+    fun `UNKNOWN_EFFECT is never blindly retried, at any age - same treatment as DELIVERY_PENDING`() {
+        val ages = listOf(0L, staleAfterMs, staleAfterMs + 60_000, 365L * 24 * 60 * 60 * 1000L)
+        ages.forEach { age ->
+            val outcome = ProactiveOccurrenceReconciler.decide(ProactiveOccurrenceState.UNKNOWN_EFFECT, now - age, now, staleAfterMs)
+            assertEquals(OccurrenceClaimOutcome.AlreadyOwned(ProactiveOccurrenceState.UNKNOWN_EFFECT), outcome)
+        }
     }
 
     // --- key stability (§D, test items 12/13/14) --------------------------
@@ -179,5 +209,34 @@ class ProactiveOccurrenceTest {
         val date = LocalDate.of(2026, 3, 1)
         val composerStyleDedupKey = "${ProactiveKind.WEATHER_ALERT}:$date"
         assertEquals(composerStyleDedupKey, ProactiveOccurrenceKey.weatherAlert(date))
+    }
+
+    // --- eveningDigest key (§ PROACTIVITY RELIABILITY CLOSURE WORK PACKAGE A §15) ---
+
+    @Test
+    fun `eveningDigest key is stable for the same delivery date`() {
+        val a = ProactiveOccurrenceKey.eveningDigest(LocalDate.of(2026, 9, 11))
+        val b = ProactiveOccurrenceKey.eveningDigest(LocalDate.of(2026, 9, 11))
+        assertEquals(a, b)
+    }
+
+    @Test
+    fun `eveningDigest key differs for different delivery dates`() {
+        val a = ProactiveOccurrenceKey.eveningDigest(LocalDate.of(2026, 9, 11))
+        val b = ProactiveOccurrenceKey.eveningDigest(LocalDate.of(2026, 9, 12))
+        assertTrue(a != b)
+    }
+
+    @Test
+    fun `eveningDigest key is distinct from morningDigest and weatherAlert on the same date`() {
+        val date = LocalDate.of(2026, 9, 11)
+        val evening = ProactiveOccurrenceKey.eveningDigest(date)
+        assertTrue(evening != ProactiveOccurrenceKey.morningDigest(date))
+        assertTrue(evening != ProactiveOccurrenceKey.weatherAlert(date))
+    }
+
+    @Test
+    fun `eveningDigest key never embeds a timestamp or random component`() {
+        assertEquals("EVENING_DIGEST:2026-09-09", ProactiveOccurrenceKey.eveningDigest(LocalDate.of(2026, 9, 9)))
     }
 }

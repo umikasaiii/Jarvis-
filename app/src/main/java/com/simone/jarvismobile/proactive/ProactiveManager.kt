@@ -9,7 +9,6 @@ import android.util.Log
 import com.simone.jarvismobile.agenda.AgendaRepository
 import com.simone.jarvismobile.audio.SessionCoordinator
 import com.simone.jarvismobile.context.ContextEngine
-import com.simone.jarvismobile.core.proactive.MorningRefreshGate
 import com.simone.jarvismobile.core.proactive.OccurrenceClaimOutcome
 import com.simone.jarvismobile.core.proactive.ProactiveComposer
 import com.simone.jarvismobile.core.proactive.ProactiveDecision
@@ -56,6 +55,7 @@ class ProactiveManager @Inject constructor(
     private val store: ProactiveStore,
     private val occurrenceStore: ProactiveOccurrenceStore,
     private val notifier: ProactiveNotifier,
+    private val dispatcher: ProactiveDeliveryDispatcher,
     private val coordinator: SessionCoordinator,
     private val contextEngine: ContextEngine,
     private val weather: WeatherManager,
@@ -267,8 +267,23 @@ class ProactiveManager @Inject constructor(
             )
         }
 
+        // § WORK PACKAGE A §15 — evening joins the SAME durable occurrence
+        // authority morning already has. `EVENING_DIGEST:<deliveryDate>`,
+        // keyed by TODAY (delivery date), never the agenda target date.
+        val eveningEligible = now.hour in EVENING_FROM..EVENING_TO
+        val eveningKey = if (eveningEligible) ProactiveOccurrenceKey.eveningDigest(today) else null
+        val eveningClaim = eveningKey?.let { key ->
+            runCatching {
+                occurrenceStore.claim(key, kind = "EVENING_DIGEST", logicalDate = today, triggerSource = triggerSource, now = nowMs)
+            }.getOrNull()
+        }
+        val eveningOwnedThisRun = eveningClaim is OccurrenceClaimOutcome.Claimed || eveningClaim is OccurrenceClaimOutcome.TakeoverAllowed
+        if (eveningKey != null && !eveningOwnedThisRun) {
+            Log.i(TAG, "proactive_evening_claim_denied source=$triggerSource claim=$eveningClaim")
+        }
+
         val snap = snapshot(today, now)
-        val candidates = candidatesFor(now, snap, today, includeMorning = morningOwnedThisRun).toMutableList()
+        val candidates = candidatesFor(now, snap, today, includeMorning = morningOwnedThisRun, includeEvening = eveningOwnedThisRun).toMutableList()
 
         // § JARVIS Implementation Master Plan PASSAGGIO 14.2 — evening
         // rain/storm alert, evaluated in the SAME evening window
@@ -287,7 +302,10 @@ class ProactiveManager @Inject constructor(
 
         if (candidates.isEmpty()) {
             if (morningKey != null && morningOwnedThisRun) {
-                runCatching { occurrenceStore.markFailedRetryable(morningKey, "no_candidate_this_hour") }
+                runCatching { occurrenceStore.markFailedRetryable(morningKey, "no_candidate_this_hour", nowMs) }
+            }
+            if (eveningKey != null && eveningOwnedThisRun) {
+                runCatching { occurrenceStore.markFailedRetryable(eveningKey, "no_candidate_this_hour", nowMs) }
             }
             recordRun(now, isRealUnlock, triggerSource, config.enabled, automationEnabled, candidateCount = 0, outcome = "no_candidate_this_hour")
             return
@@ -296,36 +314,104 @@ class ProactiveManager @Inject constructor(
         when (val decision = ProactiveGovernor.decide(candidates, config, state, now)) {
             is ProactiveDecision.Deliver -> {
                 val deliveredKind = decision.suggestion.kind
-                if (deliveredKind == ProactiveKind.MORNING_DIGEST && morningKey != null) {
-                    runCatching { occurrenceStore.markDeliveryAttempt(morningKey) }
+                // § WORK PACKAGE A §11 — the durable occurrence key backing
+                // THIS delivered kind, if any (BATTERY_BEFORE_ALARM has none
+                // — it keeps its existing SharedPreferences-based dedup,
+                // explicitly out of scope here).
+                val occurrenceKeyForDelivered = when (deliveredKind) {
+                    ProactiveKind.MORNING_DIGEST -> morningKey
+                    ProactiveKind.EVENING_DIGEST -> eveningKey
+                    ProactiveKind.WEATHER_ALERT -> weatherAlertKey
+                    ProactiveKind.BATTERY_BEFORE_ALARM -> null
                 }
-                if (deliveredKind == ProactiveKind.WEATHER_ALERT && weatherAlertKey != null) {
-                    runCatching { occurrenceStore.markDeliveryAttempt(weatherAlertKey) }
-                }
-                notifier.show(decision.suggestion)
                 store.save(decision.newState)
-                // Spoken too, same opt-in path a new-engine SPEAK action uses — an
-                // adaptive briefing that only JARVIS reads silently isn't a briefing.
-                runCatching { coordinator.speakBackgroundResponse(decision.suggestion.message) }
-                Log.i(TAG, "proactive_deliver ${decision.suggestion.kind} source=$triggerSource")
-                recordRun(now, isRealUnlock, triggerSource, config.enabled, automationEnabled, candidates.size, "delivered:${decision.suggestion.kind}")
-                if (deliveredKind == ProactiveKind.MORNING_DIGEST && morningKey != null) {
-                    runCatching { occurrenceStore.markDelivered(morningKey) }
-                    // § FASE 2A.8 RELEASE GATE G — only for a REAL morning-digest
-                    // delivery, never for the evening digest or a battery tip.
-                    runCatching { morningTriggerScheduler.schedulePostBriefingRefreshes() }
-                    recordMorningReceipt(
-                        now = now, occurrenceKey = morningKey, triggerSource = triggerSource,
-                        schedulerSource = schedulerSourceFor(triggerSource), scheduledForMs = null,
-                        claimOutcome = morningClaim.claimLabel(), stateBefore = ProactiveOccurrenceState.CLAIMED,
-                        stateAfter = ProactiveOccurrenceState.DELIVERED,
-                        deliveryAttempted = true, deliveryResult = "DELIVERED",
+
+                if (occurrenceKeyForDelivered != null) {
+                    // § §11/§12/§13 — the ONE dispatch owner: fenced
+                    // markDeliveryAttempt -> notifier call iff fencing held ->
+                    // fenced mark* of the typed outcome. Never a direct
+                    // production notifier call for an occurrence-backed kind.
+                    val result = dispatcher.dispatch(
+                        occurrenceKey = occurrenceKeyForDelivered,
+                        expectedClaimedAtMs = nowMs,
+                        suggestion = decision.suggestion,
+                        tag = ProactiveNotifier.tagFor(deliveredKind),
                     )
-                } else if (morningKey != null && morningOwnedThisRun) {
-                    // The governor picked a different candidate this run (budget/
-                    // priority) — release the claim so it isn't wasted (§L: never
-                    // permanently blocks a later legitimate attempt).
-                    runCatching { occurrenceStore.markFailedRetryable(morningKey, "governor_selected_other_candidate") }
+                    when (result) {
+                        is ProactiveDeliveryResult.Posted -> {
+                            runCatching { coordinator.speakBackgroundResponse(decision.suggestion.message) }
+                            Log.i(TAG, "proactive_deliver $deliveredKind source=$triggerSource")
+                            recordRun(now, isRealUnlock, triggerSource, config.enabled, automationEnabled, candidates.size, "delivered:$deliveredKind")
+                            if (deliveredKind == ProactiveKind.MORNING_DIGEST && morningKey != null) {
+                                // § FASE 2A.8 RELEASE GATE G — only for a REAL
+                                // morning-digest delivery, never evening/battery.
+                                runCatching { morningTriggerScheduler.schedulePostBriefingRefreshes() }
+                                recordMorningReceipt(
+                                    now = now, occurrenceKey = morningKey, triggerSource = triggerSource,
+                                    schedulerSource = schedulerSourceFor(triggerSource), scheduledForMs = null,
+                                    claimOutcome = morningClaim.claimLabel(), stateBefore = ProactiveOccurrenceState.CLAIMED,
+                                    stateAfter = ProactiveOccurrenceState.DELIVERED,
+                                    deliveryAttempted = true, deliveryResult = "DELIVERED",
+                                )
+                            }
+                            if (deliveredKind == ProactiveKind.WEATHER_ALERT) {
+                                updateWeatherAlertOutcome("delivered", deliveryAttempted = true, delivered = true)
+                            }
+                        }
+                        is ProactiveDeliveryResult.BlockedPermission -> {
+                            Log.i(TAG, "proactive_blocked_permission $deliveredKind source=$triggerSource")
+                            recordRun(now, isRealUnlock, triggerSource, config.enabled, automationEnabled, candidates.size, "blocked_permission:$deliveredKind")
+                            if (deliveredKind == ProactiveKind.MORNING_DIGEST && morningKey != null) {
+                                recordMorningReceipt(
+                                    now = now, occurrenceKey = morningKey, triggerSource = triggerSource,
+                                    schedulerSource = schedulerSourceFor(triggerSource), scheduledForMs = null,
+                                    claimOutcome = morningClaim.claimLabel(), stateBefore = ProactiveOccurrenceState.CLAIMED,
+                                    stateAfter = ProactiveOccurrenceState.BLOCKED_PERMISSION,
+                                    deliveryAttempted = true, deliveryResult = "BLOCKED_PERMISSION",
+                                )
+                            }
+                            if (deliveredKind == ProactiveKind.WEATHER_ALERT) {
+                                updateWeatherAlertOutcome("blocked_permission", deliveryAttempted = true, delivered = false)
+                            }
+                        }
+                        is ProactiveDeliveryResult.UnknownEffect -> {
+                            Log.w(TAG, "proactive_unknown_effect $deliveredKind source=$triggerSource detail=${result.detail}")
+                            recordRun(now, isRealUnlock, triggerSource, config.enabled, automationEnabled, candidates.size, "unknown_effect:$deliveredKind")
+                            if (deliveredKind == ProactiveKind.MORNING_DIGEST && morningKey != null) {
+                                recordMorningReceipt(
+                                    now = now, occurrenceKey = morningKey, triggerSource = triggerSource,
+                                    schedulerSource = schedulerSourceFor(triggerSource), scheduledForMs = null,
+                                    claimOutcome = morningClaim.claimLabel(), stateBefore = ProactiveOccurrenceState.CLAIMED,
+                                    stateAfter = ProactiveOccurrenceState.UNKNOWN_EFFECT,
+                                    deliveryAttempted = true, deliveryResult = "UNKNOWN_EFFECT:${result.detail}",
+                                )
+                            }
+                            if (deliveredKind == ProactiveKind.WEATHER_ALERT) {
+                                updateWeatherAlertOutcome("unknown_effect:${result.detail}", deliveryAttempted = true, delivered = false)
+                            }
+                        }
+                        is ProactiveDeliveryResult.FencingLost -> {
+                            // § §13 — a canonical DB transition failure before
+                            // dispatch: NO Android call was made. Someone else
+                            // (a takeover) already owns this occurrence.
+                            Log.w(TAG, "proactive_fencing_lost $deliveredKind source=$triggerSource")
+                            recordRun(now, isRealUnlock, triggerSource, config.enabled, automationEnabled, candidates.size, "fencing_lost:$deliveredKind")
+                        }
+                    }
+                } else {
+                    // BATTERY_BEFORE_ALARM — no durable occurrence backing
+                    // (existing SharedPreferences-based dedup, out of scope).
+                    notifier.dispatch(decision.suggestion)
+                    runCatching { coordinator.speakBackgroundResponse(decision.suggestion.message) }
+                    Log.i(TAG, "proactive_deliver $deliveredKind source=$triggerSource")
+                    recordRun(now, isRealUnlock, triggerSource, config.enabled, automationEnabled, candidates.size, "delivered:$deliveredKind")
+                }
+
+                // § §L — release every occurrence-backed claim NOT delivered
+                // this run so it never permanently blocks a later legitimate
+                // trigger (the governor picked a different candidate).
+                if (deliveredKind != ProactiveKind.MORNING_DIGEST && morningKey != null && morningOwnedThisRun) {
+                    runCatching { occurrenceStore.markFailedRetryable(morningKey, "governor_selected_other_candidate", nowMs) }
                     recordMorningReceipt(
                         now = now, occurrenceKey = morningKey, triggerSource = triggerSource,
                         schedulerSource = schedulerSourceFor(triggerSource), scheduledForMs = null,
@@ -335,11 +421,11 @@ class ProactiveManager @Inject constructor(
                         retryReason = "governor_selected_other_candidate",
                     )
                 }
-                if (deliveredKind == ProactiveKind.WEATHER_ALERT && weatherAlertKey != null) {
-                    runCatching { occurrenceStore.markDelivered(weatherAlertKey) }
-                    updateWeatherAlertOutcome("delivered", deliveryAttempted = true, delivered = true)
-                } else if (weatherAlertKey != null) {
-                    runCatching { occurrenceStore.markFailedRetryable(weatherAlertKey, "governor_selected_other_candidate") }
+                if (deliveredKind != ProactiveKind.EVENING_DIGEST && eveningKey != null && eveningOwnedThisRun) {
+                    runCatching { occurrenceStore.markFailedRetryable(eveningKey, "governor_selected_other_candidate", nowMs) }
+                }
+                if (deliveredKind != ProactiveKind.WEATHER_ALERT && weatherAlertKey != null) {
+                    runCatching { occurrenceStore.markFailedRetryable(weatherAlertKey, "governor_selected_other_candidate", nowMs) }
                     updateWeatherAlertOutcome("suppressed:governor_selected_other_candidate", deliveryAttempted = false, delivered = false)
                 }
             }
@@ -347,7 +433,7 @@ class ProactiveManager @Inject constructor(
                 Log.i(TAG, "proactive_skip ${decision.reason} source=$triggerSource")
                 recordRun(now, isRealUnlock, triggerSource, config.enabled, automationEnabled, candidates.size, "skip:${decision.reason}")
                 if (morningKey != null && morningOwnedThisRun) {
-                    runCatching { occurrenceStore.markFailedRetryable(morningKey, "skip:${decision.reason}") }
+                    runCatching { occurrenceStore.markFailedRetryable(morningKey, "skip:${decision.reason}", nowMs) }
                     recordMorningReceipt(
                         now = now, occurrenceKey = morningKey, triggerSource = triggerSource,
                         schedulerSource = schedulerSourceFor(triggerSource), scheduledForMs = null,
@@ -357,8 +443,11 @@ class ProactiveManager @Inject constructor(
                         retryReason = "skip:${decision.reason}",
                     )
                 }
+                if (eveningKey != null && eveningOwnedThisRun) {
+                    runCatching { occurrenceStore.markFailedRetryable(eveningKey, "skip:${decision.reason}", nowMs) }
+                }
                 if (weatherAlertKey != null) {
-                    runCatching { occurrenceStore.markFailedRetryable(weatherAlertKey, "skip:${decision.reason}") }
+                    runCatching { occurrenceStore.markFailedRetryable(weatherAlertKey, "skip:${decision.reason}", nowMs) }
                     updateWeatherAlertOutcome("suppressed:skip:${decision.reason}", deliveryAttempted = false, delivered = false)
                 }
             }
@@ -490,11 +579,20 @@ class ProactiveManager @Inject constructor(
         if (!owned) {
             return "Questo esatto scenario è già stato simulato e consegnato oggi (claim=$claim) — nessuna nuova notifica."
         }
-        val suggestion = ProactiveComposer.weatherAlert(hazard, targetDate)
-        runCatching { occurrenceStore.markDeliveryAttempt(occurrenceKey) }
-        notifier.show(suggestion)
-        runCatching { occurrenceStore.markDelivered(occurrenceKey) }
-        return "Notifica simulata inviata — hazard=$hazard targetDate=$targetDate messaggio=\"${suggestion.message}\""
+        val baseSuggestion = ProactiveComposer.weatherAlert(hazard, targetDate)
+        // § WORK PACKAGE A §18 — DEBUG ISOLATION: a distinct tag/id range and
+        // a visible "[SIMULAZIONE]" prefix, so this can never be confused
+        // with a real hazard warning nor debit production occurrence/budget.
+        val suggestion = baseSuggestion.copy(message = "[SIMULAZIONE] ${baseSuggestion.message}")
+        val fenced = occurrenceStore.markDeliveryAttempt(occurrenceKey, nowMs)
+        if (!fenced) return "Presa in carico persa fra la richiesta e l'invio — nessuna notifica."
+        val outcome = notifier.dispatch(suggestion, tag = ProactiveNotifier.TAG_DEBUG)
+        when (outcome) {
+            is ProactiveDispatchOutcome.Posted -> occurrenceStore.markDelivered(occurrenceKey, nowMs)
+            is ProactiveDispatchOutcome.BlockedPermission -> occurrenceStore.markBlockedPermission(occurrenceKey, "notification_blocked", nowMs)
+            is ProactiveDispatchOutcome.ApiThrew -> occurrenceStore.markUnknownEffect(occurrenceKey, outcome.exceptionClass, nowMs)
+        }
+        return "Notifica simulata inviata (esito=$outcome) — hazard=$hazard targetDate=$targetDate messaggio=\"${suggestion.message}\""
     }
 
     private fun recordRun(
@@ -540,24 +638,29 @@ class ProactiveManager @Inject constructor(
      * (`MORNING_DIGEST:<date>`) resta l'unico cancello "una volta al
      * giorno" fra i due percorsi.
      *
-     * [includeMorning] (§ PASSAGGIO 14.1) — whether THIS caller actually won
-     * the atomic occurrence claim for today's morning digest (computed once
-     * in [run], before this method is even called) — never recomputed here,
-     * so the hour/automation-service eligibility check and the claim
-     * ownership check can never drift apart into two different answers.
+     * [includeMorning]/[includeEvening] (§ PASSAGGIO 14.1 / WORK PACKAGE A
+     * §15) — whether THIS caller actually won the atomic occurrence claim
+     * for today's morning/evening digest (computed once in [run], before
+     * this method is even called) — never recomputed here, so the hour/
+     * automation-service eligibility check and the claim ownership check
+     * can never drift apart into two different answers. [includeEvening]
+     * gates ONLY `ProactiveComposer.eveningDigest` — `batteryBeforeAlarm`
+     * keeps its existing SharedPreferences-based dedup, deliberately out of
+     * scope for this occurrence-authority work.
      */
     private fun candidatesFor(
         now: LocalDateTime,
         snap: ProactiveSnapshot,
         today: LocalDate,
         includeMorning: Boolean,
+        includeEvening: Boolean,
     ): List<ProactiveSuggestion> {
         val out = ArrayList<ProactiveSuggestion>()
         val hour = now.hour
         if (includeMorning) out += ProactiveComposer.morningDigest(snap, today)
         if (hour in EVENING_FROM..EVENING_TO) {
             ProactiveComposer.batteryBeforeAlarm(snap, today)?.let { out += it }
-            ProactiveComposer.eveningDigest(snap, today)?.let { out += it }
+            if (includeEvening) ProactiveComposer.eveningDigest(snap, today)?.let { out += it }
         }
         return out
     }
@@ -634,63 +737,16 @@ class ProactiveManager @Inject constructor(
         )
     }
 
-    /**
-     * § FASE 2A.8 RELEASE GATE G, hardened by MICRO-PATCH 14.2.2 — called
-     * only by [MorningRefreshWorker], AFTER a morning digest was supposedly
-     * already really delivered today. Re-composes the digest from freshly
-     * refreshed data and re-posts it under the SAME notification id
-     * ([ProactiveNotifier.notificationId] is stable per
-     * [com.simone.jarvismobile.core.proactive.ProactiveKind]) so it
-     * replaces in place rather than stacking a second notification.
-     * Deliberately does NOT go through [ProactiveGovernor.decide] again:
-     * that gate's per-day dedup exists to prevent a SECOND independent
-     * decision to deliver today's digest, which is correct for a new
-     * decision but wrong for refreshing content already shown — and
-     * deliberately does NOT re-speak it (a second spoken briefing minutes
-     * later would be intrusive, not helpful).
-     *
-     * § MICRO-PATCH 14.2.2 — REAL DEVICE ROOT CAUSE FIX, two parts:
-     * (1) this was the ONE code path in the whole app that could produce
-     * Morning-Briefing-shaped notification content with NO occurrence
-     * claim/check at all — it ASSUMED (never verified) that today's
-     * occurrence was DELIVERED. [MorningRefreshGate.shouldRefresh] now
-     * verifies that against [occurrenceStore] (a read-only [ProactiveOccurrenceStore.peek],
-     * never a competing claim) before touching the notifier at all — any
-     * other state is a pure no-op, recorded honestly as such.
-     * (2) even when genuinely DELIVERED, the notifier's `show()` call used
-     * to alert exactly like a brand-new delivery whenever the user had
-     * already dismissed the original notification (`setOnlyAlertOnce`
-     * alone does not prevent this) — this is what produced the extra,
-     * differently-worded 08:14/09:00 notifications on real device (weather
-     * had become known between refreshes, hence the emoji difference; see
-     * [MorningRefreshGate]'s doc comment for the full evidence). Now always
-     * `silent = true`: a refresh can update content but can never itself
-     * become a second alert.
-     */
-    suspend fun refreshMorningDigestNotification(now: LocalDateTime = LocalDateTime.now(), triggerSource: String = "POST_BRIEFING_REFRESH") {
-        val today = now.toLocalDate()
-        val key = ProactiveOccurrenceKey.morningDigest(today)
-        val current = runCatching { occurrenceStore.peek(key) }.getOrNull()
-        if (!MorningRefreshGate.shouldRefresh(current?.state)) {
-            recordMorningReceipt(
-                now = now, occurrenceKey = key, triggerSource = triggerSource,
-                schedulerSource = "MorningRefreshWorker", scheduledForMs = null,
-                claimOutcome = "NOT_DELIVERED_YET", stateBefore = current?.state, stateAfter = current?.state,
-                deliveryAttempted = false, deliveryResult = "SKIPPED",
-                retryReason = "refresh_gate_denied", existingOwnerTrigger = current?.owningTriggerSource,
-            )
-            return
-        }
-        val suggestion = ProactiveComposer.morningDigest(snapshot(today, now), today)
-        notifier.show(suggestion, silent = true)
-        recordMorningReceipt(
-            now = now, occurrenceKey = key, triggerSource = triggerSource,
-            schedulerSource = "MorningRefreshWorker", scheduledForMs = null,
-            claimOutcome = "ALREADY_DELIVERED", stateBefore = ProactiveOccurrenceState.DELIVERED,
-            stateAfter = ProactiveOccurrenceState.DELIVERED,
-            deliveryAttempted = true, deliveryResult = "REFRESHED_SILENT",
-        )
-    }
+    // § JARVIS Implementation Master Plan — PROACTIVITY RELIABILITY CLOSURE
+    // WORK PACKAGE A (§10, P0) — `refreshMorningDigestNotification()` is
+    // REMOVED. It was the exact P0-1 bug: the one code path in the whole
+    // app that could produce Morning-Briefing-shaped notification content
+    // with occurrence claim = NO (it only checked, never held, ownership),
+    // and even after MICRO-PATCH 14.2.2's fix, the audit found it remained
+    // the wrong shape of fix — see `docs/JARVIS_PROACTIVITY_RELIABILITY_CLOSURE_AUDIT.md`
+    // §2 for the superseded conclusion this corrects. [MorningRefreshWorker]
+    // is now DATA ONLY (§10): it refreshes weather/agenda/Health caches and
+    // never composes, notifies, or touches dispatch ownership.
 
     private fun isBirthday(text: String): Boolean = text.contains("complean", ignoreCase = true)
 

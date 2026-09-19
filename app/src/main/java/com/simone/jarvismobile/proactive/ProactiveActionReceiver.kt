@@ -28,7 +28,7 @@ class ProactiveActionReceiver : BroadcastReceiver() {
         val settings = EntryPointAccessors
             .fromApplication(context.applicationContext, ProactiveActionEntryPoint::class.java)
             .settings()
-        NotificationManagerCompat.from(context).cancel(ProactiveNotifier.notificationId(kind))
+        NotificationManagerCompat.from(context).cancel(ProactiveNotifier.tagFor(kind), ProactiveNotifier.notificationId(kind))
         val pending = goAsync()
         CoroutineScope(Dispatchers.Default).launch {
             try {

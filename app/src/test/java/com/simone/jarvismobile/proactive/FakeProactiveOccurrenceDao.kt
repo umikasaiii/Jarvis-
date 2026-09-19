@@ -30,8 +30,8 @@ class FakeProactiveOccurrenceDao : ProactiveOccurrenceDao {
         nowMs: Long,
     ): Int {
         val existing = rows[key] ?: return 0
-        val eligible = existing.state == "FAILED_RETRYABLE" ||
-            (existing.state in TAKEOVER_ELIGIBLE_STATES && existing.claimedAtMs <= staleCutoffMs)
+        val eligible = existing.state in UNCONDITIONAL_TAKEOVER_STATES ||
+            (existing.state in STALE_TAKEOVER_ELIGIBLE_STATES && existing.claimedAtMs <= staleCutoffMs)
         if (!eligible) return 0
         rows[key] = existing.copy(
             state = newState,
@@ -46,20 +46,32 @@ class FakeProactiveOccurrenceDao : ProactiveOccurrenceDao {
         return 1
     }
 
-    override suspend fun markGenerated(key: String, state: String, atMs: Long) {
-        rows[key]?.let { rows[key] = it.copy(state = state, generatedAtMs = atMs) }
+    override suspend fun markGenerated(key: String, state: String, atMs: Long, expectedClaimedAtMs: Long): Int {
+        val existing = rows[key] ?: return 0
+        if (existing.claimedAtMs != expectedClaimedAtMs) return 0
+        rows[key] = existing.copy(state = state, generatedAtMs = atMs)
+        return 1
     }
 
-    override suspend fun markDeliveryAttempt(key: String, state: String, atMs: Long) {
-        rows[key]?.let { rows[key] = it.copy(state = state, deliveryAttemptAtMs = atMs) }
+    override suspend fun markDeliveryAttempt(key: String, state: String, atMs: Long, expectedClaimedAtMs: Long): Int {
+        val existing = rows[key] ?: return 0
+        if (existing.claimedAtMs != expectedClaimedAtMs) return 0
+        rows[key] = existing.copy(state = state, deliveryAttemptAtMs = atMs)
+        return 1
     }
 
-    override suspend fun markDelivered(key: String, state: String, atMs: Long) {
-        rows[key]?.let { rows[key] = it.copy(state = state, deliveredAtMs = atMs) }
+    override suspend fun markDelivered(key: String, state: String, atMs: Long, expectedClaimedAtMs: Long): Int {
+        val existing = rows[key] ?: return 0
+        if (existing.claimedAtMs != expectedClaimedAtMs) return 0
+        rows[key] = existing.copy(state = state, deliveredAtMs = atMs)
+        return 1
     }
 
-    override suspend fun markFailed(key: String, state: String, reason: String?) {
-        rows[key]?.let { rows[key] = it.copy(state = state, terminalReason = reason) }
+    override suspend fun markFailed(key: String, state: String, reason: String?, expectedClaimedAtMs: Long): Int {
+        val existing = rows[key] ?: return 0
+        if (existing.claimedAtMs != expectedClaimedAtMs) return 0
+        rows[key] = existing.copy(state = state, terminalReason = reason)
+        return 1
     }
 
     override suspend fun deleteOlderThan(cutoffMs: Long): Int {
@@ -76,6 +88,10 @@ class FakeProactiveOccurrenceDao : ProactiveOccurrenceDao {
     fun rowOrNull(key: String): ProactiveOccurrenceEntity? = rows[key]
 
     private companion object {
-        val TAKEOVER_ELIGIBLE_STATES = setOf("CLAIMED", "GENERATED", "DELIVERY_PENDING")
+        /** § WORK PACKAGE A (P0-6) — mirrors the real Room query: `DELIVERY_PENDING` is NOT staleness-eligible, only `CLAIMED`/`GENERATED`. */
+        val STALE_TAKEOVER_ELIGIBLE_STATES = setOf("CLAIMED", "GENERATED")
+
+        /** § WORK PACKAGE A — proven no-effect states, always immediately retryable regardless of age. */
+        val UNCONDITIONAL_TAKEOVER_STATES = setOf("FAILED_RETRYABLE", "BLOCKED_PERMISSION")
     }
 }

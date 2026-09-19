@@ -55,29 +55,46 @@ interface ProactiveOccurrenceDao {
      * concurrent takeover attempts can only ever have one winner — the
      * loser's UPDATE simply matches zero rows. `retryCount` increments so
      * diagnostics can show how many times an occurrence needed reclaiming.
+     *
+     * § PROACTIVITY RELIABILITY CLOSURE WORK PACKAGE A (P0-6): `DELIVERY_PENDING`
+     * is deliberately EXCLUDED from the staleness-eligible set — an ambiguous
+     * in-flight dispatch is never blindly retried, at any age (mirrors
+     * [com.simone.jarvismobile.core.proactive.ProactiveOccurrenceReconciler.decide]).
+     * `BLOCKED_PERMISSION` joins `FAILED_RETRYABLE` in the UNCONDITIONAL set —
+     * proven no-effect, always immediately retryable regardless of age.
      */
     @Query(
         "UPDATE proactive_occurrences SET " +
             "state = :newState, triggerSource = :triggerSource, claimedAtMs = :nowMs, retryCount = retryCount + 1, " +
             "generatedAtMs = NULL, deliveryAttemptAtMs = NULL, deliveredAtMs = NULL, terminalReason = NULL " +
             "WHERE occurrenceKey = :key AND (" +
-            "  state = 'FAILED_RETRYABLE' " +
-            "  OR (state IN ('CLAIMED', 'GENERATED', 'DELIVERY_PENDING') AND claimedAtMs <= :staleCutoffMs)" +
+            "  state IN ('FAILED_RETRYABLE', 'BLOCKED_PERMISSION') " +
+            "  OR (state IN ('CLAIMED', 'GENERATED') AND claimedAtMs <= :staleCutoffMs)" +
             ")",
     )
     suspend fun tryTakeover(key: String, staleCutoffMs: Long, newState: String, triggerSource: String, nowMs: Long): Int
 
-    @Query("UPDATE proactive_occurrences SET state = :state, generatedAtMs = :atMs WHERE occurrenceKey = :key")
-    suspend fun markGenerated(key: String, state: String, atMs: Long)
+    /**
+     * § PROACTIVITY RELIABILITY CLOSURE WORK PACKAGE A (§13) — every state
+     * transition beyond the initial claim is now CAS-fenced by
+     * `expectedClaimedAtMs` (the fencing token this caller believed was
+     * current when it started working — see [tryInsertClaim]/[tryTakeover],
+     * both of which write `claimedAtMs` atomically). A stale owner whose
+     * `claimedAtMs` was superseded by a takeover writes zero rows here —
+     * the return value (affected-row count) is the caller's only honest
+     * signal of whether its write actually stuck.
+     */
+    @Query("UPDATE proactive_occurrences SET state = :state, generatedAtMs = :atMs WHERE occurrenceKey = :key AND claimedAtMs = :expectedClaimedAtMs")
+    suspend fun markGenerated(key: String, state: String, atMs: Long, expectedClaimedAtMs: Long): Int
 
-    @Query("UPDATE proactive_occurrences SET state = :state, deliveryAttemptAtMs = :atMs WHERE occurrenceKey = :key")
-    suspend fun markDeliveryAttempt(key: String, state: String, atMs: Long)
+    @Query("UPDATE proactive_occurrences SET state = :state, deliveryAttemptAtMs = :atMs WHERE occurrenceKey = :key AND claimedAtMs = :expectedClaimedAtMs")
+    suspend fun markDeliveryAttempt(key: String, state: String, atMs: Long, expectedClaimedAtMs: Long): Int
 
-    @Query("UPDATE proactive_occurrences SET state = :state, deliveredAtMs = :atMs WHERE occurrenceKey = :key")
-    suspend fun markDelivered(key: String, state: String, atMs: Long)
+    @Query("UPDATE proactive_occurrences SET state = :state, deliveredAtMs = :atMs WHERE occurrenceKey = :key AND claimedAtMs = :expectedClaimedAtMs")
+    suspend fun markDelivered(key: String, state: String, atMs: Long, expectedClaimedAtMs: Long): Int
 
-    @Query("UPDATE proactive_occurrences SET state = :state, terminalReason = :reason WHERE occurrenceKey = :key")
-    suspend fun markFailed(key: String, state: String, reason: String?)
+    @Query("UPDATE proactive_occurrences SET state = :state, terminalReason = :reason WHERE occurrenceKey = :key AND claimedAtMs = :expectedClaimedAtMs")
+    suspend fun markFailed(key: String, state: String, reason: String?, expectedClaimedAtMs: Long): Int
 
     /** Bounded retention, mirrors [com.simone.jarvismobile.automation.rule.ExecutionLogRepository.prune] — old rows carry no useful dedup value once their logical date is long past. */
     @Query("DELETE FROM proactive_occurrences WHERE claimedAtMs < :cutoffMs")

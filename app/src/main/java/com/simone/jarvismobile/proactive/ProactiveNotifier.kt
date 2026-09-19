@@ -18,6 +18,26 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
+ * § PROACTIVITY RELIABILITY CLOSURE WORK PACKAGE A (§12) — the typed,
+ * internal dispatch outcome. `Unit`-returning `show()` could never
+ * distinguish "the Android call never happened" from "it happened and
+ * threw" from "it genuinely posted" — the exact ambiguity that let
+ * [ProactiveDeliveryDispatcher] durably record a false POSTED. Never claim
+ * POSTED == the user actually saw it / heads-up shown / sound heard — this
+ * only reports what the Android API call itself returned.
+ */
+sealed interface ProactiveDispatchOutcome {
+    /** The Android `notify()` call completed without throwing. Still not a guarantee of visible delivery — see the type doc above. */
+    data object Posted : ProactiveDispatchOutcome
+
+    /** Proven no-effect: rejected BEFORE any Android call — POST_NOTIFICATIONS missing, notifications globally disabled, or the channel is blocked/disabled. Always safe to retry once the condition may have changed. */
+    data object BlockedPermission : ProactiveDispatchOutcome
+
+    /** The Android call was made and threw — genuinely unknown whether anything was posted. Never a blind retry. */
+    data class ApiThrew(val exceptionClass: String) : ProactiveDispatchOutcome
+}
+
+/**
  * Posts a proactive suggestion as one discreet "Suggerimenti" notification. One
  * id per kind, so muting or a repeat replaces rather than stacks.
  *
@@ -36,6 +56,14 @@ class ProactiveNotifier @Inject constructor(
     @ApplicationContext private val context: Context,
 ) {
     /**
+     * § PROACTIVITY RELIABILITY CLOSURE WORK PACKAGE A (§12) — the single
+     * internal dispatch operation. Replaces the old public `Unit`-returning
+     * `show()`: the only two real production call sites are
+     * [ProactiveDeliveryDispatcher] (every occurrence-backed kind —
+     * MORNING_DIGEST/EVENING_DIGEST/WEATHER_ALERT/BATTERY_BEFORE_ALARM) and
+     * `ProactiveManager.simulateWeatherAlert()`'s debug preview path (its
+     * own distinct tag/id range, never production occurrence ownership).
+     *
      * [silent] (§ JARVIS Implementation Master Plan MICRO-PATCH 14.2.2) —
      * `true` for a post-delivery CONTENT REFRESH only (never a real new
      * delivery): `setOnlyAlertOnce` alone does NOT guarantee silence — it
@@ -43,20 +71,30 @@ class ProactiveNotifier @Inject constructor(
      * STILL present in the shade; once the user has dismissed/opened it,
      * Android treats the next `notify()` on the same id as a brand-new
      * alert (sound/vibration/heads-up), which is the exact real-device
-     * root cause of the extra 08:14/09:00 "briefings" this patch fixes
-     * (see [com.simone.jarvismobile.core.proactive.MorningRefreshGate]'s
-     * doc comment for the full evidence trail). `setSilent(true)`
-     * unconditionally suppresses alerting for THIS post regardless of
-     * dismissal state — the real guarantee a refresh needs. Every genuine
-     * new delivery keeps `silent = false` (default), unchanged.
+     * root cause of the extra 08:14/09:00 "briefings" a prior patch fixed.
+     * `setSilent(true)` unconditionally suppresses alerting for THIS post
+     * regardless of dismissal state — the real guarantee a refresh needs.
+     * Every genuine new delivery keeps `silent = false` (default), unchanged.
+     *
+     * [tag] (§17) — a stable, non-null feature namespace
+     * (`jarvis.proactive.morning`/`.evening`/`.weather`, or the caller's
+     * own kind-derived default). Notification ids stay explicit
+     * ([notificationId], never derived from enum ordinal drift) — the tag
+     * exists so a legacy untagged notification for the same [ProactiveKind]
+     * never visually stacks with a new tagged one; callers with a legacy
+     * delivered occurrence should suppress re-posting under the new tag at
+     * the occurrence layer, not rely on tag collision here.
      */
-    fun show(suggestion: ProactiveSuggestion, silent: Boolean = false) {
+    fun dispatch(suggestion: ProactiveSuggestion, silent: Boolean = false, tag: String? = null): ProactiveDispatchOutcome {
         if (
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED
         ) {
-            return
+            return ProactiveDispatchOutcome.BlockedPermission
+        }
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) {
+            return ProactiveDispatchOutcome.BlockedPermission
         }
         val open = PendingIntent.getActivity(
             context,
@@ -94,36 +132,41 @@ class ProactiveNotifier @Inject constructor(
             .setPriority(if (isDigest) NotificationCompat.PRIORITY_DEFAULT else NotificationCompat.PRIORITY_LOW)
             .setCategory(NotificationCompat.CATEGORY_RECOMMENDATION)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
-            // § bug reale segnalato dall'utente: il briefing mattutino delle
-            // 8:00 è stato seguito da un secondo avviso "Briefing" alle 9:00,
-            // dopo aver collegato l'orologio alle 8:30 — causa reale, non
-            // ipotizzata: `ProactiveManager.refreshMorningDigestNotification()`
-            // (§ FASE 2A.8 §G, +10min/+60min post-briefing refresh) ripubblica
-            // DELIBERATAMENTE la stessa notifica (stesso id, mai una seconda)
-            // per aggiornarne il contenuto con dati Health nel frattempo
-            // sincronizzati — ma senza `setOnlyAlertOnce`, `notify()` con lo
-            // stesso id fa comunque suonare/vibrare/apparire di nuovo la
-            // notifica su un canale `IMPORTANCE_HIGH` come CHANNEL_REMINDERS,
-            // che è indistinguibile per l'utente da un secondo messaggio
-            // vero. Il commento di `refreshMorningDigestNotification()`
-            // dichiarava già l'intento ("si sostituisce sul posto... mai un
-            // secondo messaggio") ma il costruttore della notifica non lo
-            // garantiva. Con questo flag, un `notify()` sulla stessa notifica
-            // ancora presente nella shade aggiorna il contenuto in silenzio;
-            // se l'utente l'ha già chiusa nel frattempo, Android la tratta
-            // comunque come nuova e avvisa di nuovo — comportamento corretto,
-            // non un bug residuo.
+            // `setOnlyAlertOnce` alone was historically not enough to keep a
+            // legitimate re-post silent once the user had already dismissed
+            // the original — see [dispatch]'s own doc comment for the full
+            // history and why [silent]/`setSilent` is the real guarantee.
             .setOnlyAlertOnce(true)
             .setSilent(silent)
         if (!isDigest) builder.addAction(0, "Non avvisarmi più di questo", mute)
         val notification = builder.build()
-        runCatching {
-            NotificationManagerCompat.from(context).notify(notificationId(suggestion.kind), notification)
-        }
+        val effectiveTag = tag ?: tagFor(suggestion.kind)
+        return runCatching {
+            NotificationManagerCompat.from(context).notify(effectiveTag, notificationId(suggestion.kind), notification)
+            ProactiveDispatchOutcome.Posted
+        }.getOrElse { e -> ProactiveDispatchOutcome.ApiThrew(e.javaClass.simpleName) }
     }
 
     companion object {
         private const val NOTIFICATION_BASE = 7_200
         fun notificationId(kind: ProactiveKind) = NOTIFICATION_BASE + kind.ordinal
+
+        /** § §17 — stable non-null feature tags for proactive production output. Ids stay explicit ([notificationId]); tags exist only to namespace the feature, never as a second id scheme. */
+        const val TAG_MORNING = "jarvis.proactive.morning"
+        const val TAG_EVENING = "jarvis.proactive.evening"
+        const val TAG_WEATHER = "jarvis.proactive.weather"
+        const val TAG_SUGGESTION = "jarvis.proactive.suggestion"
+
+        /** § §18 — debug/diagnostics isolation: weather simulation previews use a distinct tag+id range, never production occurrence ownership. */
+        const val TAG_DEBUG = "jarvis.proactive.debug"
+        private const val DEBUG_NOTIFICATION_BASE = 7_300
+        fun debugNotificationId(kind: ProactiveKind) = DEBUG_NOTIFICATION_BASE + kind.ordinal
+
+        fun tagFor(kind: ProactiveKind): String = when (kind) {
+            ProactiveKind.MORNING_DIGEST -> TAG_MORNING
+            ProactiveKind.EVENING_DIGEST -> TAG_EVENING
+            ProactiveKind.WEATHER_ALERT -> TAG_WEATHER
+            ProactiveKind.BATTERY_BEFORE_ALARM -> TAG_SUGGESTION
+        }
     }
 }
