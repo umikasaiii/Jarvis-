@@ -1714,16 +1714,21 @@ provider reale) → la stessa validazione (`WeatherAlertFreshnessPolicyV2`) →
 `WeatherAlertPolicyV2` → risultato solo-debug. Mai l'occorrenza/budget/
 namespace di notifica di produzione (chiave `WEATHER_ALERT_DEBUG:`
 invariata da Work Package D, isolamento già garantito da Work Package A §18);
-mai un `ForecastDecisionReceipt` reale scritto da questo percorso (§32 di
-Work Package D resta esplicitamente non chiuso da questo giro — una scelta
-di scope dichiarata, non un difetto nascosto: il simulatore prova
-rendering/occorrenza/dispatch, non la vera catena receipt). I tre bottoni
-diagnostici (CLEAR/RAIN/THUNDERSTORM) preservano il comportamento pre-D.1
-esatto (tracciato a mano contro le regole della policy v2, incluso il
-requisito "mai un codice temporale daily da solo" — la fixture THUNDERSTORM
-sintetizza anche una riga `HourlyPrecipitationEvidence` allineata). Nessun
-percorso di produzione torna mai a v1; v1 resta nel codice solo per
-replay/confronto storico (§34 di Work Package D, invariato).
+il simulatore scrive anche un `ForecastDecisionReceipt` genuino
+(`factsSource="synthetic_debug_simulation"`, `occurrenceKey=null` — mai
+collegato a una riga `WEATHER_ALERT:<data>` di produzione,
+`notificationNamespace=ProactiveNotifier.TAG_DEBUG`), chiudendo §32 di
+Work Package D ("uno shadow evaluation può scrivere un receipt diagnostico
+chiaramente marcato ma mai diventare autorità di consegna") — verificato
+leggendo il codice reale (`receiptRepository` è un vero campo del
+costruttore di `ProactiveManager`, usato sia dal percorso di produzione
+sia da questo). I tre bottoni diagnostici (CLEAR/RAIN/THUNDERSTORM)
+preservano il comportamento pre-D.1 esatto (tracciato a mano contro le
+regole della policy v2, incluso il requisito "mai un codice temporale
+daily da solo" — la fixture THUNDERSTORM sintetizza anche una riga
+`HourlyPrecipitationEvidence` allineata). Nessun percorso di produzione
+torna mai a v1; v1 resta nel codice solo per replay/confronto storico
+(§34 di Work Package D, invariato).
 
 **§5-6 — harness di replay minimo e deterministico, per Work Package E**:
 nuovo `core/weather/replay/WeatherAlertReplay.kt` (puro, `:core`) — chiama
@@ -1827,11 +1832,10 @@ METEOROLOGICAL QUALITY VERIFIED  ❌
 PRODUCTION READY          ❌
 ```
 
-**Deliberatamente NON fatto, dichiarato non nascosto**: nessun receipt reale
-scritto dal debug simulator (§4, scelta di scope); nessun pruning periodico
-agganciato a un secondo scheduler oltre a `ProactiveWorker` (§3, l'owner
-scelto è già quello corretto); nessuna UI/pannello diagnostico per i receipt
-o per il replay harness (nessuna nuova schermata Diagnostica); nessun
+**Deliberatamente NON fatto, dichiarato non nascosto**: nessun pruning
+periodico agganciato a un secondo scheduler oltre a `ProactiveWorker` (§3,
+l'owner scelto è già quello corretto); nessuna UI/pannello diagnostico per
+i receipt o per il replay harness (nessuna nuova schermata Diagnostica); nessun
 round-trip Room-reale per W10/W11 oltre al fake DAO in-memory (stesso limite
 Robolectric-assente di ogni altra modifica `app/` di questo progetto). Work
 Package E (validazione meteorologica/campagna 180 giorni, criteri di
