@@ -4,7 +4,7 @@
 
 - **Project:** JARVIS
 - **Document role:** project map / architectural control plane / living source of project intent
-- **Version:** 1.6
+- **Version:** 1.7
 - **Generated:** 2026-09-19
 - **Primary language:** Italiano
 - **Status:** ACTIVE — living document
@@ -1505,6 +1505,177 @@ budget/governor SharedPreferences→Room (ancora deferito), scheduling
 (`ProactiveScheduler`/`SourceAlarmReconciler`/`MorningWindowPolicy`/
 `StaleIntentValidator`/`ExactAlarms` — invariati). PASS 14B resta PAUSED,
 `jarvis-core`/`jarvis-protocol` restano FROZEN (ADR-013).
+
+## 30.13 PROACTIVITY RELIABILITY CLOSURE — WORK PACKAGE D: WEATHER PROOF / FORECAST CONFIDENCE
+
+Implementa il pacchetto D della spec Astra (§0-§44) — l'ultimo dei quattro
+pacchetti di chiusura proattività, sui difetti architetturali del meteo
+proattivo mai coperti da A/B/C. Work Package A/B/C restano interamente
+preservati — nessun file di `ProactiveDeliveryDispatcher`/
+`ProactiveOccurrenceStore`/`ProactiveScheduler`/`ProactiveComposer`/
+`ProactiveDigestSnapshot`/`ContextEngine.todayForecastFacts` toccato.
+
+**Difetti architetturali confermati reali per lettura diretta del codice
+(§1)**: `OpenMeteoWeatherSource.fetchOrThrow()` assumeva `codes.getOrNull(0)`
+= oggi, `getOrNull(1)` = domani (§7 — nessun `daily.time` richiesto, quindi
+nessuna verifica reale della data); `WeatherCategory.fromWmoCode()` collassa
+esplicitamente (nel proprio commento) i codici neve 71/73/75/77/85/86 in
+RAIN (§9); un singolo `@Volatile lastErrorType` condiviso da tutti i fetch
+pre-esistenti (§10); nessun receipt persistente di alcuna decisione meteo
+esisteva (§22).
+
+**Fondazione dati strutturata (§6-§11), `:core` puro**:
+`core/weather/ForecastFacts.kt` (nuovo) — `ForecastFacts` (identità/
+provenienza: provider, `locationRevision` opaco, `fetchedAt`, target date,
+timezone; fatti: raw WMO code, categoria proiettata, precip sum/rain/
+showers/snowfall, probabilità/ore), `HourlyPrecipitationEvidence`,
+`WmoPrecipitationKind` (classificatore RAIN/SNOW/MIXED/NONE/UNKNOWN dal
+codice raw — mai la `WeatherCategory` lossy, chiude §9 senza toccare quella
+classe, usata anche dal rendering mattina/sera di Work Package C),
+`ForecastDateMatcher`/`ForecastFactsBuilder` (data esplicita, mai
+posizionale — chiude §7), `ForecastFactsHash` (SHA-256, identità/replay).
+`core/weather/WeatherRequestOutcome.kt` (nuovo) — outcome request-scoped
+tipizzato (8 `WeatherFailureReason`), mai lo stato condiviso (§10) — additivo,
+i quattro metodi pre-esistenti di `OpenMeteoWeatherSource` restano
+invariati sul vecchio `lastErrorType`.
+
+**Policy v2 (§14-§19), `:core` puro, versionata**:
+`core/weather/WeatherAlertPolicyV2.kt` — `WeatherDecisionReason` (8 valori
+espliciti), `WeatherAlertThresholdsV2` (P≥70%/L≥1.0mm o L≥0.5mm+H≥2h,
+soglia temporale 0.2mm, accumulo pesante 10mm — CANDIDATE PRODUCT
+THRESHOLDS PENDING QUALIFICATION, mai validate meteorologicamente), riusa
+`WeatherHazard` esistente (v1) come tipo di output — nessuna modifica a
+`ProactiveComposer.weatherAlert`/`ProactiveOccurrenceKey.weatherAlert`
+(§2: nessun secondo proprietario di notifica). Neve/mista non producono
+mai un alert pioggia (§9). Temporale daily-code mai da solo — richiede
+evidenza oraria allineata per data, altrimenti `UNKNOWN_STORM_CONFIDENCE`
+con eventuale fallback al gate pioggia generico (§17/§18).
+`core/weather/WeatherAlertFreshnessPolicyV2.kt` — target-date/location-
+revision/unità/clock-skew/3h max, distinto dalla freshness UI a 6h
+esistente (`WeatherFreshnessPolicy`, invariata).
+
+**Provider adapter (§6), estensione additiva**: `OpenMeteoWeatherSource`
+guadagna `fetchDatedDailyForecast()`/`fetchAlignedHourlyEvidence()` (nuovi
+metodi di interfaccia, request-scoped `WeatherRequestOutcome`, `catch
+(CancellationException) { throw e }` prima di ogni catch generico — 4 punti,
+convenzione `util/RunCancellable.kt`) — i quattro metodi pre-esistenti
+(`fetchRain`/`fetchWeeklyOutlook`/`fetchHourlyForecast`/`fetchExtendedDay`)
+NON toccati.
+
+**`WeatherManager` (§11)**: `fetchDatedTomorrowForecast()`/
+`fetchAlignedHourlyEvidenceForTomorrow()` (nuovi, riusano `resolvePoint()`
+esistente) — bypassano deliberatamente `ContextEngine`: sono la fonte per
+la NUOVA decisione v2, mai una lettura della proiezione
+`rainTomorrow`/`tomorrowWeather` di `ContextEngine`, che resta quella che
+`RainDecision`/la condizione automazione `RainTomorrow` continuano a
+leggere invariata (§21 — due policy, la stessa fonte canonica Open-Meteo,
+non due sistemi paralleli).
+
+**`ForecastDecisionReceipt` (§22-§29), deviazione dichiarata da §33**:
+database Room SEPARATO e dedicato (`weather_decisions.db`,
+`WeatherDecisionDatabase`, versione 1, `fallbackToDestructiveMigration` —
+ogni riga è un'evaluazione re-derivabile, mai dato solo-utente) invece di
+una tabella su `JarvisDatabase` (che resterebbe 14, invariato — confermato
+prima di procedere, come richiesto da §33). Motivazione: §29 richiede che i
+receipt restino locali ed esclusi dai backup esportati —
+`BackupRepository.collectSources()` spazza `db/` per un elenco ESPLICITO
+di nomi file (`jarvis.db`/`-wal`/`-shm`), mai una scansione generica di
+cartella — un secondo file con nome diverso è quindi escluso dal backup
+PER COSTRUZIONE, senza scrivere alcun codice di redazione né toccare
+`BackupRepository`. `ForecastDecisionReceiptEntity` (§23-§27: id/schema/
+build/policy/threshold-config/facts-hash; evaluatedAtUtc/target-date/
+timezone/fetchedAt/età/provider-run-timestamp — MAI inventato, Open-Meteo
+non lo fornisce — provider-id/endpoint; location revision opaca/mode/match
+— MAI lat/lon; fatti meteo usati; date-match/freshness-result/request-
+status/source; hazard/reason/candidate-created/fallback-used/hourly-
+evidence-count; occurrence-key/trigger-source/notification-namespace/
+dispatch-attempt) — le §27 "outcome events append-only" sono un campo JSON
+BOUNDED sulla stessa riga immutabile (semplificazione dichiarata: un
+receipt è già uno-per-valutazione e immutabile, mai una riscrittura di
+altri campi) invece di una seconda tabella SQL letterale.
+`ForecastDecisionReceiptRepository.record()` — §22 "receipt write failure →
+NO ALERT DISPATCH" applicato per davvero: un candidato è restituito da
+`ProactiveManager.evaluateWeatherAlert()` SOLO se `record()` ha restituito
+un id non-null; retention §28 (90 giorni AND max 4096 righe, `prune()`
+esposto — non ancora agganciato a uno scheduler periodico, stesso stato
+attuale non-collegato di `ProactiveOccurrenceStore.pruneOld()`/
+`TriggerEvidenceStore.pruneOld()` preesistenti, un gap preesistente non
+introdotto qui).
+
+**`ProactiveManager.evaluateWeatherAlert()` riscritto (§30-§32)**: il
+pipeline production ora è STRUCTURED DATA (`fetchDatedTomorrowForecast`) →
+VALIDATION (`WeatherAlertFreshnessPolicyV2`) → PURE VERSIONED POLICY
+(`WeatherAlertPolicyV2`, con evidenza oraria fetchata SOLO se il codice
+daily è un codice temporale — §6 "mai un campo non richiesto") → RECEIPT
+(`ForecastDecisionReceiptRepository.record`, sempre, anche sui rami
+no-alert/unknown/disabled) → l'INVARIATA claim/dispatch machinery di Work
+Package A/B (`ProactiveOccurrenceKey.weatherAlert`, `occurrenceStore.claim`,
+`ProactiveDeliveryDispatcher`). `WeatherAlertPolicy` v1 NON è più chiamato
+da alcun percorso di produzione — resta nel codice solo per migrazione/
+replay/confronto storico (§34), mai due proprietari di notifica in
+parallelo. Gli outcome event append-only (`CLAIMED` alla creazione del
+candidato, `POSTED`/`PREFLIGHT_BLOCKED`/`UNKNOWN_EFFECT` al vero esito di
+dispatch) sono scritti sulla STESSA riga receipt.
+
+**Debug/shadow (§32), limite dichiarato non chiuso in questo giro**:
+`simulateWeatherAlert()` (debug-only, chiave `WEATHER_ALERT_DEBUG:`,
+budget/notifica di produzione mai toccati — invariante già garantito da
+Work Package A §18) continua a esercitare `WeatherAlertPolicy` v1
+(hazard da categoria+mm, non da codice WMO raw) e NON scrive ancora un
+receipt — una scelta di scope esplicita per limiti di tempo, non un difetto
+nascosto: il simulatore prova solo il rendering/occorrenza/dispatch, mai
+la vera policy v2 di produzione, quindi non introduce un secondo percorso
+decisionale reale.
+
+**Migrazione (§33)**: confermato che nessuna migrazione di `JarvisDatabase`
+è necessaria — la tabella receipt vive nel database separato sopra. Le
+occorrenze `WEATHER_ALERT:<data>` v1 pre-esistenti restano l'unico formato
+di chiave (`ProactiveOccurrenceKey.weatherAlert`, mai cambiato), quindi
+continuano a sopprimere correttamente una doppia notifica per lo stesso
+target anche sotto il nuovo percorso v2 — nessun codice di compatibilità
+aggiuntivo necessario.
+
+```text
+PROACTIVITY CLOSURE D — WEATHER PROOF
+CODE PRESENT             ✅
+AUTOMATED TESTED         ✅ (core — W01/W02/W03/W04/W05/W06/W07/W09 coperti
+                             dai 46 test :core già esistenti su ForecastFacts/
+                             WeatherAlertPolicyV2/WeatherAlertFreshnessPolicyV2;
+                             W08/W10/W11/W12 verificati per costruzione, non
+                             da un nuovo test eseguito — vedi onestà sotto)
+CI VERIFIED               ⏳ (questo push)
+DEVICE VERIFIED          ❌
+METEOROLOGICAL QUALITY VERIFIED  ❌
+PRODUCTION READY          ❌
+```
+
+**Onestà sui test (W08/W10/W11/W12)**: `WeatherRequestOutcome<T>` è
+request-scoped per costruzione (nessuno stato mutabile condiviso fra due
+chiamate concorrenti — W08 garantito strutturalmente, non da un test di
+concorrenza dedicato in questo giro). W10 (valutazioni multiple → receipt
+multipli, una sola occorrenza, nessun secondo dispatch) è garantito
+dall'invariato claim atomico Room di Work Package A/14.1
+(`ProactiveOccurrenceStore`) più il fatto che ogni receipt è un nuovo INSERT
+— nessun nuovo test `app/` Room-based scritto qui (stesso limite
+Robolectric-assente già documentato). W11 (replay determinism) è garantito
+dal fatto che `WeatherAlertPolicyV2.evaluate`/
+`WeatherAlertFreshnessPolicyV2.evaluate` sono già funzioni pure/
+side-effect-free (stessa proprietà già provata dai loro test esistenti) —
+nessun harness di replay letterale (§35) è stato costruito in questo giro,
+gap dichiarato per Work Package E. W12 (fallimento persistenza/retention/
+backup) è verificato architetturalmente (database separato mai spazzato da
+`BackupRepository`, confermato via lettura diretta di `collectSources()`)
+ma non da un test Room in esecuzione in questo ambiente.
+
+**Deliberatamente NON fatto**: harness di replay letterale (§35); UI/pannello
+diagnostico per i receipt (nessuna nuova schermata Diagnostica aggiunta —
+`WeatherAlertDiagnostic` esistente esteso con `receiptId` ma non ancora
+mostrato); pruning periodico agganciato a uno scheduler; migrazione del
+simulatore debug a v2. Work Package E (validazione meteorologica/campagna
+180 giorni) resta interamente APERTO — nessuna dichiarazione di qualità
+meteorologica fatta qui, né potrebbe esserlo senza dati reali di verifica.
+`jarvis-core`/`jarvis-protocol` restano FROZEN (ADR-013), PASS 14B resta
+PAUSED, nessun file toccato in nessuno dei due repository esterni.
 
 # 31. MICRO-PATCH 14.2.1 — CONFIGURABLE BRIEFING TIME
 
@@ -3674,6 +3845,35 @@ Un micro-modello è `PRODUCTION READY` solo se:
 
 # 129. MASTER CHANGELOG
 
+## v1.7 — 2026-09-19
+
+Aggiornamento per **PROACTIVITY RELIABILITY CLOSURE — WORK PACKAGE D:
+WEATHER PROOF / FORECAST CONFIDENCE** (nuovo §30.13):
+
+- fondazione dati strutturata `:core` (`ForecastFacts`/
+  `WeatherRequestOutcome`/`WmoPrecipitationKind`/`ForecastFactsHash`,
+  46 test già verdi in sessione precedente);
+- `WeatherAlertPolicyV2`/`WeatherAlertFreshnessPolicyV2` (`:core`, puri,
+  versionati, CANDIDATE THRESHOLDS PENDING QUALIFICATION);
+- `OpenMeteoWeatherSource` esteso con due metodi request-scoped additivi
+  (i quattro metodi pre-esistenti invariati);
+- `WeatherManager.fetchDatedTomorrowForecast()`/
+  `fetchAlignedHourlyEvidenceForTomorrow()` (bypassano `ContextEngine`
+  deliberatamente per la nuova decisione, §21 preservato);
+- `ForecastDecisionReceipt` — database Room SEPARATO (`weather_decisions.db`)
+  per rispettare §29 (esclusione backup) per costruzione, deviazione
+  dichiarata da §33's assunzione di una migrazione condivisa;
+- `ProactiveManager.evaluateWeatherAlert()` riscritto attorno al pipeline
+  STRUCTURED DATA → VALIDATION → POLICY v2 → RECEIPT → occorrenza/dispatch
+  INVARIATI di Work Package A/B; `WeatherAlertPolicy` v1 non più chiamato
+  da produzione (resta per replay/migrazione, §34);
+- Work Package A/B/C interamente preservati (nessun file toccato);
+  `jarvis-core`/`jarvis-protocol` FROZEN, PASS 14B PAUSED.
+
+Decisione chiave: **DEVICE VERIFIED e METEOROLOGICAL QUALITY VERIFIED
+restano ❌ — Work Package D chiude codice/CI, non qualificazione
+meteorologica (Work Package E, non iniziato).**
+
 ## v1.6 — 2026-09-19
 
 **Work Package C — Factual Morning/Evening Presentation** implementato
@@ -3846,4 +4046,4 @@ Decisione chiave:
 **JARVIS adotta il pattern “specialized reflexes → semantic intelligence → planner/BRAIN escalation”, ma resta vendor-agnostic e non trasforma i micro-modelli in un secondo sistema semantico.**
 
 
-**END OF JARVIS MASTER ARCHITECTURE v1.6**
+**END OF JARVIS MASTER ARCHITECTURE v1.7**
