@@ -9,14 +9,19 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import com.simone.jarvismobile.automation.rule.PlaceRepository
 import com.simone.jarvismobile.context.ContextEngine
+import com.simone.jarvismobile.core.weather.ForecastFacts
+import com.simone.jarvismobile.core.weather.HourlyPrecipitationEvidence
 import com.simone.jarvismobile.core.weather.RainDecision
+import com.simone.jarvismobile.core.weather.WeatherFailureReason
 import com.simone.jarvismobile.core.weather.WeatherLocationKey
+import com.simone.jarvismobile.core.weather.WeatherRequestOutcome
 import com.simone.jarvismobile.data.SettingsRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import java.time.LocalDate
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -233,6 +238,43 @@ class WeatherManager @Inject constructor(
             _fetchDiagnostic.value = _fetchDiagnostic.value?.copy(lastErrorType = source.lastFetchErrorType())
         }
         return day
+    }
+
+    /**
+     * § JARVIS Implementation Master Plan — PROACTIVITY RELIABILITY CLOSURE
+     * WORK PACKAGE D §6/§7/§8/§10/§11. Tomorrow's dated, location-revisioned
+     * [ForecastFacts] for [com.simone.jarvismobile.core.weather.WeatherAlertPolicyV2] —
+     * explicit date matching (never a positional array index, §7's exact
+     * defect), the raw WMO code preserved (§9), a request-scoped outcome
+     * (never [fetchRain]'s shared `lastErrorType`, §10). Deliberately
+     * bypasses [ContextEngine]: this is the SOURCE data feeding the v2
+     * receipt-backed decision, never a read of ContextEngine's own,
+     * separately-sourced `rainTomorrow`/`tomorrowWeather` projection — §21
+     * keeps [RainDecision]/the `RainTomorrow` automation condition reading
+     * that one, unchanged.
+     */
+    @SuppressLint("MissingPermission")
+    suspend fun fetchDatedTomorrowForecast(): WeatherRequestOutcome<ForecastFacts> {
+        if (!settings.weatherEnabled.first()) return WeatherRequestOutcome.Failure(WeatherFailureReason.DISABLED)
+        val resolved = resolvePoint() ?: return WeatherRequestOutcome.Failure(WeatherFailureReason.NO_LOCATION)
+        val targetDate = LocalDate.now().plusDays(1)
+        return source.fetchDatedDailyForecast(resolved.latitude, resolved.longitude, targetDate, resolved.locationKey.asCacheTag())
+    }
+
+    /**
+     * § §17/§18 — date-aligned hourly precipitation evidence for TOMORROW,
+     * fetched only to confirm/deny a daily storm code — the caller
+     * ([com.simone.jarvismobile.proactive.ProactiveManager]) only calls this
+     * when [fetchDatedTomorrowForecast] actually returned a storm-coded day,
+     * never prefetched unconditionally (§6 — "do not request unrelated
+     * fields").
+     */
+    @SuppressLint("MissingPermission")
+    suspend fun fetchAlignedHourlyEvidenceForTomorrow(): WeatherRequestOutcome<List<HourlyPrecipitationEvidence>> {
+        if (!settings.weatherEnabled.first()) return WeatherRequestOutcome.Failure(WeatherFailureReason.DISABLED)
+        val resolved = resolvePoint() ?: return WeatherRequestOutcome.Failure(WeatherFailureReason.NO_LOCATION)
+        val targetDate = LocalDate.now().plusDays(1)
+        return source.fetchAlignedHourlyEvidence(resolved.latitude, resolved.longitude, targetDate)
     }
 
     /**

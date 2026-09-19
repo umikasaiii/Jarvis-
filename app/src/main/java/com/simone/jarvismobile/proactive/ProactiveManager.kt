@@ -27,13 +27,21 @@ import com.simone.jarvismobile.core.proactive.ProactiveSuggestion
 import com.simone.jarvismobile.core.proactive.ProactiveTriggerSource
 import com.simone.jarvismobile.core.proactive.ProactiveWeatherFacts
 import com.simone.jarvismobile.core.tools.ToolOutcomeStatus
+import com.simone.jarvismobile.core.weather.ForecastEligibilityReason
+import com.simone.jarvismobile.core.weather.WeatherAlertDecisionV2
 import com.simone.jarvismobile.core.weather.WeatherAlertEvaluation
+import com.simone.jarvismobile.core.weather.WeatherAlertFreshnessPolicyV2
 import com.simone.jarvismobile.core.weather.WeatherAlertPolicy
+import com.simone.jarvismobile.core.weather.WeatherAlertPolicyV2
 import com.simone.jarvismobile.core.weather.WeatherCategory
+import com.simone.jarvismobile.core.weather.WeatherFailureReason
 import com.simone.jarvismobile.core.weather.WeatherHazard
+import com.simone.jarvismobile.core.weather.WeatherRequestOutcome
+import com.simone.jarvismobile.core.weather.WmoPrecipitationKind
 import com.simone.jarvismobile.data.SettingsRepository
 import com.simone.jarvismobile.health.HealthConnectManager
 import com.simone.jarvismobile.weather.WeatherManager
+import com.simone.jarvismobile.weather.receipt.ForecastDecisionReceiptRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -71,6 +79,7 @@ class ProactiveManager @Inject constructor(
     private val weather: WeatherManager,
     private val health: HealthConnectManager,
     private val morningTriggerScheduler: MorningTriggerScheduler,
+    private val receiptRepository: ForecastDecisionReceiptRepository,
 ) {
     /**
      * Called periodically by the worker as a coarse fallback (see
@@ -149,6 +158,15 @@ class ProactiveManager @Inject constructor(
         val governorOutcome: String?,
         val deliveryAttempted: Boolean,
         val delivered: Boolean,
+        /**
+         * § WORK PACKAGE D §22/§27 — the
+         * [com.simone.jarvismobile.weather.receipt.ForecastDecisionReceiptEntity.receiptId]
+         * this evaluation committed, if the write succeeded — null when the
+         * evaluation never reached a real decision (disabled/no location) or
+         * the receipt write itself failed (§22: a failed write never blocks
+         * the DIAGNOSTIC, only ever blocks a DISPATCH).
+         */
+        val receiptId: String? = null,
     )
 
     private val _weatherAlertDiagnostic = MutableStateFlow<WeatherAlertDiagnostic?>(null)
@@ -502,29 +520,60 @@ class ProactiveManager @Inject constructor(
         }
     }
 
-    private fun updateWeatherAlertOutcome(governorOutcome: String, deliveryAttempted: Boolean, delivered: Boolean) {
-        _weatherAlertDiagnostic.value = _weatherAlertDiagnostic.value?.copy(
+    /**
+     * § WORK PACKAGE D §27 — besides updating the in-memory diagnostic, also
+     * appends the matching append-only outcome event to the receipt this
+     * evaluation already committed (§22), where one is actually defined —
+     * never a fabricated `USER_SEEN`, and never an event for a purely
+     * internal governor "suppressed" outcome (not part of the
+     * CLAIMED/PREFLIGHT_BLOCKED/DISPATCH_INTENT/POSTED/UNKNOWN_EFFECT
+     * vocabulary those events are scoped to).
+     */
+    private suspend fun updateWeatherAlertOutcome(governorOutcome: String, deliveryAttempted: Boolean, delivered: Boolean) {
+        val diagnostic = _weatherAlertDiagnostic.value ?: return
+        _weatherAlertDiagnostic.value = diagnostic.copy(
             governorOutcome = governorOutcome,
             deliveryAttempted = deliveryAttempted,
             delivered = delivered,
         )
+        val receiptId = diagnostic.receiptId ?: return
+        val event = when {
+            governorOutcome == "delivered" -> "POSTED"
+            governorOutcome == "blocked_permission" -> "PREFLIGHT_BLOCKED"
+            governorOutcome.startsWith("unknown_effect") -> "UNKNOWN_EFFECT"
+            else -> return
+        }
+        receiptRepository.appendOutcomeEvent(receiptId, event)
     }
 
     private data class WeatherAlertEvalResult(val suggestion: ProactiveSuggestion, val occurrenceKey: String)
 
     /**
-     * § JARVIS Implementation Master Plan — PASSAGGIO 14.2. Structured data
-     * only, reusing the same [com.simone.jarvismobile.core.tools.ToolOutcomeStatus]
-     * vocabulary the rest of this app's tool evidence already uses — never
-     * a keyword/regex search over generated text, never an LLM judgement.
-     * Always publishes a [WeatherAlertDiagnostic] before returning, even on
-     * every early-out branch, so a future missed alert is explainable from
-     * the diagnostic alone. Returns non-null ONLY when a real, atomically
-     * claimed candidate should be added to this run's suggestion list —
-     * every other outcome (data unavailable/stale/source failure, no
-     * hazard, NO_ALERT, or the occurrence already owned by an earlier
-     * evaluation today) is a pure no-op: no candidate, no claim held, no
-     * notification.
+     * § JARVIS Implementation Master Plan — PROACTIVITY RELIABILITY CLOSURE
+     * WORK PACKAGE D. The production weather-alert pipeline, rewritten
+     * around the STRUCTURED DATA → VALIDATION → PURE VERSIONED POLICY →
+     * RECEIPT → EXISTING OCCURRENCE/DISPATCH contract (§1): a dated,
+     * explicitly-matched, raw-WMO-code-preserving
+     * [com.simone.jarvismobile.core.weather.ForecastFacts] fetch
+     * ([WeatherManager.fetchDatedTomorrowForecast], §6-§9), a real
+     * freshness/date/location validation
+     * ([com.simone.jarvismobile.core.weather.WeatherAlertFreshnessPolicyV2],
+     * §13), a pure versioned hazard decision
+     * ([com.simone.jarvismobile.core.weather.WeatherAlertPolicyV2], §14-§19
+     * — CANDIDATE THRESHOLDS PENDING QUALIFICATION, never claimed
+     * meteorologically validated), and a committed receipt
+     * ([ForecastDecisionReceiptRepository], §22) BEFORE the existing
+     * occurrence-claim/dispatch machinery (§2/§31, entirely unchanged) is
+     * ever reached. §32/§34: this is the ONE production decision path —
+     * [com.simone.jarvismobile.core.weather.WeatherAlertPolicy] (v1) is
+     * never called from here, kept only for migration/replay comparison.
+     *
+     * §22's "receipt write failure → NO ALERT DISPATCH" is enforced
+     * directly: a candidate is only ever returned when [ForecastDecisionReceiptRepository.record]
+     * returned a non-null id. Always publishes a [WeatherAlertDiagnostic]
+     * before returning, even on every early-out branch — never invents
+     * "tomorrow it will rain" (or "it will not") from bad/stale/mismatched
+     * data.
      */
     private suspend fun evaluateWeatherAlert(
         now: LocalDateTime,
@@ -532,49 +581,101 @@ class ProactiveManager @Inject constructor(
         triggerSource: String,
         nowMs: Long,
     ): WeatherAlertEvalResult? {
-        val targetDate = WeatherAlertPolicy.targetDateFor(today)
+        val targetDate = today.plusDays(1)
         val weatherEnabled = settings.weatherEnabled.first()
-        val rainDiag = weather.rainFetchDiagnostic.value
-        val facts = contextEngine.tomorrowForecastFacts(now)
-        // Priority: disabled > never-attempted-this-session > a real fetch
-        // failure > whatever ContextEngine's own stored-state freshness
-        // gate says (SUCCESS_DATA/STALE/DATA_UNAVAILABLE) — a failed fetch
-        // is never confused with "fetched fine, nothing forecast" (§
-        // WeatherManager.RainFetchDiagnostic's own doc comment).
+        val outcome = weather.fetchDatedTomorrowForecast()
+        val facts = (outcome as? WeatherRequestOutcome.Success)?.value
+        val requestStatus = when {
+            !weatherEnabled -> "DISABLED"
+            outcome is WeatherRequestOutcome.Success -> "SUCCESS"
+            outcome is WeatherRequestOutcome.Failure -> outcome.reason.name
+            else -> "UNKNOWN"
+        }
+        val freshness = if (facts != null) {
+            WeatherAlertFreshnessPolicyV2.evaluate(
+                facts = facts,
+                expectedTargetDate = targetDate,
+                // § WORK PACKAGE D §11 — this is a fresh, synchronous fetch
+                // (no cache layer for dated facts): the location [facts]
+                // itself was just resolved FOR is, by definition, the
+                // location resolved at evaluation time — the same
+                // authoritative resolution, not a fabricated match.
+                currentLocationRevision = facts.locationRevision,
+                now = Instant.now(),
+            )
+        } else {
+            ForecastEligibilityReason.MISSING_FACTS
+        }
         val dataStatus = when {
             !weatherEnabled -> ToolOutcomeStatus.DATA_UNAVAILABLE
-            rainDiag == null -> ToolOutcomeStatus.DATA_UNAVAILABLE
-            rainDiag.lastErrorType != null -> ToolOutcomeStatus.SOURCE_FAILURE
-            else -> facts.dataStatus
+            outcome is WeatherRequestOutcome.Failure && outcome.reason == WeatherFailureReason.NO_LOCATION -> ToolOutcomeStatus.DATA_UNAVAILABLE
+            outcome is WeatherRequestOutcome.Failure -> ToolOutcomeStatus.SOURCE_FAILURE
+            freshness != ForecastEligibilityReason.ELIGIBLE -> ToolOutcomeStatus.STALE
+            else -> ToolOutcomeStatus.SUCCESS_DATA
+        }
+        val locationMode = when {
+            facts?.locationRevision?.startsWith("place:") == true -> "saved_place"
+            facts?.locationRevision?.startsWith("coord:") == true -> "gps_fallback"
+            else -> "unknown"
         }
 
-        fun publish(hazard: WeatherHazard?, candidateCreated: Boolean, occurrenceClaimed: Boolean) {
+        suspend fun publishAndRecord(
+            decision: WeatherAlertDecisionV2?,
+            candidateCreated: Boolean,
+            occurrenceClaimed: Boolean,
+            occurrenceKey: String?,
+        ): String? {
+            val receiptId = receiptRepository.record(
+                requestedTargetDate = targetDate,
+                facts = facts,
+                freshness = freshness,
+                requestStatus = requestStatus,
+                factsSource = "live",
+                decision = decision,
+                candidateCreated = candidateCreated,
+                locationMode = locationMode,
+                locationMatch = facts?.let { freshness != ForecastEligibilityReason.LOCATION_MISMATCH },
+                occurrenceKey = occurrenceKey,
+                triggerSource = triggerSource,
+            )
+            if (receiptId != null && occurrenceKey != null) {
+                receiptRepository.appendOutcomeEvent(receiptId, "CLAIMED")
+            }
             _weatherAlertDiagnostic.value = WeatherAlertDiagnostic(
                 evaluatedAtMs = System.currentTimeMillis(),
                 targetLocalDate = targetDate,
-                policyVersion = WeatherAlertPolicy.POLICY_VERSION,
-                dataStatus = dataStatus.name,
-                hazard = hazard?.name,
+                policyVersion = WeatherAlertPolicyV2.POLICY_VERSION,
+                dataStatus = if (dataStatus == ToolOutcomeStatus.STALE) freshness.name else dataStatus.name,
+                hazard = decision?.hazard?.name,
                 candidateCreated = candidateCreated,
                 occurrenceClaimed = occurrenceClaimed,
                 governorOutcome = null,
                 deliveryAttempted = false,
                 delivered = false,
+                receiptId = receiptId,
             )
+            return receiptId
         }
 
         // Never invent "tomorrow it will rain" (or "it will not") from bad
         // data — represent the failure honestly and let the next scheduled
         // evaluation (same evening window, up to hourly) retry.
         if (dataStatus != ToolOutcomeStatus.SUCCESS_DATA) {
-            publish(hazard = null, candidateCreated = false, occurrenceClaimed = false)
+            publishAndRecord(decision = null, candidateCreated = false, occurrenceClaimed = false, occurrenceKey = null)
             return null
         }
 
-        val evaluation = WeatherAlertPolicy.evaluate(facts.category, facts.millimeters)
-        val hazard = (evaluation as? WeatherAlertEvaluation.Decided)?.hazard
-        if (hazard == null || hazard == WeatherHazard.NO_ALERT) {
-            publish(hazard = hazard, candidateCreated = false, occurrenceClaimed = false)
+        // § §17 — a daily storm code needs date-aligned hourly evidence
+        // before it can qualify on its own; requested ONLY when the daily
+        // code actually is a storm code (§6 — never an unrelated fetch).
+        val hourlyEvidence = if (facts!!.rawWeatherCode in WmoPrecipitationKind.STORM_CODES) {
+            (weather.fetchAlignedHourlyEvidenceForTomorrow() as? WeatherRequestOutcome.Success)?.value.orEmpty()
+        } else {
+            emptyList()
+        }
+        val decision = WeatherAlertPolicyV2.evaluate(facts, hourlyEvidence)
+        if (decision.hazard == WeatherHazard.NO_ALERT) {
+            publishAndRecord(decision = decision, candidateCreated = false, occurrenceClaimed = false, occurrenceKey = null)
             return null
         }
 
@@ -585,12 +686,19 @@ class ProactiveManager @Inject constructor(
         val owned = claim is OccurrenceClaimOutcome.Claimed || claim is OccurrenceClaimOutcome.TakeoverAllowed
         if (!owned) {
             Log.i(TAG, "proactive_weather_alert_claim_denied source=$triggerSource claim=$claim")
-            publish(hazard = hazard, candidateCreated = false, occurrenceClaimed = false)
+            publishAndRecord(decision = decision, candidateCreated = false, occurrenceClaimed = false, occurrenceKey = null)
             return null
         }
 
-        publish(hazard = hazard, candidateCreated = true, occurrenceClaimed = true)
-        return WeatherAlertEvalResult(ProactiveComposer.weatherAlert(hazard, targetDate), occurrenceKey)
+        // § §22 — RECEIPT WRITE FAILURE → NO ALERT DISPATCH: a candidate is
+        // only ever returned when the receipt actually committed.
+        val receiptId = publishAndRecord(decision = decision, candidateCreated = true, occurrenceClaimed = true, occurrenceKey = occurrenceKey)
+        if (receiptId == null) {
+            Log.w(TAG, "proactive_weather_alert_receipt_write_failed source=$triggerSource")
+            runCatching { occurrenceStore.markFailedRetryable(occurrenceKey, "receipt_write_failed", nowMs) }
+            return null
+        }
+        return WeatherAlertEvalResult(ProactiveComposer.weatherAlert(decision.hazard, targetDate), occurrenceKey)
     }
 
     /**

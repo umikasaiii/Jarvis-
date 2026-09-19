@@ -1,8 +1,14 @@
 package com.simone.jarvismobile.weather
 
 import android.util.Log
+import com.simone.jarvismobile.core.weather.ForecastFacts
+import com.simone.jarvismobile.core.weather.ForecastFactsBuilder
+import com.simone.jarvismobile.core.weather.HourlyPrecipitationEvidence
 import com.simone.jarvismobile.core.weather.WeatherCategory
+import com.simone.jarvismobile.core.weather.WeatherFailureReason
+import com.simone.jarvismobile.core.weather.WeatherRequestOutcome
 import com.simone.jarvismobile.core.weather.roundWeatherCoordinate
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
@@ -10,6 +16,8 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.time.Instant
+import java.time.LocalDate
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -190,6 +198,119 @@ class OpenMeteoWeatherSource @Inject constructor() : WeatherSource {
                 Log.w(TAG, "weather_extended_fetch_failed ${it.javaClass.simpleName}")
             }
             .getOrNull()
+    }
+
+    /**
+     * § JARVIS Implementation Master Plan — PROACTIVITY RELIABILITY CLOSURE
+     * WORK PACKAGE D §6/§7/§8/§10. The one new EXTENDED request this work
+     * package adds (§5/§6: extends the EXISTING provider adapter, never a
+     * second Open-Meteo client) — the same `daily=` endpoint shape as
+     * [fetchOrThrow], plus `daily.time` (so [targetDate] is matched
+     * explicitly via [com.simone.jarvismobile.core.weather.ForecastDateMatcher],
+     * never assumed at a fixed array position — §7's exact defect) and the
+     * richer precipitation fields §6 lists. Deliberately its own
+     * request-scoped [WeatherRequestOutcome] (§10) — never the shared
+     * `@Volatile lastErrorType` the four pre-existing methods above use —
+     * so a concurrent evaluation can never see another request's error.
+     */
+    override suspend fun fetchDatedDailyForecast(
+        latitude: Double,
+        longitude: Double,
+        targetDate: LocalDate,
+        locationRevision: String,
+    ): WeatherRequestOutcome<ForecastFacts> = withContext(Dispatchers.IO) {
+        val url = "https://api.open-meteo.com/v1/forecast" +
+            "?latitude=${round(latitude)}&longitude=${round(longitude)}" +
+            "&daily=weathercode,precipitation_sum,rain_sum,showers_sum,snowfall_sum," +
+            "precipitation_probability_max,precipitation_hours" +
+            "&timezone=auto&forecast_days=3"
+        val fetchedAt = Instant.now()
+        val body = try {
+            val response = client.newCall(Request.Builder().url(url).build()).execute()
+            response.use { r -> if (r.isSuccessful) r.body?.string() else null }
+                ?: return@withContext WeatherRequestOutcome.Failure(WeatherFailureReason.NETWORK, "http_error")
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "weather_dated_fetch_failed ${e.javaClass.simpleName}")
+            return@withContext WeatherRequestOutcome.Failure(WeatherFailureReason.NETWORK, e.javaClass.simpleName)
+        }
+        val parsed = try {
+            json.decodeFromString(OpenMeteoDatedResponse.serializer(), body)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            return@withContext WeatherRequestOutcome.Failure(WeatherFailureReason.INVALID_RESPONSE, e.javaClass.simpleName)
+        }
+        val daily = parsed.daily ?: return@withContext WeatherRequestOutcome.Failure(WeatherFailureReason.INVALID_RESPONSE, "no_daily_block")
+        val facts = ForecastFactsBuilder.fromDaily(
+            targetDate = targetDate,
+            providerTimezone = parsed.timezone,
+            locationRevision = locationRevision,
+            fetchedAt = fetchedAt,
+            times = daily.time,
+            weatherCodes = daily.weatherCode,
+            precipitationSum = daily.precipitationSum,
+            rainSum = daily.rainSum,
+            showersSum = daily.showersSum,
+            snowfallSum = daily.snowfallSum,
+            precipitationProbabilityMax = daily.precipitationProbabilityMax,
+            precipitationHours = daily.precipitationHours,
+        ) ?: return@withContext WeatherRequestOutcome.Failure(WeatherFailureReason.DATE_MISMATCH, "target_date_not_in_response")
+        WeatherRequestOutcome.Success(facts)
+    }
+
+    /**
+     * § §6/§17 — date-aligned hourly precipitation evidence, requested ONLY
+     * to confirm/deny a daily storm code (§17/§18) — [ProactiveManager]
+     * (`app/proactive/`) only calls this when a daily code actually needs
+     * confirming, never prefetched. Minimum required hourly fields only
+     * (§6: "do not request unrelated fields").
+     */
+    override suspend fun fetchAlignedHourlyEvidence(
+        latitude: Double,
+        longitude: Double,
+        targetDate: LocalDate,
+    ): WeatherRequestOutcome<List<HourlyPrecipitationEvidence>> = withContext(Dispatchers.IO) {
+        val url = "https://api.open-meteo.com/v1/forecast" +
+            "?latitude=${round(latitude)}&longitude=${round(longitude)}" +
+            "&hourly=weathercode,precipitation_probability,rain,showers,precipitation" +
+            "&timezone=auto&forecast_days=3"
+        val body = try {
+            val response = client.newCall(Request.Builder().url(url).build()).execute()
+            response.use { r -> if (r.isSuccessful) r.body?.string() else null }
+                ?: return@withContext WeatherRequestOutcome.Failure(WeatherFailureReason.NETWORK, "http_error")
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "weather_hourly_evidence_fetch_failed ${e.javaClass.simpleName}")
+            return@withContext WeatherRequestOutcome.Failure(WeatherFailureReason.NETWORK, e.javaClass.simpleName)
+        }
+        val parsed = try {
+            json.decodeFromString(OpenMeteoHourlyEvidenceResponse.serializer(), body)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            return@withContext WeatherRequestOutcome.Failure(WeatherFailureReason.INVALID_RESPONSE, e.javaClass.simpleName)
+        }
+        val hourly = parsed.hourly ?: return@withContext WeatherRequestOutcome.Failure(WeatherFailureReason.INVALID_RESPONSE, "no_hourly_block")
+        val times = hourly.time.orEmpty()
+        val targetStr = targetDate.toString()
+        val evidence = times.indices.mapNotNull { i ->
+            val t = times.getOrNull(i) ?: return@mapNotNull null
+            if (t.take(10) != targetStr) return@mapNotNull null
+            val hour = t.drop(11).take(2).toIntOrNull() ?: return@mapNotNull null
+            HourlyPrecipitationEvidence(
+                date = targetDate,
+                hour = hour,
+                rawWeatherCode = hourly.weatherCode?.getOrNull(i),
+                precipitationProbabilityPercent = hourly.precipitationProbability?.getOrNull(i),
+                rainMm = hourly.rain?.getOrNull(i),
+                showersMm = hourly.showers?.getOrNull(i),
+                precipitationMm = hourly.precipitation?.getOrNull(i),
+            )
+        }
+        WeatherRequestOutcome.Success(evidence)
     }
 
     /** `"http_<code>"` for a real HTTP failure (see [WeatherHttpException]), else the plain exception class name — same style already used for Core diagnostics elsewhere in this project. */
@@ -400,6 +521,51 @@ class OpenMeteoWeatherSource @Inject constructor() : WeatherSource {
         val isDay: List<Int>? = null,
     )
 
+    /**
+     * § WORK PACKAGE D §6/§24 — the top-level `timezone` field Open-Meteo
+     * always returns when `timezone=auto` is requested, captured for real
+     * (never assumed) provenance in [ForecastFacts.providerTimezone].
+     */
+    @Serializable
+    private data class OpenMeteoDatedResponse(
+        val timezone: String? = null,
+        val daily: DatedDaily? = null,
+    )
+
+    @Serializable
+    private data class DatedDaily(
+        val time: List<String?>? = null,
+        @SerialName("weathercode")
+        val weatherCode: List<Int?>? = null,
+        @SerialName("precipitation_sum")
+        val precipitationSum: List<Double?>? = null,
+        @SerialName("rain_sum")
+        val rainSum: List<Double?>? = null,
+        @SerialName("showers_sum")
+        val showersSum: List<Double?>? = null,
+        @SerialName("snowfall_sum")
+        val snowfallSum: List<Double?>? = null,
+        @SerialName("precipitation_probability_max")
+        val precipitationProbabilityMax: List<Double?>? = null,
+        @SerialName("precipitation_hours")
+        val precipitationHours: List<Double?>? = null,
+    )
+
+    @Serializable
+    private data class OpenMeteoHourlyEvidenceResponse(val hourly: HourlyEvidence? = null)
+
+    @Serializable
+    private data class HourlyEvidence(
+        val time: List<String>? = null,
+        @SerialName("weathercode")
+        val weatherCode: List<Int?>? = null,
+        @SerialName("precipitation_probability")
+        val precipitationProbability: List<Double?>? = null,
+        val rain: List<Double?>? = null,
+        val showers: List<Double?>? = null,
+        val precipitation: List<Double?>? = null,
+    )
+
     private companion object {
         const val TAG = "JarvisWeather"
         const val TIMEOUT_SECONDS = 10L
@@ -429,6 +595,30 @@ interface WeatherSource {
      * supports — never a guessed/clamped day.
      */
     suspend fun fetchExtendedDay(latitude: Double, longitude: Double, daysAhead: Int): DayOutlook?
+
+    /**
+     * § JARVIS Implementation Master Plan — PROACTIVITY RELIABILITY CLOSURE
+     * WORK PACKAGE D §6/§10. Normalized, dated forecast facts for
+     * [targetDate] — never assumed at a fixed array position (§7). Its own
+     * request-scoped [WeatherRequestOutcome], deliberately NOT folded into
+     * [lastFetchErrorType]'s shared field (§10).
+     */
+    suspend fun fetchDatedDailyForecast(
+        latitude: Double,
+        longitude: Double,
+        targetDate: java.time.LocalDate,
+        locationRevision: String,
+    ): WeatherRequestOutcome<ForecastFacts>
+
+    /**
+     * § §6/§17 — date-aligned hourly precipitation evidence for [targetDate],
+     * used only to confirm/deny a daily storm code. Never prefetched.
+     */
+    suspend fun fetchAlignedHourlyEvidence(
+        latitude: Double,
+        longitude: Double,
+        targetDate: java.time.LocalDate,
+    ): WeatherRequestOutcome<List<HourlyPrecipitationEvidence>>
 
     /**
      * § JARVIS Implementation Master Plan — PASSAGGIO 7 §4 (JARVIS-06/-15).
