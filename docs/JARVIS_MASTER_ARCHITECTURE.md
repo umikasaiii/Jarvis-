@@ -1826,7 +1826,10 @@ AUTOMATED TESTED         ✅ (core: +25 test — 8 WeatherReceiptRetentionPolicy
                              reale, W10 receipt append-only/hash-fidelity,
                              W12 backup-exclusion regression — non eseguibili
                              in questo ambiente, nessun Android SDK)
-CI VERIFIED               ⏳ (pending questo push)
+CI VERIFIED               ✅ (run #450, commit 6281019 — tutti gli step
+                             verdi: core tests 1469/1469, assemble debug
+                             APK, Android unit tests, lint, APK SHA-256,
+                             upload, publish)
 DEVICE VERIFIED           ❌
 METEOROLOGICAL QUALITY VERIFIED  ❌
 PRODUCTION READY          ❌
