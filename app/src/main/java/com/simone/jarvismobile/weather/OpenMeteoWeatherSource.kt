@@ -122,6 +122,21 @@ data class HourlyForecast(
 @Singleton
 class OpenMeteoWeatherSource @Inject constructor() : WeatherSource {
 
+    /**
+     * § JARVIS Implementation Master Plan — PROACTIVITY RELIABILITY CLOSURE
+     * WORK PACKAGE D.1 §7. A test-only override point — the `@Inject
+     * constructor()` stays zero-argument (Hilt's DI graph is entirely
+     * unaffected; production always uses [DEFAULT_BASE_URL]). Package-
+     * internal so `app/src/test`'s
+     * [com.simone.jarvismobile.weather.OpenMeteoWeatherSourceConcurrencyTest]
+     * can point this source at a local `MockWebServer` (already a declared
+     * test dependency, unused until this test) instead of the real network
+     * — this is the "deterministic fakes/mock transport" §7 asks for,
+     * exercising the REAL request/parse/outcome code, never a reimplemented
+     * fake of it.
+     */
+    internal var baseUrl: String = DEFAULT_BASE_URL
+
     private val client: OkHttpClient by lazy {
         OkHttpClient.Builder()
             .connectTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
@@ -219,7 +234,7 @@ class OpenMeteoWeatherSource @Inject constructor() : WeatherSource {
         targetDate: LocalDate,
         locationRevision: String,
     ): WeatherRequestOutcome<ForecastFacts> = withContext(Dispatchers.IO) {
-        val url = "https://api.open-meteo.com/v1/forecast" +
+        val url = "$baseUrl/v1/forecast" +
             "?latitude=${round(latitude)}&longitude=${round(longitude)}" +
             "&daily=weathercode,precipitation_sum,rain_sum,showers_sum,snowfall_sum," +
             "precipitation_probability_max,precipitation_hours" +
@@ -272,7 +287,7 @@ class OpenMeteoWeatherSource @Inject constructor() : WeatherSource {
         longitude: Double,
         targetDate: LocalDate,
     ): WeatherRequestOutcome<List<HourlyPrecipitationEvidence>> = withContext(Dispatchers.IO) {
-        val url = "https://api.open-meteo.com/v1/forecast" +
+        val url = "$baseUrl/v1/forecast" +
             "?latitude=${round(latitude)}&longitude=${round(longitude)}" +
             "&hourly=weathercode,precipitation_probability,rain,showers,precipitation" +
             "&timezone=auto&forecast_days=3"
@@ -328,7 +343,7 @@ class OpenMeteoWeatherSource @Inject constructor() : WeatherSource {
 
     /** Throws on anything wrong; the caller wraps this in [runCatching]. */
     private fun fetchOrThrow(latitude: Double, longitude: Double): RainForecast? {
-        val url = "https://api.open-meteo.com/v1/forecast" +
+        val url = "$baseUrl/v1/forecast" +
             "?latitude=${round(latitude)}&longitude=${round(longitude)}" +
             "&daily=weathercode,precipitation_sum&timezone=auto&forecast_days=2"
         val request = Request.Builder().url(url).build()
@@ -353,7 +368,7 @@ class OpenMeteoWeatherSource @Inject constructor() : WeatherSource {
      * three days the Ares panel shows below it.
      */
     private fun fetchOutlookOrThrow(latitude: Double, longitude: Double): WeeklyOutlook? {
-        val url = "https://api.open-meteo.com/v1/forecast" +
+        val url = "$baseUrl/v1/forecast" +
             "?latitude=${round(latitude)}&longitude=${round(longitude)}" +
             "&daily=weathercode,temperature_2m_max,temperature_2m_min,windspeed_10m_max,winddirection_10m_dominant" +
             "&current_weather=true&timezone=auto&forecast_days=4"
@@ -390,7 +405,7 @@ class OpenMeteoWeatherSource @Inject constructor() : WeatherSource {
      * response's flat 96-hour (4×24) arrays — no separate date math needed.
      */
     private fun fetchHourlyOrThrow(latitude: Double, longitude: Double, dayIndex: Int): HourlyForecast? {
-        val url = "https://api.open-meteo.com/v1/forecast" +
+        val url = "$baseUrl/v1/forecast" +
             "?latitude=${round(latitude)}&longitude=${round(longitude)}" +
             "&hourly=temperature_2m,weathercode,is_day&timezone=auto&forecast_days=4"
         val request = Request.Builder().url(url).build()
@@ -436,7 +451,7 @@ class OpenMeteoWeatherSource @Inject constructor() : WeatherSource {
         if (daysAhead < 0) return null
         val forecastDays = (daysAhead + 1).coerceAtMost(MAX_FORECAST_DAYS)
         if (daysAhead >= forecastDays) return null
-        val url = "https://api.open-meteo.com/v1/forecast" +
+        val url = "$baseUrl/v1/forecast" +
             "?latitude=${round(latitude)}&longitude=${round(longitude)}" +
             "&daily=weathercode,temperature_2m_max,temperature_2m_min,windspeed_10m_max,winddirection_10m_dominant" +
             "&timezone=auto&forecast_days=$forecastDays"
@@ -566,11 +581,13 @@ class OpenMeteoWeatherSource @Inject constructor() : WeatherSource {
         val precipitation: List<Double?>? = null,
     )
 
-    private companion object {
-        const val TAG = "JarvisWeather"
-        const val TIMEOUT_SECONDS = 10L
+    companion object {
+        private const val TAG = "JarvisWeather"
+        private const val TIMEOUT_SECONDS = 10L
         /** § FASE 2A.8 RELEASE GATE H — see [fetchExtendedDayOrThrow]'s own honesty note. */
-        const val MAX_FORECAST_DAYS = 16
+        private const val MAX_FORECAST_DAYS = 16
+        /** § WORK PACKAGE D.1 §7 — the real Open-Meteo host, used by every caller except tests. */
+        const val DEFAULT_BASE_URL = "https://api.open-meteo.com"
     }
 }
 
