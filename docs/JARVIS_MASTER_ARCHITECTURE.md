@@ -1365,7 +1365,12 @@ re-arm resta sempre raggiunto anche su intent stale.
 PROACTIVITY CLOSURE B — SIGNALS & SCHEDULING
 CODE PRESENT             ✅
 AUTOMATED TESTED         ✅ (parziale — vedi onestà sotto)
-CI VERIFIED              PENDING (questo push)
+CI VERIFIED              ✅ (run #442, commit 4fc71d7 — tutti gli step verdi:
+                             core test/assemble/Android unit test/lint/APK.
+                             Run #441, commit 15dbea3, aveva fallito su un
+                             vero bug di compilazione — `recordScheduleOutcome()`
+                             mancava `suspend` — corretto nel commit immediatamente
+                             successivo, non nascosto)
 DEVICE VERIFIED          ❌
 PRODUCTION READY         ❌
 ```
