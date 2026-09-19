@@ -66,3 +66,29 @@ notte.
 Nessuno degli scenari 1-10 è stato eseguito da questo ambiente (nessun
 dispositivo Android disponibile qui). Non dichiarare PASS su nessuna riga
 finché non è stata eseguita realmente sul dispositivo.
+
+## Addendum D.1 — retention/simulator v2 manuale
+
+Scenari aggiuntivi introdotti da WORK PACKAGE D.1 (§3/§4), da verificare
+sul dispositivo reale allo stesso modo degli scenari 1-10 sopra:
+
+11. Lascia il telefono acceso con «Proattività» attiva per oltre 90 giorni
+    (o riduci temporaneamente `retentionDays` per un test accelerato) —
+    atteso: i receipt più vecchi vengono cancellati dal tick orario di
+    `ProactiveWorker`, mai un blocco/crash della valutazione proattiva
+    stessa se la pruning fallisce (§3 — `runCatching` indipendente).
+12. Con la retention/simulazione D.1 attiva, conferma che occorrenza e
+    budget della finestra 19-21 (scenario 7 sopra) restano invariati anche
+    dopo una pruning avvenuta nello stesso ciclo orario — l'indipendenza
+    occorrenza/receipt (database separati) non deve mai manifestarsi come
+    un avviso mancato o duplicato.
+13. Ripeti gli scenari 1-5 sopra (i tre bottoni debug) e verifica anche, in
+    Diagnostica (se/quando un pannello receipt viene aggiunto — non
+    presente in questo giro), che ogni tocco scriva un
+    `ForecastDecisionReceipt` con `factsSource=synthetic_debug_simulation`
+    e `occurrenceKey=null` — mai una riga collegata a un `WEATHER_ALERT:
+    <data>` di produzione. Non ancora verificabile senza un pannello
+    diagnostico dedicato (gap dichiarato in WORK PACKAGE D.1).
+
+Nessuno degli scenari 11-13 è stato eseguito da questo ambiente. Non
+dichiarare PASS finché non eseguiti realmente sul dispositivo.
