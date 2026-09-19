@@ -4,7 +4,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.simone.jarvismobile.core.proactive.ProactiveKind
 import com.simone.jarvismobile.data.SettingsRepository
-import com.simone.jarvismobile.proactive.MorningTriggerScheduler
 import com.simone.jarvismobile.proactive.ProactiveScheduler
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.NonCancellable
@@ -19,12 +18,10 @@ import javax.inject.Inject
 @HiltViewModel
 class ProactiveSettingsViewModel @Inject constructor(
     private val settings: SettingsRepository,
+    // § WORK PACKAGE B §3 — the single canonical temporal owner of the
+    // CONFIGURED_TIME exact alarm; reused here to re-arm it after the user
+    // changes the briefing time, never a second scheduler.
     private val scheduler: ProactiveScheduler,
-    // § MICRO-PATCH 14.2.1 — the canonical owner of the CONFIGURED_TIME exact
-    // alarm (§ MorningTriggerScheduler's own doc comment); reused here to
-    // re-arm it after the user changes the briefing time, never a second
-    // scheduler.
-    private val morningTriggerScheduler: MorningTriggerScheduler,
 ) : ViewModel() {
 
     val enabled: StateFlow<Boolean> = settings.proactiveEnabled
@@ -79,15 +76,18 @@ class ProactiveSettingsViewModel @Inject constructor(
     }
 
     /**
-     * § MICRO-PATCH 14.2.1 — delegates to the existing [SettingsRepository]
-     * persistence, then re-arms [MorningTriggerScheduler]'s CONFIGURED_TIME
-     * exact alarm (§4: the schedule DOES materialize into a real
-     * [android.app.AlarmManager] booking, so a save must reschedule it —
-     * otherwise the alarm already armed at the OLD time would still fire
-     * today). [MorningTriggerScheduler.scheduleConfiguredTimeTrigger] always
-     * re-books under the SAME key (`FLAG_UPDATE_CURRENT`), so this never
-     * creates a second alarm/worker — it replaces the one that already
-     * exists. Changing the time never touches
+     * § MICRO-PATCH 14.2.1 / WORK PACKAGE B §3/§7 — delegates to the
+     * existing [SettingsRepository] persistence, then re-arms
+     * [ProactiveScheduler]'s CONFIGURED_TIME exact alarm (§4: the schedule
+     * DOES materialize into a real [android.app.AlarmManager] booking, so a
+     * save must reschedule it — otherwise the alarm already armed at the
+     * OLD time would still fire today). [ProactiveScheduler.reconcileConfiguredTime]
+     * always re-books under the SAME key (`FLAG_UPDATE_CURRENT`) AND bumps
+     * the durable plan revision (§7), so a stale intent already in flight
+     * from before this edit is rejected at fire time rather than silently
+     * delivered against the new settings. This never creates a second
+     * alarm/worker — it replaces the one that already exists. Changing the
+     * time never touches
      * [com.simone.jarvismobile.core.proactive.ProactiveOccurrenceKey] (§6): the
      * occurrence identity stays `MORNING_DIGEST:<date>`, date-only, so an
      * already-DELIVERED occurrence for today is never redelivered just
@@ -111,7 +111,7 @@ class ProactiveSettingsViewModel @Inject constructor(
     fun setMorningBriefingTime(hour: Int, minute: Int) = viewModelScope.launch {
         withContext(NonCancellable) {
             settings.setMorningBriefingTime(hour, minute)
-            morningTriggerScheduler.scheduleConfiguredTimeTrigger()
+            scheduler.reconcileConfiguredTime()
         }
     }
 }

@@ -17,6 +17,7 @@ import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -590,6 +591,24 @@ class SettingsRepository @Inject constructor(
     /** Default +5min (§ spec) — how long after the next device alarm rings before the briefing fires. */
     val morningNextAlarmOffsetMinutes: Flow<Int> =
         context.settingsDataStore.data.map { (it[Keys.MORNING_NEXT_ALARM_OFFSET_MINUTES] ?: 5).coerceIn(0, 120) }
+
+    /**
+     * § JARVIS Implementation Master Plan — PROACTIVITY RELIABILITY CLOSURE
+     * WORK PACKAGE B §5. ONE coherent snapshot of every setting the morning
+     * scheduler needs — never two/three independent `.first()` reads that
+     * could straddle a concurrent [setMorningBriefingTime] edit and pair a
+     * new hour with a stale minute (or vice versa).
+     */
+    data class MorningScheduleSettings(
+        val hour: Int,
+        val minute: Int,
+        val nextAlarmOffsetMinutes: Int,
+        val automationServiceEnabled: Boolean,
+    )
+
+    val morningScheduleSettings: Flow<MorningScheduleSettings> = combine(
+        morningBriefingHour, morningBriefingMinute, morningNextAlarmOffsetMinutes, automationServiceEnabled,
+    ) { hour, minute, offset, autoServiceOn -> MorningScheduleSettings(hour, minute, offset, autoServiceOn) }
 
     suspend fun setMorningBriefingTime(hour: Int, minute: Int) {
         context.settingsDataStore.edit {

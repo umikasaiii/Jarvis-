@@ -1,172 +1,44 @@
 package com.simone.jarvismobile.proactive
 
-import android.app.AlarmManager
 import android.content.Context
 import androidx.work.Data
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
-import com.simone.jarvismobile.alarms.ExactAlarms
-import com.simone.jarvismobile.core.proactive.TriggerEvidenceSource
-import com.simone.jarvismobile.core.proactive.TriggerEvidenceStage
-import com.simone.jarvismobile.data.SettingsRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
-import java.time.Instant
 import java.time.LocalDate
-import java.time.LocalDateTime
-import java.time.ZoneId
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * § FASE 2A.8 RELEASE GATE F — MULTI-SIGNAL MORNING COORDINATOR. Root cause
- * audited: the morning briefing used to depend entirely on the real
- * `ACTION_USER_PRESENT` unlock event (only delivered when "Automazioni in
- * background" is on) plus a coarse periodic fallback (up to 1h late, and
- * silenced when the automation service is on — see [ProactiveManager]'s own
- * doc comments for that history). This schedules TWO independent, higher-
- * quality signals as real exact alarms — reusing [ExactAlarms]/[com.simone.jarvismobile.alarms.AlarmReceiver],
- * the same channel reminders/rules already use, never a second scheduler:
+ * § JARVIS Implementation Master Plan — PROACTIVITY RELIABILITY CLOSURE
+ * WORK PACKAGE B §3.
  *
- *  - **NEXT_ALARM**: [AlarmManager.getNextAlarmClock] (already read once by
- *    [ProactiveManager.nextAlarmTime] for the briefing's own content) plus a
- *    configurable offset (default +5min, [SettingsRepository.morningNextAlarmOffsetMinutes]) —
- *    the user is realistically awake shortly after their alarm rings, not at
- *    the instant of the alarm-manager wakeup.
- *  - **CONFIGURED_TIME**: [SettingsRepository.morningBriefingHour]/[SettingsRepository.morningBriefingMinute],
- *    a MANDATORY daily fallback — always scheduled, so the briefing never
- *    depends solely on an alarm existing or a real unlock happening.
+ * **DISPOSITION: NO LONGER A SCHEDULING AUTHORITY.** This class used to own
+ * NEXT_ALARM/CONFIGURED_TIME planning (FASE 2A.8/MICRO-PATCH 14.2.3) —
+ * that entire responsibility has been absorbed into
+ * [ProactiveScheduler] (§3, option A: "absorb its logic into
+ * ProactiveScheduler and remove it"), the single canonical temporal owner.
+ * This class MUST NOT — and no longer does — read settings independently,
+ * compute fire times independently, create WorkManager/AlarmManager work
+ * independently, own persisted schedule state, or make business eligibility
+ * decisions. No two active scheduling owners.
  *
- * FIRST_UNLOCK ([com.simone.jarvismobile.automation.AutomationEventService])
- * remains as an additional, already-existing safety signal — untouched here.
- * All three converge on the exact same [ProactiveManager.evaluateOnUnlock]
- * call and the exact same governor per-day dedup key, so no combination of
- * simultaneous triggers can ever double-deliver.
- *
- * **HUAWEI_SLEEP deliberately NOT implemented**: it would need a
- * `NotificationListenerService` reading Huawei Health's own sleep-report
- * notification with explicit user consent and a prudent, low-confidence-safe
- * text classification — real content-sniffing of another app's notifications
- * this project has never done before, and getting the classification wrong
- * risks either missing real sleep data or (worse) misreading an unrelated
- * notification as one. Per the spec's own instruction ("ignore if not
- * confident"), this is left out rather than guessed at; NEXT_ALARM and
- * CONFIGURED_TIME already close the "no digest depends solely on unlock"
- * requirement on their own.
+ * What remains is the one thing this class did that was never actually
+ * about WHEN the morning digest fires: the POST-BRIEFING DATA REFRESH
+ * (§ FASE 2A.8 RELEASE GATE G) scheduled only AFTER
+ * [ProactiveManager] has already delivered today's digest through the
+ * single dispatch owner ([ProactiveDeliveryDispatcher]) — a data-only
+ * WorkManager job with no bearing on occurrence ownership.
  */
 @Singleton
 class MorningTriggerScheduler @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val exactAlarms: ExactAlarms,
-    private val settings: SettingsRepository,
-    private val evidence: TriggerEvidenceStore,
 ) {
-    /** Re-arms both signals — called at app start/boot, and after either fires (self-healing: a missed `ACTION_NEXT_ALARM_CLOCK_CHANGED` broadcast never leaves NEXT_ALARM stale for more than one cycle). */
-    suspend fun scheduleAll() {
-        scheduleNextAlarmTrigger()
-        scheduleConfiguredTimeTrigger()
-    }
-
-    /**
-     * Re-reads the device's next alarm and (re)schedules the NEXT_ALARM
-     * firing, or cancels it if no alarm is set. § MICRO-PATCH 14.2.3 §3/§6 —
-     * this is the ONLY place NEXT_ALARM is ever (re)computed, so calling it
-     * again after the device's next alarm changes always reconciles the
-     * schedule to `alarmTriggerTime + configuredOffset`; [ExactAlarms]'s
-     * fixed key + `FLAG_UPDATE_CURRENT` guarantee only ONE PendingIntent
-     * identity ever exists for this signal (verified, not assumed).
-     */
-    suspend fun scheduleNextAlarmTrigger() {
-        val am = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
-        val triggerAtMs = runCatching { am?.nextAlarmClock?.triggerTime }.getOrNull()
-        evidence.record(TriggerEvidenceSource.NEXT_ALARM, TriggerEvidenceStage.NEXT_ALARM_READ, detail = "triggerAtMs=$triggerAtMs")
-        if (triggerAtMs == null) {
-            exactAlarms.cancel(KEY_NEXT_ALARM)
-            evidence.record(TriggerEvidenceSource.NEXT_ALARM, TriggerEvidenceStage.NEXT_ALARM_ABSENT)
-            return
-        }
-        val offsetMinutes = settings.morningNextAlarmOffsetMinutes.first()
-        val fireAt = Instant.ofEpochMilli(triggerAtMs)
-            .plusSeconds(offsetMinutes * 60L)
-            .atZone(ZoneId.systemDefault())
-            .toLocalDateTime()
-        // An alarm whose offset window has already passed (e.g. rescheduled
-        // while this ran) is never fired immediately as a side effect —
-        // CONFIGURED_TIME/FIRST_UNLOCK remain the signals for today.
-        if (!fireAt.isAfter(LocalDateTime.now())) {
-            exactAlarms.cancel(KEY_NEXT_ALARM)
-            evidence.record(TriggerEvidenceSource.NEXT_ALARM, TriggerEvidenceStage.NEXT_ALARM_CANCELLED_PAST, detail = "fireAt=$fireAt")
-            return
-        }
-        evidence.record(TriggerEvidenceSource.NEXT_ALARM, TriggerEvidenceStage.NEXT_ALARM_SCHEDULE_ATTEMPTED, detail = "fireAt=$fireAt offsetMinutes=$offsetMinutes")
-        val outcome = exactAlarms.scheduleWithOutcome(
-            key = KEY_NEXT_ALARM,
-            at = fireAt,
-            extras = mapOf(
-                ExactAlarms.EXTRA_KIND to ExactAlarms.KIND_MORNING_BRIEFING,
-                ExactAlarms.EXTRA_ID to KEY_NEXT_ALARM,
-                ExactAlarms.EXTRA_TRIGGER_SOURCE to "NEXT_ALARM",
-            ),
-        )
-        recordScheduleOutcome(TriggerEvidenceSource.NEXT_ALARM, outcome, TriggerEvidenceStage.NEXT_ALARM_SCHEDULED, TriggerEvidenceStage.NEXT_ALARM_SCHEDULE_FAILED, "fireAt=$fireAt")
-    }
-
-    /**
-     * Always scheduled — the mandatory fallback, independent of whether any
-     * device alarm exists. § MICRO-PATCH 14.2.3 §3/§6/§9 — this is the ONLY
-     * place CONFIGURED_TIME is ever (re)computed; calling it again after the
-     * setting changes always reschedules the exact alarm to the NEW
-     * persisted hour/minute (the caller, [com.simone.jarvismobile.ui.settings.ProactiveSettingsViewModel],
-     * persists then calls this in the same atomic step — see its own doc
-     * comment for the race this closes).
-     */
-    suspend fun scheduleConfiguredTimeTrigger() {
-        val hour = settings.morningBriefingHour.first()
-        val minute = settings.morningBriefingMinute.first()
-        evidence.record(TriggerEvidenceSource.CONFIGURED_TIME, TriggerEvidenceStage.CONFIGURED_TIME_PERSISTED, detail = "hour=$hour minute=$minute")
-        val now = LocalDateTime.now()
-        var fireAt = now.toLocalDate().atTime(hour, minute)
-        if (!fireAt.isAfter(now)) fireAt = fireAt.plusDays(1)
-        evidence.record(TriggerEvidenceSource.CONFIGURED_TIME, TriggerEvidenceStage.CONFIGURED_TIME_SCHEDULE_ATTEMPTED, detail = "fireAt=$fireAt")
-        val outcome = exactAlarms.scheduleWithOutcome(
-            key = KEY_CONFIGURED_TIME,
-            at = fireAt,
-            extras = mapOf(
-                ExactAlarms.EXTRA_KIND to ExactAlarms.KIND_MORNING_BRIEFING,
-                ExactAlarms.EXTRA_ID to KEY_CONFIGURED_TIME,
-                ExactAlarms.EXTRA_TRIGGER_SOURCE to "CONFIGURED_TIME",
-            ),
-        )
-        recordScheduleOutcome(TriggerEvidenceSource.CONFIGURED_TIME, outcome, TriggerEvidenceStage.CONFIGURED_TIME_SCHEDULED, TriggerEvidenceStage.CONFIGURED_TIME_SCHEDULE_FAILED, "fireAt=$fireAt")
-    }
-
-    /** § §12 — never a generic pass/fail: the exact-alarm-permission state is recorded as its own distinct checkpoint too. */
-    private suspend fun recordScheduleOutcome(
-        source: TriggerEvidenceSource,
-        outcome: ExactAlarms.ScheduleOutcome,
-        scheduledStage: TriggerEvidenceStage,
-        failedStage: TriggerEvidenceStage,
-        detail: String,
-    ) {
-        when (outcome) {
-            ExactAlarms.ScheduleOutcome.SCHEDULED_EXACT -> evidence.record(source, scheduledStage, detail = "$detail exact=true")
-            ExactAlarms.ScheduleOutcome.SCHEDULED_INEXACT_PERMISSION_MISSING -> {
-                evidence.record(source, scheduledStage, detail = "$detail exact=false")
-                evidence.record(source, TriggerEvidenceStage.EXACT_ALARM_PERMISSION_MISSING)
-            }
-            ExactAlarms.ScheduleOutcome.SECURITY_EXCEPTION -> {
-                evidence.record(source, failedStage, detail = "reason=security_exception")
-                evidence.record(source, TriggerEvidenceStage.EXACT_ALARM_SECURITY_EXCEPTION)
-            }
-            ExactAlarms.ScheduleOutcome.FAILED -> evidence.record(source, failedStage, detail = "reason=pending_intent_or_unknown")
-        }
-    }
-
     /**
      * § FASE 2A.8 RELEASE GATE G — POST-BRIEFING MORNING REFRESH. Called only
      * by [ProactiveManager] right after it REALLY delivered a MORNING_DIGEST
@@ -174,10 +46,9 @@ class MorningTriggerScheduler @Inject constructor(
      * one-time [MorningRefreshWorker] runs (+10min main attempt, catching a
      * Huawei Health→Health Connect sync that landed just after the digest
      * itself; +60min safety retry) — `ExistingWorkPolicy.KEEP` so a duplicate
-     * call the same morning (e.g. a race between two trigger sources, already
-     * prevented one layer up by the governor's dedup, but cheap insurance
-     * here too) never double-books. WorkManager, not [ExactAlarms]: unlike the
-     * briefing itself, a refresh a few minutes late to Doze is an acceptable
+     * call the same morning never double-books. WorkManager, not
+     * [com.simone.jarvismobile.alarms.ExactAlarms]: unlike the briefing
+     * itself, a refresh a few minutes late to Doze is an acceptable
      * degradation, not a broken promise.
      */
     fun schedulePostBriefingRefreshes() {
@@ -217,8 +88,6 @@ class MorningTriggerScheduler @Inject constructor(
     }
 
     companion object {
-        const val KEY_NEXT_ALARM = "morning_next_alarm"
-        const val KEY_CONFIGURED_TIME = "morning_configured_time"
         private const val WORK_NAME_PREFIX = "jarvis_morning_refresh_"
         private const val TAG_POST_BRIEFING_REFRESH = "jarvis_morning_refresh"
     }

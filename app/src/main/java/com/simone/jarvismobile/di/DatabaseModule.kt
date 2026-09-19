@@ -20,6 +20,8 @@ import com.simone.jarvismobile.engine.memory.EngineMemoryMigrations
 import com.simone.jarvismobile.navigation.NavDao
 import com.simone.jarvismobile.proactive.ProactiveOccurrenceDao
 import com.simone.jarvismobile.proactive.ProactiveOccurrenceMigrations
+import com.simone.jarvismobile.proactive.ProactiveSchedulePlanDao
+import com.simone.jarvismobile.proactive.ProactiveSchedulePlanMigrations
 import com.simone.jarvismobile.proactive.TriggerEvidenceDao
 import com.simone.jarvismobile.proactive.TriggerEvidenceMigrations
 import dagger.Module
@@ -43,6 +45,7 @@ object DatabaseModule {
             .addMigrations(
                 *RuleMigrations.ALL, *ArchiveMigrations.ALL, *EngineMemoryMigrations.ALL,
                 *ProactiveOccurrenceMigrations.ALL, *TriggerEvidenceMigrations.ALL,
+                *ProactiveSchedulePlanMigrations.ALL,
             )
             // The fallback remains only for the older, cache-only versions (the
             // document and navigation tables can be regenerated from the vault
@@ -108,4 +111,8 @@ object DatabaseModule {
     @Provides
     fun provideTriggerEvidenceDao(database: JarvisDatabase): TriggerEvidenceDao =
         database.triggerEvidenceDao()
+
+    @Provides
+    fun provideProactiveSchedulePlanDao(database: JarvisDatabase): ProactiveSchedulePlanDao =
+        database.proactiveSchedulePlanDao()
 }

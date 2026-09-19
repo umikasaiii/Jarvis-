@@ -6,34 +6,33 @@ import org.junit.Test
 import java.io.File
 
 /**
- * § JARVIS Implementation Master Plan — MICRO-PATCH 14.2.2 §7. STALE
- * SCHEDULE RECONCILIATION — a source-scan regression test (no Android/
- * Robolectric needed) pinning that a changed configured briefing time can
- * never create a second, independently-live exact alarm.
+ * § JARVIS Implementation Master Plan — MICRO-PATCH 14.2.2 §7 / PROACTIVITY
+ * RELIABILITY CLOSURE WORK PACKAGE B §3. STALE SCHEDULE RECONCILIATION — a
+ * source-scan regression test (no Android/Robolectric needed) pinning that a
+ * changed configured briefing time can never create a second,
+ * independently-live exact alarm. Re-targeted from
+ * `MorningTriggerScheduler` to [ProactiveScheduler] — Work Package B §3
+ * absorbed CONFIGURED_TIME/NEXT_ALARM scheduling authority into the latter,
+ * which is now the sole class this invariant applies to.
  *
- * [MorningTriggerScheduler.scheduleConfiguredTimeTrigger] must always
- * schedule under the SAME, constant `KEY_CONFIGURED_TIME` — never a key
- * derived from the configured hour/minute — because [ExactAlarms]'s own
- * `PendingIntent` identity is built from that key alone (`Uri.parse("jarvis://alarm/$key")`
+ * [ProactiveScheduler.reconcileConfiguredTime] must always schedule under
+ * the SAME, constant `KEY_CONFIGURED_TIME` — never a key derived from the
+ * configured hour/minute — because [ExactAlarms]'s own `PendingIntent`
+ * identity is built from that key alone (`Uri.parse("jarvis://alarm/$key")`
  * + `PendingIntent.getBroadcast(context, key.hashCode(), ..., FLAG_UPDATE_CURRENT)`):
  * a constant key means `AlarmManager` itself replaces any previously
- * scheduled alarm for that PendingIntent when `schedule()` is called again
- * after a time change, rather than leaving the old one independently live.
- * This is verified NOT the root cause of the real device failure (that was
- * `refreshMorningDigestNotification`'s missing occurrence check — see
- * `MorningBriefingCanonicalGateRegressionTest`), but the mission requires
- * this audit regardless, and the correctness hierarchy (§7: "persistent
- * occurrence gate FIRST, scheduler cancellation/replacement SECOND") means
- * both must hold — this pins the second layer.
+ * scheduled alarm for that PendingIntent when `scheduleWithOutcome()` is
+ * called again after a time change, rather than leaving the old one
+ * independently live.
  */
-class MorningTriggerSchedulerAlarmIdentityRegressionTest {
+class ProactiveSchedulerAlarmIdentityRegressionTest {
 
     @Test
-    fun `scheduleConfiguredTimeTrigger always schedules under the constant KEY_CONFIGURED_TIME, never a value derived from hour or minute`() {
-        val text = morningTriggerSchedulerSource().readText()
-        val body = extractFunctionBody(text, "scheduleConfiguredTimeTrigger")
+    fun `reconcileConfiguredTime always schedules under the constant KEY_CONFIGURED_TIME, never a value derived from hour or minute`() {
+        val text = proactiveSchedulerSource().readText()
+        val body = extractFunctionBody(text, "reconcileConfiguredTime")
         assertTrue(
-            "scheduleConfiguredTimeTrigger() must call exactAlarms.schedule(key = KEY_CONFIGURED_TIME, ...) - " +
+            "reconcileConfiguredTime() must call exactAlarms.scheduleWithOutcome(key = KEY_CONFIGURED_TIME, ...) - " +
                 "a constant identity so a time change replaces the alarm in place instead of forking it.",
             body.contains("key = KEY_CONFIGURED_TIME"),
         )
@@ -86,7 +85,7 @@ class MorningTriggerSchedulerAlarmIdentityRegressionTest {
         error("Unbalanced braces while extracting $functionName() - could not find its closing brace")
     }
 
-    private fun morningTriggerSchedulerSource(): File = resolve("src/main/java/com/simone/jarvismobile/proactive/MorningTriggerScheduler.kt")
+    private fun proactiveSchedulerSource(): File = resolve("src/main/java/com/simone/jarvismobile/proactive/ProactiveScheduler.kt")
     private fun exactAlarmsSource(): File = resolve("src/main/java/com/simone/jarvismobile/alarms/ExactAlarms.kt")
 
     private fun resolve(relative: String): File {

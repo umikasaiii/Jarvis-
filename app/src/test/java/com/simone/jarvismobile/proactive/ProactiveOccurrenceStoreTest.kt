@@ -404,7 +404,7 @@ class ProactiveOccurrenceStoreTest {
         assertEquals(ProactiveOccurrenceState.DELIVERED.name, dao.rowOrNull(key)!!.state)
 
         // The user then changes the setting to 09:00 (ProactiveSettingsViewModel.
-        // setMorningBriefingTime -> MorningTriggerScheduler re-arms the SAME
+        // setMorningBriefingTime -> ProactiveScheduler re-arms the SAME
         // KEY_CONFIGURED_TIME alarm for the new hour, but the occurrence KEY
         // computed by ProactiveOccurrenceKey.morningDigest is unaffected — it
         // is date-only, never a function of the configured hour/minute). The
@@ -582,9 +582,9 @@ class ProactiveOccurrenceStoreTest {
         store.markDeliveryAttempt(key, now)
         store.markDelivered(key, now)
 
-        // MorningTriggerScheduler.scheduleConfiguredTimeTrigger() always
+        // ProactiveScheduler.reconcileConfiguredTime() always
         // reschedules under the SAME PendingIntent key (KEY_CONFIGURED_TIME,
-        // FLAG_UPDATE_CURRENT — verified by MorningTriggerSchedulerAlarmIdentityRegressionTest),
+        // FLAG_UPDATE_CURRENT — verified by ProactiveSchedulerAlarmIdentityRegressionTest),
         // so "old and new exact alarms" can never both be independently
         // live — but even if a stale callback fired anyway (defense in
         // depth, § "persistent occurrence gate FIRST, scheduler

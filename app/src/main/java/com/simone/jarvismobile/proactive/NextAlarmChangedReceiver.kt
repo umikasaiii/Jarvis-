@@ -13,23 +13,20 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 /**
- * § FASE 2A.8 RELEASE GATE F — reacts to the device's next-alarm changing
- * (a new alarm set, an existing one edited, or the current one dismissed) so
- * [MorningTriggerScheduler]'s NEXT_ALARM firing follows promptly instead of
- * only self-healing at the next app cold start or the next time it itself
- * fires (both of which still cover the case where this receiver never runs —
- * see [MorningTriggerScheduler]'s own doc comment on why CONFIGURED_TIME is
- * a MANDATORY fallback, not merely a backup for this).
- *
- * Onestà: `android.app.action.NEXT_ALARM_CLOCK_CHANGED` is documented as a
- * broadcast a manifest-registered receiver can still receive after Android
- * 8's implicit-broadcast restrictions (it is not one of the explicitly
- * exempted-from-registration actions like `CONNECTIVITY_ACTION`), but this
- * has not been verified against a real device/compiler in this environment
- * (no network access, same limit as Health Connect/TomTom elsewhere in this
- * project) — if it turns out not to fire reliably on a given OEM build, the
- * self-healing re-arm above still bounds the staleness to one day, never
- * silently forever.
+ * § FASE 2A.8 §F / PROACTIVITY RELIABILITY CLOSURE WORK PACKAGE B §8 — a
+ * manifest-registered SELF-HEALING FALLBACK for the device's next-alarm
+ * changing. § WORK PACKAGE B §8 moved the PRIMARY observation of this signal
+ * to a runtime-registered receiver inside
+ * [com.simone.jarvismobile.automation.AutomationEventService] (which also
+ * reconciles immediately on service start, closing the window before this
+ * manifest receiver would ever get a chance to run) — this one remains
+ * only as a bound on staleness for whoever hasn't enabled "Automazioni in
+ * background": if it turns out this manifest broadcast does not fire
+ * reliably on a given OEM build, [ProactiveScheduler.scheduleAll]'s own
+ * boot/app-start re-arm still bounds the staleness to one day, never
+ * silently forever. Both paths call the exact same
+ * [ProactiveScheduler.reconcileNextAlarm] — the single canonical NEXT_ALARM
+ * owner (§3) — never a second, competing scheduling decision.
  */
 class NextAlarmChangedReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -37,7 +34,7 @@ class NextAlarmChangedReceiver : BroadcastReceiver() {
         val pending = goAsync()
         CoroutineScope(Dispatchers.Default).launch {
             try {
-                deps.morningTriggerScheduler().scheduleNextAlarmTrigger()
+                deps.proactiveScheduler().reconcileNextAlarm()
             } catch (e: Throwable) {
                 Log.w(TAG, "next_alarm_changed_reschedule_failed ${e.javaClass.simpleName}")
             } finally {
@@ -49,7 +46,7 @@ class NextAlarmChangedReceiver : BroadcastReceiver() {
     @EntryPoint
     @InstallIn(SingletonComponent::class)
     interface NextAlarmEntryPoint {
-        fun morningTriggerScheduler(): MorningTriggerScheduler
+        fun proactiveScheduler(): ProactiveScheduler
     }
 
     private companion object {

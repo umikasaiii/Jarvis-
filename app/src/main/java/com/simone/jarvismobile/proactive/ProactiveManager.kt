@@ -9,7 +9,9 @@ import android.util.Log
 import com.simone.jarvismobile.agenda.AgendaRepository
 import com.simone.jarvismobile.audio.SessionCoordinator
 import com.simone.jarvismobile.context.ContextEngine
+import com.simone.jarvismobile.core.proactive.MorningWindowPolicy
 import com.simone.jarvismobile.core.proactive.OccurrenceClaimOutcome
+import com.simone.jarvismobile.core.proactive.PeriodicFallbackPolicy
 import com.simone.jarvismobile.core.proactive.ProactiveComposer
 import com.simone.jarvismobile.core.proactive.ProactiveDecision
 import com.simone.jarvismobile.core.proactive.ProactiveGovernor
@@ -19,6 +21,7 @@ import com.simone.jarvismobile.core.proactive.ProactiveOccurrenceState
 import com.simone.jarvismobile.core.proactive.ProactiveSettings
 import com.simone.jarvismobile.core.proactive.ProactiveSnapshot
 import com.simone.jarvismobile.core.proactive.ProactiveSuggestion
+import com.simone.jarvismobile.core.proactive.ProactiveTriggerSource
 import com.simone.jarvismobile.core.tools.ToolOutcomeStatus
 import com.simone.jarvismobile.core.weather.WeatherAlertEvaluation
 import com.simone.jarvismobile.core.weather.WeatherAlertPolicy
@@ -69,18 +72,18 @@ class ProactiveManager @Inject constructor(
      * no real unlock event to react to.
      */
     suspend fun evaluate(now: LocalDateTime = LocalDateTime.now()) =
-        run(now, isRealUnlock = false, triggerSource = "PERIODIC_FALLBACK")
+        run(now, ProactiveTriggerSource.PERIODIC_FALLBACK)
 
     /**
      * Called at the real first-unlock-of-the-day event (§ "primo sblocco utile
      * della giornata"). Distinct from [evaluate] only in *when* it runs — both
-     * go through the same [candidatesFor]/[MORNING_EARLIEST_HOUR] floor and the
+     * go through the same [candidatesFor]/[MorningWindowPolicy] window and the
      * same governor per-day dedup, so calling this promptly at the real unlock
      * (rather than waiting for the next coarse tick) is what makes the morning
      * digest feel immediate instead of arriving up to an hour late.
      */
-    suspend fun evaluateOnUnlock(now: LocalDateTime = LocalDateTime.now(), triggerSource: String = "FIRST_UNLOCK") =
-        run(now, isRealUnlock = true, triggerSource = triggerSource)
+    suspend fun evaluateOnUnlock(now: LocalDateTime = LocalDateTime.now(), trigger: ProactiveTriggerSource = ProactiveTriggerSource.FIRST_UNLOCK) =
+        run(now, trigger)
 
     /**
      * "Il briefing non è proprio arrivato" (non solo in ritardo, § segnalazioni
@@ -93,12 +96,14 @@ class ProactiveManager @Inject constructor(
      * budget esaurito / consegnato) invece di un'altra ipotesi. Mai il testo del
      * messaggio consegnato, solo il tipo e l'esito (§ "non loggare dati personali").
      *
-     * [triggerSource] (§ FASE 2A.8 RELEASE GATE F — Multi-Signal Morning
-     * Coordinator): which signal caused this call — `"HUAWEI_SLEEP"` (not
+     * `triggerSource` (§ FASE 2A.8 RELEASE GATE F — Multi-Signal Morning
+     * Coordinator, § WORK PACKAGE B §4 — typed): which signal caused this
+     * call — [ProactiveTriggerSource.NEXT_ALARM], [ProactiveTriggerSource.CONFIGURED_TIME],
+     * [ProactiveTriggerSource.FIRST_UNLOCK], [ProactiveTriggerSource.MANUAL_DEBUG],
+     * or [ProactiveTriggerSource.PERIODIC_FALLBACK] (`"HUAWEI_SLEEP"` is not
      * implemented, see [com.simone.jarvismobile.proactive.MorningTriggerScheduler]'s
-     * own honesty note), `"NEXT_ALARM"`, `"CONFIGURED_TIME"`, `"FIRST_UNLOCK"`,
-     * `"MANUAL"`, or `"PERIODIC_FALLBACK"`. Purely diagnostic — every source
-     * converges on this SAME method and the SAME governor per-day dedup key
+     * own honesty note). Purely diagnostic — every source converges on this
+     * SAME method and the SAME governor per-day dedup key
      * (`MORNING_DIGEST:<date>`), so no source can ever double-deliver.
      */
     data class RunDiagnostic(
@@ -223,7 +228,12 @@ class ProactiveManager @Inject constructor(
         _morningDeliveryReceipts.value = (_morningDeliveryReceipts.value + receipt).takeLast(MAX_RECEIPTS)
     }
 
-    private suspend fun run(now: LocalDateTime, isRealUnlock: Boolean, triggerSource: String) {
+    private suspend fun run(now: LocalDateTime, trigger: ProactiveTriggerSource) {
+        // § WORK PACKAGE B §4 — a typed trigger source, never a bare
+        // isRealUnlock=true hardcoded for every caller: only FIRST_UNLOCK is
+        // ever a real ACTION_USER_PRESENT observation.
+        val triggerSource = trigger.name
+        val isRealUnlock = trigger == ProactiveTriggerSource.FIRST_UNLOCK
         val config = readSettings()
         val automationEnabled = settings.automationServiceEnabled.first()
         if (!config.enabled) {
@@ -240,8 +250,32 @@ class ProactiveManager @Inject constructor(
         // may ever compose/speak/deliver today's morning digest — every other
         // caller sees AlreadyOwned and must not include it as a candidate at all
         // (§G: a suppressed duplicate performs no side effect whatsoever).
-        val offerMorning = isRealUnlock || !automationEnabled
-        val morningEligible = now.hour >= MORNING_EARLIEST_HOUR && offerMorning
+        // § WORK PACKAGE B §12 — a desired-ON automation-service setting is
+        // never proof the runtime observer is actually alive (§11): the old
+        // rule permanently suppressed the periodic fallback whenever the
+        // setting was on, even if the real observer had silently died.
+        // Before the configured fallback time, the periodic tick still never
+        // sends early (a still-possibly-working FIRST_UNLOCK/NEXT_ALARM
+        // shouldn't be preempted); once it has passed, periodic
+        // reconciliation may recover a still-legitimately-available
+        // occurrence regardless of the desired service preference — the
+        // durable occurrence claim above/below is what actually decides
+        // "still available", never this policy alone.
+        val offerMorning = when (trigger) {
+            ProactiveTriggerSource.PERIODIC_FALLBACK -> {
+                val schedule = settings.morningScheduleSettings.first()
+                PeriodicFallbackPolicy.shouldOfferMorningOnPeriodicTick(
+                    automationServiceDesiredOn = automationEnabled,
+                    nowMinuteOfDay = now.hour * 60 + now.minute,
+                    configuredFallbackMinuteOfDay = schedule.hour * 60 + schedule.minute,
+                )
+            }
+            else -> true
+        }
+        // § WORK PACKAGE B §13 — the explicit supported morning delivery
+        // window (05:00 inclusive, 12:00 exclusive), not just a floor: a
+        // delayed trigger from well past noon must never say "Buongiorno".
+        val morningEligible = MorningWindowPolicy.isWithinWindow(now.hour) && offerMorning
         val morningKey = if (morningEligible) ProactiveOccurrenceKey.morningDigest(today) else null
         val morningClaim = morningKey?.let { key ->
             runCatching {
@@ -618,9 +652,11 @@ class ProactiveManager @Inject constructor(
 
     /**
      * The evening digest stays in its natural window, so a midday periodic run
-     * stays quiet about it. The morning digest is different: it is offered any
-     * time at or after [MORNING_EARLIEST_HOUR] — never earlier, so a late-night
-     * unlock right after midnight is not mistaken for waking up.
+     * stays quiet about it. The morning digest is different: it is offered
+     * only inside [MorningWindowPolicy]'s explicit supported delivery window
+     * (05:00 inclusive, 12:00 exclusive — § WORK PACKAGE B §13) — never
+     * earlier, so a late-night unlock right after midnight is not mistaken
+     * for waking up, and never once it is no longer morning.
      *
      * **Bug reale segnalato dall'utente, corretto**: "il briefing arriva o
      * prima dello sblocco o dopo" — con "Automazioni in background" attivo,
@@ -631,12 +667,15 @@ class ProactiveManager @Inject constructor(
      * consumava il "turno" del giorno — se il tick periodico cadeva alle 8 e
      * lo sblocco reale avveniva solo alle 10, il briefing partiva alle 8
      * (prima del vero sblocco) e il vero sblocco non aveva più nulla da
-     * offrire. Corretto: il tick periodico offre il digest mattutino solo
-     * quando "Automazioni in background" è **spento** (in quel caso resta
-     * l'unico percorso possibile, come documentato sopra su [evaluate]); il
-     * vero sblocco lo offre sempre. Il dedup giornaliero del governor stesso
+     * offrire. Corretto (§ WORK PACKAGE B §12, [PeriodicFallbackPolicy]): il
+     * tick periodico non offre mai il digest mattutino PRIMA dell'orario
+     * configurato, indipendentemente da "Automazioni in background" —
+     * DOPO quell'orario, invece, lo offre SEMPRE, anche a servizio
+     * desiderato-attivo, perché un'impostazione ON non è mai prova che
+     * l'observer runtime sia davvero vivo (§11). Il vero sblocco lo offre
+     * sempre. Il dedup giornaliero del governor stesso
      * (`MORNING_DIGEST:<date>`) resta l'unico cancello "una volta al
-     * giorno" fra i due percorsi.
+     * giorno" fra i percorsi.
      *
      * [includeMorning]/[includeEvening] (§ PASSAGGIO 14.1 / WORK PACKAGE A
      * §15) — whether THIS caller actually won the atomic occurrence claim
@@ -781,18 +820,15 @@ class ProactiveManager @Inject constructor(
      * occurrence claim/governor logic actually uses.
      */
     private fun schedulerSourceFor(triggerSource: String): String = when (triggerSource) {
-        "NEXT_ALARM", "CONFIGURED_TIME" -> "MorningTriggerScheduler+AlarmReceiver"
+        "NEXT_ALARM", "CONFIGURED_TIME" -> "ProactiveScheduler+AlarmReceiver"
         "FIRST_UNLOCK" -> "AutomationEventService"
         "PERIODIC_FALLBACK" -> "ProactiveWorker"
-        "MANUAL" -> "DiagnosticsViewModel"
+        "MANUAL_DEBUG" -> "DiagnosticsViewModel"
         else -> triggerSource
     }
 
     private companion object {
         const val TAG = "JarvisProactive"
-        // Real unlocks between midnight and this hour never count as "waking up"
-        // (§ evaluateOnUnlock) — that is still the previous night, not morning.
-        const val MORNING_EARLIEST_HOUR = 5
         const val EVENING_FROM = 19
         const val EVENING_TO = 21
 

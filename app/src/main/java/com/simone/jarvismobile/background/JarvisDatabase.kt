@@ -28,6 +28,8 @@ import com.simone.jarvismobile.navigation.NavHistoryEntity
 import com.simone.jarvismobile.navigation.PlaceFtsEntity
 import com.simone.jarvismobile.proactive.ProactiveOccurrenceDao
 import com.simone.jarvismobile.proactive.ProactiveOccurrenceEntity
+import com.simone.jarvismobile.proactive.ProactiveSchedulePlanDao
+import com.simone.jarvismobile.proactive.ProactiveSchedulePlanEntity
 import com.simone.jarvismobile.proactive.TriggerEvidenceDao
 import com.simone.jarvismobile.proactive.TriggerEvidenceRowEntity
 
@@ -41,8 +43,9 @@ import com.simone.jarvismobile.proactive.TriggerEvidenceRowEntity
         ConversationalMemoryEntity::class,
         ProactiveOccurrenceEntity::class,
         TriggerEvidenceRowEntity::class,
+        ProactiveSchedulePlanEntity::class,
     ],
-    version = 13,
+    version = 14,
     exportSchema = false,
 )
 abstract class JarvisDatabase : RoomDatabase() {
@@ -79,4 +82,11 @@ abstract class JarvisDatabase : RoomDatabase() {
     // persistent, bounded, process-restart-surviving trigger diagnostics
     // (FIRST_UNLOCK/NEXT_ALARM/CONFIGURED_TIME). See TriggerEvidenceMigrations.
     abstract fun triggerEvidenceDao(): TriggerEvidenceDao
+
+    // § JARVIS Implementation Master Plan — PROACTIVITY RELIABILITY CLOSURE
+    // WORK PACKAGE B §5/§6 — the durable derived schedule plan ProactiveScheduler
+    // reconciles NEXT_ALARM/CONFIGURED_TIME to, so a fired AlarmReceiver intent
+    // can validate its own plan identity against the current one (§15). See
+    // ProactiveSchedulePlanMigrations.
+    abstract fun proactiveSchedulePlanDao(): ProactiveSchedulePlanDao
 }

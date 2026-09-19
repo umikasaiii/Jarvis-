@@ -48,8 +48,16 @@ class ExactAlarms @Inject constructor(
             true
         }
 
+    // § JARVIS Implementation Master Plan — PROACTIVITY RELIABILITY CLOSURE
+    // WORK PACKAGE B §14 — a SecurityException must NEVER be converted to a
+    // Boolean success. The old `!= FAILED` check let SECURITY_EXCEPTION slip
+    // through as `true` (only FAILED was `false`); this now names every
+    // outcome that legitimately counts as "something is scheduled".
     fun schedule(key: String, at: LocalDateTime, extras: Map<String, String>): Boolean =
-        scheduleWithOutcome(key, at, extras) != ScheduleOutcome.FAILED
+        when (scheduleWithOutcome(key, at, extras)) {
+            ScheduleOutcome.SCHEDULED_EXACT, ScheduleOutcome.SCHEDULED_INEXACT_PERMISSION_MISSING -> true
+            ScheduleOutcome.SECURITY_EXCEPTION, ScheduleOutcome.FAILED -> false
+        }
 
     /**
      * § JARVIS Implementation Master Plan — MICRO-PATCH 14.2.3 §12. Same
@@ -131,6 +139,17 @@ class ExactAlarms @Inject constructor(
         const val KIND_MORNING_BRIEFING = "morning_briefing"
         /** Which of the coordinator's signals scheduled this firing — see [KIND_MORNING_BRIEFING]. */
         const val EXTRA_TRIGGER_SOURCE = "trigger_source"
+        /**
+         * § JARVIS Implementation Master Plan — PROACTIVITY RELIABILITY
+         * CLOSURE WORK PACKAGE B §15 — the plan identity this intent was
+         * scheduled under. [com.simone.jarvismobile.alarms.AlarmReceiver]
+         * validates both against the CURRENT plan
+         * ([com.simone.jarvismobile.proactive.ProactiveScheduler.currentPlan])
+         * before acting; a mismatch is a NO-OP, never a recompute-and-
+         * deliver-anyway.
+         */
+        const val EXTRA_PLAN_REVISION = "plan_revision"
+        const val EXTRA_LOGICAL_DATE = "logical_date"
         private const val TAG = "JarvisAlarms"
     }
 }

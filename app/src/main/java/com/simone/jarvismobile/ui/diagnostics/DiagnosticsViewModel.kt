@@ -175,7 +175,7 @@ class DiagnosticsViewModel @Inject constructor(
             // perfettamente funzionante, perché quel percorso lo esclude di
             // proposito. Questo pulsante simula esattamente "come se avessi
             // appena sbloccato il telefono ora", il vero test che conta.
-            proactive.evaluateOnUnlock(triggerSource = "MANUAL")
+            proactive.evaluateOnUnlock(trigger = com.simone.jarvismobile.core.proactive.ProactiveTriggerSource.MANUAL_DEBUG)
             val d = proactive.lastRun.value
             if (d == null) {
                 _proactiveStatus.value = "Nessuna valutazione ancora registrata (anomalo appena premuto il pulsante)."

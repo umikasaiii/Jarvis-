@@ -1,5 +1,6 @@
 package com.simone.jarvismobile.automation
 
+import android.app.AlarmManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -30,6 +31,7 @@ import com.simone.jarvismobile.core.automation.rule.TriggerRegistry
 import com.simone.jarvismobile.core.proactive.TriggerEvidenceSource
 import com.simone.jarvismobile.core.proactive.TriggerEvidenceStage
 import com.simone.jarvismobile.proactive.ProactiveManager
+import com.simone.jarvismobile.proactive.ProactiveScheduler
 import com.simone.jarvismobile.proactive.TriggerEvidenceStore
 import com.simone.jarvismobile.ui.MainActivity
 import dagger.hilt.android.AndroidEntryPoint
@@ -64,6 +66,7 @@ class AutomationEventService : Service() {
     @Inject lateinit var newEngineContext: ContextEngine
     @Inject lateinit var eventBridge: com.simone.jarvismobile.corebridge.EventBridge
     @Inject lateinit var evidence: TriggerEvidenceStore
+    @Inject lateinit var proactiveScheduler: ProactiveScheduler
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val lastFired = HashMap<String, Long>()
@@ -83,6 +86,12 @@ class AutomationEventService : Service() {
         // this exact process actually reached Service.onCreate(), so a
         // missing FIRST_UNLOCK never has to be inferred from silence alone.
         scope.launch { evidence.record(TriggerEvidenceSource.FIRST_UNLOCK, TriggerEvidenceStage.SERVICE_ON_CREATE) }
+        // § WORK PACKAGE B §8 — on service start, reconcile the CURRENT
+        // AlarmManager.getNextAlarmClock() immediately, not just when the
+        // runtime observer below next fires: closes the window between a
+        // process (re)start and the first ACTION_NEXT_ALARM_CLOCK_CHANGED
+        // broadcast this service happens to see.
+        scope.launch { runCatching { proactiveScheduler.reconcileNextAlarm() } }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -110,6 +119,15 @@ class AutomationEventService : Service() {
     private fun handle(intent: Intent) {
         when (intent.action) {
             Intent.ACTION_USER_PRESENT -> onUnlock()
+            // § WORK PACKAGE B §8 — the PRIMARY runtime observation of the
+            // device's next-alarm changing, registered while this live
+            // process is running (never a second polling loop) — reconciles
+            // through the same single canonical NEXT_ALARM owner
+            // (ProactiveScheduler) that boot/app-start and the manifest
+            // NextAlarmChangedReceiver fallback also call.
+            AlarmManager.ACTION_NEXT_ALARM_CLOCK_CHANGED -> {
+                scope.launch { runCatching { proactiveScheduler.reconcileNextAlarm() } }
+            }
             Intent.ACTION_AIRPLANE_MODE_CHANGED -> {
                 val on = intent.getBooleanExtra("state", false)
                 fire { it is Trigger.AirplaneMode && it.on == on }
@@ -252,6 +270,10 @@ class AutomationEventService : Service() {
             addAction(WifiManager.WIFI_STATE_CHANGED_ACTION)
             addAction(Intent.ACTION_HEADSET_PLUG)
             addAction(BluetoothDevice.ACTION_ACL_CONNECTED)
+            // § WORK PACKAGE B §8 — the runtime NEXT_ALARM observer, in the
+            // same registration as everything else this live process already
+            // observes reliably (no second receiver/service).
+            addAction(AlarmManager.ACTION_NEXT_ALARM_CLOCK_CHANGED)
         }
         // § MICRO-PATCH 14.2.3 §3/§4 — whether an exception prevented receiver
         // registration is now a persisted, observable fact, not an assumption.
@@ -262,6 +284,10 @@ class AutomationEventService : Service() {
             evidence.record(
                 TriggerEvidenceSource.FIRST_UNLOCK,
                 if (registered) TriggerEvidenceStage.RECEIVER_REGISTERED else TriggerEvidenceStage.RECEIVER_REGISTER_FAILED,
+            )
+            evidence.record(
+                TriggerEvidenceSource.NEXT_ALARM,
+                if (registered) TriggerEvidenceStage.NEXT_ALARM_OBSERVER_REGISTERED else TriggerEvidenceStage.NEXT_ALARM_OBSERVER_REGISTER_FAILED,
             )
         }
 

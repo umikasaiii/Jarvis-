@@ -19,8 +19,11 @@ import com.simone.jarvismobile.automation.rule.RuleScheduler
 import com.simone.jarvismobile.background.JarvisNotifications
 import com.simone.jarvismobile.context.ContextEngine
 import com.simone.jarvismobile.core.automation.rule.TriggerEvent
+import com.simone.jarvismobile.core.proactive.ProactiveTriggerSource
+import com.simone.jarvismobile.core.proactive.StaleIntentValidator
 import com.simone.jarvismobile.core.proactive.TriggerEvidenceSource
 import com.simone.jarvismobile.core.proactive.TriggerEvidenceStage
+import com.simone.jarvismobile.proactive.ProactiveScheduler
 import com.simone.jarvismobile.proactive.TriggerEvidenceStore
 import com.simone.jarvismobile.reminders.ReminderActionReceiver
 import com.simone.jarvismobile.ui.MainActivity
@@ -126,12 +129,18 @@ class AlarmReceiver : BroadcastReceiver() {
                     context.applicationContext,
                     AlarmEntryPoint::class.java,
                 )
-                val triggerSource = intent.getStringExtra(ExactAlarms.EXTRA_TRIGGER_SOURCE) ?: "CONFIGURED_TIME"
+                // § WORK PACKAGE B §4 — a typed trigger, never a bare string
+                // threaded blindly through to isRealUnlock=true.
+                val trigger = runCatching {
+                    ProactiveTriggerSource.valueOf(intent.getStringExtra(ExactAlarms.EXTRA_TRIGGER_SOURCE) ?: "")
+                }.getOrDefault(ProactiveTriggerSource.CONFIGURED_TIME)
+                val intentPlanRevision = intent.getStringExtra(ExactAlarms.EXTRA_PLAN_REVISION)?.toLongOrNull()
+                val intentLogicalDate = intent.getStringExtra(ExactAlarms.EXTRA_LOGICAL_DATE)
                 val pending = goAsync()
                 CoroutineScope(Dispatchers.Default).launch {
                     try {
                         val evidence = deps.triggerEvidence()
-                        val evidenceSource = if (id == com.simone.jarvismobile.proactive.MorningTriggerScheduler.KEY_NEXT_ALARM) {
+                        val evidenceSource = if (trigger == ProactiveTriggerSource.NEXT_ALARM) {
                             TriggerEvidenceSource.NEXT_ALARM
                         } else {
                             TriggerEvidenceSource.CONFIGURED_TIME
@@ -141,30 +150,55 @@ class AlarmReceiver : BroadcastReceiver() {
                         } else {
                             TriggerEvidenceStage.CONFIGURED_TIME_RECEIVER_FIRED
                         }
-                        evidence.record(evidenceSource, firedStage, detail = "triggerSource=$triggerSource")
-                        evidence.record(evidenceSource, TriggerEvidenceStage.PROACTIVE_CALL_ATTEMPTED)
-                        // § MICRO-PATCH 14.2.3 §6 — a failure INSIDE evaluateOnUnlock
-                        // must never skip the re-arm below: without this runCatching,
-                        // an exception here would leave the alarm that just fired
-                        // WITHOUT a successor scheduled for the next occurrence — a
-                        // real systemic-reliability gap found during this audit, not
-                        // just a diagnostics gap.
-                        runCatching { deps.proactiveManager().evaluateOnUnlock(triggerSource = triggerSource) }
-                            .onSuccess { evidence.record(evidenceSource, TriggerEvidenceStage.PROACTIVE_CALL_SUCCEEDED) }
-                            .onFailure {
-                                evidence.record(evidenceSource, TriggerEvidenceStage.PROACTIVE_CALL_FAILED, detail = "error=${it.javaClass.simpleName}")
-                                Log.w(TAG, "alarm_morning_briefing_evaluate_failed ${it.javaClass.simpleName}")
+                        evidence.record(evidenceSource, firedStage, detail = "trigger=${trigger.name} revision=$intentPlanRevision date=$intentLogicalDate")
+
+                        val scheduler = deps.proactiveScheduler()
+                        // § WORK PACKAGE B §15 — RECEIVER VALIDATION: a fired
+                        // intent must carry the SAME plan revision/logical
+                        // date the CURRENT plan holds. A mismatch is a
+                        // NO-OP + evidence — never "recompute against
+                        // current settings and deliver anyway".
+                        val currentPlan = scheduler.currentPlan(trigger)
+                        val isValid = intentPlanRevision != null && intentLogicalDate != null &&
+                            StaleIntentValidator.isValid(
+                                intentPlanRevision = intentPlanRevision,
+                                intentLogicalDate = intentLogicalDate,
+                                currentPlanRevision = currentPlan?.planRevision,
+                                currentLogicalDate = currentPlan?.logicalDate,
+                            )
+                        if (!isValid) {
+                            val staleStage = if (evidenceSource == TriggerEvidenceSource.NEXT_ALARM) {
+                                TriggerEvidenceStage.NEXT_ALARM_STALE_INTENT_REJECTED
+                            } else {
+                                TriggerEvidenceStage.CONFIGURED_TIME_STALE_INTENT_REJECTED
                             }
+                            evidence.record(evidenceSource, staleStage, detail = "intentRev=$intentPlanRevision currentRev=${currentPlan?.planRevision}")
+                            Log.i(TAG, "alarm_morning_briefing_stale_intent_rejected source=${trigger.name}")
+                        } else {
+                            evidence.record(evidenceSource, TriggerEvidenceStage.PROACTIVE_CALL_ATTEMPTED)
+                            // § MICRO-PATCH 14.2.3 §6 — a failure INSIDE
+                            // evaluateOnUnlock must never skip the re-arm
+                            // below: without this runCatching, an exception
+                            // here would leave the alarm that just fired
+                            // WITHOUT a successor scheduled for the next
+                            // occurrence — a real systemic-reliability gap
+                            // found during that audit, not just a
+                            // diagnostics gap.
+                            runCatching { deps.proactiveManager().evaluateOnUnlock(trigger = trigger) }
+                                .onSuccess { evidence.record(evidenceSource, TriggerEvidenceStage.PROACTIVE_CALL_SUCCEEDED) }
+                                .onFailure {
+                                    evidence.record(evidenceSource, TriggerEvidenceStage.PROACTIVE_CALL_FAILED, detail = "error=${it.javaClass.simpleName}")
+                                    Log.w(TAG, "alarm_morning_briefing_evaluate_failed ${it.javaClass.simpleName}")
+                                }
+                        }
                         // Both signals are one-shot exact alarms — re-arm the
-                        // NEXT day's occurrence for whichever one just fired,
+                        // NEXT occurrence for whichever one just fired,
                         // exactly like KIND_RULE's own re-arm above. Always
-                        // reached now, even if evaluateOnUnlock above failed.
-                        val scheduler = deps.morningTriggerScheduler()
-                        when (id) {
-                            com.simone.jarvismobile.proactive.MorningTriggerScheduler.KEY_NEXT_ALARM ->
-                                scheduler.scheduleNextAlarmTrigger()
-                            com.simone.jarvismobile.proactive.MorningTriggerScheduler.KEY_CONFIGURED_TIME ->
-                                scheduler.scheduleConfiguredTimeTrigger()
+                        // reached, whether the intent was valid or stale, and
+                        // even if evaluateOnUnlock above failed.
+                        when (trigger) {
+                            ProactiveTriggerSource.NEXT_ALARM -> scheduler.reconcileNextAlarm()
+                            else -> scheduler.reconcileConfiguredTime()
                         }
                     } catch (e: Throwable) {
                         Log.w(TAG, "alarm_morning_briefing_failed ${e.javaClass.simpleName}")
@@ -257,7 +291,7 @@ class AlarmReceiver : BroadcastReceiver() {
         fun ruleScheduler(): RuleScheduler
         fun weather(): com.simone.jarvismobile.weather.WeatherManager
         fun proactiveManager(): com.simone.jarvismobile.proactive.ProactiveManager
-        fun morningTriggerScheduler(): com.simone.jarvismobile.proactive.MorningTriggerScheduler
+        fun proactiveScheduler(): ProactiveScheduler
         fun triggerEvidence(): TriggerEvidenceStore
     }
 

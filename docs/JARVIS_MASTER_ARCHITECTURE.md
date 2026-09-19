@@ -1245,10 +1245,11 @@ PRODUCTION READY         ❌
 ```
 
 Stati separati, mai collassati: affidabilità del trigger mattutino —
-ANCORA APERTA (Work Package B); correttezza fattuale serale — ANCORA
-APERTA (Work Package C); correttezza proattiva meteo — ANCORA APERTA
-(Work Package D). Honor 200 va ritestato solo quando un candidato A+B+C+D
-è pronto insieme, non isolatamente su A.
+Work Package B CODE PRESENT ✅ (vedi §30.11), DEVICE VERIFIED ❌;
+correttezza fattuale serale — ANCORA APERTA (Work Package C); correttezza
+proattiva meteo — ANCORA APERTA (Work Package D). Honor 200 va ritestato
+solo quando un candidato A+B+C+D è pronto insieme, non isolatamente su A
+né su B.
 
 ## 30.10 Conclusioni precedenti marcate SUPERSEDED (regola §81 — mai cancellate silenziosamente)
 
@@ -1288,6 +1289,102 @@ conclusioni storiche di questo documento sono ora **SUPERSEDED**:
    Package D (§20 dell'audit), non affrontata in questo passaggio.
 
 ---
+
+
+## 30.11 PROACTIVITY RELIABILITY CLOSURE — WORK PACKAGE B: RELIABLE SIGNALS & SCHEDULING
+
+Implementa il pacchetto B della spec Astra adottata in §30.9, sui punti
+NON coperti da Work Package A (che ha chiuso solo la proprietà del
+side-effect dispatch). Work Package A resta interamente preservato —
+nessuna modifica a `ProactiveDeliveryDispatcher`/CAS fencing/one-shot
+contract/debug isolation.
+
+**Proprietario temporale unico (§3)**: `ProactiveScheduler` assorbe
+NEXT_ALARM/CONFIGURED_TIME da `MorningTriggerScheduler`, che è ridotto
+(non rimosso) al solo post-briefing data refresh (+10/+60min) — il suo
+doc comment dichiara esplicitamente "NO LONGER A SCHEDULING AUTHORITY".
+Nessun secondo scheduler attivo.
+
+**Typed trigger contract (§4)**: nuovo `core/proactive/ProactiveTriggerSource`
+(FIRST_UNLOCK/NEXT_ALARM/CONFIGURED_TIME/PERIODIC_FALLBACK/MANUAL_DEBUG)
+sostituisce l'`isRealUnlock=true` hardcoded che `AlarmReceiver` passava a
+`evaluateOnUnlock()` per OGNI segnale, anche NEXT_ALARM/CONFIGURED_TIME —
+il bug esatto che §4 vietava esplicitamente.
+
+**Piano di schedulazione durevole (§5/§6)**: nuova tabella Room
+`proactive_schedule_plans` (migrazione non distruttiva 13→14, versione
+base confermata via ispezione reale del codice, non assunta) — un plan
+per source con revision/logicalDate/intendedFireAtMs/sourceAlarmAtMs/
+enabled/reconciliationOutcome/exactness. `SettingsRepository.morningScheduleSettings`
+(nuovo `Flow` combinato) legge hour/minute/offset/automationServiceEnabled
+come UNA sola istantanea coerente.
+
+**CONFIGURED_TIME (§7)**: ogni reschedule incrementa la plan revision;
+ogni exact alarm porta `EXTRA_PLAN_REVISION`/`EXTRA_LOGICAL_DATE`.
+
+**NEXT_ALARM runtime observation (§8)**: `AutomationEventService`
+registra ora anche `ACTION_NEXT_ALARM_CLOCK_CHANGED` nella stessa
+`registerReceivers()`, riconcilia immediatamente su `onCreate()`;
+`NextAlarmChangedReceiver` (manifest) resta fallback self-healing.
+
+**NEXT_ALARM source preservation (§9, critico)**: nuovo
+`core/proactive/SourceAlarmReconciler` (puro, 9 test) — PRIMA della
+maturazione un edit/cancel affidabile rivede/cancella lo slot pendente;
+ALLA/DOPO la maturazione l'occorrenza già valida è CONGELATA
+incondizionatamente, così un'osservazione `null`/un nuovo alarm dopo
+08:30 non cancella mai l'occorrenza 08:35 già matura. Pinnato da un test
+sull'esatto scenario dell'audit.
+
+**Periodic fallback correction (§12)**: nuovo
+`core/proactive/PeriodicFallbackPolicy` (puro, 4 test) — mai prima
+dell'orario configurato, sempre dopo, indipendentemente dalla preferenza
+desiderata del servizio (chiude il P0: un servizio ON ma silenziosamente
+morto non sopprime più il recovery per sempre).
+
+**Morning window (§13)**: nuovo `core/proactive/MorningWindowPolicy`
+(puro, 5 test) — 05:00 inclusive/12:00 exclusive, il default esplicito
+dell'audit; nessuna impostazione utente in conflitto trovata, nessuna
+nuova UI inventata.
+
+**Exact alarm outcomes (§14)**: bug reale corretto in
+`ExactAlarms.schedule()` — convertiva `SECURITY_EXCEPTION` in `true`
+(`!= FAILED`); ora un `when` esaustivo nomina ogni esito, mai una
+SecurityException spacciata per successo.
+
+**Receiver validation (§15)**: nuovo `core/proactive/StaleIntentValidator`
+(puro, 4 test) — `AlarmReceiver` valida `EXTRA_PLAN_REVISION`/
+`EXTRA_LOGICAL_DATE` contro `ProactiveScheduler.currentPlan()` prima di
+agire; un mismatch è NO-OP + evidenza, mai un ricalcolo silenzioso. Il
+re-arm resta sempre raggiunto anche su intent stale.
+
+**Boot/startup (§16)**: `BootReceiver`/`JarvisApplication` chiamano ora
+`ProactiveScheduler.scheduleAll()` — barriera di restore-recovery
+(PASSAGGIO 10.1/10.2) non toccata.
+
+```text
+PROACTIVITY CLOSURE B — SIGNALS & SCHEDULING
+CODE PRESENT             ✅
+AUTOMATED TESTED         ✅ (parziale — vedi onestà sotto)
+CI VERIFIED              PENDING (questo push)
+DEVICE VERIFIED          ❌
+PRODUCTION READY         ❌
+```
+
+**Onestà sui test (§19)**: automatizzati i pezzi puri testabili senza
+Robolectric (rollover NEXT_ALARM, stale intent, periodic fallback,
+morning window — 22 nuovi test `:core`). Restano non automatizzati:
+receiver lifecycle end-to-end, source-unavailable reale, permesso exact
+alarm reale, boot/DST reale, restore-barrier-ordering — richiederebbero
+Robolectric (mai introdotto in questo progetto) o un dispositivo reale.
+
+**Deliberatamente NON fatto**: Work Package C (Buonasera/agenda-domani/
+rendering/starred/Health-removal/weather-emoji), Work Package D
+(OpenMeteo fields/target-date/WeatherAlertPolicy v2/soglie/
+ForecastDecisionReceipt/replay), consolidamento budget/governor
+SharedPreferences→Room (§16 dell'audit originale, ancora deferito),
+HUAWEI_SLEEP (invariato da FASE 2A.8). PASS 14B resta PAUSED, `jarvis-core`/
+`jarvis-protocol` restano FROZEN (ADR-013) — nessun file toccato in
+nessuno dei due.
 
 # 31. MICRO-PATCH 14.2.1 — CONFIGURABLE BRIEFING TIME
 

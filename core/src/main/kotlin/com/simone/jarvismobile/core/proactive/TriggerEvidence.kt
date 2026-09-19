@@ -52,6 +52,17 @@ enum class TriggerEvidenceStage {
     EXACT_ALARM_PERMISSION_MISSING,
     EXACT_ALARM_SECURITY_EXCEPTION,
 
+    // § WORK PACKAGE B §8/§10/§15 — the runtime NEXT_ALARM_CHANGED observer
+    // (AutomationEventService, not the manifest-only receiver) and the
+    // receiver-side stale-intent rejection, as their own distinct
+    // checkpoints — never inferred from silence.
+    NEXT_ALARM_OBSERVER_REGISTERED,
+    NEXT_ALARM_OBSERVER_REGISTER_FAILED,
+    NEXT_ALARM_READ_FAILED,
+    NEXT_ALARM_STALE_INTENT_REJECTED,
+    CONFIGURED_TIME_STALE_INTENT_REJECTED,
+    CONFIGURED_TIME_RECONCILED,
+
     // All sources converge on the same occurrence call (§5 "all sources").
     PROACTIVE_CALL_ATTEMPTED,
     PROACTIVE_CALL_SUCCEEDED,
