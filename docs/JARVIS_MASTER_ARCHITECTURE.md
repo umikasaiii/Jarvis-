@@ -1473,7 +1473,10 @@ genera mai prosa.
 PROACTIVITY CLOSURE C — FACTUAL PRESENTATION
 CODE PRESENT             ✅
 AUTOMATED TESTED         ✅ (core — vedi onestà sotto per i limiti)
-CI VERIFIED              PENDING (questo push)
+CI VERIFIED              ✅ (run #444, commit 87b84d3 — tutti gli step verdi:
+                             core test 1398/1398/assemble/Android unit
+                             test/lint/APK/publish, nessun errore reale
+                             trovato al primo push)
 DEVICE VERIFIED          ❌
 PRODUCTION READY         ❌
 ```
