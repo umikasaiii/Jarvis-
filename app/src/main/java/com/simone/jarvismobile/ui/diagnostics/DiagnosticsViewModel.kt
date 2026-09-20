@@ -32,6 +32,8 @@ import com.simone.jarvismobile.navigation.NavigationRepository
 import com.simone.jarvismobile.navigation.debug.DebugGpsSimulator
 import com.simone.jarvismobile.proactive.ProactiveManager
 import com.simone.jarvismobile.proactive.TriggerEvidenceStore
+import com.simone.jarvismobile.weather.receipt.ForecastDecisionReceiptEntity
+import com.simone.jarvismobile.weather.receipt.ForecastDecisionReceiptRepository
 import com.simone.jarvismobile.tts.AudioFocusGate
 import com.simone.jarvismobile.tts.PcmPlayer
 import com.simone.jarvismobile.tts.SupertonicTtsEngine
@@ -77,6 +79,7 @@ class DiagnosticsViewModel @Inject constructor(
     private val semanticEmbeddingEngine: SemanticEmbeddingEngine,
     private val semanticClassifier: EmbeddingSemanticClassifier,
     private val triggerEvidence: TriggerEvidenceStore,
+    private val forecastReceipts: ForecastDecisionReceiptRepository,
 ) : AndroidViewModel(application) {
 
     /**
@@ -225,6 +228,76 @@ class DiagnosticsViewModel @Inject constructor(
                 append(" · consegnata: ").append(d.delivered)
             }
         }
+    }
+
+    /**
+     * § JARVIS Implementation Master Plan — PROACTIVITY RELIABILITY CLOSURE
+     * WORK PACKAGE E §16/§24. On-device receipt reconstruction — every
+     * field §16 names, so a real production evaluation can be verified
+     * without adb/Room Inspector. Reads the receipt the last real
+     * evaluation's [WeatherAlertDiagnostic.receiptId] points to when
+     * available, otherwise falls back to the single most recent receipt
+     * on disk (covers the case where a receipt was written but the
+     * in-memory diagnostic StateFlow was reset by a process restart).
+     * NEVER shows a coordinate/address/place name — [ForecastDecisionReceiptEntity
+     * .locationRevision] is already the same opaque tag used everywhere
+     * else in this app's weather code (§25), not a raw lat/lon.
+     */
+    private val _weatherReceiptDetail = MutableStateFlow("")
+    val weatherReceiptDetail: StateFlow<String> = _weatherReceiptDetail.asStateFlow()
+
+    fun refreshLatestWeatherReceiptDetail() {
+        viewModelScope.launch {
+            val byDiagnostic = proactive.weatherAlertDiagnostic.value?.receiptId?.let { forecastReceipts.findByReceiptId(it) }
+            val entity = byDiagnostic ?: forecastReceipts.recent(1).firstOrNull()
+            _weatherReceiptDetail.value = if (entity == null) {
+                "Nessun receipt ancora registrato."
+            } else {
+                formatReceipt(entity)
+            }
+        }
+    }
+
+    private fun formatReceipt(r: ForecastDecisionReceiptEntity): String = buildString {
+        append("receiptId: ").append(r.receiptId)
+        append("\nschema v").append(r.schemaVersion).append(" · build ").append(r.appBuildId ?: "?")
+        append("\npolicy v").append(r.policyVersion).append(" · soglie v").append(r.thresholdConfigVersion)
+        append("\nfactsHash: ").append(r.factsHash ?: "—")
+        append("\n\n--- provenienza ---")
+        append("\nvalutato: ").append(java.time.Instant.ofEpochMilli(r.evaluatedAtUtcMs))
+        append("\ngiorno richiesto: ").append(r.requestedTargetDate)
+        append(" · giorno provider: ").append(r.providerTargetDate ?: "—")
+        append("\nfuso provider: ").append(r.forecastTimezone ?: "—")
+        append("\nfetchedAt: ").append(r.fetchedAtMs?.let { java.time.Instant.ofEpochMilli(it).toString() } ?: "—")
+        append(" · età: ").append(r.forecastAgeMs?.let { "${it / 60_000}min" } ?: "—")
+        append("\nprovider: ").append(r.providerId).append(" · endpoint: ").append(r.endpointKind)
+        append("\n\n--- posizione (opaca, mai coordinate) ---")
+        append("\nlocationRevision: ").append(r.locationRevision ?: "—")
+        append(" · modalità: ").append(r.locationMode)
+        append(" · combacia: ").append(r.locationMatch?.toString() ?: "—")
+        append("\n\n--- fatti meteo usati ---")
+        append("\nraw WMO: ").append(r.rawWeatherCode?.toString() ?: "—")
+        append(" · categoria: ").append(r.category ?: "—")
+        append("\nprecipitazione totale: ").append(r.precipitationSumMm?.toString() ?: "—").append("mm")
+        append(" · pioggia: ").append(r.rainSumMm?.toString() ?: "—").append("mm")
+        append(" · rovesci: ").append(r.showersSumMm?.toString() ?: "—").append("mm")
+        append(" · neve: ").append(r.snowfallSumCm?.toString() ?: "—").append("cm")
+        append("\nprobabilità max: ").append(r.precipitationProbabilityMaxPercent?.toString() ?: "—").append("%")
+        append(" · ore: ").append(r.precipitationHours?.toString() ?: "—")
+        if (r.fieldsMissing.isNotBlank()) append("\ncampi mancanti: ").append(r.fieldsMissing)
+        append("\n\n--- validazione/decisione ---")
+        append("\ndata combacia: ").append(r.dateMatch)
+        append(" · freschezza: ").append(r.freshnessResult)
+        append("\nesito richiesta: ").append(r.requestStatus).append(" · fonte fatti: ").append(r.factsSource)
+        append("\npericolo: ").append(r.hazard ?: "—").append(" · motivo: ").append(r.decisionReason)
+        append("\ncandidato creato: ").append(r.candidateCreated)
+        append(" · fallback precipitazione: ").append(r.precipitationFallbackUsed)
+        append(" · evidenza oraria usata: ").append(r.usedHourlyEvidenceCount)
+        append("\n\n--- consegna ---")
+        append("\noccurrenceKey: ").append(r.occurrenceKey ?: "—")
+        append(" · triggerSource: ").append(r.triggerSource ?: "—")
+        append("\nnamespace notifica: ").append(r.notificationNamespace ?: "—")
+        append("\neventi: ").append(r.outcomeEventsJson)
     }
 
     /**

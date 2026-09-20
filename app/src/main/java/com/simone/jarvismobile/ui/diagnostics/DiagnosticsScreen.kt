@@ -68,6 +68,7 @@ fun DiagnosticsScreen(
     val triggerDiagnosticsStatus by viewModel.triggerDiagnosticsStatus.collectAsStateWithLifecycle()
     val weatherAlertStatus by viewModel.weatherAlertStatus.collectAsStateWithLifecycle()
     val weatherAlertSimulationResult by viewModel.weatherAlertSimulationResult.collectAsStateWithLifecycle()
+    val weatherReceiptDetail by viewModel.weatherReceiptDetail.collectAsStateWithLifecycle()
     val lastChatRoute by viewModel.lastChatRoute.collectAsStateWithLifecycle()
     val lastRemoteAttempt by viewModel.lastRemoteAttempt.collectAsStateWithLifecycle()
     val buildId = viewModel.buildId
@@ -574,6 +575,14 @@ fun DiagnosticsScreen(
                 }
                 if (weatherAlertStatus.isNotEmpty()) {
                     Text(weatherAlertStatus, style = MaterialTheme.typography.bodySmall)
+                }
+                // § WORK PACKAGE E §16/§24 — full receipt reconstruction for
+                // on-device qualification evidence, never coordinates/address.
+                Button(onClick = viewModel::refreshLatestWeatherReceiptDetail, modifier = Modifier.fillMaxWidth()) {
+                    Text("Mostra receipt completo")
+                }
+                if (weatherReceiptDetail.isNotEmpty()) {
+                    Text(weatherReceiptDetail, style = MaterialTheme.typography.bodySmall)
                 }
                 if (BuildConfig.DEBUG) {
                     Text("Simula (solo debug, non tocca i dati meteo reali):", style = MaterialTheme.typography.labelSmall)

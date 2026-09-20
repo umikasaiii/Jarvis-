@@ -149,6 +149,21 @@ class ForecastDecisionReceiptRepository @Inject constructor(
     }
 
     /**
+     * § JARVIS Implementation Master Plan — PROACTIVITY RELIABILITY CLOSURE
+     * WORK PACKAGE E §16/§24. Read-only access to a single immutable
+     * receipt for on-device qualification evidence — "receipt must allow
+     * reconstruction of" every field §16 lists. Never used to decide
+     * production behavior (that stays exclusively [record]'s job); a
+     * read failure returns `null`, never throws.
+     */
+    suspend fun findByReceiptId(receiptId: String): ForecastDecisionReceiptEntity? =
+        runCatching { dao.findByReceiptId(receiptId) }.getOrNull()
+
+    /** § WORK PACKAGE E §16/§24 — the most recent receipts, newest first, for the same on-device qualification purpose as [findByReceiptId]. */
+    suspend fun recent(limit: Int = 5): List<ForecastDecisionReceiptEntity> =
+        runCatching { dao.recent(limit) }.getOrDefault(emptyList())
+
+    /**
      * § WORK PACKAGE D.1 §3 — bounded local retention: 90 days AND max 4096
      * detailed rows (§28), now genuinely called (see
      * [com.simone.jarvismobile.proactive.ProactiveWorker], the EXISTING
