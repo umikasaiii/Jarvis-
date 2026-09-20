@@ -4,8 +4,8 @@
 
 - **Project:** JARVIS
 - **Document role:** project map / architectural control plane / living source of project intent
-- **Version:** 1.8
-- **Generated:** 2026-09-19
+- **Version:** 1.9
+- **Generated:** 2026-09-20
 - **Primary language:** Italiano
 - **Status:** ACTIVE — living document
 - **Repository target:** `umikasaiii/Jarvis-`
@@ -1849,6 +1849,139 @@ restano FROZEN (ADR-013), PASS 14B resta PAUSED, nessun file toccato in
 nessuno dei due repository esterni. **Non iniziato Work Package E, non
 iniziato PASS 15, non toccato l'External JARVIS Core, come esplicitamente
 richiesto.**
+
+## 30.15 PROACTIVITY RELIABILITY CLOSURE — WORK PACKAGE E: FINAL QUALIFICATION & HONOR 200 ACCEPTANCE (SESSIONE 1/N — PRE-DEVICE)
+
+Prima sessione del pacchetto finale di chiusura (§0-§33 della spec Astra),
+il quinto e ultimo dei pacchetti A/B/C/D/D.1/E. **Per mandato esplicito
+§32 della spec**: questa sessione NON può eseguire test reali su
+dispositivo (Claude non possiede fisicamente l'Honor 200) — produce solo
+la fondazione automatizzata, la documentazione di accettazione e
+l'identità della build candidata, poi SI FERMA. **Non dichiarata
+completa Work Package E.**
+
+Work Package A/B/C/D/D.1 interamente preservati — nessun file di
+`ProactiveDeliveryDispatcher`/`ProactiveOccurrenceStore`/
+`ProactiveScheduler`/`ProactiveComposer`/`ProactiveDigestSnapshot`/
+`WeatherAlertPolicyV2`/`ForecastDecisionReceiptRepository.record`/`prune`
+toccato — solo estensioni additive (nuovi metodi di lettura, nuovi file).
+
+**§4 — matrice di test integrati per la convergenza dei segnali
+mattutini**: nuovo `MorningSignalConvergenceTest.kt` (`app/src/test`) — le
+5 scenari A-E richieste esplicitamente (FIRST_UNLOCK vince e tutti i
+successivi sopprimono; NEXT_ALARM vince, incluso un FIRST_UNLOCK tardivo
+che arriva dopo; CONFIGURED_TIME vince come fallback; PERIODIC_FALLBACK
+recupera quando nessun segnale precedente ha reclamato la giornata; due
+claim quasi-simultanei — un solo proprietario durevole), ognuna eseguita
+end-to-end (claim → deliveryAttempt → delivered) tramite la STESSA
+`ProactiveOccurrenceStore`/`FakeProactiveOccurrenceDao` già usata da
+Work Package A/14.1 — un'unica suite nominata esplicitamente per
+l'invariante richiesto, non solo implicita nei test più granulari già
+esistenti.
+
+**§16/§24 — diagnostica: ricostruzione completa del receipt**: gap reale
+trovato — `ForecastDecisionReceiptRepository` non esponeva ALCUN metodo di
+lettura (solo `record`/`appendOutcomeEvent`/`prune`), quindi nonostante
+`ForecastDecisionReceiptEntity` avesse già ogni campo richiesto da §16,
+non esisteva modo di leggerlo su dispositivo senza adb/Room Inspector.
+Aggiunti `findByReceiptId()`/`recent()` (passthrough al DAO, `runCatching`,
+mai un'eccezione propagata) e un nuovo pulsante "Mostra receipt completo"
+nella card "Meteo — avviso pioggia/temporali" di Diagnostica
+(`DiagnosticsViewModel.refreshLatestWeatherReceiptDetail()`) che rende
+TUTTI i campi elencati da §16 (target date, fetchedAt, età, provider,
+fuso, raw WMO, probabilità, precipitazione/rovesci/neve, ore, evidenza
+oraria, location match, policy/soglie version, decisione/motivo,
+occurrenceKey/triggerSource/namespace, eventi) — MAI coordinate/indirizzo
+(verificato: `locationRevision` resta l'unico tag opaco già in uso
+ovunque nel codice meteo).
+
+**§18-§20 — ponte receipt→replay-fixture + contratto observed-outcome
+versionato**: nuovo `core/weather/replay/WeatherObservedOutcome.kt`
+(`:core`, puro, versionato `OBSERVED_OUTCOME_CONTRACT_VERSION=1`) —
+5 valori (RAIN_OBSERVED/NO_MEANINGFUL_RAIN_OBSERVED/STORM_OBSERVED/
+SNOW_MIXED/OBSERVATION_UNKNOWN) definiti PRIMA di qualunque scoring reale
+(§20: "non spostare i pali della porta dopo aver visto i risultati"), con
+`toAggregationTruth()` che mappa esplicitamente al binario
+[ObservedOutcome] già usato da `WeatherAlertReplay.aggregate()` —
+`SNOW_MIXED` mappa a NO_HAZARD_OCCURRED (mai escluso, mai trattato come
+pioggia: la policy stessa rifiuta di allertare per neve, §9/§17) e
+`OBSERVATION_UNKNOWN` mappa a `null` (mai contato come vero negativo,
+§21). Nuovo `app/weather/receipt/ForecastDecisionReceiptReplayBridge.kt`
+— converte un `ForecastDecisionReceiptEntity` REALE già scritto in
+produzione in un `ReplayFixture`, chiudendo §19's gate di integrità dati:
+un receipt di produzione È genuinamente "ciò che era disponibile al
+momento della decisione" (scritto la stessa sera dalla vera fetch), mai
+una ricostruzione successiva. Limite dichiarato: rifiuta (`null`) un
+receipt con `thresholdConfigVersion` diverso dall'unico che la produzione
+abbia mai realmente valutato (verificato leggendo
+`ProactiveManager.evaluateWeatherAlert()`: nessuna soglia custom viene mai
+passata); un receipt il cui `LOCATION_MISMATCH` originale non è
+riproducibile fedelmente (lo schema del receipt non conserva le due
+revisioni di posizione confrontate, solo il booleano di match).
+
+**§21 — breakdown delle esclusioni per motivo**: `ReplayAggregate` esteso
+(campi additivi con default, nessuna rottura dei test esistenti) con
+`unknownCount`/`invalidDataCount`/`staleDataCount`/
+`locationMismatchCount`/`noSourceCount`/`unlabeledCount` più i rispettivi
+tassi — una partizione non sovrapposta ESAUSTIVA di ogni risultato
+valutato (provata da test: la somma di questi sei più
+TP+FP+TN+FN combacia sempre con `evaluatedCount`) — mai più
+`excludedFromAggregate` come unico numero opaco che nasconde UNKNOWN
+dentro TN (§21's divieto esplicito).
+
+**Test**: `cd core && ./gradlew test` verde — **1477/1477** (+8: 6
+`WeatherObservedOutcomeTest`, 2 nuovi `WeatherAlertReplayTest` sul
+breakdown — nessuna regressione sui 1469 preesistenti). `app/`: 2 nuovi
+file di test (`MorningSignalConvergenceTest.kt`, più le estensioni a
+`ForecastDecisionReceiptRepository.kt`/`DiagnosticsViewModel.kt`/
+`DiagnosticsScreen.kt`) scritti e verificati con bilanciamento parentesi/
+graffe/quadre programmatico — non eseguibili in questo ambiente (nessun
+Android SDK), CI/device-pending come ogni altra modifica `app/` di questo
+progetto.
+
+**§24 — documento di accettazione**: nuovo `docs/PROACTIVITY_FINAL_ACCEPTANCE.md`
+— identità build candidata, checklist precondizioni, scenario primario a
+un mattino (§7), acceptance del contenuto mattutino (§8), le tre scenari
+sorgente-alternativa (§9), rollover/cambio NEXT_ALARM (§10/§11),
+CONFIGURED_TIME (§12), restart/reboot (§13), edge fuso orario (§14),
+Evening Digest (§15), accettazione produzione meteo (§16), scenari debug
+v2 (§17), shadow mode reale con procedura/limiti/regola di sample-size
+onesta (§18-§23), limitazioni di piattaforma accettabili (§26), tabella
+riassuntiva di chiusura software (§27), procedura di gestione fallimento
+(§25) — ogni riga PASS/FAIL vuota finché non eseguita realmente sul
+dispositivo, mai una dichiarazione anticipata.
+
+**§29/§30 — impact check**: Semantic tutti NO (nessun nuovo intent/
+dominio/operazione/slot/classificatore/dataset/retraining/EmbeddingGemma/
+calibrazione-OOD; `BLIND` non toccato; nessun keyword/regex NL
+understanding — verificato via grep, `core/semantic/*` non toccato);
+`jarvis-core`/`jarvis-protocol` FROZEN, Event Bridge non toccato, PASS 14B
+resta PAUSED/UNTOUCHED; Pass 15 NON iniziato.
+
+```text
+PROACTIVITY CLOSURE E — FINAL QUALIFICATION
+AUTOMATED QUALIFICATION READY  ✅
+CI VERIFIED                    ⏳ (pending questo push)
+HONOR DEVICE TEST              IN PROGRESS (protocollo pronto e consegnato
+                                all'utente — nessuno scenario ancora
+                                eseguito, nessun dispositivo posseduto da
+                                questa sessione)
+SOFTWARE DEVICE VERIFIED       ❌
+WEATHER QUALITY VERIFIED       ❌
+PRODUCTION READY               ❌
+```
+
+**Deliberatamente NON fatto in questa sessione, per mandato esplicito
+§32**: nessuno scenario Honor 200 eseguito; nessuna dichiarazione di
+Work Package E completo; nessuna modifica di codice motivata solo da
+"rendere più facile il piano di accettazione" (§2 — nessun fix applicato
+in questa sessione, perché nessun fallimento reale è stato osservato su
+dispositivo: solo colmato un gap di osservabilità/copertura test già
+noto); Pass 15 non iniziato; `jarvis-core`/`jarvis-protocol` non toccati.
+La procedura Honor 200 esatta (§7-§17 della spec, riportata per intero in
+`docs/PROACTIVITY_FINAL_ACCEPTANCE.md`) è restituita all'utente per
+l'esecuzione manuale, come richiesto esplicitamente dal mandato di questa
+prima sessione.
 
 # 31. MICRO-PATCH 14.2.1 — CONFIGURABLE BRIEFING TIME
 
@@ -4018,6 +4151,43 @@ Un micro-modello è `PRODUCTION READY` solo se:
 
 # 129. MASTER CHANGELOG
 
+## v1.9 — 2026-09-20
+
+Aggiornamento per **PROACTIVITY RELIABILITY CLOSURE — WORK PACKAGE E:
+FINAL QUALIFICATION & HONOR 200 ACCEPTANCE, sessione 1/N pre-device**
+(nuovo §30.15) — l'ultimo dei cinque pacchetti Astra (A/B/C/D/D.1/E). Per
+mandato esplicito della spec, questa prima sessione produce solo la
+fondazione automatizzata, mai un'esecuzione reale su dispositivo:
+
+- `MorningSignalConvergenceTest.kt` (nuovo) — le 5 scenari A-E esplicite
+  di convergenza dei segnali mattutini su un solo dispaccio, end-to-end
+  via `ProactiveOccurrenceStore`;
+- `ForecastDecisionReceiptRepository` guadagna `findByReceiptId()`/
+  `recent()` — colmato un gap reale: nessun metodo di lettura esisteva
+  nonostante l'entity avesse già ogni campo richiesto — nuovo pulsante
+  "Mostra receipt completo" in Diagnostica;
+- `WeatherObservedOutcome` (`:core`, nuovo, versionato) — contratto
+  observed-outcome a 5 valori definito PRIMA di qualunque scoring reale,
+  mappato esplicitamente al binario `ObservedOutcome` esistente
+  (SNOW_MIXED non è mai un falso positivo pioggia, OBSERVATION_UNKNOWN
+  non è mai un vero negativo fabbricato);
+- `ForecastDecisionReceiptReplayBridge` (nuovo) — converte un receipt di
+  produzione REALE in una fixture di replay, chiudendo il gate di
+  integrità dati §19 per lo shadow mode meteo reale;
+- `ReplayAggregate` esteso con il breakdown esaustivo delle esclusioni
+  per motivo (unknown/invalid/stale/location-mismatch/no-source/
+  unlabeled), mai più un unico numero opaco;
+- nuovo `docs/PROACTIVITY_FINAL_ACCEPTANCE.md` — protocollo Honor 200
+  completo, ogni riga PASS/FAIL vuota finché non eseguita realmente;
+- core 1477/1477 (+8); Work Package A/B/C/D/D.1 interamente preservati;
+  `jarvis-core`/`jarvis-protocol` FROZEN, PASS 14B PAUSED.
+
+Decisione chiave: **Work Package E NON è dichiarata completa da questa
+sessione — la fondazione automatizzata e il protocollo di accettazione
+sono pronti, ma `SOFTWARE DEVICE VERIFIED`/`WEATHER QUALITY VERIFIED`
+restano ❌ finché l'utente non esegue davvero gli scenari sull'Honor 200
+reale.**
+
 ## v1.8 — 2026-09-19
 
 Aggiornamento per **PROACTIVITY RELIABILITY CLOSURE — WORK PACKAGE D.1:
@@ -4251,4 +4421,4 @@ Decisione chiave:
 **JARVIS adotta il pattern “specialized reflexes → semantic intelligence → planner/BRAIN escalation”, ma resta vendor-agnostic e non trasforma i micro-modelli in un secondo sistema semantico.**
 
 
-**END OF JARVIS MASTER ARCHITECTURE v1.8**
+**END OF JARVIS MASTER ARCHITECTURE v1.9**
