@@ -1961,7 +1961,11 @@ resta PAUSED/UNTOUCHED; Pass 15 NON iniziato.
 ```text
 PROACTIVITY CLOSURE E — FINAL QUALIFICATION
 AUTOMATED QUALIFICATION READY  ✅
-CI VERIFIED                    ⏳ (pending questo push)
+CI VERIFIED                    ✅ (run #452, commit 3e2b7e0 — tutti gli step
+                                verdi: core tests 1477/1477, assemble,
+                                Android unit tests, lint, APK SHA-256
+                                3e9d92c038b96602cc19c7f37993c3f6d4caf9fbd4e2c38cefd942296460be39,
+                                upload, publish)
 HONOR DEVICE TEST              IN PROGRESS (protocollo pronto e consegnato
                                 all'utente — nessuno scenario ancora
                                 eseguito, nessun dispositivo posseduto da

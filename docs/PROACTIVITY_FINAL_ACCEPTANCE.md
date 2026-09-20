@@ -18,9 +18,9 @@ never test against a floating "whatever is currently installed" build.
 
 | Field | Value |
 |---|---|
-| Candidate SHA | *(filled in after the qualifying CI run — see §31/§33 of the Work Package E task and the PROACTIVITY-E row in `CLAUDE.md`)* |
-| CI run | *(run number + URL)* |
-| APK SHA-256 | *(from the CI job's "Compute APK SHA-256" step, or `app-debug.apk.sha256` in the `latest-debug` GitHub Release)* |
+| Candidate SHA | `3e2b7e07deb920744451bba3e671857c580fa8cf` |
+| CI run | run #452, https://github.com/umikasaiii/Jarvis-/actions/runs/35477928954 (all 17 steps green: core tests, assemble debug APK, Android unit tests, lint, compute SHA-256, upload, publish) |
+| APK SHA-256 | `3e9d92c038b96602cc19c7f37993c3f6d4caf9fbd4e2c38cefd942296460be39` (from `app-debug.apk.sha256` in the `latest-debug` GitHub Release, cross-checked against the release asset's own digest) |
 | versionName | `0.1.0` (static — this project does not derive `versionName`/`versionCode` per commit; see `app/build.gradle.kts`) |
 | versionCode | `1` (static, same as above) |
 | `BuildConfig.BUILD_ID` | first 7 chars of the commit SHA in CI (`local` outside CI) — visible in Diagnostics › "Ultima risposta chat" card, and embedded in every `ForecastDecisionReceiptEntity.appBuildId` written by that build |
