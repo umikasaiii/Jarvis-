@@ -210,4 +210,68 @@ class WeatherAlertReplayTest {
         assertTrue(out.startsWith("{") && out.endsWith("}"))
         assertTrue(out.contains("\"evaluatedCount\":1"))
     }
+
+    // --- § WORK PACKAGE E §21 — exclusion breakdown --------------------------
+
+    @Test fun aggregate_breaksDownExclusionsByReason_neverOneOpaqueCount() {
+        val results = listOf(
+            // no-source: the fetch itself never produced facts.
+            WeatherAlertReplay.evaluate(fixture(id = "no_source", f = null, observed = ObservedOutcome.HAZARD_OCCURRED)),
+            // location-mismatch.
+            WeatherAlertReplay.evaluate(fixture(id = "loc", locationOverride = "coord:45.00,9.00", observed = ObservedOutcome.HAZARD_OCCURRED)),
+            // stale.
+            WeatherAlertReplay.evaluate(fixture(id = "stale", f = facts(fetchedAt = "2026-09-15T18:00:00Z"), observed = ObservedOutcome.HAZARD_OCCURRED)),
+            // invalid-data: date mismatch.
+            WeatherAlertReplay.evaluate(fixture(id = "date", f = facts(target = "2026-09-21"), observed = ObservedOutcome.HAZARD_OCCURRED)),
+            // policy-unknown: a storm code with no aligned hourly evidence.
+            WeatherAlertReplay.evaluate(
+                fixture(
+                    id = "unk",
+                    f = facts(rawWeatherCode = 95, precipitationProbabilityMaxPercent = 10.0, rainSumMm = 0.0, precipitationSumMm = 0.0),
+                    observed = ObservedOutcome.HAZARD_OCCURRED,
+                ),
+            ),
+            // eligible, a real decision reached, but genuinely no label yet
+            // (a prospective shadow evaluation awaiting tomorrow).
+            WeatherAlertReplay.evaluate(fixture(id = "pending", observed = null)),
+            // a real, fully-scoreable TP.
+            WeatherAlertReplay.evaluate(fixture(id = "tp", observed = ObservedOutcome.HAZARD_OCCURRED)),
+        )
+        val agg = WeatherAlertReplay.aggregate(results)
+
+        assertEquals(7, agg.evaluatedCount)
+        assertEquals(1, agg.noSourceCount)
+        assertEquals(1, agg.locationMismatchCount)
+        assertEquals(1, agg.staleDataCount)
+        assertEquals(1, agg.invalidDataCount)
+        assertEquals(1, agg.unknownCount)
+        assertEquals(1, agg.unlabeledCount)
+        assertEquals(1, agg.truePositive)
+        assertEquals(6, agg.excludedFromAggregate)
+
+        // The six exclusion reasons plus the four confusion-matrix buckets
+        // must exhaustively partition every evaluated result - nothing
+        // double-counted, nothing dropped.
+        val partitioned = agg.noSourceCount + agg.locationMismatchCount + agg.staleDataCount +
+            agg.invalidDataCount + agg.unknownCount + agg.unlabeledCount +
+            agg.truePositive + agg.falsePositive + agg.trueNegative + agg.falseNegative
+        assertEquals(agg.evaluatedCount, partitioned)
+        assertEquals(agg.excludedFromAggregate, agg.noSourceCount + agg.locationMismatchCount + agg.staleDataCount + agg.invalidDataCount + agg.unknownCount + agg.unlabeledCount)
+
+        assertEquals(1.0 / 7.0, agg.noSourceRate)
+        assertEquals(1.0 / 7.0, agg.locationMismatchRate)
+        assertEquals(1.0 / 7.0, agg.staleDataRate)
+        assertEquals(1.0 / 7.0, agg.invalidDataRate)
+        assertEquals(1.0 / 7.0, agg.unknownRate)
+    }
+
+    @Test fun aggregate_emptyResults_ratesAreNullNeverFabricated() {
+        val agg = WeatherAlertReplay.aggregate(emptyList())
+        assertNull(agg.unknownRate)
+        assertNull(agg.invalidDataRate)
+        assertNull(agg.staleDataRate)
+        assertNull(agg.locationMismatchRate)
+        assertNull(agg.noSourceRate)
+        assertEquals(0, agg.unknownCount + agg.invalidDataCount + agg.staleDataCount + agg.locationMismatchCount + agg.noSourceCount + agg.unlabeledCount)
+    }
 }

@@ -151,7 +151,24 @@ data class ReplayResult(
     val observedOutcome: String?,
 )
 
-/** §6's optional aggregate — computed only over [ReplayClassification.CANDIDATE]/[ReplayClassification.NO_ALERT] results that also carry an [ObservedOutcome]. `null` ratios mean the denominator was zero, never a fabricated 0.0/1.0. */
+/**
+ * §6's optional aggregate — computed only over
+ * [ReplayClassification.CANDIDATE]/[ReplayClassification.NO_ALERT] results
+ * that also carry an [ObservedOutcome]. `null` ratios mean the denominator
+ * was zero, never a fabricated 0.0/1.0.
+ *
+ * § WORK PACKAGE E §21 — [excludedFromAggregate] is broken down by REASON
+ * ([unknownCount]/[invalidDataCount]/[staleDataCount]/
+ * [locationMismatchCount]/[noSourceCount]/[unlabeledCount], each with its
+ * own rate) so an UNKNOWN policy decision, a stale fetch, a location
+ * mismatch, a missing source, and a genuinely still-unlabeled prospective
+ * evaluation are never collapsed into one opaque number — §21's explicit
+ * "do not hide UNKNOWN cases by counting them as TN" and "do not report
+ * one vague accuracy number as the primary metric". These six counts plus
+ * [truePositive]/[falsePositive]/[trueNegative]/[falseNegative] always sum
+ * to exactly [evaluatedCount] — a non-overlapping partition of every
+ * result, verified by test.
+ */
 @Serializable
 data class ReplayAggregate(
     val evaluatedCount: Int,
@@ -164,6 +181,17 @@ data class ReplayAggregate(
     val recall: Double?,
     val falsePositiveRate: Double?,
     val falseNegativeRate: Double?,
+    val unknownCount: Int = 0,
+    val invalidDataCount: Int = 0,
+    val staleDataCount: Int = 0,
+    val locationMismatchCount: Int = 0,
+    val noSourceCount: Int = 0,
+    val unlabeledCount: Int = 0,
+    val unknownRate: Double? = null,
+    val invalidDataRate: Double? = null,
+    val staleDataRate: Double? = null,
+    val locationMismatchRate: Double? = null,
+    val noSourceRate: Double? = null,
 )
 
 object WeatherAlertReplay {
@@ -264,12 +292,37 @@ object WeatherAlertReplay {
         var tn = 0
         var fn = 0
         var excluded = 0
+        var unknownCount = 0
+        var invalidDataCount = 0
+        var staleDataCount = 0
+        var locationMismatchCount = 0
+        var noSourceCount = 0
+        var unlabeledCount = 0
         for (r in results) {
             val truth = r.observedOutcome
             val predictedPositive = r.classification == ReplayClassification.CANDIDATE.name
             val predictedNegative = r.classification == ReplayClassification.NO_ALERT.name
             if (truth == null || (!predictedPositive && !predictedNegative)) {
                 excluded++
+                // § §21 — a non-overlapping breakdown of WHY this result was
+                // excluded, checked in the same priority order production's
+                // own freshness gate applies (a freshness failure always
+                // means the policy never ran, regardless of classification).
+                when (r.freshnessResult) {
+                    ForecastEligibilityReason.MISSING_FACTS.name -> noSourceCount++
+                    ForecastEligibilityReason.LOCATION_MISMATCH.name -> locationMismatchCount++
+                    ForecastEligibilityReason.STALE.name -> staleDataCount++
+                    ForecastEligibilityReason.DATE_MISMATCH.name, ForecastEligibilityReason.FUTURE_TIMESTAMP.name -> invalidDataCount++
+                    else -> if (r.classification == ReplayClassification.UNKNOWN.name) {
+                        unknownCount++
+                    } else {
+                        // freshness was ELIGIBLE and the policy reached a
+                        // real CANDIDATE/NO_ALERT decision, but no ground
+                        // truth label exists yet — a genuinely pending
+                        // prospective shadow evaluation, not a data defect.
+                        unlabeledCount++
+                    }
+                }
                 continue
             }
             val truthPositive = truth == ObservedOutcome.HAZARD_OCCURRED.name
@@ -280,8 +333,9 @@ object WeatherAlertReplay {
                 else -> fn++
             }
         }
+        val total = results.size
         return ReplayAggregate(
-            evaluatedCount = results.size,
+            evaluatedCount = total,
             truePositive = tp,
             falsePositive = fp,
             trueNegative = tn,
@@ -291,6 +345,17 @@ object WeatherAlertReplay {
             recall = ratio(tp, tp + fn),
             falsePositiveRate = ratio(fp, fp + tn),
             falseNegativeRate = ratio(fn, fn + tp),
+            unknownCount = unknownCount,
+            invalidDataCount = invalidDataCount,
+            staleDataCount = staleDataCount,
+            locationMismatchCount = locationMismatchCount,
+            noSourceCount = noSourceCount,
+            unlabeledCount = unlabeledCount,
+            unknownRate = ratio(unknownCount, total),
+            invalidDataRate = ratio(invalidDataCount, total),
+            staleDataRate = ratio(staleDataCount, total),
+            locationMismatchRate = ratio(locationMismatchCount, total),
+            noSourceRate = ratio(noSourceCount, total),
         )
     }
 
