@@ -2075,7 +2075,11 @@ STARTUP CRASH RECORDER          ✅ (StartupDiagnostics, Room-independent)
 UPGRADE REGRESSION TEST        ✅ (androidTest, compile-only in this CI)
 DATA PRESERVATION              CONFIRMED
 A/B/C/D/D.1 REGRESSIONS        NONE
-CI VERIFIED                    ⏳ (pending questo push)
+CI VERIFIED                    ✅ (run #454, commit 1236015 — tutti gli
+                                step verdi, incluso il nuovo
+                                :app:assembleDebugAndroidTest — vedi anche
+                                CI run #452 (3e2b7e0), il candidato E che
+                                ha realmente fallito sul dispositivo)
 DEVICE RETEST                  REQUIRED — non ancora eseguito
 ```
 
