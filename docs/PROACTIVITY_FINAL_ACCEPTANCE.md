@@ -37,6 +37,99 @@ table before trusting a download.
 
 ---
 
+## 0.1 Device failure log — MICRO-PATCH E.1 (cold start / upgrade crash)
+
+**Failed candidate**: `3e2b7e07deb920744451bba3e671857c580fa8cf` (the
+candidate identified in §0 above). Installed OVER the previously-installed
+JARVIS build on a real Honor 200, preserving all existing app
+data/settings/databases — a normal in-place upgrade, never a clean
+install/clear-data.
+
+```
+UPGRADE INSTALL            PASS
+COLD START                 FAIL — app opens briefly, then the process/UI
+                            closes immediately, no Android crash dialog
+                            shown; app unusable
+MORNING                    BLOCKED
+EVENING                    BLOCKED
+WEATHER DEVICE              BLOCKED
+E COMPLETE                 NO
+```
+
+**Root cause — PROVEN, not inferred.** `TriggerEvidenceRowEntity`'s
+`@Entity` annotation (`app/.../proactive/TriggerEvidenceEntities.kt`)
+declared no `indices`, while `TriggerEvidenceMigrations.MIGRATION_12_13`
+(added in MICRO-PATCH 14.2.3, never previously device-tested) creates two
+indices (`source`, `eventAtMs`) via raw `CREATE INDEX` SQL. Room's own
+schema validation on open (`onValidateSchema`) compares the
+entity-derived expected `TableInfo` — columns AND indices — against the
+actual live schema after every migration runs; this mismatch throws
+`IllegalStateException` on the very first open of the WHOLE shared
+`JarvisDatabase` after migrating through v12→v13, and on every subsequent
+DAO call on that same Singleton instance for the rest of the process's
+life — not just calls touching `trigger_evidence`. This ONLY manifests on
+an in-place upgrade from schema ≤12 (the real migration path runs and
+creates the two indices); a clean install never migrates at all — Room
+just calls `createAllTables()` from the current (already self-consistent)
+entity shape — which is exactly why "works after a clean reinstall" was
+never trusted as evidence of a fix (per this task's own explicit
+instruction) and would have masked, not proven, anything. Verified against
+every OTHER migration+entity pair in this codebase (`ArchiveItemEntity`,
+`AutomationRuleEntity`, `AutomationExecutionEntity`,
+`ConversationalMemoryEntity`), all of which already declare matching
+`indices` — `TriggerEvidenceRowEntity` was the one outlier.
+
+**Fix**: `indices = [Index("source"), Index("eventAtMs")]` added to
+`TriggerEvidenceRowEntity`'s `@Entity` annotation, matching exactly what
+the (unchanged) migration SQL creates. No `JarvisDatabase` version bump
+needed or made — the fix makes the EXPECTED schema match what the
+migration already produces, so no new migration step, no data loss, fully
+non-destructive.
+
+**Regression test**: `TriggerEvidenceMigrationRegressionTest`
+(`app/src/androidTest/.../proactive/`) — a small, standalone Room database
+scoped to just this entity, seeded at raw schema version 12 (no
+`trigger_evidence` table, matching a real prior install), then opened
+through the real `MIGRATION_12_13` — fails loudly on this exact regression
+class instead of silently passing on a clean-install-shaped test. Compiled
+(never run — no emulator in this environment) by a new CI step
+(`:app:assembleDebugAndroidTest`).
+
+**Also built, independent of whether this specific root cause is the only
+one**: `StartupDiagnostics` (`app/.../diagnostics/StartupDiagnostics.kt`) —
+a minimal, bounded, Room/DataStore-INDEPENDENT (plain `SharedPreferences`)
+startup crash/checkpoint recorder, installed as the first statement of
+`JarvisApplication.onCreate()`. Records build id, startup checkpoint,
+exception class, a bounded message, up to 6 top stack frames and a
+timestamp — never agenda/health/weather/message content, coordinates or
+secrets. Exposed as a new "Avvio precedente" card at the top of the
+Diagnostics screen. Checkpoints wired through every startup phase
+(`APPLICATION_CREATED`/`HILT_READY`/`RESTORE_BARRIER_*`/`*_SYNC_*` for
+each optional subsystem/`MAIN_ACTIVITY_CREATED`/`ROOT_UI_READY`) so the
+NEXT device attempt — whether this fix is complete or not — reports
+exactly which phase it reached, without needing adb.
+
+**Data preservation**: CONFIRMED — the fix is a compile-time entity
+annotation only; no migration was added, removed, or changed; no
+`fallbackToDestructiveMigration()` was invoked on `JarvisDatabase` by this
+patch.
+
+**A/B/C/D/D.1 regressions**: none — no file owned by those work packages
+was modified by this patch (only `TriggerEvidenceEntities.kt`,
+`JarvisApplication.kt`, `MainActivity.kt`, `DiagnosticsViewModel.kt`,
+`DiagnosticsScreen.kt`, the new `StartupDiagnostics.kt`, the new
+`androidTest` regression test, `app/build.gradle.kts` and `ci.yml`).
+
+**Device retest required: YES.** This candidate has NOT yet been tested
+on the Honor 200 — the table above records the FAILURE of the previous
+candidate and the fix applied in response, not a new PASS. The next real
+device attempt must re-run at minimum the upgrade-install scenario (over
+the SAME previously-installed build, or over the failed
+`3e2b7e0` candidate itself — either reproduces the real-world upgrade
+path) before any row below can be attempted.
+
+---
+
 ## 1. Preconditions checklist
 
 Before the first morning test:

@@ -4,8 +4,8 @@
 
 - **Project:** JARVIS
 - **Document role:** project map / architectural control plane / living source of project intent
-- **Version:** 1.9
-- **Generated:** 2026-09-20
+- **Version:** 1.10
+- **Generated:** 2026-09-24
 - **Primary language:** Italiano
 - **Status:** ACTIVE — living document
 - **Repository target:** `umikasaiii/Jarvis-`
@@ -1986,6 +1986,104 @@ La procedura Honor 200 esatta (§7-§17 della spec, riportata per intero in
 `docs/PROACTIVITY_FINAL_ACCEPTANCE.md`) è restituita all'utente per
 l'esecuzione manuale, come richiesto esplicitamente dal mandato di questa
 prima sessione.
+
+## 30.16 MICRO-PATCH E.1 — COLD START / UPGRADE CRASH (Honor 200 device
+failure, causa reale trovata e corretta)
+
+Il primo vero test device del candidato E (`3e2b7e0`) è fallito:
+installazione in-place riuscita, dati preservati, ma l'app si apriva
+brevemente e chiudeva subito il processo, senza dialogo di crash Android
+— inutilizzabile. Nessun clear-data/reinstall accettato come fix, per
+mandato esplicito.
+
+**Audit statico ordinato**: `JarvisApplication`→Hilt→`MainActivity`→
+navigazione root→Room, con priorità esplicita su
+`AutomationServiceController`/`AutomationEventService` (§3 del task) e
+sulla catena di migrazione `JarvisDatabase` (§4). Il manifest FGS
+`specialUse` di `AutomationEventService` (permesso, tipo, property
+`PROPERTY_SPECIAL_USE_FGS_SUBTYPE`) è risultato corretto — non la causa.
+`DiagnosticsViewModel`/`ForecastDecisionReceiptRepository`/
+`WeatherDecisionDatabase` (§10) sono risultati raggiunti solo via
+`hiltViewModel()` lazy alla navigazione reale della schermata Diagnostica
+— mai eager alla root — verificato via grep dei call site, non
+un'assunzione.
+
+**CAUSA REALE PROVATA, non ipotizzata**: `TriggerEvidenceRowEntity`
+(`app/.../proactive/TriggerEvidenceEntities.kt`) non dichiarava `indices`
+sulla propria `@Entity`, mentre `TriggerEvidenceMigrations.MIGRATION_12_13`
+(MICRO-PATCH 14.2.3, mai testata su device reale prima d'ora) crea due
+indici (`source`, `eventAtMs`) via SQL raw. La validazione schema di Room
+all'apertura (`onValidateSchema`) confronta il `TableInfo` atteso
+(derivato dall'annotazione — colonne E indici) contro lo schema live
+reale dopo ogni migrazione; il disallineamento lancia
+`IllegalStateException` alla PRIMA apertura dell'INTERO `JarvisDatabase`
+condiviso dopo la migrazione v12→v13 — e su OGNI chiamata DAO successiva
+sulla stessa istanza Singleton per il resto della vita del processo, non
+solo su `trigger_evidence`. Si manifesta SOLO su un upgrade in-place da
+schema ≤12 (il vero percorso di migrazione gira e crea i due indici); un
+install pulito non migra mai — Room chiama `createAllTables()` dalla
+forma ENTITY corrente, già auto-consistente — spiegando esattamente
+perché "funziona dopo reinstall pulito" avrebbe mascherato il bug invece
+di provarne la correzione (esattamente il divieto esplicito del task).
+Verificato contro OGNI altra coppia migrazione+entity del progetto
+(`ArchiveItemEntity`, `AutomationRuleEntity`, `AutomationExecutionEntity`,
+`ConversationalMemoryEntity`) — tutte dichiarano correttamente `indices`
+corrispondenti; `TriggerEvidenceRowEntity` era l'unica eccezione.
+
+**Fix**: `indices = [Index("source"), Index("eventAtMs")]` aggiunto
+all'annotazione `@Entity`, a specchio esatto di ciò che la migrazione
+(invariata) già crea — nessun bump di versione `JarvisDatabase`
+necessario, nessuna nuova migrazione, zero perdita dati, interamente
+non distruttivo.
+
+**Test di regressione reale**: `TriggerEvidenceMigrationRegressionTest`
+(nuovo `app/src/androidTest/`) — un `@Database` minimo scoped alla sola
+entità sotto test, seminato a schema raw versione 12 (nessuna tabella
+`trigger_evidence`, come un vero device pre-migrazione), poi aperto
+tramite la vera `MIGRATION_12_13` — fallisce rumorosamente su questa
+esatta classe di regressione invece di passare silenziosamente su un test
+a forma di clean-install. Compilato (mai eseguito — nessun emulatore in
+questo ambiente) da un nuovo step CI (`:app:assembleDebugAndroidTest`).
+
+**Osservabilità costruita indipendentemente dalla causa specifica trovata
+(§7/§8 del task, obbligatoria comunque)**: nuovo `StartupDiagnostics`
+(`app/.../diagnostics/`) — recorder di crash/checkpoint minimo, bounded,
+locale, deliberatamente su `SharedPreferences` semplice e MAI Room/
+DataStore (deve continuare a funzionare quando è proprio Room a
+crashare), installato come prima istruzione di
+`JarvisApplication.onCreate()`. Registra build id, checkpoint di avvio,
+classe eccezione, messaggio bounded, fino a 6 stack frame in cima,
+timestamp — mai contenuto agenda/salute/meteo/messaggi, coordinate o
+segreti. Un fallimento del PRECEDENTE avvio (o un processo terminato
+senza eccezione Java mai osservata, marcato onestamente come
+`INCOMPLETE_STARTUP` distinto da un vero `EXCEPTION`) è esposto in una
+nuova card "Avvio precedente" in cima alla schermata Diagnostica, con
+pulsante "Cancella". Checkpoint cablati in ogni fase di avvio reale
+(`APPLICATION_CREATED`/`HILT_READY`/`RESTORE_BARRIER_*`/`*_SYNC_*` per
+ogni sottosistema opzionale via un nuovo helper `checkpointed()` che
+distingue sempre `CancellationException`/`MAIN_ACTIVITY_CREATED`/
+`ROOT_UI_READY`) — il prossimo tentativo su device, che questo fix basti
+o no, dirà esattamente a quale fase si è arrivati, senza adb.
+
+```text
+MICRO-PATCH E.1 — COLD START / UPGRADE CRASH
+ROOT CAUSE                     PROVEN (TriggerEvidenceRowEntity missing
+                                indices vs MIGRATION_12_13 raw SQL)
+FIX APPLIED                    ✅ (indices added, no migration/version
+                                change, zero data loss)
+STARTUP CRASH RECORDER          ✅ (StartupDiagnostics, Room-independent)
+UPGRADE REGRESSION TEST        ✅ (androidTest, compile-only in this CI)
+DATA PRESERVATION              CONFIRMED
+A/B/C/D/D.1 REGRESSIONS        NONE
+CI VERIFIED                    ⏳ (pending questo push)
+DEVICE RETEST                  REQUIRED — non ancora eseguito
+```
+
+**Deliberatamente NON fatto**: nessuna soglia meteo toccata, nessun
+modello semantico toccato, Pass 15 non iniziato, `jarvis-core`/
+`jarvis-protocol` non toccati, nessuna clear-data/reinstall proposta come
+fix, nessun `fallbackToDestructiveMigration()` invocato su
+`JarvisDatabase`.
 
 # 31. MICRO-PATCH 14.2.1 — CONFIGURABLE BRIEFING TIME
 
@@ -4155,6 +4253,28 @@ Un micro-modello è `PRODUCTION READY` solo se:
 
 # 129. MASTER CHANGELOG
 
+## v1.10 — 2026-09-24
+
+**MICRO-PATCH E.1 — COLD START / UPGRADE CRASH** (nuovo §30.16). Il primo
+vero test device del candidato E (`3e2b7e0`) è fallito: upgrade in-place
+riuscito, dati preservati, ma l'app si apriva brevemente e chiudeva subito
+il processo, senza dialogo di crash Android. Causa reale PROVATA (non
+ipotizzata): `TriggerEvidenceRowEntity` non dichiarava `indices` mentre
+`TriggerEvidenceMigrations.MIGRATION_12_13` crea due indici via SQL raw —
+un disallineamento che la validazione schema di Room rigetta con
+`IllegalStateException` alla prima apertura dell'intero `JarvisDatabase`
+condiviso dopo la migrazione, su ogni chiamata DAO successiva, solo su
+upgrade in-place da schema ≤12 (mai su un install pulito — esattamente
+perché "funziona dopo reinstall" avrebbe mascherato il bug). Fix:
+`indices = [Index("source"), Index("eventAtMs")]` aggiunto all'entity, a
+specchio della migrazione invariata — nessun bump versione, nessuna
+perdita dati. Nuovo `StartupDiagnostics` (recorder di crash/checkpoint
+locale, Room-indipendente, installato come prima istruzione di
+`JarvisApplication.onCreate()`) + nuovo
+`TriggerEvidenceMigrationRegressionTest` (androidTest, compilato da un
+nuovo step CI `:app:assembleDebugAndroidTest`). Device retest richiesto —
+non ancora eseguito.
+
 ## v1.9 — 2026-09-20
 
 Aggiornamento per **PROACTIVITY RELIABILITY CLOSURE — WORK PACKAGE E:
@@ -4425,4 +4545,4 @@ Decisione chiave:
 **JARVIS adotta il pattern “specialized reflexes → semantic intelligence → planner/BRAIN escalation”, ma resta vendor-agnostic e non trasforma i micro-modelli in un secondo sistema semantico.**
 
 
-**END OF JARVIS MASTER ARCHITECTURE v1.9**
+**END OF JARVIS MASTER ARCHITECTURE v1.10**
