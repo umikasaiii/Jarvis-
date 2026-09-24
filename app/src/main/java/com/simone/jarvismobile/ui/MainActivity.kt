@@ -33,6 +33,8 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.delay
 import com.simone.jarvismobile.audio.SessionCoordinator
 import com.simone.jarvismobile.data.SettingsRepository
+import com.simone.jarvismobile.diagnostics.StartupDiagnostics
+import com.simone.jarvismobile.diagnostics.StartupDiagnostics.Checkpoint
 import com.simone.jarvismobile.ui.theme.JarvisThemeId
 import com.simone.jarvismobile.ui.theme.JarvisTheme
 import dagger.hilt.android.AndroidEntryPoint
@@ -63,6 +65,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
+        // § MICRO-PATCH E.1 §8 — reaching here means Hilt's field injection
+        // into this Activity (coordinator/settings above) already succeeded.
+        StartupDiagnostics.checkpoint(Checkpoint.MAIN_ACTIVITY_CREATED)
         enableEdgeToEdge()
 
         // Stop is an action, not a screen: honour it even on a cold start.
@@ -110,6 +115,13 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+        // § MICRO-PATCH E.1 §8 — setContent() only schedules composition; it
+        // does not block until the first frame renders. Reaching this line
+        // still proves the whole synchronous Activity.onCreate() body above
+        // (permissions, theme/state collection setup, JarvisApp() call)
+        // completed without throwing — the closest proxy to "root UI ready"
+        // available without touching Compose internals.
+        StartupDiagnostics.checkpoint(Checkpoint.ROOT_UI_READY)
     }
 
     override fun onNewIntent(intent: Intent) {

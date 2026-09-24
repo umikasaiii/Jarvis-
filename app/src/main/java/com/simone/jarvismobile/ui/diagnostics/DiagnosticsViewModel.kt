@@ -23,6 +23,7 @@ import com.simone.jarvismobile.core.navigation.GpxParser
 import com.simone.jarvismobile.core.navigation.GpxReplayRoute
 import com.simone.jarvismobile.core.tts.SupertonicQuality
 import com.simone.jarvismobile.data.SettingsRepository
+import com.simone.jarvismobile.diagnostics.StartupDiagnostics
 import com.simone.jarvismobile.engine.ConversationalJarvisEngine
 import com.simone.jarvismobile.engine.semantic.EmbeddingSemanticClassifier
 import com.simone.jarvismobile.health.HealthConnectManager
@@ -81,6 +82,23 @@ class DiagnosticsViewModel @Inject constructor(
     private val triggerEvidence: TriggerEvidenceStore,
     private val forecastReceipts: ForecastDecisionReceiptRepository,
 ) : AndroidViewModel(application) {
+
+    /**
+     * § JARVIS Implementation Master Plan — MICRO-PATCH E.1 §7/§8. Whatever
+     * [StartupDiagnostics] recorded about the PREVIOUS process's startup —
+     * `null` when the last startup finished cleanly (or on a fresh install).
+     * Read once: the value is fixed for the lifetime of this ViewModel
+     * (this process's own startup already succeeded, by construction, or
+     * this screen could not have been reached).
+     */
+    private val _startupFailure =
+        MutableStateFlow(StartupDiagnostics.lastStartupFailure(getApplication<Application>()))
+    val startupFailure: StateFlow<String?> = _startupFailure.asStateFlow()
+
+    fun clearStartupFailure() {
+        StartupDiagnostics.clearLastStartupFailure(getApplication<Application>())
+        _startupFailure.value = null
+    }
 
     /**
      * A verifiable read of what JARVIS actually believes about the weather

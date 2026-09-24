@@ -70,6 +70,7 @@ fun DiagnosticsScreen(
     val weatherAlertSimulationResult by viewModel.weatherAlertSimulationResult.collectAsStateWithLifecycle()
     val weatherReceiptDetail by viewModel.weatherReceiptDetail.collectAsStateWithLifecycle()
     val lastChatRoute by viewModel.lastChatRoute.collectAsStateWithLifecycle()
+    val startupFailure by viewModel.startupFailure.collectAsStateWithLifecycle()
     val lastRemoteAttempt by viewModel.lastRemoteAttempt.collectAsStateWithLifecycle()
     val buildId = viewModel.buildId
     val perms = viewModel.permissions()
@@ -96,6 +97,28 @@ fun DiagnosticsScreen(
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        // § JARVIS Implementation Master Plan — MICRO-PATCH E.1 §7/§8. Always
+        // shown first, before anything else: this is what the previous
+        // process left behind, most useful exactly when the app almost
+        // didn't reach this screen at all.
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Avvio precedente", style = MaterialTheme.typography.titleMedium)
+                if (startupFailure == null) {
+                    Line("Ultimo avvio", "completato normalmente")
+                } else {
+                    Line("Ultimo avvio", "problema rilevato")
+                    Text(
+                        startupFailure ?: "",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Button(onClick = viewModel::clearStartupFailure, modifier = Modifier.fillMaxWidth()) {
+                        Text("Cancella")
+                    }
+                }
+            }
+        }
+
         Text("Diagnostica audio", style = MaterialTheme.typography.headlineSmall)
 
         Card(Modifier.fillMaxWidth()) {
