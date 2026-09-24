@@ -254,4 +254,13 @@ dependencies {
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
+    // § MICRO-PATCH E.1 §9 — the Room migration/schema-validation regression
+    // test needs its own KSP-generated `_Impl` class (a separate small
+    // @Database scoped to the one entity under test, deliberately not the
+    // full JarvisDatabase) plus a suspend-function bridge; declared
+    // explicitly rather than relying on the app module's implicit
+    // androidTest compile-classpath visibility.
+    kspAndroidTest(libs.androidx.room.compiler)
+    androidTestImplementation(libs.androidx.room.runtime)
+    androidTestImplementation(libs.kotlinx.coroutines.android)
 }

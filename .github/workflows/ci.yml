@@ -53,6 +53,14 @@ jobs:
       - name: Android unit tests
         run: ./gradlew --no-daemon :app:testDebugUnitTest
 
+      # § MICRO-PATCH E.1 §9/§14 — compiles (never runs; no emulator here)
+      # the instrumented test APK, so a new androidTest file (e.g. the Room
+      # migration/schema-validation regression test) is at least confirmed
+      # to compile against the real Room-generated code on every push,
+      # instead of silently never being checked by CI.
+      - name: Compile instrumented tests (no emulator, compile-only)
+        run: ./gradlew --no-daemon :app:assembleDebugAndroidTest
+
       - name: Android lint (debug)
         run: ./gradlew --no-daemon :app:lintDebug
 
