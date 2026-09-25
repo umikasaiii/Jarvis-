@@ -4,8 +4,8 @@
 
 - **Project:** JARVIS
 - **Document role:** project map / architectural control plane / living source of project intent
-- **Version:** 1.10
-- **Generated:** 2026-09-24
+- **Version:** 1.11
+- **Generated:** 2026-09-25
 - **Primary language:** Italiano
 - **Status:** ACTIVE — living document
 - **Repository target:** `umikasaiii/Jarvis-`
@@ -701,6 +701,7 @@ Hardware target attuale: official GGUF Q4_K_M ~1.56 GB; da qualificare su laptop
 | Qwen3.5 0.8B | FAST local | ACTIVE/CURRENT TARGET |
 | Qwen3.5 4B | BRAIN local weak-PC | ACTIVE/CURRENT TARGET |
 | MiniCPM5-2B | planner/BRAIN candidate | CANDIDATE |
+| Needle 3 | fast action compiler / bounded tool calling / structured extraction / tool retrieval candidate | CANDIDATE / QUALIFICATION REQUIRED |
 | FunctionGemma 270M | semantic competitor | CANDIDATE |
 | LFM2.5-2.6B | competitor | CANDIDATE |
 | LFM2.5-VL-3B | screen/UI perception | CANDIDATE |
@@ -2744,6 +2745,8 @@ Tokenizer parity, encoder qualification, real embedding generation, real learned
 
 `ConversationalJarvisEngine` unificato.
 
+All'interno di questa fase qualificare anche **Needle 3** come `FastActionCompiler`/`ToolCallCompiler` candidato, non come nuovo Semantic Interpreter e non come autorità di esecuzione. Benchmarkarlo sullo stesso dataset JARVIS contro routing deterministico e planner, con tool/argomenti esatti, abstention/OOD, multi-tool ordinato, p50/p95, RAM/CPU/batteria e qualità italiana. L'integrazione è consentita solo se il modello resta subordinato a SemanticFrame, policy, permission/state validation e ToolRegistry.
+
 ## FASI SUCCESSIVE
 
 Grounding maturity, memory, personal intelligence, context, automations, Live Voice, perception, device actions, driving, security, final acceptance.
@@ -3431,6 +3434,7 @@ LEARNED HEAD REAL            PENDING
 CALIBRATION/OOD              PENDING
 BLIND                        UNTOUCHED
 UNIFIED ORCHESTRATION        PLANNED
+NEEDLE3 FAST ACTION COMPILER CANDIDATE / QUALIFICATION REQUIRED
 MINICPM5                     CANDIDATE
 LIVE VOICE ENGINE            PLANNED
 REFLEX LAYER                 PLANNED / CANDIDATES UNDER QUALIFICATION
@@ -4103,6 +4107,47 @@ Questo è particolarmente importante sul Core attuale da 8 GB.
 
 MiniCPM5-2B non viene “sostituito” dal Reflex Layer.
 
+### 122.1 Needle 3 — fast action compiler candidate
+
+Needle 3 sostituisce Needle 2 nella shortlist JARVIS come candidato da qualificare per il fast-path operativo. Ruolo approvato solo come **bounded action compiler / tool-call mapper**, non come secondo sistema semantico, planner o autorizzatore.
+
+Architettura target:
+
+```text
+user input
+→ Semantic Interpreter
+→ SemanticFrame
+→ deterministic candidate filtering / ToolRegistry subset
+→ Needle 3 (solo se il mapping non è già deterministico)
+→ ToolCallCandidate[] strutturato + confidence/abstention
+→ schema validation
+→ capability/policy/permission/current-state validation
+→ deterministic executor
+→ receipt
+
+richiesta complessa / ambigua / multi-step reasoning
+→ PlannerPort
+→ MiniCPM / BRAIN
+→ stesso validation/execution boundary
+```
+
+Punti di qualifica richiesti prima di integrazione:
+
+- tool esatto + argomenti esatti;
+- multi-tool ordinato;
+- empty-call / abstention su no-tool e OOD;
+- confidence utile e calibrabile;
+- schema/grammar reliability;
+- retrieval su catalogo ampio senza rendere irraggiungibile il tool corretto;
+- italiano colloquiale, typo, riferimenti contestuali e tool confondibili;
+- latency p50/p95, cold start, resident/peak RAM, CPU e batteria su Honor 200;
+- benchmark equivalente sul PC Core debole;
+- licensing/runtime/telemetry audit, con telemetria disabilitata nel profilo offline/privacy;
+- confronto base vs eventuale LoRA JARVIS-specialized; il fine-tuning viene dopo il benchmark base, mai prima;
+- nessun side effect autorizzato dalla confidence del modello.
+
+Needle 3 può anche essere valutato per retrieval di tool ed estrazione strutturata, ma **non sostituisce automaticamente EmbeddingGemma/Semantic Intelligence**. Qualunque uso dei suoi embedding che cambi intent/domain/op/slot o routing globale richiede un nuovo Semantic Impact Check esplicito.
+
 Ruoli distinti:
 
 ```text
@@ -4256,6 +4301,10 @@ Un micro-modello è `PRODUCTION READY` solo se:
 ---
 
 # 129. MASTER CHANGELOG
+
+## v1.11 — 2026-09-25
+
+**Needle 3 adottato come candidato di qualifica per FASE 3 / Orchestrazione unica.** Sostituisce Needle 2 nella shortlist JARVIS. Ruolo vincolato: `FastActionCompiler`/`ToolCallCompiler` per tool semplici o multipli ordinati, structured extraction e possibile tool retrieval; non sostituisce Semantic Interpreter, EmbeddingGemma, MiniCPM/Planner, policy o ToolRegistry. Architettura approvata: SemanticFrame restringe lo spazio dei tool → Needle 3 propone `ToolCallCandidate[]`/abstention → validazione schema/capability/permission/state → executor deterministico. MiniCPM resta l'escalation per planning/ragionamento complesso. Prima di integrazione: benchmark JARVIS-specific su italiano, tool/argomenti esatti, OOD/abstention, confidence, retrieval, multi-tool, latency/RAM/CPU/batteria Honor 200 e PC debole, audit licenza/runtime/telemetria; LoRA solo dopo baseline. Nessuna implementazione runtime avviata in questo aggiornamento.
 
 ## v1.10 — 2026-09-24
 
@@ -4549,4 +4598,4 @@ Decisione chiave:
 **JARVIS adotta il pattern “specialized reflexes → semantic intelligence → planner/BRAIN escalation”, ma resta vendor-agnostic e non trasforma i micro-modelli in un secondo sistema semantico.**
 
 
-**END OF JARVIS MASTER ARCHITECTURE v1.10**
+**END OF JARVIS MASTER ARCHITECTURE v1.11**
