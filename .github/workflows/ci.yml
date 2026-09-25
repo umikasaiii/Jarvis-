@@ -115,3 +115,73 @@ jobs:
             app/build/outputs/lint-results-*.*
           if-no-files-found: warn
           retention-days: 14
+
+  # PASS 14B pre-execution compatibility gate. run_real_training.ps1 is the
+  # sole Windows runner for the (still user-PC-only) real EmbeddingGemma
+  # qualification/training pipeline; it previously corrupted the parser on
+  # the target Windows PowerShell 5.1 environment because it was UTF-8
+  # without BOM with non-ASCII punctuation, requiring a manual BOM-converted
+  # temporary copy to run at all. That file is now kept pure ASCII, and this
+  # job proves it stays that way and stays parseable under REAL Windows
+  # PowerShell 5.1 (not pwsh 7) on every push - without downloading any
+  # model/tokenizer artifact or installing any Python dependency.
+  windows-ps51-compat:
+    name: PASS 14B Windows PowerShell 5.1 compatibility
+    runs-on: windows-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Assert running under Windows PowerShell 5.1 (not pwsh 7)
+        run: |
+          $ver = $PSVersionTable.PSVersion
+          $edition = $PSVersionTable.PSEdition
+          Write-Host "PSVersion: $ver"
+          Write-Host "PSEdition: $edition"
+          if ($edition -ne "Desktop") {
+            Write-Host "FAILED: expected PSEdition 'Desktop' (Windows PowerShell), got '$edition' - this gate must run under Windows PowerShell 5.1, not PowerShell 7/pwsh." -ForegroundColor Red
+            exit 1
+          }
+          if ($ver.Major -ne 5) {
+            Write-Host "FAILED: expected Windows PowerShell major version 5, got $($ver.Major)." -ForegroundColor Red
+            exit 1
+          }
+          Write-Host "OK: running under Windows PowerShell $ver (PSEdition=$edition)"
+
+      - name: ASCII-safety check on run_real_training.ps1
+        run: |
+          $path = "tools\semantic_classifier\run_real_training.ps1"
+          if (-not (Test-Path $path)) {
+            Write-Host "FAILED: $path not found." -ForegroundColor Red
+            exit 1
+          }
+          $bytes = [System.IO.File]::ReadAllBytes($path)
+          $nonAsciiCount = 0
+          foreach ($b in $bytes) { if ($b -gt 127) { $nonAsciiCount++ } }
+          Write-Host "File size: $($bytes.Length) bytes"
+          Write-Host "Non-ASCII byte count: $nonAsciiCount"
+          if ($nonAsciiCount -gt 0) {
+            Write-Host "FAILED: non-ASCII bytes found in $path - this file must stay ASCII-safe so it parses on Windows PowerShell 5.1 without a manual BOM conversion." -ForegroundColor Red
+            exit 1
+          }
+          Write-Host "OK: $path is pure ASCII"
+
+      - name: Parse run_real_training.ps1 with the PowerShell language parser
+        run: |
+          $path = (Resolve-Path "tools\semantic_classifier\run_real_training.ps1").Path
+          $tokens = $null
+          $parseErrors = $null
+          $ast = [System.Management.Automation.Language.Parser]::ParseFile($path, [ref]$tokens, [ref]$parseErrors)
+          Write-Host "Token count: $($tokens.Count)"
+          Write-Host "Parser error count: $($parseErrors.Count)"
+          if ($parseErrors.Count -gt 0) {
+            foreach ($e in $parseErrors) {
+              Write-Host "PARSE ERROR: $($e.Message) at line $($e.Extent.StartLineNumber), column $($e.Extent.StartColumnNumber)" -ForegroundColor Red
+            }
+            exit 1
+          }
+          Write-Host "OK: zero parser errors"

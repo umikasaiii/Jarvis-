@@ -608,14 +608,88 @@ l'utente esegua `run_real_training.ps1` sul proprio PC Windows quando
 disponibile. BLIND resta non toccato. Pass 15 (calibrazione) non
 iniziato.
 
-**Problema aperto, non risolto in questa sessione**: `run_real_training.ps1`
-ha un problema di compatibilità di encoding con Windows PowerShell 5.1 —
-un file UTF-8 senza BOM contenente caratteri non-ASCII ha causato
-corruzione del parser sull'ambiente Windows PowerShell 5.1 di destinazione;
-una copia temporanea UTF-8-con-BOM ha permesso di procedere. Tracciato
-come problema di esecuzione PASS 14B aperto, non corretto qui (fuori
+**Problema storico, ora SUPERSEDED**: `run_real_training.ps1` aveva un
+problema di compatibilità di encoding con Windows PowerShell 5.1 — un
+file UTF-8 senza BOM contenente caratteri non-ASCII (un em dash `—` e il
+simbolo di paragrafo `§`, usati solo come punteggiatura decorativa nei
+commenti/testo per l'utente, mai nella logica) causava corruzione del
+parser sull'ambiente Windows PowerShell 5.1 di destinazione; una copia
+temporanea UTF-8-con-BOM permetteva di procedere. Tracciato come problema
+di esecuzione PASS 14B aperto, non corretto in quella sessione (fuori
 scope per Work Package A — vedi
-`docs/JARVIS_PROACTIVITY_RELIABILITY_CLOSURE_AUDIT.md` §7).
+`docs/JARVIS_PROACTIVITY_RELIABILITY_CLOSURE_AUDIT.md` §7). Il testo
+storico di questa nota resta qui per intero, come richiesto — non
+cancellato, solo superato dalla correzione sotto.
+
+### 15.4 PASS 14B PRE-EXECUTION MICRO-PATCH — Windows PowerShell 5.1 compatibility (SUPERSEDES 15.3's open problem)
+
+**Strategia scelta**: rendere il file `.ps1` puro ASCII invece di
+affidarsi a metadati di encoding specifici dell'editor — l'unico
+carattere `>` 127 presente era decorativo (em dash `—` in 33 punti,
+sempre come separatore " — " già circondato da spazi; simbolo `§` in 8
+punti, sempre come riferimento breve a una sezione del task tipo `§17`).
+Sostituiti rispettivamente con `-` (trattino ASCII, stessa spaziatura
+circostante preservata) e `item N` (es. `§17` → `item 17`) — nessuna
+modifica di significato, solo di rappresentazione. Verificato dopo la
+trasformazione: zero byte non-ASCII, nessun BOM introdotto, nessun CRLF
+introdotto (LF preservato), bilanciamento parentesi/graffe/quadre/virgolette
+identico a prima (la trasformazione tocca solo caratteri di punteggiatura
+decorativa, mai `(`/`)`/`{`/`}`/`[`/`]`/`"`/`'`/backtick). Nessun secondo
+runner creato — `run_real_training.ps1` resta l'unico orchestratore
+Windows del Pass 14B, stesso ordine fail-closed degli 11 step, stesso
+comportamento Resume/Force/`REAL_TRAINED`+`CalibrationStatus.PENDING`/
+encoder congelato/BLIND non toccato/TEST-una-tantum, tutti invariati.
+
+**Gate CI dedicato, nuovo job separato** (`.github/workflows/ci.yml`,
+`windows-ps51-compat`, `runs-on: windows-latest`, `shell: powershell` a
+livello di job — quindi Windows PowerShell 5.1 reale, mai `pwsh`/
+PowerShell 7): (1) asserisce `$PSVersionTable.PSEdition -eq "Desktop"` e
+`.PSVersion.Major -eq 5`, fallisce altrimenti — la prova diretta richiesta
+che l'interprete sia davvero 5.1 e non pwsh; (2) legge i byte grezzi del
+file e fallisce se un futuro edit reintroduce un byte non-ASCII —
+l'invariante ASCII-safety diventa un gate automatico, non solo una
+convenzione da rispettare a mano; (3) analizza il file con
+`[System.Management.Automation.Language.Parser]::ParseFile()` (l'API
+reale del parser di PowerShell, non una simulazione) e fallisce su
+qualunque errore di parsing. Nessun modello/tokenizer scaricato, nessuna
+dipendenza Python installata in questo gate — verifica solo il runner
+tracciato in git. Il job Linux/Android esistente (`build`) non è stato
+toccato.
+
+Comando reale eventuale per l'utente, coi due file già scaricati
+localmente (`embeddinggemma-300M_seq256_mixed-precision.tflite` +
+`sentencepiece.model` — il default del parametro resta
+`-TokenizerFileName "tokenizer.model"`, non cambiato: il nome file esatto
+dell'utente si passa già esplicitamente, un contratto già valido, senza
+bisogno di toccare il default):
+
+```powershell
+cd tools\semantic_classifier
+.\run_real_training.ps1 `
+  -ModelDir ".\models" `
+  -OutputDir ".\real_run" `
+  -TokenizerFileName "sentencepiece.model"
+```
+
+Il candidato Honor testato per MICRO-PATCH E.1 (`1236015`) resta
+**pinnato** durante questo micro-patch — nessuna nuova APK generata da
+questo commit tooling-only deve sostituire il candidato Honor attualmente
+in test, salvo decisione separata.
+
+```text
+PASS 14B PRE-EXECUTION MICRO-PATCH — WINDOWS PS 5.1 COMPATIBILITY
+ASCII-SAFETY FIX               APPLIED (em dash -> "-", section sign -> "item N")
+RUNNER OWNER                   UNCHANGED (run_real_training.ps1, sole orchestrator)
+WINDOWS PS 5.1 CI GATE         ADDED (windows-ps51-compat, separate job)
+SANDBOX PROXY CHECK            PASS (bracket/brace/bracket/quote balance
+                                identical before/after — no pwsh available in
+                                this sandbox to run the real parser)
+REAL PARSER RESULT (CI)        PENDING — awaiting the observed CI run on this push
+MODEL DOWNLOADED IN CI GATE    NO
+BLIND                          UNTOUCHED
+PASS 15                        NOT STARTED
+PASS 14B REAL EXECUTION        STILL PENDING (user-PC step, unchanged)
+```
 
 ---
 
@@ -2081,8 +2155,27 @@ CI VERIFIED                    ✅ (run #454, commit 1236015 — tutti gli
                                 :app:assembleDebugAndroidTest — vedi anche
                                 CI run #452 (3e2b7e0), il candidato E che
                                 ha realmente fallito sul dispositivo)
-DEVICE RETEST                  REQUIRED — non ancora eseguito
+DEVICE RETEST                  PARTIAL — vedi §30.16.1
 ```
+
+### 30.16.1 Prima evidenza device reale sul candidato E.1
+
+L'utente ha installato/testato il candidato `1236015` sull'Honor 200 reale
+e riporta che l'app **si apre**, invece di chiudersi immediatamente come
+faceva il vecchio candidato `3e2b7e0`. Questo è trattato **solo come
+evidenza parziale**, non come chiusura:
+
+- l'apertura dell'app è stata osservata — coerente con il fix (indices
+  mancanti sull'entity) essendo la causa reale;
+- Work Package E **non** è dichiarato completo;
+- **non** tutti gli scenari di startup/device acceptance sono marcati
+  PASS;
+- identità della build, evidenza `StartupDiagnostics`, persistenza dati e
+  gli scenari Morning/Evening/Weather di `docs/PROACTIVITY_FINAL_ACCEPTANCE.md`
+  restano sotto qualificazione, non ancora eseguiti/registrati.
+
+`APP OPENS observed / remaining device qualification pending` — questa è
+la formulazione esatta dello stato, per non farla leggere come "PASS".
 
 **Deliberatamente NON fatto**: nessuna soglia meteo toccata, nessun
 modello semantico toccato, Pass 15 non iniziato, `jarvis-core`/
