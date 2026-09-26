@@ -4,7 +4,7 @@
 
 - **Project:** JARVIS
 - **Document role:** project map / architectural control plane / living source of project intent
-- **Version:** 1.12
+- **Version:** 1.13
 - **Generated:** 2026-09-26
 - **Primary language:** Italiano
 - **Status:** ACTIVE — living document
@@ -3556,7 +3556,7 @@ UNIFIED ORCHESTRATION        PLANNED
 NEEDLE3 FAST ACTION COMPILER CANDIDATE / QUALIFICATION REQUIRED
 MINICPM5                     CANDIDATE
 LIVE VOICE ENGINE            PLANNED (v1 full-duplex, non iniziato)
-LIVE VOICE PHASE 0.1         CODE PRESENT / AUTOMATED TESTED / CI PENDING / DEVICE PENDING (§129)
+LIVE VOICE PHASE 0.1         CODE PRESENT / AUTOMATED TESTED / CI VERIFIED (run #460) / DEVICE PENDING (§129)
 REFLEX LAYER                 PLANNED / CANDIDATES UNDER QUALIFICATION
 DESERT ANT SUITE             CANDIDATE PROVIDER / NOT ARCHITECTURALLY REQUIRED
 CLEAR                        CANDIDATE / LIVE LATENCY QUALIFICATION REQUIRED
@@ -4422,7 +4422,26 @@ Un micro-modello è `PRODUCTION READY` solo se:
 
 # 129. LIVE VOICE PHASE 0.1 — EXISTING FOUNDATION HARDENING + VOICE TIMING DIAGNOSTICS
 
-Status: **CODE PRESENT / AUTOMATED TESTED (`:core` 1490/1490) / CI VERIFIED PENDING (questo push) / DEVICE VERIFIED ❌**.
+Status: **CODE PRESENT / AUTOMATED TESTED (`:core` 1490/1490) / CI VERIFIED ✅ (run #460, commit `2d02be8`, https://github.com/umikasaiii/Jarvis-/actions/runs/36258756141) / DEVICE VERIFIED ❌**.
+
+**Reconciliazione, 2026-09-26**: il primo push (`0f6531d`, run #459) è
+fallito — `:app:compileDebugKotlin` con una cascata di "Expecting a top
+level declaration" da riga 19 in poi di
+`VoiceTurnDiagnosticsRecorder.kt`. Causa reale: il commento KDoc
+conteneva testualmente `mark*/finish*` — la sequenza `*/` al suo
+interno chiudeva prematuramente il blocco `/** ... */`, trasformando
+il resto del commento inteso in Kotlin top-level non valido. Corretto
+(`2d02be8`) sostituendo con "mark-and-finish methods" — nessun altro
+contenuto toccato, nessun file `:core` coinvolto. Verificato imitando
+la tokenizzazione reale del compilatore (primo `*/` dopo ogni `/**`)
+su tutti i file toccati da questa fase prima di ripubblicare — nessuna
+altra occorrenza trovata. CI run #460 (commit `2d02be8`) **tutti i 17
+step verdi**: core unit tests (1490/1490), assemble debug APK, Android
+unit tests, compile instrumented tests, Android lint, compute APK
+SHA-256 (`d3f5a477ba5fdae43f49949995590c2d6ddb19d23a1fd544a724ca520b6cae7f`),
+upload, pubblicazione su `latest-debug`. Il job separato "PASS 14B
+Windows PowerShell 5.1 compatibility" resta verde su entrambi i
+commit, invariato da questa fase.
 
 Non è Live Voice v1 (§24, `PLANNED / DESIGN APPROVED`, il full-duplex
 stack whisper.cpp/Kokoro/AEC3/VAD ancora non implementato). Questa fase
@@ -4596,6 +4615,28 @@ richiesto.
 ---
 
 # 130. MASTER CHANGELOG
+
+## v1.13 — 2026-09-26
+
+Reconciliazione CI per **LIVE VOICE PHASE 0.1** (§129): il primo push
+(`0f6531d`, CI run #459) è fallito su `:app:compileDebugKotlin` — un
+commento KDoc conteneva testualmente `mark*/finish*`, e quel `*/`
+chiudeva prematuramente il blocco `/** ... */`, lasciando il resto del
+commento come Kotlin top-level non valido (cascata di "Expecting a top
+level declaration" da riga 19 di `VoiceTurnDiagnosticsRecorder.kt`).
+Corretto in `2d02be8` (solo quella frase, riformulata "mark-and-finish
+methods" — nessun altro contenuto toccato, nessun file `:core`
+coinvolto), verificato imitando la tokenizzazione reale del
+compilatore su ogni file di questa fase prima di ripubblicare. CI run
+#460 (commit `2d02be8`, https://github.com/umikasaiii/Jarvis-/actions/runs/36258756141)
+**tutti i 17 step verdi**: core 1490/1490, assemble debug APK, Android
+unit tests, compile instrumented tests, lint, SHA-256
+(`d3f5a477ba5fdae43f49949995590c2d6ddb19d23a1fd544a724ca520b6cae7f`),
+upload, pubblicazione `latest-debug`. Il job Windows PS5.1 resta verde
+su entrambi i commit, invariato. Pass 14B `PAUSED`, BLIND `UNTOUCHED`,
+Pass 15 `NOT STARTED`, candidato Honor `1236015` pinnato — nessuno di
+questi toccato. Non dichiarato Live Voice device-verified; non avviata
+la Phase 0.2.
 
 ## v1.12 — 2026-09-26
 
