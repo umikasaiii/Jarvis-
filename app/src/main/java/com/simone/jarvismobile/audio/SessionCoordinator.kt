@@ -14,6 +14,9 @@ import com.simone.jarvismobile.core.state.ConversationEvent
 import com.simone.jarvismobile.core.state.ConversationState
 import com.simone.jarvismobile.core.state.ConversationStateMachine
 import com.simone.jarvismobile.core.state.RouteTarget
+import com.simone.jarvismobile.core.voice.VoiceTurnDiagnostics
+import com.simone.jarvismobile.core.voice.VoiceTurnFailureStage
+import com.simone.jarvismobile.core.voice.VoiceTurnOutcome
 import com.simone.jarvismobile.core.routing.AssistantReplyCleaner
 import com.simone.jarvismobile.core.routing.ComplexityHeuristic
 import com.simone.jarvismobile.core.routing.ToolIntentGate
@@ -121,6 +124,7 @@ class SessionCoordinator @Inject constructor(
     private val remoteAiEngine: RemoteAiEngine,
     private val aiRouter: com.simone.jarvismobile.ai.AiRouter,
     private val remoteChatState: com.simone.jarvismobile.ai.RemoteChatState,
+    private val voiceDiagnostics: VoiceTurnDiagnosticsRecorder,
 ) {
 
     /** Long-lived scope for fire-and-forget persistence; lives as long as the app. */
@@ -237,6 +241,13 @@ class SessionCoordinator @Inject constructor(
     val selectedVoiceName: StateFlow<String?> = tts.selectedVoiceName
     val availableVoices: StateFlow<List<TtsVoiceOption>> = tts.availableVoices
     val partialTranscript: StateFlow<String> = stt.partial
+
+    /**
+     * Latest bounded voice-turn timing diagnostics — Live Voice Phase 0.1.
+     * Timestamps/latencies/enums/counters/booleans only, never transcript
+     * or reply text. See [VoiceTurnDiagnosticsRecorder]'s own doc comment.
+     */
+    val voiceTurnDiagnostics: StateFlow<List<VoiceTurnDiagnostics>> = voiceDiagnostics.history
 
     private val _transcript = MutableStateFlow("")
     val transcript: StateFlow<String> = _transcript.asStateFlow()
@@ -451,11 +462,13 @@ class SessionCoordinator @Inject constructor(
             } catch (_: CancellationException) {
                 _diagnostic.value = "sessione annullata"
                 machine.dispatch(ConversationEvent.CancelRequested)
+                voiceDiagnostics.finishCancelled()
             } catch (e: Exception) {
                 _lastError.value = "crash_${e.javaClass.simpleName}"
                 _diagnostic.value = "CRASH ${e.javaClass.simpleName}: ${e.message}"
                 Log.w(TAG, "session_crash ${e.javaClass.simpleName}")
                 machine.dispatch(ConversationEvent.RecoverableFailure("crash"))
+                voiceDiagnostics.finishCrashed()
             }
         }
     }
@@ -470,6 +483,8 @@ class SessionCoordinator @Inject constructor(
         machine.dispatch(ConversationEvent.StartRequested) // -> PreparingAudio
         if (!hasRecordPermission()) {
             _diagnostic.value = "no_mic_permission"
+            voiceDiagnostics.beginTurn(followUpIndex = 0)
+            voiceDiagnostics.finish(VoiceTurnOutcome.PERMISSION_DENIED, VoiceTurnFailureStage.PERMISSION)
             machine.dispatch(ConversationEvent.PermissionDenied)
             return
         }
@@ -479,7 +494,11 @@ class SessionCoordinator @Inject constructor(
         val followUpEnabled = runCatching { settings.followUpEnabled.first() }.getOrDefault(true)
         var turn = 0
         while (true) {
-            val spoke = processTurn(stt.transcribe("it-IT"), isFollowUp = turn > 0)
+            voiceDiagnostics.beginTurn(followUpIndex = turn)
+            voiceDiagnostics.markSttStarted()
+            val sttResult = stt.transcribe("it-IT")
+            voiceDiagnostics.markSttFinal()
+            val spoke = processTurn(sttResult, isFollowUp = turn > 0)
             if (!spoke) return // a terminal/no-speech outcome was handled inside
 
             // The user pressed the mic while JARVIS was talking. TTS has been
@@ -534,6 +553,7 @@ class SessionCoordinator @Inject constructor(
                 // return-to-Idle as SttResult.NoSpeech below.
                 _diagnostic.value = "ascolto interrotto (\"ok\")"
                 machine.dispatch(ConversationEvent.Reset) // -> Idle
+                voiceDiagnostics.finish(VoiceTurnOutcome.LISTENING_STOPPED, VoiceTurnFailureStage.NONE)
                 false
             } else {
                 _transcript.value = result.text
@@ -544,12 +564,17 @@ class SessionCoordinator @Inject constructor(
                 machine.dispatch(ConversationEvent.TranscriptReady(result.text)) // -> RetrievingMemory
                 machine.dispatch(ConversationEvent.MemoryRetrieved) // -> Routing
                 machine.dispatch(ConversationEvent.Routed(RouteTarget.LOCAL)) // -> ThinkingLocal
+                voiceDiagnostics.markAnswerStarted()
                 val answer = generateAnswer(result.text)
+                voiceDiagnostics.markAnswerReady()
                 _reply.value = answer
                 appendMessage(fromUser = false, text = answer)
                 machine.dispatch(ConversationEvent.AnswerReady) // -> Speaking
+                voiceDiagnostics.markTtsRequested()
                 speakOut(answer)
+                voiceDiagnostics.markTtsFinished()
                 machine.dispatch(ConversationEvent.SpeechSynthesisFinished) // -> FollowUpWindow
+                voiceDiagnostics.finish(VoiceTurnOutcome.COMPLETED, VoiceTurnFailureStage.NONE)
                 true
             }
 
@@ -559,6 +584,7 @@ class SessionCoordinator @Inject constructor(
                     // didn't continue. Return to Idle quietly, no nagging prompt.
                     _diagnostic.value = "follow-up chiuso (silenzio)"
                     machine.dispatch(ConversationEvent.Reset) // -> Idle
+                    voiceDiagnostics.finish(VoiceTurnOutcome.FOLLOW_UP_CLOSED, VoiceTurnFailureStage.NONE)
                 } else {
                     _diagnostic.value = "no_speech"
                     machine.dispatch(ConversationEvent.SpeechEnded)
@@ -566,6 +592,7 @@ class SessionCoordinator @Inject constructor(
                     machine.dispatch(ConversationEvent.TranscriptReady("")) // -> RecoverableError
                     _lastError.value = "empty_transcript"
                     speakOut("Non ho sentito nulla. Riprova.")
+                    voiceDiagnostics.finish(VoiceTurnOutcome.NO_SPEECH, VoiceTurnFailureStage.STT)
                 }
                 false
             }
@@ -578,6 +605,7 @@ class SessionCoordinator @Inject constructor(
                     "Il riconoscimento vocale offline non è disponibile su questo telefono. " +
                         "Nella prossima fase userò un motore incluso nell'app.",
                 )
+                voiceDiagnostics.finish(VoiceTurnOutcome.STT_UNAVAILABLE, VoiceTurnFailureStage.STT)
                 false
             }
 
@@ -585,6 +613,7 @@ class SessionCoordinator @Inject constructor(
                 _diagnostic.value = "stt_fail: ${result.code}"
                 _lastError.value = result.code
                 machine.dispatch(ConversationEvent.RecoverableFailure(result.code))
+                voiceDiagnostics.finish(VoiceTurnOutcome.STT_FAILURE, VoiceTurnFailureStage.STT)
                 false
             }
         }
@@ -2158,6 +2187,7 @@ class SessionCoordinator @Inject constructor(
     fun interruptAndListen() {
         if (state.value == ConversationState.Speaking || tts.state.value == TtsState.SPEAKING) {
             bargeInRequested = true
+            voiceDiagnostics.markBargeInRequested()
             tts.stop()
             _diagnostic.value = "interruzione vocale…"
         } else {
@@ -2175,6 +2205,7 @@ class SessionCoordinator @Inject constructor(
 
     fun cancel() {
         bargeInRequested = false
+        voiceDiagnostics.markCancellationRequested()
         stt.cancel()
         audioCapture.cancel()
         tts.stop()

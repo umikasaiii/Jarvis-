@@ -342,6 +342,39 @@ fun DiagnosticsScreen(
                     }
                 }
             }
+
+            // Live Voice Phase 0.1 — bounded voice-turn timing diagnostics
+            // (§ docs/JARVIS_MASTER_ARCHITECTURE.md "Live Voice Phase 0.1").
+            // Timestamps/latencies/enums/counters/booleans only, never the
+            // transcript or the spoken reply — see VoiceTurnDiagnosticsRecorder.
+            val voiceTurns by viewModel.voiceTurnDiagnostics.collectAsStateWithLifecycle()
+            if (voiceTurns.isNotEmpty()) {
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Diagnostica vocale (debug)", style = MaterialTheme.typography.titleMedium)
+                        voiceTurns.takeLast(8).reversed().forEach { turn ->
+                            Text(
+                                "esito=${turn.outcome} · stadio=${turn.failureStage} · " +
+                                    "followUp=${turn.followUpIndex} · annullato=${turn.cancellationRequested}",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            Text(
+                                "stt=${turn.sttFinalLatencyMs?.let { "${it}ms" } ?: "-"} · " +
+                                    "risposta=${turn.answerLatencyMs?.let { "${it}ms" } ?: "-"} · " +
+                                    "tts=${turn.ttsDurationMs?.let { "${it}ms" } ?: "-"} · " +
+                                    "totale=${turn.totalTurnMs?.let { "${it}ms" } ?: "-"}",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            if (turn.bargeInRequested) {
+                                Text(
+                                    "bargeIn=true · stopDopoBargeIn=${turn.ttsStoppedAfterBargeInMs?.let { "${it}ms" } ?: "non disponibile"}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         // Driving Mode V2 (sviluppo): la modalità overlay su Google Maps resta il

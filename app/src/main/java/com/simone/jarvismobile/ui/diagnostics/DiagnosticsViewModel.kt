@@ -574,6 +574,8 @@ class DiagnosticsViewModel @Inject constructor(
     val selectedVoiceName: StateFlow<String?> = coordinator.selectedVoiceName
     val micLevel: StateFlow<Float> = coordinator.micLevel
     val lastError: StateFlow<String?> = coordinator.lastError
+    val voiceTurnDiagnostics: StateFlow<List<com.simone.jarvismobile.core.voice.VoiceTurnDiagnostics>> =
+        coordinator.voiceTurnDiagnostics
 
     private val _micStatus = MutableStateFlow("")
     val micStatus: StateFlow<String> = _micStatus.asStateFlow()

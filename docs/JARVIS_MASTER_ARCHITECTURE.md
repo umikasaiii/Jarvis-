@@ -4,8 +4,8 @@
 
 - **Project:** JARVIS
 - **Document role:** project map / architectural control plane / living source of project intent
-- **Version:** 1.11
-- **Generated:** 2026-09-25
+- **Version:** 1.12
+- **Generated:** 2026-09-26
 - **Primary language:** Italiano
 - **Status:** ACTIVE — living document
 - **Repository target:** `umikasaiii/Jarvis-`
@@ -3388,7 +3388,7 @@ Ordine consigliato:
 6. mantenere Pass 14 artifact gate separato;
 7. eseguire 14B sul PC — il runner è ora pronto (§15): `cd tools\semantic_classifier` poi `.\run_real_training.ps1 -ModelDir ".\models" -OutputDir ".\real_run"` dopo aver scaricato i due file reali per `models/README.md`;
 8. solo dopo real semantic artifact gate procedere verso Pass 15;
-9. Live Voice: progettazione può continuare, full implementation dopo semantic/orchestration foundation.
+9. Live Voice: progettazione può continuare, full implementation dopo semantic/orchestration foundation. **Live Voice Phase 0.1** (foundation hardening + timing diagnostics, §129) implementata su questo push — device acceptance non ancora eseguita, Phase 0.2 non avviata.
 
 ---
 
@@ -3555,7 +3555,8 @@ BLIND                        UNTOUCHED
 UNIFIED ORCHESTRATION        PLANNED
 NEEDLE3 FAST ACTION COMPILER CANDIDATE / QUALIFICATION REQUIRED
 MINICPM5                     CANDIDATE
-LIVE VOICE ENGINE            PLANNED
+LIVE VOICE ENGINE            PLANNED (v1 full-duplex, non iniziato)
+LIVE VOICE PHASE 0.1         CODE PRESENT / AUTOMATED TESTED / CI PENDING / DEVICE PENDING (§129)
 REFLEX LAYER                 PLANNED / CANDIDATES UNDER QUALIFICATION
 DESERT ANT SUITE             CANDIDATE PROVIDER / NOT ARCHITECTURALLY REQUIRED
 CLEAR                        CANDIDATE / LIVE LATENCY QUALIFICATION REQUIRED
@@ -4419,7 +4420,203 @@ Un micro-modello è `PRODUCTION READY` solo se:
 
 ---
 
-# 129. MASTER CHANGELOG
+# 129. LIVE VOICE PHASE 0.1 — EXISTING FOUNDATION HARDENING + VOICE TIMING DIAGNOSTICS
+
+Status: **CODE PRESENT / AUTOMATED TESTED (`:core` 1490/1490) / CI VERIFIED PENDING (questo push) / DEVICE VERIFIED ❌**.
+
+Non è Live Voice v1 (§24, `PLANNED / DESIGN APPROVED`, il full-duplex
+stack whisper.cpp/Kokoro/AEC3/VAD ancora non implementato). Questa fase
+NON tocca quell'architettura futura — audita e rafforza lo stack vocale
+**push-to-talk esistente e già device-verified** (fasi 1-4c del §Roadmap
+in `CLAUDE.md`), aggiungendo solo diagnostica di timing strutturata e
+privacy-safe. Zero cambi di comportamento/routing/semantica.
+
+## 129.1 Owner reali confermati (nessun secondo owner creato)
+
+- `SessionCoordinator` (`app/audio/SessionCoordinator.kt`) — unico owner
+  della sessione vocale; `startSession()` resta il solo entry point
+  (mai `runSession()` diretto — la guardia storica che tiene ogni turno
+  tracciabile/annullabile via `sessionJob`, invariata).
+- `ConversationStateMachine` (`core/state/`) — unico owner dello stato
+  di conversazione, reducer puro, invariato.
+- `SpeechToTextEngine`/`AndroidOnDeviceSpeechEngine` — contratto STT,
+  invariato (`transcribe()` mai lancia, `SttResult` sealed invariato).
+- `TextToSpeechEngine`/`HybridTtsEngine` — contratto TTS e selezione
+  neurale/Android, invariati (`speak()` sospende fino a fine
+  riproduzione/stop/fallimento, `stop()` sincrono).
+- `WakeWordController` — owner wake-word, invariato (recognizer proprio
+  distinto da quello di sessione, si autocancella quando
+  `coordinator.state != Idle`, chiama sempre `startSession()`).
+
+Nessun `VoiceSessionCoordinator2`, `LiveVoiceCoordinator`, secondo
+`ConversationStateMachine`, `StreamingSttEngine`, secondo wake-word
+owner, secondo mic manager o secondo TTS router introdotto.
+
+## 129.2 Trace reale (construction → DI → callsite → consumer)
+
+```text
+Entry point (visible mic/orb, ListeningService, WakeWordController)
+    → SessionCoordinator.startSession()
+        → runSession() [sessionMutex]
+            → runTurn() [loop hands-free]
+                → stt.transcribe("it-IT")                 [SpeechToTextEngine]
+                → processTurn(result)
+                    → generateAnswer(text)                 [JarvisEngineRouter
+                                                              → Classic/Conversational]
+                    → speakOut(answer)                      [TextToSpeechEngine
+                                                              → HybridTtsEngine
+                                                              → neural/Android
+                                                              → PcmPlayer/Android TTS]
+Interruzione: interruptAndListen() → tts.stop() → bargeInRequested=true
+Cancellazione: cancel() → stt.cancel()/audioCapture.cancel()/tts.stop()/
+    router.cancel() → sessionJob.cancel() → ConversationEvent.CancelRequested
+Wake word: WakeWordController → coordinator.startSession()
+Translator handoff: SessionCoordinator (translatorTakingOver flag)
+    → LiveTranslatorManager
+```
+
+## 129.3 Audit ownership microfono — nessun bug trovato, nessun redesign
+
+`WakeWordController` usa un `SpeechToTextEngine` proprio, distinto da
+quello di sessione, e si autocancella osservando `coordinator.state`
+prima di poter mai entrare in conflitto; `translatorTakingOver` è un
+handoff esplicito a senso unico verso `LiveTranslatorManager`;
+`sessionJob`/`startSession()` restano il solo punto che traccia una
+sessione annullabile. **Nessun secondo consumer del microfono in
+conflitto trovato — nessuno STOP scattato, nessun `MicrophoneArbiter`
+costruito.**
+
+## 129.4 Gap reale confermato — streaming NON end-to-end
+
+`SessionCoordinator.processTurn()` attende il completamento intero di
+`generateAnswer()` prima di chiamare `speakOut()`: nessun token LLM
+arriva mai a `HybridTtsEngine` prima che la risposta sia completa. Lo
+streaming "progressivo" di `HybridTtsEngine` è **chunking per frase di
+una stringa già completa** (via `SpeechShaper`), non vero streaming
+token→TTS. Questo gap è confermato e registrato qui, non implementato
+in questa fase (esplicitamente fuori scope).
+
+## 129.5 Barge-in — comportamento reale, non riscritto
+
+Il barge-in di oggi è **utente-attivato/interazione visibile** (tap sul
+mic mentre `state == Speaking`), mai una VAD automatica durante la
+riproduzione — confermato leggendo `interruptAndListen()`, nessuna
+implementazione di barge-in acustico automatico esiste nel codice. Non
+riscritto in questa fase.
+
+## 129.6 Diagnostica di timing — cosa è misurato per davvero
+
+Nuovo package puro `core/voice/` (`VoiceTurnDiagnostics.kt`,
+`VoiceTurnOutcome`/`VoiceTurnFailureStage`/`VoiceTurnTimestamps`) +
+`app/audio/VoiceTurnDiagnosticsRecorder.kt` (unico punto che chiama
+`System.nanoTime()`, mai sparso). `SessionCoordinator` resta l'unico
+chiamante — la diagnostica è **osservabilità derivata**, mai fonte di
+verità: non guida mai routing, permessi, interpretazione semantica,
+esecuzione tool, retry o stato di conversazione.
+
+**Genuinamente misurato** (derivato da timestamp reali su call site
+esistenti, mai inventato):
+
+- `sttFinalLatencyMs` (`sttStartedAtMs`→`sttFinalAtMs`);
+- `answerLatencyMs` (`answerStartedAtMs`→`answerReadyAtMs`, attorno a
+  `generateAnswer()`);
+- `ttsDurationMs` (`ttsRequestedAtMs`→`ttsFinishedAtMs`, attorno a
+  `speakOut()` — l'intera chiamata, non il tempo al primo audio);
+- `totalTurnMs` (l'intero turno, qualunque l'esito);
+- `ttsStoppedAfterBargeInMs` — claimato **solo** quando la richiesta di
+  barge-in precede (o coincide con) la fine di `speakOut()` dello
+  **stesso** turno (garanzia strutturale: quel ramo è raggiungibile solo
+  mentre `speakOut()` del turno corrente è ancora in volo — mai un
+  ordinamento accidentale).
+
+**Deliberatamente NON misurato / NOT_AVAILABLE, mai fabbricato**:
+
+- `ttsFirstAudioMs` — omesso come campo (non un null permanente):
+  `HybridTtsEngine.speak()` sospende fino a fine riproduzione, il primo
+  campione PCM non è osservabile senza una modifica invasiva a quel
+  motore/`PcmPlayer`, fuori scope;
+- `wakeWordLatencyMs`, metriche AEC, dropped frame, CPU/RAM peak — nessun
+  punto di misura reale esiste oggi, non aggiunto un proxy.
+
+Regole di privacy rispettate per costruzione: solo timestamp/enum/
+contatori/booleani (`turnId`, `startedAtEpochMs`, outcome, failure
+stage, follow-up index, cancellazione richiesta) — mai trascritto,
+testo di risposta, prompt, argomenti tool, dati agenda/salute/posizione/
+contatti o contenuto generato dal modello. Cronologia bounded a 20
+(`VoiceTurnDiagnosticsRecorder`, stesso pattern già in uso da
+`ConversationalJarvisEngine`'s `MAX_DIAGNOSTICS_HISTORY`). In memoria,
+nessun nuovo database/tabella Room.
+
+## 129.7 UI — architettura Diagnostica esistente riusata
+
+`DiagnosticsViewModel.voiceTurnDiagnostics` (pass-through diretto,
+stesso pattern di `ttsState`/`micLevel`/`lastError`) + una nuova card
+debug-only "Diagnostica vocale (debug)" in `DiagnosticsScreen.kt`,
+stesso stile della card "Motore conversazionale (debug)" già esistente
+— nessuna seconda schermata Diagnostica, nessun nuovo sistema di
+persistenza.
+
+## 129.8 Test aggiunti (`core/src/test/.../voice/VoiceTurnDiagnosticsTest.kt`, 13)
+
+Coprono: calcolo puro delle durate; punti di timing mancanti non
+fabbricano mai un valore; un turno annullato produce un outcome bounded
+corretto con lo stadio inferito dalle sole evidenze reali (non un
+guess); il barge-in registra solo la richiesta senza inventare
+evidenza di primo-audio/stop quando non provabile, e mai una latenza
+negativa se l'ordinamento non è verificato; follow-up index/
+cancellazione preservati verbatim; la cronologia bounded non cresce
+oltre il limite. I test preesistenti di `ConversationStateMachine` e
+delle transizioni cancellazione/barge-in restano verdi (nessuna
+regressione — nessuno di quei file è stato toccato).
+
+## 129.9 Semantic/Protocol Impact Check
+
+Tutti NO: nessuna modifica al classificatore, al dataset, al routing,
+a `jarvis-protocol`, agli schemi wire Android↔Core. Nessuna nuova
+egress — la diagnostica resta interamente locale.
+
+## 129.10 Device Acceptance
+
+**Non dichiarato Live Voice DEVICE VERIFIED** — questa fase è solo
+observability/foundation. Il candidato Honor `1236015` (pinnato da
+MICRO-PATCH E.1) **resta pinnato**, nessuna nuova APK di questo commit
+lo sostituisce nella qualificazione in corso del Work Package E.
+
+## 129.11 Conferme esplicite richieste
+
+- Pass 14B: **PAUSED / RUNNER READY, USER-PC REAL EXECUTION PENDING**
+  — non toccato da questa fase.
+- BLIND: **UNTOUCHED** — non toccato da questa fase.
+- Pass 15: **NOT STARTED** — non avviato da questa fase.
+- Honor candidate `1236015`: **resta PINNATO** — invariato.
+
+**Non avviata autonomamente la Phase 0.2**, come esplicitamente
+richiesto.
+
+---
+
+# 130. MASTER CHANGELOG
+
+## v1.12 — 2026-09-26
+
+**LIVE VOICE PHASE 0.1 — EXISTING FOUNDATION HARDENING + VOICE TIMING
+DIAGNOSTICS** (nuovo §129). Audit dello stack vocale push-to-talk
+esistente (owner: `SessionCoordinator`/`ConversationStateMachine`/
+`SpeechToTextEngine`/`TextToSpeechEngine`+`HybridTtsEngine`/
+`WakeWordController`, tutti preservati invariati, nessun secondo owner
+introdotto) + nuova diagnostica di timing bounded e privacy-safe
+(`core/voice/VoiceTurnDiagnostics.kt`, `app/audio/
+VoiceTurnDiagnosticsRecorder.kt`, wiring in `SessionCoordinator.kt`,
+esposizione in Diagnostica). Confermati e registrati due gap reali: lo
+streaming LLM-token→TTS end-to-end **non esiste** (`speakOut()` attende
+sempre la risposta completa), e il barge-in resta utente-attivato, mai
+VAD automatica durante la riproduzione — nessuno dei due implementato
+qui, entrambi fuori scope esplicito. 13 nuovi test `:core`
+(`VoiceTurnDiagnosticsTest`), suite `:core` **1490/1490**, nessuna
+regressione. Pass 14B resta `PAUSED`, BLIND `UNTOUCHED`, Pass 15
+`NOT STARTED`, candidato Honor `1236015` resta pinnato — nessuno di
+questi quattro stati toccato da questa fase. Non dichiarato Live Voice
+device-verified; non avviata la Phase 0.2.
 
 ## v1.11 — 2026-09-25
 
