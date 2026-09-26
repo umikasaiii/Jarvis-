@@ -678,18 +678,44 @@ in test, salvo decisione separata.
 
 ```text
 PASS 14B PRE-EXECUTION MICRO-PATCH — WINDOWS PS 5.1 COMPATIBILITY
+IMPLEMENTATION COMMIT           85fcc1ab063eb2703280ebc5925fce9162d3a021
 ASCII-SAFETY FIX               APPLIED (em dash -> "-", section sign -> "item N")
 RUNNER OWNER                   UNCHANGED (run_real_training.ps1, sole orchestrator)
 WINDOWS PS 5.1 CI GATE         ADDED (windows-ps51-compat, separate job)
 SANDBOX PROXY CHECK            PASS (bracket/brace/bracket/quote balance
                                 identical before/after — no pwsh available in
                                 this sandbox to run the real parser)
-REAL PARSER RESULT (CI)        PENDING — awaiting the observed CI run on this push
+REAL PARSER RESULT (CI)        PASS — Windows PowerShell 5.1 real parser,
+                                CI run #457, commit 85fcc1a
+CI VERIFIED                    ✅ run #457
+                                https://github.com/umikasaiii/Jarvis-/actions/runs/36191336205
 MODEL DOWNLOADED IN CI GATE    NO
 BLIND                          UNTOUCHED
 PASS 15                        NOT STARTED
 PASS 14B REAL EXECUTION        STILL PENDING (user-PC step, unchanged)
 ```
+
+**Reconciliazione, 2026-09-26**: il job dedicato `windows-ps51-compat` (CI
+run #457, https://github.com/umikasaiii/Jarvis-/actions/runs/36191336205,
+commit `85fcc1ab063eb2703280ebc5925fce9162d3a021`) ha davvero eseguito e
+superato tutti e tre i controlli su un runner Windows reale — non solo il
+proxy di bilanciamento di questa sandbox: `PSEdition=Desktop`+
+`PSVersion.Major=5` confermati (Windows PowerShell 5.1 reale, mai
+`pwsh`/PowerShell 7), zero byte non-ASCII nel file tracciato, e
+`[System.Management.Automation.Language.Parser]::ParseFile()` (l'API
+reale, non una simulazione) ha riportato zero errori di parsing. Il job
+Linux/Android esistente (`Core tests + Android debug build`) è risultato
+altrettanto verde sullo stesso commit — nessuna regressione. La vecchia
+riga `REAL PARSER RESULT (CI) PENDING` di questo stesso blocco è quindi
+superata dal risultato osservato sopra; il testo storico del problema
+originale in §15.3 resta intatto, non cancellato. **Pass 14B real
+execution resta STILL PENDING** (passo separato sul PC dell'utente, non
+toccato da questa reconciliazione), **BLIND resta UNTOUCHED**, **Pass 15
+resta NOT STARTED**, e lo stato Honor E.1 resta esattamente `APP OPENS
+observed / remaining device qualification pending` (§30.16.1) — nessuna
+di queste dichiarazioni è stata alterata. Nessuna dichiarazione di
+Work Package E completo, SOFTWARE DEVICE VERIFIED, WEATHER QUALITY
+VERIFIED o production-ready è stata fatta qui.
 
 ---
 
