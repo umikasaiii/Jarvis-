@@ -16,7 +16,7 @@ import javax.inject.Singleton
  * Bounded, privacy-safe voice-turn timing diagnostics — Live Voice Phase
  * 0.1 (docs/JARVIS_MASTER_ARCHITECTURE.md). Derived observability only:
  * [SessionCoordinator] remains the sole voice-session owner and calls the
- * mark*/finish* methods below at existing call sites; this class owns no
+ * mark-and-finish methods below at existing call sites; this class owns no
  * session state of its own beyond the current in-flight turn's raw
  * timestamps, and nothing it records ever feeds back into routing,
  * permissions, semantic interpretation, tool execution, retries, or
