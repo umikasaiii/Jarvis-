@@ -3557,7 +3557,7 @@ NEEDLE3 FAST ACTION COMPILER CANDIDATE / QUALIFICATION REQUIRED
 MINICPM5                     CANDIDATE
 LIVE VOICE ENGINE            PLANNED (v1 full-duplex, non iniziato)
 LIVE VOICE PHASE 0.1         CODE PRESENT / AUTOMATED TESTED / CI VERIFIED (run #460) / DEVICE PENDING (§129)
-LIVE VOICE PHASE 0.2         CODE PRESENT / AUTOMATED TESTED (`:core` 1498/1498) / CI PENDING / DEVICE PENDING (§130)
+LIVE VOICE PHASE 0.2         CODE PRESENT / AUTOMATED TESTED / CI VERIFIED (run #462) / DEVICE PENDING (§130)
 REFLEX LAYER                 PLANNED / CANDIDATES UNDER QUALIFICATION
 DESERT ANT SUITE             CANDIDATE PROVIDER / NOT ARCHITECTURALLY REQUIRED
 CLEAR                        CANDIDATE / LIVE LATENCY QUALIFICATION REQUIRED
@@ -4617,7 +4617,18 @@ richiesto.
 
 # 130. LIVE VOICE PHASE 0.2 — REAL TTS PLAYBACK-START OBSERVABILITY
 
-Status: **CODE PRESENT / AUTOMATED TESTED (`:core` 1498/1498) / CI VERIFIED PENDING (questo push) / DEVICE VERIFIED ❌**.
+Status: **CODE PRESENT / AUTOMATED TESTED (`:core` 1498/1498) / CI VERIFIED ✅ (run #462, commit `38c1644`, https://github.com/umikasaiii/Jarvis-/actions/runs/36354280345) / DEVICE VERIFIED ❌**.
+
+**Riconciliazione CI, 2026-09-27**: run #462 (commit `38c1644`) — **tutti
+gli step verdi** su entrambi i job: "Core tests + Android debug build"
+(core unit tests 1498/1498, assemble debug APK, Android unit tests,
+compile instrumented tests, Android lint, compute APK SHA-256
+`cd489877329f9cc45a25083403a582a7dd5b480174c44ebb6a0a9affa89fe8c3`,
+upload, pubblicazione `latest-debug`) e "PASS 14B Windows PowerShell
+5.1 compatibility" (invariato, non toccato da questa fase). Un solo
+warning del compilatore Kotlin (non un errore) su un file preesistente
+e scollegato (`MorningBriefingCanonicalGateRegressionTest.kt`, mai
+toccato da questa fase) — build comunque riuscita.
 
 Estende (mai sostituisce) §129: aggiunge il segnale che Phase 0.1
 dichiarava esplicitamente non misurabile senza toccare l'engine —
@@ -4811,6 +4822,17 @@ automaticamente lo streaming LLM→TTS reale.**
 ---
 
 # 131. MASTER CHANGELOG
+
+## v1.15 — 2026-09-27
+
+Riconciliazione CI per **LIVE VOICE PHASE 0.2** (§130): run #462
+(commit `38c1644`, https://github.com/umikasaiii/Jarvis-/actions/runs/36354280345)
+**tutti gli step verdi** su entrambi i job — core 1498/1498, assemble
+debug APK, Android unit tests, compile instrumented tests, lint,
+SHA-256 (`cd489877329f9cc45a25083403a582a7dd5b480174c44ebb6a0a9affa89fe8c3`),
+upload, pubblicazione `latest-debug`; il job Windows PS5.1 resta verde,
+invariato. Nessun codice toccato in questo aggiornamento —
+solo-documentazione.
 
 ## v1.14 — 2026-09-27
 
