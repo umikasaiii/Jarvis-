@@ -1,7 +1,9 @@
 package com.simone.jarvismobile.audio
 
 import com.simone.jarvismobile.core.speech.SpeechStyle
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import java.util.UUID
 
 /** Whether speech is currently being produced. */
 enum class TtsState { IDLE, SPEAKING, ERROR }
@@ -32,6 +34,15 @@ interface TextToSpeechEngine {
     /** Technical detail of the last init/voice-setup attempt (for diagnostics). */
     val lastDetail: StateFlow<String>
 
+    /**
+     * Bounded, best-effort playback-start observability (Live Voice Phase
+     * 0.2) — see [TtsPlaybackStartedEvent]. Failure to observe playback
+     * start for a given [speak] call never fails that call: the event
+     * simply never fires for it, and speech continues exactly as before
+     * this existed.
+     */
+    val playbackStartEvents: SharedFlow<TtsPlaybackStartedEvent>
+
     /** True once an offline Italian voice has been resolved and is ready. */
     suspend fun ensureReady(): Boolean
 
@@ -48,8 +59,16 @@ interface TextToSpeechEngine {
      */
     fun setStyle(style: SpeechStyle)
 
-    /** Speaks [text]; suspends until playback finishes or is stopped/failed. */
-    suspend fun speak(text: String)
+    /**
+     * Speaks [text]; suspends until playback finishes or is stopped/failed.
+     *
+     * [invocationId] is an opaque handle the caller may supply to correlate
+     * a later [playbackStartEvents] emission with this exact call — it
+     * defaults to a fresh id for callers (voice preview/diagnostics test
+     * tones, background worker replies) that have no use for that
+     * correlation.
+     */
+    suspend fun speak(text: String, invocationId: String = UUID.randomUUID().toString())
 
     /** Immediately stops any current utterance. */
     fun stop()

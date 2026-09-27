@@ -4,8 +4,8 @@
 
 - **Project:** JARVIS
 - **Document role:** project map / architectural control plane / living source of project intent
-- **Version:** 1.13
-- **Generated:** 2026-09-26
+- **Version:** 1.14
+- **Generated:** 2026-09-27
 - **Primary language:** Italiano
 - **Status:** ACTIVE — living document
 - **Repository target:** `umikasaiii/Jarvis-`
@@ -3388,7 +3388,7 @@ Ordine consigliato:
 6. mantenere Pass 14 artifact gate separato;
 7. eseguire 14B sul PC — il runner è ora pronto (§15): `cd tools\semantic_classifier` poi `.\run_real_training.ps1 -ModelDir ".\models" -OutputDir ".\real_run"` dopo aver scaricato i due file reali per `models/README.md`;
 8. solo dopo real semantic artifact gate procedere verso Pass 15;
-9. Live Voice: progettazione può continuare, full implementation dopo semantic/orchestration foundation. **Live Voice Phase 0.1** (foundation hardening + timing diagnostics, §129) implementata su questo push — device acceptance non ancora eseguita, Phase 0.2 non avviata.
+9. Live Voice: progettazione può continuare, full implementation dopo semantic/orchestration foundation. **Live Voice Phase 0.1** (foundation hardening + timing diagnostics, §129) e **Phase 0.2** (real TTS playback-start observability, §130) implementate — device acceptance non ancora eseguita per nessuna delle due, streaming LLM→TTS reale non avviato.
 
 ---
 
@@ -3557,6 +3557,7 @@ NEEDLE3 FAST ACTION COMPILER CANDIDATE / QUALIFICATION REQUIRED
 MINICPM5                     CANDIDATE
 LIVE VOICE ENGINE            PLANNED (v1 full-duplex, non iniziato)
 LIVE VOICE PHASE 0.1         CODE PRESENT / AUTOMATED TESTED / CI VERIFIED (run #460) / DEVICE PENDING (§129)
+LIVE VOICE PHASE 0.2         CODE PRESENT / AUTOMATED TESTED (`:core` 1498/1498) / CI PENDING / DEVICE PENDING (§130)
 REFLEX LAYER                 PLANNED / CANDIDATES UNDER QUALIFICATION
 DESERT ANT SUITE             CANDIDATE PROVIDER / NOT ARCHITECTURALLY REQUIRED
 CLEAR                        CANDIDATE / LIVE LATENCY QUALIFICATION REQUIRED
@@ -4614,7 +4615,234 @@ richiesto.
 
 ---
 
-# 130. MASTER CHANGELOG
+# 130. LIVE VOICE PHASE 0.2 — REAL TTS PLAYBACK-START OBSERVABILITY
+
+Status: **CODE PRESENT / AUTOMATED TESTED (`:core` 1498/1498) / CI VERIFIED PENDING (questo push) / DEVICE VERIFIED ❌**.
+
+Estende (mai sostituisce) §129: aggiunge il segnale che Phase 0.1
+dichiarava esplicitamente non misurabile senza toccare l'engine —
+`ttsPlaybackStartLatencyMs`, definito come `SessionCoordinator` richiede
+la voce → prima osservazione affidabile di avvio riproduzione per **la
+stessa** invocazione TTS. Zero cambi di comportamento/routing/semantica;
+nessun secondo owner introdotto.
+
+## 130.1 Owner reali preservati (nessun secondo owner creato)
+
+- `SessionCoordinator` — resta l'unico owner di sessione; `speakOut()`
+  guadagna solo un listener effimero attorno alla stessa `tts.speak()`
+  già chiamata, mai una seconda pipeline.
+- `ConversationStateMachine` — invariato.
+- `TextToSpeechEngine`/`HybridTtsEngine` — contratto esteso in modo
+  additivo (`playbackStartEvents: SharedFlow<TtsPlaybackStartedEvent>`,
+  `speak(text, invocationId = ...)` con default — ogni call site
+  preesistente resta source-compatible), selezione neurale/Android
+  invariata, streaming/fallback/audio focus invariati.
+- `PcmPlayer` — resta l'unico owner PCM; guadagna solo un'osservazione
+  bounded del proprio `AudioTrack`, mai un secondo player, mai una
+  decisione di riproduzione basata su di essa.
+- `AndroidOfflineTtsEngine` — resta l'unico `UtteranceProgressListener`;
+  `onStart()` esistente integra l'osservazione, nessun secondo listener.
+- `VoiceTurnDiagnosticsRecorder` — resta l'unico punto che chiama
+  `System.nanoTime()`; il nuovo `markTtsPlaybackStarted()` segue
+  esattamente il pattern già in uso (idempotente, no-op se `current`
+  è null).
+
+Nessun `PcmPlayer2`, nessuna seconda `AudioTrack`, nessun secondo
+sistema di osservazione TTS, nessun nuovo voice-session coordinator.
+
+## 130.2 Il segnale reale, per percorso
+
+**Percorso neurale** (`HybridTtsEngine` → `NeuralTtsEngine.synthesize()`
+→ `PcmPlayer.write()` → `AudioTrack MODE_STREAM`): un `write()` riuscito
+prova solo che i campioni sono entrati nel buffer OS, mai che la
+riproduzione è iniziata. `PcmPlayer.start()` ora arma un poll bounded
+(cadenza `POLL_MS=40`, stessa già usata da `drain()`; tetto
+`PLAYBACK_START_TIMEOUT_MS=5000`, mai un loop permanente) che osserva
+`AudioTrack.playbackHeadPosition` avanzare **rispetto alla propria
+baseline di sessione** (non semplicemente `>0`: un track riusato può già
+avere una posizione non-zero da una sessione precedente — misurata
+apposta a runtime, mai assunta zero) — solo allora emette il token di
+generazione via `playbackStartEvents`. Nessun busy-spin, nessuna seconda
+`AudioTrack`.
+
+**Percorso Android TTS** (`AndroidOfflineTtsEngine`): riusa il callback
+di piattaforma già esistente, `UtteranceProgressListener.onStart()` —
+mai `onBeginSynthesis`, mai il successo di coda — armato per il solo
+primo segmento accodato di ogni invocazione (`armedFirstUtteranceId`,
+azzerato al primo match, così un secondo segmento della stessa
+invocazione non ri-emette).
+
+## 130.3 Identità di invocazione / sicurezza da callback stantii
+
+`TtsPlaybackStartedEvent(invocationId: String)` — id opaco generato da
+`SessionCoordinator.speakOut()`, mai il testo parlato. `HybridTtsEngine`
+espone un unico `SharedFlow` unificato: il ponte Android è permanente
+(fencing per utterance-id univoco, indipendente dalla decisione di
+routing), il ponte neurale è per-chiamata, filtrato per il token di
+generazione di `PcmPlayer` — un evento di una generazione superata non
+può mai corrispondere alla generazione corrente.
+
+Scenario esplicitamente richiesto (TTS A parte → interruzione → TTS B
+parte → callback tardivo di A) chiuso su due livelli indipendenti: (1)
+il listener per l'invocazione A viene cancellato (`finally`) subito dopo
+che la chiamata `speak()` di A ritorna, **prima** che una nuova
+invocazione B possa mai iniziare (le chiamate sono sequenziali, non
+concorrenti, all'interno della stessa sessione) — un evento tardivo con
+nessun sottoscrittore attivo è perso, mai riprodotto a un sottoscrittore
+successivo (`SharedFlow` con `replay=0`); (2) anche nell'improbabile
+caso in cui un sottoscrittore fosse ancora attivo, il confronto esplicito
+`event.invocationId == invocationId` rigetta l'evento — un confronto per
+identità, mai una finestra temporale.
+
+Un barrier (`CompletableDeferred` + `onSubscription`) garantisce che il
+listener sia già sottoscritto **prima** che la sintesi/riproduzione
+possa iniziare, eliminando la race "evento emesso prima della
+sottoscrizione" per costruzione, non per probabilità.
+
+## 130.4 Terminologia
+
+Il campo si chiama `ttsPlaybackStartLatencyMs`, mai "first audible
+sample": il software può provare che la riproduzione è iniziata al
+livello del sottosistema audio (testa di riproduzione che avanza,
+callback di piattaforma), non che l'utente ha fisicamente sentito
+l'altoparlante. Stessa terminologia nel modello `:core`, nella UI di
+Diagnostica e in questo documento.
+
+## 130.5 Clock — nessuna dispersione di `System.nanoTime()`
+
+`VoiceTurnDiagnosticsRecorder` resta l'unico punto che legge l'orologio.
+Gli engine (Android/PcmPlayer) segnalano solo *che* un evento reale è
+accaduto, opaco e privo di timestamp proprio; il recorder timbra il
+momento in cui riceve la notifica (via `SessionCoordinator`'s listener),
+esattamente come ogni altro `mark*` di Phase 0.1. Scelta deliberata: il
+piccolo ritardo di scheduling fra l'evento di piattaforma e il
+collector coroutine (tipicamente sub-millisecondo) è un compromesso
+accettabile per una metrica diagnostica, contro lo sparpagliare
+`System.nanoTime()` nei motori TTS — che avrebbe violato la
+centralizzazione già stabilita da Phase 0.1.
+
+## 130.6 Barge-in / cancellazione — comportamento verificato, non riscritto
+
+Se il barge-in interrompe la riproduzione **prima** che sia mai partita,
+nessun evento `PlaybackStarted` viene mai emesso per quell'invocazione →
+`ttsPlaybackStartLatencyMs` resta `null` per costruzione (nessun ramo
+speciale necessario). Se la riproduzione era già iniziata, il timestamp
+resta valido — barge-in e playback-start sono evidenze indipendenti,
+esattamente come già lo erano `bargeInRequestedAtMs` e
+`ttsStoppedAfterBargeInMs` in Phase 0.1. Un'invocazione cancellata non
+può produrre evidenza valida più tardi: il listener è già stato
+cancellato (`finally`) e, comunque, il turno nel recorder è già `null`
+dopo `finish()`/`finishCancelled()`, quindi un `markTtsPlaybackStarted()`
+tardivo resta un no-op — nessun nuovo comportamento di cancellazione
+introdotto, `CancellationException` continua a propagarsi invariata
+(nessun nuovo `catch` generico aggiunto in nessuno dei file toccati).
+
+## 130.7 Metriche genuinamente misurate vs. deliberatamente non aggiunte
+
+Misurato: `ttsPlaybackStartLatencyMs` (richiesta→avvio riproduzione),
+`null` finché non esistono ENTRAMBI i timestamp E il loro ordinamento è
+valido (mai una latenza negativa/inventata da un evento stantio che
+sfuggisse al fencing sopra).
+
+Deliberatamente non aggiunto: `answerReadyToPlaybackStartMs` — sarebbe
+quasi identico numericamente a `ttsPlaybackStartLatencyMs` (il gap reale
+fra `markAnswerReady()` e `markTtsRequested()` in
+`SessionCoordinator.processTurn()` è un dispatch di stato + un append
+messaggio, non un'attesa reale) — aggiungerlo sarebbe stata una metrica
+ridondante creata solo per quantità, esplicitamente vietato dalla
+richiesta.
+
+## 130.8 UI — Diagnostica esistente riusata
+
+Estesa la stessa card "Diagnostica vocale (debug)" (mai una seconda
+schermata): una riga `avvioRiproduzione=Xms` quando disponibile,
+`avvioRiproduzione=non disponibile` altrimenti — nessun nuovo componente
+Diagnostica.
+
+## 130.9 Test aggiunti
+
+`:core` (`VoiceTurnDiagnosticsTest`, +8): evidenza corrispondente
+produce una latenza reale; nessuna evidenza lascia il campo non
+disponibile; evidenza precedente alla richiesta viene rigettata (mai
+negativa); evidenza esattamente coincidente con la richiesta è accettata
+(confine inclusivo); barge-in-prima-dell'avvio lascia il campo non
+disponibile; barge-in-dopo-l'avvio preserva l'evidenza reale; un turno
+annullato senza evidenza non ne fabbrica una dalla cancellazione stessa;
+il record espone solo id opachi/timestamp/enum/contatori/booleani.
+`app/` (`VoiceTurnDiagnosticsRecorderTest`, nuovo — zero dipendenze
+Android, scritto/verificato per bilanciamento parentesi, non eseguibile
+in questo ambiente): un evento tardivo dopo `finish()` non muta mai il
+record già pubblicato; solo la prima osservazione per turno è accettata;
+un'evidenza senza richiesta precedente non fabbrica mai una latenza; un
+nuovo turno parte senza l'evidenza del turno precedente.
+
+## 130.10 Semantic/Protocol Impact Check
+
+Tutti NO: nessuna modifica al classificatore, al dataset, al routing, a
+`jarvis-protocol`, agli schemi wire Android↔Core. Nessuna nuova egress —
+la diagnostica resta interamente locale, privacy-safe per costruzione
+(id opachi, mai testo parlato/transcript/prompt/argomenti tool).
+
+## 130.11 Device Acceptance
+
+**Non dichiarato Live Voice DEVICE VERIFIED.** Da verificare su
+un'APK/qualifica dispositivo separata: avvio riproduzione Android TTS
+reale; avvio riproduzione PCM neurale reale; altoparlante; Bluetooth/
+A2DP; interruzione prima della riproduzione; interruzione dopo l'avvio
+riproduzione; turni ripetuti; sicurezza da callback stantii. Il
+candidato Honor `1236015` (pinnato da MICRO-PATCH E.1) **resta
+pinnato** — nessuna nuova APK di questo commit lo sostituisce nella
+qualificazione in corso del Work Package E.
+
+## 130.12 Conferme esplicite richieste
+
+- Pass 14B: **PAUSED / RUNNER READY, USER-PC REAL EXECUTION PENDING**
+  — non toccato da questa fase.
+- BLIND: **UNTOUCHED** — non toccato da questa fase.
+- Pass 15: **NOT STARTED** — non avviato da questa fase.
+- Honor candidate `1236015`: **resta PINNATO** — invariato.
+- LLM-token→TTS streaming: **ANCORA NON IMPLEMENTATO** — §129.4 resta
+  invariato, questa fase riguarda solo l'osservabilità di avvio
+  riproduzione del percorso a-risposta-completa esistente.
+
+**Fermato qui, come esplicitamente richiesto — non avviato
+automaticamente lo streaming LLM→TTS reale.**
+
+---
+
+# 131. MASTER CHANGELOG
+
+## v1.14 — 2026-09-27
+
+**LIVE VOICE PHASE 0.2 — REAL TTS PLAYBACK-START OBSERVABILITY** (nuovo
+§130). Estende Phase 0.1 (§129) col segnale che quella fase dichiarava
+esplicitamente non misurabile senza toccare l'engine:
+`ttsPlaybackStartLatencyMs` — `SessionCoordinator` richiede la voce →
+prima osservazione affidabile di avvio riproduzione, mai il campanello
+"speak() chiamato", mai il primo `PcmPlayer.write()` da solo. Percorso
+neurale: nuovo poll bounded in `PcmPlayer` su
+`AudioTrack.playbackHeadPosition` che avanza dalla propria baseline di
+sessione (mai solo `>0`), cadenza/tetto già consistenti con lo stile
+esistente di `drain()`, mai un loop permanente. Percorso Android:
+riusato il callback di piattaforma `onStart()` già esistente, armato
+solo per il primo segmento accodato di ogni invocazione. Nuovo,
+minimo, contratto di evento (`TtsPlaybackStartedEvent(invocationId)`,
+opaco, mai testo parlato) esteso sul `TextToSpeechEngine` esistente
+(`speak(text, invocationId = ...)` con default — ogni call site
+preesistente resta source-compatible) — nessun secondo sistema di
+osservazione TTS, nessun `PcmPlayer2`, nessun secondo
+`UtteranceProgressListener`. Callback stantii rigettati
+deterministicamente su due livelli (cancellazione del listener
+per-invocazione + confronto esplicito per id), mai una finestra
+temporale. Barge-in/cancellazione verificati e preservati, non
+riscritti: nessun `catch` generico nuovo che possa ingoiare
+`CancellationException`. 8 nuovi test `:core`
+(`VoiceTurnDiagnosticsTest`, suite **1498/1498**) + nuovo
+`VoiceTurnDiagnosticsRecorderTest` (`app/`, zero dipendenze Android).
+Pass 14B `PAUSED`, BLIND `UNTOUCHED`, Pass 15 `NOT STARTED`, candidato
+Honor `1236015` pinnato — nessuno di questi toccato. Streaming
+LLM-token→TTS reale **non implementato**, come esplicitamente richiesto
+di non avviare. Non dichiarato Live Voice device-verified.
 
 ## v1.13 — 2026-09-26
 

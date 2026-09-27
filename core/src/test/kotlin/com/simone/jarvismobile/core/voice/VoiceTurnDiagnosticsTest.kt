@@ -6,7 +6,7 @@ import kotlin.test.assertNull
 
 class VoiceTurnDiagnosticsTest {
 
-    private fun full(bargeInAtMs: Long? = null) = VoiceTurnTimestamps(
+    private fun full(bargeInAtMs: Long? = null, playbackStartAtMs: Long? = null) = VoiceTurnTimestamps(
         sttStartedAtMs = 0,
         sttFinalAtMs = 300,
         answerStartedAtMs = 300,
@@ -14,6 +14,7 @@ class VoiceTurnDiagnosticsTest {
         ttsRequestedAtMs = 900,
         ttsFinishedAtMs = 2400,
         bargeInRequestedAtMs = bargeInAtMs,
+        ttsPlaybackStartAtMs = playbackStartAtMs,
     )
 
     @Test
@@ -34,6 +35,10 @@ class VoiceTurnDiagnosticsTest {
         assertEquals(2400, record.totalTurnMs)
         assertEquals(false, record.bargeInRequested)
         assertNull(record.ttsStoppedAfterBargeInMs)
+        // No playback-start evidence was supplied — must stay unavailable,
+        // never fall back to answerLatencyMs/ttsDurationMs or any other
+        // already-known timestamp as a stand-in.
+        assertNull(record.ttsPlaybackStartLatencyMs)
     }
 
     @Test
@@ -53,6 +58,7 @@ class VoiceTurnDiagnosticsTest {
         assertNull(record.answerLatencyMs)
         assertNull(record.ttsDurationMs)
         assertNull(record.ttsStoppedAfterBargeInMs)
+        assertNull(record.ttsPlaybackStartLatencyMs)
         // totalTurnMs is the one duration that is always known once the turn
         // finishes, whatever the outcome — it is not derived from a pair of
         // optional stage timestamps.
@@ -76,6 +82,7 @@ class VoiceTurnDiagnosticsTest {
         assertNull(record.ttsDurationMs)
         assertEquals(false, record.bargeInRequested)
         assertNull(record.ttsStoppedAfterBargeInMs)
+        assertNull(record.ttsPlaybackStartLatencyMs)
     }
 
     @Test
@@ -202,5 +209,153 @@ class VoiceTurnDiagnosticsTest {
         )
         assertEquals(true, record.cancellationRequested)
         assertEquals(VoiceTurnOutcome.CANCELLED, record.outcome)
+    }
+
+    // --- Live Voice Phase 0.2 — ttsPlaybackStartLatencyMs -------------------
+
+    @Test
+    fun `matching playback-start evidence produces a real, non-fabricated latency`() {
+        val record = VoiceTurnDiagnostics.compute(
+            turnId = "t8",
+            startedAtEpochMs = 0,
+            followUpIndex = 0,
+            cancellationRequested = false,
+            outcome = VoiceTurnOutcome.COMPLETED,
+            failureStage = VoiceTurnFailureStage.NONE,
+            timestamps = full(playbackStartAtMs = 1_100),
+            finishedAtMs = 2400,
+        )
+        // ttsRequestedAtMs=900, ttsPlaybackStartAtMs=1100 -> 200ms, the exact
+        // request-to-playback-start gap, never derived from anything else
+        // (not ttsDurationMs, not answerLatencyMs).
+        assertEquals(200, record.ttsPlaybackStartLatencyMs)
+    }
+
+    @Test
+    fun `no playback-start evidence leaves the metric unavailable, not zero`() {
+        val record = VoiceTurnDiagnostics.compute(
+            turnId = "t9",
+            startedAtEpochMs = 0,
+            followUpIndex = 0,
+            cancellationRequested = false,
+            outcome = VoiceTurnOutcome.COMPLETED,
+            failureStage = VoiceTurnFailureStage.NONE,
+            timestamps = full(playbackStartAtMs = null),
+            finishedAtMs = 2400,
+        )
+        assertNull(record.ttsPlaybackStartLatencyMs)
+    }
+
+    @Test
+    fun `playback-start evidence timestamped before the request is rejected, never a negative latency`() {
+        // Simulates a stale callback that belonged to an earlier, already-
+        // superseded invocation slipping past invocation-id fencing at the
+        // engine/session layer — this ordering check is the model's own,
+        // independent second line of defence: it must never turn that into
+        // an invented negative duration.
+        val record = VoiceTurnDiagnostics.compute(
+            turnId = "t10",
+            startedAtEpochMs = 0,
+            followUpIndex = 0,
+            cancellationRequested = false,
+            outcome = VoiceTurnOutcome.COMPLETED,
+            failureStage = VoiceTurnFailureStage.NONE,
+            timestamps = full(playbackStartAtMs = 500), // before ttsRequestedAtMs=900
+            finishedAtMs = 2400,
+        )
+        assertNull(record.ttsPlaybackStartLatencyMs)
+    }
+
+    @Test
+    fun `playback-start evidence exactly at the request instant is accepted, not just strictly after`() {
+        val record = VoiceTurnDiagnostics.compute(
+            turnId = "t11",
+            startedAtEpochMs = 0,
+            followUpIndex = 0,
+            cancellationRequested = false,
+            outcome = VoiceTurnOutcome.COMPLETED,
+            failureStage = VoiceTurnFailureStage.NONE,
+            timestamps = full(playbackStartAtMs = 900), // == ttsRequestedAtMs
+            finishedAtMs = 2400,
+        )
+        assertEquals(0, record.ttsPlaybackStartLatencyMs)
+    }
+
+    @Test
+    fun `barge-in requested before playback ever started leaves the metric unavailable`() {
+        // The engine/session layer never fires a playback-started event once
+        // barge-in actually cut the invocation off before it produced any
+        // audio — modelled here as simply no playback-start evidence at all,
+        // alongside a barge-in request.
+        val record = VoiceTurnDiagnostics.compute(
+            turnId = "t12",
+            startedAtEpochMs = 0,
+            followUpIndex = 0,
+            cancellationRequested = false,
+            outcome = VoiceTurnOutcome.COMPLETED,
+            failureStage = VoiceTurnFailureStage.NONE,
+            timestamps = full(bargeInAtMs = 950, playbackStartAtMs = null),
+            finishedAtMs = 2400,
+        )
+        assertEquals(true, record.bargeInRequested)
+        assertNull(record.ttsPlaybackStartLatencyMs)
+    }
+
+    @Test
+    fun `barge-in requested after a genuine playback start preserves the real start evidence`() {
+        // Playback genuinely started at 1100, barge-in was requested later at
+        // 1800 — the two are independent pieces of evidence: barge-in must
+        // never retroactively erase a playback-start observation that
+        // already happened.
+        val record = VoiceTurnDiagnostics.compute(
+            turnId = "t13",
+            startedAtEpochMs = 0,
+            followUpIndex = 0,
+            cancellationRequested = false,
+            outcome = VoiceTurnOutcome.COMPLETED,
+            failureStage = VoiceTurnFailureStage.NONE,
+            timestamps = full(bargeInAtMs = 1_800, playbackStartAtMs = 1_100),
+            finishedAtMs = 2400,
+        )
+        assertEquals(true, record.bargeInRequested)
+        assertEquals(200, record.ttsPlaybackStartLatencyMs)
+    }
+
+    @Test
+    fun `a cancelled turn with no playback-start evidence never fabricates one from the cancellation itself`() {
+        val record = VoiceTurnDiagnostics.compute(
+            turnId = "t14",
+            startedAtEpochMs = 0,
+            followUpIndex = 0,
+            cancellationRequested = true,
+            outcome = VoiceTurnOutcome.CANCELLED,
+            failureStage = VoiceTurnFailureStage.TTS,
+            timestamps = VoiceTurnTimestamps(ttsRequestedAtMs = 900, ttsPlaybackStartAtMs = null),
+            finishedAtMs = 950,
+        )
+        assertNull(record.ttsPlaybackStartLatencyMs)
+    }
+
+    @Test
+    fun `the finished record carries only opaque ids, timestamps, enums, durations, counters and booleans`() {
+        // Privacy/schema guard, enforced at the Kotlin type level (see the
+        // VoiceTurnDiagnostics/VoiceTurnTimestamps declarations themselves:
+        // every field is a Long?/Int/Boolean/enum, with turnId as the one
+        // String field, an opaque generated id — never reply text/transcript
+        // content). This test exercises that turnId really is opaque (a
+        // caller-supplied id round-trips verbatim, never inspected/parsed/
+        // transformed by compute()) rather than re-deriving the type check
+        // the compiler already performs.
+        val record = VoiceTurnDiagnostics.compute(
+            turnId = "opaque-id-not-reply-text-15",
+            startedAtEpochMs = 0,
+            followUpIndex = 0,
+            cancellationRequested = false,
+            outcome = VoiceTurnOutcome.COMPLETED,
+            failureStage = VoiceTurnFailureStage.NONE,
+            timestamps = VoiceTurnTimestamps(),
+            finishedAtMs = 10,
+        )
+        assertEquals("opaque-id-not-reply-text-15", record.turnId)
     }
 }

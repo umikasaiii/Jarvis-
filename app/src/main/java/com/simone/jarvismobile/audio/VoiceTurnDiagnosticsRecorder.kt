@@ -14,7 +14,8 @@ import javax.inject.Singleton
 
 /**
  * Bounded, privacy-safe voice-turn timing diagnostics — Live Voice Phase
- * 0.1 (docs/JARVIS_MASTER_ARCHITECTURE.md). Derived observability only:
+ * 0.1, extended in Phase 0.2 with real TTS playback-start observability
+ * (docs/JARVIS_MASTER_ARCHITECTURE.md). Derived observability only:
  * [SessionCoordinator] remains the sole voice-session owner and calls the
  * mark-and-finish methods below at existing call sites; this class owns no
  * session state of its own beyond the current in-flight turn's raw
@@ -47,6 +48,7 @@ class VoiceTurnDiagnosticsRecorder @Inject constructor() {
         @Volatile var ttsRequestedAtMs: Long? = null
         @Volatile var ttsFinishedAtMs: Long? = null
         @Volatile var bargeInRequestedAtMs: Long? = null
+        @Volatile var ttsPlaybackStartAtMs: Long? = null
         @Volatile var cancellationRequested: Boolean = false
 
         fun elapsedMs(): Long = (System.nanoTime() - startedAtNanos) / 1_000_000L
@@ -59,6 +61,7 @@ class VoiceTurnDiagnosticsRecorder @Inject constructor() {
             ttsRequestedAtMs = ttsRequestedAtMs,
             ttsFinishedAtMs = ttsFinishedAtMs,
             bargeInRequestedAtMs = bargeInRequestedAtMs,
+            ttsPlaybackStartAtMs = ttsPlaybackStartAtMs,
         )
     }
 
@@ -85,6 +88,19 @@ class VoiceTurnDiagnosticsRecorder @Inject constructor() {
     fun markAnswerReady() = mark { it.answerReadyAtMs = it.elapsedMs() }
     fun markTtsRequested() = mark { it.ttsRequestedAtMs = it.elapsedMs() }
     fun markTtsFinished() = mark { it.ttsFinishedAtMs = it.elapsedMs() }
+
+    /**
+     * Called from [SessionCoordinator.speakOut] when a real playback-start
+     * observation ([TtsPlaybackStartedEvent]) arrives for the in-flight
+     * turn's current TTS invocation (Live Voice Phase 0.2). Idempotent —
+     * only the first observation per turn is kept, matching every other
+     * mark here — and a no-op once the turn has already finished (`current`
+     * is null by then), which is what stops a late/stale event from ever
+     * mutating a completed or superseded turn: this recorder only ever has
+     * one in-flight turn, and [SessionCoordinator] independently fences by
+     * invocation id before this is ever called.
+     */
+    fun markTtsPlaybackStarted() = mark { if (it.ttsPlaybackStartAtMs == null) it.ttsPlaybackStartAtMs = it.elapsedMs() }
 
     /**
      * Called from [SessionCoordinator.interruptAndListen] — reachable only

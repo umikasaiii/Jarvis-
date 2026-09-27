@@ -7,12 +7,21 @@ import com.simone.jarvismobile.data.SettingsRepository
 import com.simone.jarvismobile.tts.AudioFocusGate
 import com.simone.jarvismobile.tts.NeuralTtsRepository
 import com.simone.jarvismobile.tts.PcmPlayer
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.onSubscription
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -49,6 +58,24 @@ class HybridTtsEngine @Inject constructor(
 
     private val _lastDetail = MutableStateFlow("")
     override val lastDetail: StateFlow<String> = _lastDetail.asStateFlow()
+
+    // Live Voice Phase 0.2 — one unified, engine-agnostic playback-start
+    // stream. The Android path is bridged in permanently below (its own
+    // fencing, by unique utterance id, already prevents cross-invocation
+    // leaks regardless of which routing decision speak() makes for a given
+    // call); the neural path is bridged per-call inside speak() itself,
+    // scoped exactly to that call's own PcmPlayer generation. Callers of
+    // this class (SessionCoordinator) only ever see this one flow and never
+    // need to know which underlying engine actually spoke.
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val _playbackStartEvents = MutableSharedFlow<TtsPlaybackStartedEvent>(extraBufferCapacity = 8)
+    override val playbackStartEvents: SharedFlow<TtsPlaybackStartedEvent> = _playbackStartEvents.asSharedFlow()
+
+    init {
+        scope.launch {
+            android.playbackStartEvents.collect { _playbackStartEvents.tryEmit(it) }
+        }
+    }
 
     @Volatile private var style: SpeechStyle = SpeechStyle.NATURALE
     @Volatile private var neuralActive = false
@@ -87,15 +114,15 @@ class HybridTtsEngine @Inject constructor(
         android.setStyle(style)
     }
 
-    override suspend fun speak(text: String) {
+    override suspend fun speak(text: String, invocationId: String) {
         if (!settings.ttsSpeechEnabled.first()) return
         if (!neuralActive) {
-            android.speak(text)
+            android.speak(text, invocationId)
             return
         }
         val engine = neural.ensureLoaded() ?: run {
             neuralActive = false
-            android.speak(text)
+            android.speak(text, invocationId)
             return
         }
 
@@ -115,8 +142,27 @@ class HybridTtsEngine @Inject constructor(
         focus.acquire { stop() }
         _state.value = TtsState.SPEAKING
         stopped = false
-        player.start(engine.sampleRate)
+        val pcmGeneration = player.start(engine.sampleRate)
         player.setVolume(volume)
+        // Bridges this one call's PcmPlayer generation to the unified event
+        // flow — armed (and confirmed subscribed, via onSubscription) before
+        // any PCM is written below, so a genuinely fast head-position
+        // advance can never race past an unsubscribed collector. Filtering
+        // by generation is what rejects a stale event from a superseded
+        // invocation deterministically: PcmPlayer only ever emits its
+        // current generation, and a new speak() call always starts a new
+        // one before this collector for the old call is even launched.
+        val playbackReady = CompletableDeferred<Unit>()
+        val playbackWatch = scope.launch {
+            player.playbackStartEvents
+                .onSubscription { playbackReady.complete(Unit) }
+                .collect { generation ->
+                    if (generation == pcmGeneration) {
+                        _playbackStartEvents.tryEmit(TtsPlaybackStartedEvent(invocationId))
+                    }
+                }
+        }
+        playbackReady.await()
         try {
             if (streaming) {
                 for (segment in segments) {
@@ -144,6 +190,7 @@ class HybridTtsEngine @Inject constructor(
             _lastDetail.value = "neural_speak_failed ${e.javaClass.simpleName}"
             Log.w(TAG, "neural_speak_failed ${e.javaClass.simpleName}")
         } finally {
+            playbackWatch.cancel()
             focus.release()
         }
     }

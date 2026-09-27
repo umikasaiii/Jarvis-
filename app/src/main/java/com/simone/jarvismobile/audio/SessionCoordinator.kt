@@ -52,11 +52,13 @@ import com.simone.jarvismobile.tools.ToolOutcome
 import com.simone.jarvismobile.util.runCancellable
 import com.simone.jarvismobile.tools.ToolRunner
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -64,6 +66,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.onSubscription
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -72,6 +75,7 @@ import java.io.File
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -2120,9 +2124,39 @@ class SessionCoordinator @Inject constructor(
         }
     }
 
+    /**
+     * Live Voice Phase 0.2 — around the same `tts.speak()` call this always
+     * made, arms a short-lived listener for a real playback-start
+     * observation ([TtsPlaybackStartedEvent]) tagged with this exact call's
+     * own [invocationId]. The `ready` barrier below guarantees the listener
+     * is already subscribed before `speak()` can possibly start producing
+     * audio, so a genuinely fast platform event can never race past an
+     * unsubscribed collector; filtering by [invocationId] is what
+     * deterministically rejects a stale event from any other invocation —
+     * never a time window. The listener is torn down the moment `speak()`
+     * returns (normally, on error, or on cancellation — `finally` runs
+     * either way), so it can never attribute a late event to a later turn.
+     */
     private suspend fun speakOut(text: String) {
         if (tts.ensureReady()) {
-            tts.speak(expressiveText(text))
+            val spoken = expressiveText(text)
+            val invocationId = UUID.randomUUID().toString()
+            coroutineScope {
+                val listenerReady = CompletableDeferred<Unit>()
+                val listener = launch {
+                    tts.playbackStartEvents
+                        .onSubscription { listenerReady.complete(Unit) }
+                        .collect { event ->
+                            if (event.invocationId == invocationId) voiceDiagnostics.markTtsPlaybackStarted()
+                        }
+                }
+                listenerReady.await()
+                try {
+                    tts.speak(spoken, invocationId)
+                } finally {
+                    listener.cancel()
+                }
+            }
         } else {
             _diagnostic.value = "${_diagnostic.value} | tts_unavailable [${tts.lastDetail.value}]"
         }

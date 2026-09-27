@@ -12,7 +12,9 @@ import com.simone.jarvismobile.core.speech.SpeechStyle
 import com.simone.jarvismobile.data.SettingsRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
@@ -50,10 +52,23 @@ class AndroidOfflineTtsEngine @Inject constructor(
     private val _lastDetail = MutableStateFlow("")
     override val lastDetail = _lastDetail.asStateFlow()
 
+    private val _playbackStartEvents = MutableSharedFlow<TtsPlaybackStartedEvent>(extraBufferCapacity = 4)
+    override val playbackStartEvents = _playbackStartEvents.asSharedFlow()
+
     private var tts: TextToSpeech? = null
     private var ready = false
     private val pending = ConcurrentHashMap<String, CompletableDeferred<Unit>>()
     private val initMutex = Mutex()
+
+    // Live Voice Phase 0.2 — armed by speak() before the first segment is
+    // queued: onStart() only treats a match against armedFirstUtteranceId as
+    // playback-start evidence, one-shot per invocation (nulled right after
+    // firing), so a later segment's own onStart() of the same invocation
+    // never re-fires it, and a stale onStart() from an invocation this
+    // engine has since moved on from can never match (each invocation gets
+    // a fresh, unique utterance id).
+    @Volatile private var currentInvocationId: String? = null
+    @Volatile private var armedFirstUtteranceId: String? = null
 
     // --- Audio focus (Phase 4) ------------------------------------------------
     // While JARVIS speaks we hold TRANSIENT audio focus so music/podcasts pause
@@ -143,7 +158,18 @@ class AndroidOfflineTtsEngine @Inject constructor(
                 .build(),
         )
         engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-            override fun onStart(utteranceId: String) { _state.value = TtsState.SPEAKING }
+            override fun onStart(utteranceId: String) {
+                _state.value = TtsState.SPEAKING
+                // The platform's own playback-start signal — onStart() is
+                // called once the TTS engine has actually begun producing
+                // this utterance, never merely queued it. Only the first
+                // queued segment of the current invocation counts, and only
+                // once.
+                if (utteranceId == armedFirstUtteranceId) {
+                    armedFirstUtteranceId = null
+                    currentInvocationId?.let { id -> _playbackStartEvents.tryEmit(TtsPlaybackStartedEvent(id)) }
+                }
+            }
             override fun onDone(utteranceId: String) {
                 _state.value = TtsState.IDLE
                 pending.remove(utteranceId)?.complete(Unit)
@@ -281,20 +307,30 @@ class AndroidOfflineTtsEngine @Inject constructor(
      * first segment, [TextToSpeech.QUEUE_ADD] for the rest — and we wait only on
      * the last utterance, so the engine never runs dry between sentences.
      */
-    override suspend fun speak(text: String) {
+    override suspend fun speak(text: String, invocationId: String) {
         val engine = tts ?: return
         val segments = SpeechShaper.shape(text, style)
         if (segments.isEmpty()) return
 
         val lastId = UUID.randomUUID().toString()
+        // Pre-generated (rather than inline in the loop below) so it is
+        // known before the first segment is queued: with one segment,
+        // firstId is simply lastId, same as before this existed.
+        val firstId = if (segments.size == 1) lastId else UUID.randomUUID().toString()
         val done = CompletableDeferred<Unit>()
         pending[lastId] = done
+        currentInvocationId = invocationId
+        armedFirstUtteranceId = firstId
         requestAudioFocus()
 
         var queued = false
         segments.forEachIndexed { i, segment ->
             val last = i == segments.lastIndex
-            val id = if (last) lastId else UUID.randomUUID().toString()
+            val id = when {
+                i == 0 -> firstId
+                last -> lastId
+                else -> UUID.randomUUID().toString()
+            }
             val mode = if (i == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
             if (engine.speak(segment.text, mode, null, id) == TextToSpeech.SUCCESS) {
                 queued = true

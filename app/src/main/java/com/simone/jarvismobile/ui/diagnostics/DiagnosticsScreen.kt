@@ -365,6 +365,19 @@ fun DiagnosticsScreen(
                                     "totale=${turn.totalTurnMs?.let { "${it}ms" } ?: "-"}",
                                 style = MaterialTheme.typography.bodySmall,
                             )
+                            // Live Voice Phase 0.2 — real playback-subsystem
+                            // evidence, never a proxy from the mere call to
+                            // speak(): AudioTrack head-position advance for
+                            // the neural path, the platform's own onStart
+                            // utterance callback for the Android path. Named
+                            // "avvio riproduzione" (playback start), never
+                            // "primo campione udibile" — software can prove
+                            // playback started at the playback subsystem, not
+                            // that the user physically heard the speaker.
+                            Text(
+                                "avvioRiproduzione=${turn.ttsPlaybackStartLatencyMs?.let { "${it}ms" } ?: "non disponibile"}",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
                             if (turn.bargeInRequested) {
                                 Text(
                                     "bargeIn=true · stopDopoBargeIn=${turn.ttsStoppedAfterBargeInMs?.let { "${it}ms" } ?: "non disponibile"}",

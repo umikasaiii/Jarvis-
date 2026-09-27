@@ -44,13 +44,19 @@ enum class VoiceTurnFailureStage {
  *
  * A null field means that point was genuinely never reached, or is not
  * observable from the current implementation — never a fabricated/proxy
- * value. In particular there is deliberately no "first TTS audio" field:
+ * value.
+ *
+ * Live Voice Phase 0.1 shipped without a playback-start field:
  * [com.simone.jarvismobile.audio.HybridTtsEngine.speak] suspends until
- * playback finishes/stops/fails, so the moment the first PCM sample is
- * actually emitted is not observable from outside without an invasive
- * change to that engine or [com.simone.jarvismobile.tts.PcmPlayer] — out of
- * scope for this phase. The gap is recorded in prose in the Master
- * Architecture doc instead of a field that would always read null.
+ * playback finishes/stops/fails, and at that time the moment playback
+ * actually began was not observable from outside without touching that
+ * engine or [com.simone.jarvismobile.tts.PcmPlayer]. Phase 0.2 closes that
+ * gap for real — see [ttsPlaybackStartAtMs] below — by having each engine
+ * signal a genuine playback-subsystem event (never a bare `speak()` call,
+ * never synthesis start) up through a small, opaque, invocation-scoped
+ * event contract; the recorder still owns the only [System.nanoTime] read
+ * on that event's arrival, exactly as it already does for every other
+ * mark here.
  */
 data class VoiceTurnTimestamps(
     val sttStartedAtMs: Long? = null,
@@ -60,6 +66,20 @@ data class VoiceTurnTimestamps(
     val ttsRequestedAtMs: Long? = null,
     val ttsFinishedAtMs: Long? = null,
     val bargeInRequestedAtMs: Long? = null,
+    /**
+     * Live Voice Phase 0.2 — set only when a real playback-subsystem event
+     * (not a bare call to [com.simone.jarvismobile.audio.TextToSpeechEngine.speak],
+     * not synthesis start, not the first PCM chunk generated, not a lone
+     * [com.simone.jarvismobile.tts.PcmPlayer.write] call succeeding) proved
+     * that this turn's TTS invocation actually started producing audio at
+     * the playback subsystem — [android.media.AudioTrack.getPlaybackHeadPosition]
+     * genuinely advancing for the neural path, the platform's own
+     * `onStart` utterance callback for the Android TTS path. Software can
+     * prove playback started at the playback subsystem; it cannot prove
+     * the user physically heard the speaker — hence "playback start", never
+     * "first audible sample", everywhere this is named.
+     */
+    val ttsPlaybackStartAtMs: Long? = null,
 )
 
 /**
@@ -92,6 +112,20 @@ data class VoiceTurnDiagnostics(
     val bargeInRequested: Boolean,
     /** How long after a barge-in request this turn's own TTS-await actually returned — null unless both events belong to this same turn and are correctly ordered. */
     val ttsStoppedAfterBargeInMs: Long?,
+    /**
+     * `SessionCoordinator` requests speech → first trustworthy playback-start
+     * observation for that same TTS invocation (Live Voice Phase 0.2). Null
+     * whenever the request timestamp or the playback-start evidence is
+     * missing, OR the two are not validly ordered (playback-start evidence
+     * timestamped before the request — e.g. a stale/rejected callback from a
+     * prior, already-superseded invocation) — never fabricated, never a
+     * negative duration. A barge-in that stops playback before it ever
+     * started leaves this null; a barge-in requested *after* a genuine
+     * playback-start observation does not erase that observation — the two
+     * are independent evidence, exactly like [ttsStoppedAfterBargeInMs]
+     * above is independent of [bargeInRequested].
+     */
+    val ttsPlaybackStartLatencyMs: Long?,
 ) {
     companion object {
 
@@ -125,6 +159,24 @@ data class VoiceTurnDiagnostics(
                 null
             }
 
+            // Only claimed when the request timestamp precedes (or coincides
+            // with) the playback-start evidence — otherwise the evidence
+            // cannot be trusted to belong to this invocation's request (e.g.
+            // a stale callback from an already-superseded invocation, which
+            // the recorder/session owner reject deterministically by
+            // invocation identity before this ever runs — this ordering
+            // check is a second, independent safeguard against ever
+            // reporting a negative/invented latency).
+            val ttsPlaybackStartLatencyMs = if (
+                timestamps.ttsRequestedAtMs != null &&
+                timestamps.ttsPlaybackStartAtMs != null &&
+                timestamps.ttsRequestedAtMs <= timestamps.ttsPlaybackStartAtMs
+            ) {
+                timestamps.ttsPlaybackStartAtMs - timestamps.ttsRequestedAtMs
+            } else {
+                null
+            }
+
             return VoiceTurnDiagnostics(
                 turnId = turnId,
                 startedAtEpochMs = startedAtEpochMs,
@@ -138,6 +190,7 @@ data class VoiceTurnDiagnostics(
                 totalTurnMs = finishedAtMs,
                 bargeInRequested = bargeInRequested,
                 ttsStoppedAfterBargeInMs = ttsStoppedAfterBargeInMs,
+                ttsPlaybackStartLatencyMs = ttsPlaybackStartLatencyMs,
             )
         }
 
