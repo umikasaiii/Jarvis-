@@ -4,7 +4,7 @@
 
 - **Project:** JARVIS
 - **Document role:** project map / architectural control plane / living source of project intent
-- **Version:** 1.16
+- **Version:** 1.17
 - **Generated:** 2026-09-30
 - **Primary language:** Italiano
 - **Status:** ACTIVE — living document
@@ -106,34 +106,43 @@ Branch Android attivo: `claude/jarvis-mobile-automazioni-dashboard-b4xa7e`
 
 Branch Core storico: `claude/jarvis-core-7uhajh`
 
-## 2.1 Stato remoto Android verificato al momento di generazione
+## 2.1 Stato remoto Android verificato al 2026-09-30
 
 Remote branch HEAD verificato:
 
-`6a66d3247cff01a9dde36fb899196b22c16ff453`
+`7c4a4fbc805a38c0467a085506c9380da47b9a55`
 
 Messaggio:
 
-`Fix CI: missing assertFalse import in ProactiveOccurrenceStoreTest`
+`feat: measure real user speech boundaries`
 
-Parent:
+Questo commit è **Live Voice Phase 0.3** (§131).
 
-`df686d525feab671fb93ed865649316bdce46073`
+CI verificata sullo SHA esatto:
 
-Il parent contiene la micro-patch **14.2.2** per il bug reale del Morning Briefing multi-delivery.
+- **GitHub Actions run #464**
+- run id `36695775885`
+- **COMPLETED / SUCCESS**
+- `Core tests + Android debug build` → SUCCESS
+- `PASS 14B Windows PowerShell 5.1 compatibility` → SUCCESS
+- core suite: **1506/1506**
+- APK SHA-256 del build di Phase 0.3:
+  `41f9fa58c482f86345c3addb39a6ab6aee44a047c1022de5c76ce3137ea9b8a4`
 
-**Aggiornamento v1.2**: **CI run #433** sullo SHA esatto `6a66d3247cff01a9dde36fb899196b22c16ff453` è **COMPLETED / SUCCESS** (era `in progress` al momento della generazione v1.1). Stato verificato per questo commit:
+Stato del branch corrente:
 
 ```text
-CODE PRESENT          ✅
-CONNECTED             ✅
-AUTOMATED TESTED      ✅
-CI VERIFIED           ✅ Run #433
-DEVICE VERIFIED       ❌
-PRODUCTION READY      ❌
+LATEST ANDROID HEAD          7c4a4fbc805a38c0467a085506c9380da47b9a55
+LATEST CI                    #464 SUCCESS
+LIVE VOICE PHASE 0.3         CODE PRESENT / AUTOMATED TESTED / CI VERIFIED
+LIVE VOICE DEVICE VERIFIED   ❌
 ```
 
-Honor 200: **RETEST REQUIRED** — CI verde non implica device acceptance (invariante §0.1/§62).
+**Separazione fondamentale:** il branch corrente NON è il candidato ancora
+in uso per la qualificazione Work Package E sul telefono. Il candidato Honor
+200 resta deliberatamente pinnato a `1236015` finché quella campagna non
+viene chiusa o sostituita esplicitamente. Non usare automaticamente
+`latest-debug` per reinterpretare evidenza raccolta sul candidato E.1.
 
 ## 2.2 Stop-hook Git false positive noto
 
@@ -2829,48 +2838,408 @@ Senza questa prova, non chiamare un comportamento “riproducibile”.
 
 ---
 
-# 65. ROADMAP MASTER — STRUTTURA
+# 65. ROADMAP MASTER — ORDINE OPERATIVO CANONICO
 
-## TRACK A — ANDROID COMPLETION (ACTIVE, priorità corrente)
+Questa sezione è la **scaletta operativa corrente**. Le sezioni storiche
+successive restano evidenza e decision log; se una vecchia sequenza entra in
+conflitto con questa, prevale questa sezione insieme allo stato reale più
+recente (§0.3).
 
-Semantic Intelligence → Android orchestration → grounding → memory →
-context/proactivity → automations → Live Voice → Reflex Layer →
-perception → phone actions → driving → SEGNALE/UI → Android security →
-Honor 200 end-to-end acceptance. Vedi ADR-013: External JARVIS Core
-runtime resta FROZEN finché questo track non chiude.
+## 65.1 TRACK A0 — PROACTIVITY DEVICE CLOSURE + PERSISTENT AGENT KERNEL (ACTIVE)
 
-## TRACK B — CORE ENHANCEMENT (successivo, non iniziato)
+Obiettivo: chiudere il failure reale del Morning Briefing e usare
+**MORNING_ASSISTANCE** come prima vertical slice di una nuova architettura a
+responsabilità persistenti, senza creare un processo "always-on" cloud-first e
+senza perdere gli owner affidabili già costruiti.
 
-Planner/BRAIN più forte, RAG di grandi dimensioni, STT/TTS pesanti, PC
-Actions, modelli più grandi, background intelligence. Puramente
-opzionale — JARVIS Android è già completo senza TRACK B.
+### Stato reale da cui si parte
 
-## FASE 0 — Architettura definitiva
+Sul candidato Honor E.1 `1236015`:
 
-- Audit ✅
-- Target Architecture ✅
-- Red Team / Manual ✅
-- MASTER Architecture ✅ questo documento
+- app opens: osservato;
+- `CONFIGURED_TIME` / fallback delle **08:50**: osservato ripetutamente;
+- `FIRST_UNLOCK`: non influenza la consegna osservata → **FAILED-DEVICE / ROOT CAUSE OPEN**;
+- `NEXT_ALARM`: non influenza la consegna osservata → **FAILED-DEVICE / ROOT CAUSE OPEN**;
+- Work Package E: **OPEN**;
+- i duplicati appartengono alla storia reale e restano un requisito di
+  non-regressione; il comportamento attuale non va dichiarato corretto finché i
+  segnali non superano acceptance sul device.
 
-## FASE 1 — Stabilizzazione fondamenta
+Il fatto che il fallback delle 08:50 consegni dimostra che almeno quel percorso
+raggiunge occurrence/dispatcher/notifier; **non prova** ancora perché
+FIRST_UNLOCK/NEXT_ALARM non arrivino o non vincano. Prima di attribuire il
+failure alla nuova architettura, usare la diagnostica persistente già presente
+(`TriggerEvidenceStore`, ricevute Morning, plan revision) per distinguere
+producer assente, service/receiver non vivo, source alarm non esposto,
+scheduling fallito, stale intent, evaluation fallita o claim già posseduto.
 
-Agenda, Health, Weather, grounding, structured tool results, session/reset, cancellation, automazioni, diagnostics, source-of-truth inconsistencies, backup/restore, navigation reliability, proactive reliability.
+### Persistent Agent Architecture — TARGET APPROVATO, ADATTATO
 
-## FASE 2 — Semantic Intelligence
+Principio:
 
-Tokenizer parity, encoder qualification, real embedding generation, real learned head, calibration, OOD, slots, follow-up, multi-domain, blind test, Honor test.
+```text
+EVENT / OBSERVATION
+→ normalized context snapshot
+→ persistent responsibility state
+→ responsibility coordinator
+→ deterministic responsibility decision
+→ existing authorization / capability policy
+→ existing action execution owner
+→ typed verification result
+→ responsibility + journal update
+→ bounded recheck / optional replan
+```
 
-## FASE 3 — Orchestrazione unica
+**Persistente non significa processo residente.** Su Android il modello deve
+restare event-driven: stato durevole + receiver/service già necessari +
+AlarmManager/WorkManager per recheck bounded. Nessun loop infinito, nessun
+polling continuo, nessun "Auto-GPT" in background.
 
-`ConversationalJarvisEngine` unificato.
+### Cosa esiste già e va RIUSATO
 
-All'interno di questa fase qualificare anche **Needle 3** come `FastActionCompiler`/`ToolCallCompiler` candidato, non come nuovo Semantic Interpreter e non come autorità di esecuzione. Benchmarkarlo sullo stesso dataset JARVIS contro routing deterministico e planner, con tool/argomenti esatti, abstention/OOD, multi-tool ordinato, p50/p95, RAM/CPU/batteria e qualità italiana. L'integrazione è consentita solo se il modello resta subordinato a SemanticFrame, policy, permission/state validation e ToolRegistry.
+- `ProactiveOccurrenceStore` + `ProactiveOccurrenceState`: authority
+  durevole per claim/dedup/side-effect lifecycle;
+- `ProactiveDeliveryDispatcher`: unico owner del dispatch proattivo;
+- `ProactiveScheduler`: unico owner temporale proattivo;
+- `TriggerEvidenceStore`: evidenza persistente dei segnali;
+- `ContextEngine`: normalized/derived Android context, **non** source of truth
+  universale;
+- `ProactiveGovernor`: policy di selezione proattiva esistente;
+- `RuleGate`, `ActionRegistry`, `ActionRisk`, `CapabilityStatus`:
+  fondazioni di policy/capability per automazioni;
+- `ToolPolicy` + `ToolRegistry`: authorization del tool path;
+- `AutomationExecutor` + `ActionHandlerRegistry`: execution path generico
+  per action spec tipizzate;
+- typed notifier/action outcomes e receipt già esistenti.
 
-## FASI SUCCESSIVE
+### Cosa manca davvero
 
-Grounding maturity, memory, personal intelligence, context, automations, Live Voice, perception, device actions, driving, security, final acceptance.
+1. una **Responsibility** persistente che sopravviva fra eventi/processi e
+   rappresenti l'outcome da ottenere, non il singolo trigger;
+2. uno stato WAIT/READY/VERIFY/COMPLETE esplicito fra osservazioni distanti nel
+   tempo;
+3. una decisione deterministica "ACT / WAIT / VERIFY / RECHECK_AT / ASK_USER /
+   COMPLETE / ABORT" collegata alla stessa responsabilità;
+4. un journal bounded che leghi observation → decision → action → verification;
+5. un adattatore d'esecuzione agentico che **deleghi** agli owner esistenti,
+   mai un secondo notifier/Home Assistant/device executor;
+6. in futuro, escalation al Planner canonico solo per casi realmente complessi.
 
----
+### Responsibility — modello approvato
+
+Il registro delle responsibility deve essere **closed-world**: tipi registrati
+dal prodotto, mai obiettivi arbitrari auto-generati dall'LLM.
+
+Target concettuale minimo:
+
+```text
+ResponsibilityRecord
+- id / logicalKey
+- type
+- lifecycleState
+- createdAt / updatedAt
+- validUntil/deadline opzionale
+- priority
+- autonomy/policy reference
+- recheckAt opzionale
+- bounded observation summary
+- lastDecision
+- linked action occurrence key(s)
+```
+
+Lifecycle target:
+
+```text
+INACTIVE → WAITING → READY → ACTING → VERIFYING → COMPLETED
+                                  ↘ BLOCKED / FAILED
+WAITING/READY → EXPIRED
+```
+
+La prima implementazione può usare solo il sottoinsieme necessario. Non creare
+stati senza una transizione reale che li usa.
+
+**Ownership rule:** il record Responsibility NON deve duplicare
+`ProactiveOccurrenceState.DELIVERY_PENDING/DELIVERED/UNKNOWN_EFFECT`.
+Per i side effect, l'occurrence store resta autoritativo. La responsibility
+può dire "sto aspettando/verificando/completata", ma COMPLETED per una
+consegna deve derivare dall'esito autoritativo dell'occurrence, non da un
+secondo boolean `briefingDelivered`.
+
+### Context — adattamento rispetto alla proposta
+
+Non trasformare `ContextEngine` nel database universale di JARVIS.
+`ContextEngine` resta una **derived normalized view** di fatti Android
+(device/place/activity/network/weather cache).
+
+Per il kernel introdurre, se necessario, un `ResponsibilityContextSnapshot`
+immutabile composto da canonical owner esistenti:
+
+```text
+ContextEngine derived state
++ ProactiveSchedulePlan/NEXT_ALARM evidence
++ AgendaRepository outcome
++ Weather dated facts/receipt
++ responsibility state
++ previous authoritative action outcomes
+→ ResponsibilityContextSnapshot
+```
+
+Il snapshot descrive la realtà; non decide l'azione. Calendar/weather failure,
+stale e unavailable devono restare distinti.
+
+### Planner — adattamento obbligatorio
+
+NON creare ora un secondo planner generale in concorrenza con il Planner
+previsto da FASE 3.
+
+Per la prima vertical slice usare un componente puro e deterministico, ad
+esempio `ResponsibilityDecisionPolicy` / `MorningAssistancePolicy`, che
+produca solo decisioni bounded:
+
+`ACT | WAIT | VERIFY | RECHECK_AT | ASK_USER | COMPLETE | ABORT`.
+
+Dopo Unified Orchestration, le responsibility complesse potranno delegare al
+**medesimo PlannerPort canonico**. Nessun secondo BRAIN.
+
+### Policy / autonomia — adattamento obbligatorio
+
+Non introdurre una seconda tassonomia autoritativa se può essere espressa
+tramite `ToolPolicy`, `ActionRisk`, `CapabilityStatus`, permissions e
+policy già esistenti.
+
+I livelli READ/SILENT/NOTIFY/ACT/CONFIRM/FORBIDDEN della proposta sono
+**semantica di prodotto utile**, ma devono diventare una mapping/view sopra le
+policy esistenti, non una nuova fonte di autorizzazione indipendente.
+
+Regola invariata:
+
+```text
+useful action proposal
+≠
+authorized action
+```
+
+### Action Router — adattamento obbligatorio
+
+Non creare un executor parallelo. Il futuro `AgentActionRouter`, se davvero
+necessario, deve essere una facciata sottile che instrada verso owner esistenti
+(`ProactiveDeliveryDispatcher`, automation action handlers, ToolRegistry/
+ToolRunner, Home Assistant owner, navigation owner, ecc.).
+
+Planner/decision policy non invoca direttamente Android/UI/HA.
+
+### Verification
+
+Outcome generale target:
+
+```text
+SUCCESS
+RETRYABLE_FAILURE
+TERMINAL_FAILURE
+UNKNOWN
+```
+
+Ma ogni adapter deve conservare l'esito più specifico del proprio dominio.
+`UNKNOWN` non autorizza mai blind retry.
+
+Per Morning Assistance, verifica minima:
+- occurrence claim/dispatch fencing;
+- typed notifier outcome;
+- stato durevole `DELIVERED` prima di COMPLETED;
+- nessun secondo post per la stessa logical morning.
+
+### Journal / diagnostics
+
+Journal bounded e privacy-safe:
+
+```text
+timestamp
+responsibilityKey/type
+observation enum
+decision enum
+reason code
+action kind
+verification outcome
+resulting lifecycle state
+```
+
+Mai briefing body, agenda completa, health payload, coordinate, transcript,
+prompt o tool args sensibili. Prima di creare una nuova tabella, verificare se
+`TriggerEvidenceStore` + occurrence/action receipts possono essere estesi
+senza introdurre una seconda authority.
+
+### Prima responsibility: MORNING_ASSISTANCE
+
+Goal di prodotto:
+
+**"Assicurare una sola assistenza mattutina utile nel momento più appropriato,
+con fallback sicuro se i segnali migliori non sono disponibili."**
+
+Logical key target:
+
+`MORNING_ASSISTANCE:<local-date>`
+
+L'attuale `MORNING_DIGEST:<local-date>` resta la identity autoritativa del
+side effect di consegna finché una migrazione esplicita non prova che può essere
+sostituita senza rompere dedup storico.
+
+Inputs/observations:
+- FIRST_UNLOCK;
+- NEXT_ALARM observation/maturity;
+- CONFIGURED_TIME fallback;
+- PERIODIC_FALLBACK/recovery;
+- process/boot restoration;
+- permission/capability changes rilevanti.
+
+Target behavior:
+- molti segnali → una responsibility;
+- late event dopo COMPLETED → no-op;
+- restart → rehydrate, non duplicate;
+- context temporaneamente non disponibile → WAIT/RECHECK bounded quando la
+  policy lo consente;
+- ogni consegna deve avere un reason code ricostruibile.
+
+**Policy temporale candidata da qualificare, non assunta come già esistente:**
+FIRST_UNLOCK è il segnale di presenza più forte; NEXT_ALARM può rendere la
+responsibility pronta/attesa senza dover necessariamente postare subito;
+CONFIGURED_TIME resta safety net. Il comportamento esatto "alarm → attendi
+unlock per N minuti → fallback" va fissato come product policy con test prima
+del codice, non inventato dentro un Worker.
+
+### Sequenza di implementazione approvata
+
+**PA-0 — Architecture + source audit**
+- leggere Master + codice reale;
+- catturare diagnostica Honor del failure 08:50-only;
+- construction→DI→callsite→consumer per FIRST_UNLOCK/NEXT_ALARM/configured;
+- distinguere root cause del segnale da limiti dell'architettura;
+- nessuna nuova authority.
+
+**PA-1 — Minimum Responsibility Kernel**
+- responsibility type/key/lifecycle;
+- persistence minima;
+- observation reducer;
+- deterministic decision contract;
+- policy mapping agli owner esistenti;
+- typed verification;
+- bounded journal;
+- nessun LLM richiesto.
+
+**PA-2 — MORNING_ASSISTANCE vertical slice**
+- migrare FIRST_UNLOCK/NEXT_ALARM/fallback come observations;
+- una sola responsibility giornaliera;
+- side effect ancora attraverso occurrence+dispatcher canonici;
+- process restart/recheck bounded;
+- nessun secondo scheduler.
+
+**PA-3 — Automated qualification**
+Test minimi:
+1. NEXT_ALARM → FIRST_UNLOCK → one delivery;
+2. FIRST_UNLOCK prima del path alarm → decisione prevista;
+3. fallback only → one delivery;
+4. alarm+unlock+fallback → one delivery;
+5. duplicate FIRST_UNLOCK → no-op;
+6. WorkManager retry → no duplicate;
+7. process restoration → no duplicate;
+8. completed morning + late signal → no-op;
+9. proven-no-effect failure → bounded recovery;
+10. unknown effect → no blind retry;
+11. journal spiega reason/state;
+12. source event mancante resta diagnosticamente distinguibile da policy WAIT.
+
+**PA-4 — Honor device acceptance**
+- nuovo candidate SHA esplicito;
+- FIRST_UNLOCK real;
+- NEXT_ALARM real/limiti OEM esposti;
+- configured fallback;
+- reboot/process death;
+- no duplicates;
+- reason code coerente;
+- solo allora Work Package E Morning può chiudere.
+
+### Future responsibilities — DESIGN ONLY
+
+Dopo la qualifica di MORNING_ASSISTANCE:
+- APPOINTMENT_ASSISTANCE;
+- RAIN_PROTECTION;
+- EVENING_ASSISTANCE;
+- DRIVING_ASSISTANCE;
+- BACKUP_HEALTH;
+- HOME_ARRIVAL.
+
+Non migrarle tutte insieme.
+
+## 65.2 TRACK A1 — SEMANTIC INTELLIGENCE (PAUSED: USER-PC REQUIRED)
+
+Ordine invariato, da riprendere quando il PC è disponibile:
+
+1. PASS 14B REAL EXECUTION con artefatti ufficiali;
+2. Learned Head reale;
+3. Pass 15 calibration/OOD;
+4. slots / references / follow-up / multi-domain;
+5. BLIND;
+6. Honor semantic acceptance.
+
+Stato:
+- runner PS5.1 READY/CI VERIFIED;
+- artefatti utente disponibili localmente;
+- real execution **PAUSED**, non fallito e non saltato;
+- BLIND **UNTOUCHED**;
+- Pass 15 **NOT STARTED**.
+
+## 65.3 TRACK A2 — LIVE VOICE FOUNDATION (PARALLELO, SOLO LAVORI INDIPENDENTI)
+
+- Phase 0.1: CI VERIFIED (#460);
+- Phase 0.2: CI VERIFIED (#462);
+- Phase 0.3: CI VERIFIED (#464);
+- device qualification Live Voice: PENDING;
+- vero LLM-token→TTS streaming: **NON IMPLEMENTATO**.
+
+Consentiti in parallelo solo hardening/observability che non creino un secondo
+orchestratore e non dipendano da Semantic/Planner non qualificati.
+
+## 65.4 TRACK A3 — UNIFIED ORCHESTRATION (DOPO SEMANTIC GATES)
+
+`ConversationalJarvisEngine` come orchestratore unico.
+
+Qui nasce il **PlannerPort canonico** condiviso da:
+- richieste conversazionali complesse;
+- future responsibility che richiedono planning non deterministico;
+- Core BRAIN opzionale.
+
+Needle 3 resta candidato `FastActionCompiler` subordinato a SemanticFrame,
+ToolRegistry, policy, permission/state validation e deterministic executor.
+MiniCPM resta candidato planner/BRAIN. Nessuna integrazione prima dei benchmark
+e dei gate semantic pertinenti.
+
+## 65.5 TRACK A4 — MATURITY / ANDROID COMPLETION
+
+Dopo le fondamenta sopra:
+- grounding maturity;
+- memory/personal intelligence;
+- responsibility expansion/contextual proactivity;
+- automations convergence;
+- Live Voice streaming + VAD/AEC/barge-in reale;
+- Reflex Layer;
+- perception;
+- phone/device actions;
+- driving/navigation finalization;
+- SEGNALE/UI final;
+- Android security/privacy;
+- Honor 200 end-to-end acceptance.
+
+## 65.6 TRACK B — CORE ENHANCEMENT (SUCCESSIVO, NON INIZIATO)
+
+Planner/BRAIN più forte, RAG grande, STT/TTS pesanti, PC Actions, modelli più
+grandi e background intelligence. Sempre enhancement opzionale:
+
+```text
+CORE OFF → Android resta operativo.
+CORE ON  → qualità/capacità aumentano.
+```
+
+Nessuna responsibility critica deve dipendere dal Core per persistence,
+dedup, authorization, retry safety o completion.
 
 # 66. IMPLEMENTATION PASS HISTORY
 
@@ -3020,6 +3389,32 @@ No secondo resource manager indipendente. **ACTIVE DESIGN RULE**
 ## ADR-013 — External JARVIS Core runtime FROZEN durante ANDROID COMPLETION TRACK
 Adottata in seguito alla Proactivity Reliability Closure Audit (§ `docs/JARVIS_PROACTIVITY_RELIABILITY_CLOSURE_AUDIT.md`) e a MICRO-PATCH 14.2.3 (retest fallito su Honor 200). Nessuna nuova pianificazione Core, nuovo modello BRAIN, nuovo servizio Core, nuova PC Action, nuovo RAG Core, o Event Bridge finché TRACK A (§65) non chiude. Eccezioni permesse: compatibilità protocollo critica, fix di sicurezza critico, tooling offline necessario a qualificare capability Android (PASS 14/14B), tooling utente-PC EmbeddingGemma già in corso (PASS 14B). Architettura: CORE OFF → JARVIS Android resta completo da solo; CORE ON in futuro → solo enhancement opzionale, mai un requisito. **ACTIVE**
 
+## ADR-014 — Persistent responsibilities, non persistent process
+
+JARVIS evolve verso un **persistent personal agent** tramite responsabilità
+durevoli e state machine event-driven, non tramite un servizio sempre residente,
+cloud-first o un loop LLM autonomo.
+
+Regole:
+- Responsibility type registry closed-world; no self-generated arbitrary goals.
+- Responsibility state persists across process death where required.
+- Observation != decision != authorization != action != verification.
+- `ProactiveOccurrenceStore` remains the side-effect lifecycle authority for
+  proactive notifications; no duplicate delivered/unknown state.
+- `ContextEngine` remains a derived context view, not universal data truth.
+- deterministic `ResponsibilityDecisionPolicy` first; canonical PlannerPort
+  only later under Unified Orchestration.
+- autonomy levels map onto existing ToolPolicy/ActionRisk/capability/permission
+  architecture; no second authorization truth.
+- action routing delegates to existing executors/dispatchers.
+- verification is typed, bounded, and UNKNOWN never blind-retries.
+- Core/cloud may improve reasoning later but never own critical responsibility
+  state.
+
+First qualification responsibility: **MORNING_ASSISTANCE**.
+
+**ACTIVE DESIGN DECISION / IMPLEMENTATION NOT STARTED**
+
 ---
 
 # 70. DECISIONI ESPLICITAMENTE NON ADOTTATE
@@ -3032,6 +3427,10 @@ Adottata in seguito alla Proactivity Reliability Closure Audit (§ `docs/JARVIS_
 - timeout/debounce usato come correctness;
 - shell arbitrary PC actions;
 - full model replacement che bypassa semantica;
+- generic always-on polling agent / infinite Auto-GPT loop;
+- secondo planner generale per le Responsibility prima del PlannerPort canonico;
+- secondo action executor/notifier/Home Assistant owner creato dal kernel agentico;
+- seconda authority di permission/autonomy parallela a ToolPolicy/ActionRisk/capability policy;
 - forced `/v2`;
 - Event Bridge senza consumer;
 - n8n/Baserow come dipendenza Core;
@@ -3046,10 +3445,29 @@ Adottata in seguito alla Proactivity Reliability Closure Audit (§ `docs/JARVIS_
 
 ## Critical / active
 
-### Morning Briefing
-- 14.2.2 fix implementato;
-- latest CI ancora da chiudere al momento del documento;
-- Honor 200 strict retest richiesto.
+### Morning Briefing / MORNING_ASSISTANCE
+
+Evidenza reale più recente sul candidato Honor E.1 `1236015`:
+
+- briefing osservato **sempre al configured/fallback time 08:50**;
+- FIRST_UNLOCK non modifica il momento di consegna osservato;
+- NEXT_ALARM non modifica il momento di consegna osservato;
+- CONFIGURED_TIME/fallback è quindi il solo path di delivery osservato come
+  efficace in questa campagna;
+- stato sorgente-specifico: FIRST_UNLOCK **FAILED-DEVICE**, NEXT_ALARM
+  **FAILED-DEVICE**, CONFIGURED_TIME **OBSERVED WORKING**;
+- Work Package E resta **OPEN**.
+
+La root cause precisa non è ancora provata. Il downstream
+occurrence→dispatcher→notification è almeno raggiungibile sul path configured,
+ma il failure può ancora essere producer/service/receiver/source-exposure/
+schedule/revision/evaluation/claim. Prima di una patch runtime leggere
+`Diagnostica trigger briefing mattutino` + ricevute di consegna persistenti.
+
+La Persistent Agent Architecture (§65.1, ADR-014) è adottata come evoluzione
+target, ma **non sostituisce** il root-cause audit: una Responsibility non può
+compensare un ACTION_USER_PRESENT mai osservato o un NEXT_ALARM non esposto dal
+device.
 
 ### EmbeddingGemma
 - real artifact acquisition/qualification pending — tooling and Windows
@@ -3542,37 +3960,55 @@ ARCHITECTURE MANUAL          AVAILABLE
 TARGET ARCHITECTURE          AVAILABLE
 DEEP AUDIT                   AVAILABLE
 SEGNALE                      AVAILABLE
-MASTER ARCHITECTURE          THIS FILE
+MASTER ARCHITECTURE          THIS FILE / v1.17
 
 ANDROID-FIRST                ACTIVE
 CORE OPTIONAL ENHANCER       ACTIVE
+
+PERSISTENT AGENT TARGET      APPROVED / ADAPTED (§65.1, ADR-014)
+RESPONSIBILITY KERNEL        PLANNED / CODE NOT STARTED
+MORNING_ASSISTANCE           FIRST VERTICAL SLICE / CODE NOT STARTED
+
+WORK PACKAGE E               OPEN
+HONOR E.1 CANDIDATE          1236015 PINNED
+HONOR APP STARTUP            APP OPENS OBSERVED / FULL QUALIFICATION PENDING
+MORNING CONFIGURED_TIME      OBSERVED WORKING @ 08:50
+MORNING FIRST_UNLOCK         FAILED-DEVICE / ROOT CAUSE OPEN
+MORNING NEXT_ALARM           FAILED-DEVICE / ROOT CAUSE OPEN
+MORNING DUPLICATE SAFETY     HISTORICAL FAILURE / NON-REGRESSION GATE
+
 SEMANTIC PIPELINE            IMPLEMENTED / NOT FULLY QUALIFIED
-REAL EMBEDDINGGEMMA          BLOCKED/PENDING USER-PC RUN
-PASS 14B WINDOWS RUNNER      RUNNER READY / USER-PC REAL EXECUTION PENDING
+REAL EMBEDDINGGEMMA          PAUSED / USER-PC RUN REQUIRED
+PASS 14B WINDOWS RUNNER      RUNNER READY / PS5.1 CI VERIFIED
 LEARNED HEAD REAL            PENDING
 CALIBRATION/OOD              PENDING
 BLIND                        UNTOUCHED
-UNIFIED ORCHESTRATION        PLANNED
+PASS 15                      NOT STARTED
+
+UNIFIED ORCHESTRATION        PLANNED / AFTER SEMANTIC GATES
+CANONICAL PLANNER PORT       PLANNED / NOT IMPLEMENTED
 NEEDLE3 FAST ACTION COMPILER CANDIDATE / QUALIFICATION REQUIRED
 MINICPM5                     CANDIDATE
-LIVE VOICE ENGINE            PLANNED (v1 full-duplex, non iniziato)
-LIVE VOICE PHASE 0.1         CODE PRESENT / AUTOMATED TESTED / CI VERIFIED (run #460) / DEVICE PENDING (§129)
-LIVE VOICE PHASE 0.2         CODE PRESENT / AUTOMATED TESTED / CI VERIFIED (run #462) / DEVICE PENDING (§130)
-LIVE VOICE PHASE 0.3         CODE PRESENT / AUTOMATED TESTED / CI VERIFIED PENDING / DEVICE PENDING (§131)
+
+LIVE VOICE FOUNDATION        ACTIVE PARALLEL TRACK
+LIVE VOICE PHASE 0.1         CI VERIFIED (#460) / DEVICE PENDING
+LIVE VOICE PHASE 0.2         CI VERIFIED (#462) / DEVICE PENDING
+LIVE VOICE PHASE 0.3         CI VERIFIED (#464) / DEVICE PENDING
+LLM-TOKEN→TTS STREAMING      NOT IMPLEMENTED
+FULL LIVE VOICE              NOT DEVICE VERIFIED
+
+WEATHER PROACTIVE            IMPLEMENTED / DEVICE+METEOROLOGICAL ACCEPTANCE OPEN
 REFLEX LAYER                 PLANNED / CANDIDATES UNDER QUALIFICATION
 DESERT ANT SUITE             CANDIDATE PROVIDER / NOT ARCHITECTURALLY REQUIRED
 CLEAR                        CANDIDATE / LIVE LATENCY QUALIFICATION REQUIRED
 REDACT                       CANDIDATE / PRIVACY-EGRESS PROTOTYPE PRIORITY
 VOZ                          WATCHLIST / PLATFORM BLOCKED FOR WINDOWS-ANDROID
-MORNING BRIEF 14.2.2         IMPLEMENTED / DEVICE RETEST PENDING
-WEATHER PROACTIVE            IMPLEMENTED / DEVICE ACCEPTANCE PARTIAL/PENDING
-CORE STREAMING               HIGH PRIORITY
+
+CORE STREAMING               FUTURE CORE ENHANCEMENT
 PAIRING/TLS                  TARGET
 EVENT BRIDGE                 DEFERRED
 N8N/BASEROW                  LEGACY / NOT CURRENT ARCHITECTURE
 ```
-
----
 
 ## MAINTENANCE NOTE
 
@@ -5014,6 +5450,43 @@ automaticamente lo streaming LLM→TTS reale.**
 
 # 132. MASTER CHANGELOG
 
+## v1.17 — 2026-09-30
+
+**PERSISTENT AGENT ARCHITECTURE UPGRADE — DESIGN ADOPTED/ADAPTED + CURRENT
+STATE RECONCILIATION.** Nessun runtime code modificato in questo passaggio.
+La proposta "always-on agent" è stata accettata solo nella parte utile:
+Responsibility persistenti, observe→decide→act→verify, state durevole,
+recheck/replan bounded, policy centralizzata, dedup/verification e local-first.
+Esplicitamente rifiutati persistent process, polling continuo, loop LLM
+autonomo, secondo planner, seconda permission authority e nuovi executor
+paralleli. §65 riscritto come scaletta operativa canonica: TRACK A0
+Proactivity/Persistent Agent (ACTIVE), A1 Semantic Intelligence
+(PAUSED user-PC), A2 Live Voice Foundation parallelo, A3 Unified
+Orchestration dopo i semantic gates, A4 maturity/Android completion, TRACK B
+Core Enhancement successivo. Primo caso di qualifica: MORNING_ASSISTANCE.
+
+Adattamenti architetturali: `ProactiveOccurrenceStore` resta authority dei
+side-effect; `ContextEngine` resta derived view e il futuro responsibility
+context compone canonical sources; il primo decision engine è deterministico e
+bounded, mentre il PlannerPort generale resta unico e futuro; livelli di
+autonomia sono una view/mapping sopra `ToolPolicy`/`ActionRisk`/
+capability policy; l'Action Router agentico, se necessario, delega agli owner
+esistenti. Nuovo ADR-014.
+
+Riconciliato anche lo stato reale: branch HEAD
+`7c4a4fbc805a38c0467a085506c9380da47b9a55`, Live Voice Phase 0.3 CI
+**#464 SUCCESS** (core 1506/1506; APK SHA-256
+`41f9fa58c482f86345c3addb39a6ab6aee44a047c1022de5c76ce3137ea9b8a4`).
+Sul candidato Honor E.1 `1236015`, nuovo device evidence: Morning Briefing
+arriva al configured time 08:50, mentre FIRST_UNLOCK e NEXT_ALARM non
+influenzano la consegna osservata. Quindi FIRST_UNLOCK/NEXT_ALARM sono ora
+marcati **FAILED-DEVICE / ROOT CAUSE OPEN**, CONFIGURED_TIME **OBSERVED
+WORKING**, Work Package E resta OPEN. Questa evidenza non viene reinterpretata
+come prova della causa: §65.1 richiede prima lettura dei checkpoint persistenti.
+
+Pass 14B resta PAUSED/USER-PC REQUIRED; BLIND UNTOUCHED; Pass 15 NOT STARTED;
+Honor 1236015 resta pinnato; nessuna nuova APK viene dichiarata candidato E.
+
 ## v1.16 — 2026-09-30
 
 **LIVE VOICE PHASE 0.3 — REAL USER-SPEECH BOUNDARY + END-TO-END RESPONSE
@@ -5042,6 +5515,13 @@ pinnato, `jarvis-core`/`jarvis-protocol` non toccati — nessuno di questi
 toccato. Streaming LLM-token→TTS reale **non implementato**, come
 esplicitamente richiesto di non avviare. Non dichiarato Live Voice
 device-verified.
+
+**Riconciliazione CI successiva:** lo stesso commit di Phase 0.3
+`7c4a4fbc805a38c0467a085506c9380da47b9a55` ha completato GitHub Actions
+**run #464 / SUCCESS** su entrambi i job; core **1506/1506**, assemble,
+Android unit tests, compile instrumented tests, lint e publish verdi. APK
+SHA-256: `41f9fa58c482f86345c3addb39a6ab6aee44a047c1022de5c76ce3137ea9b8a4`.
+Questa riconciliazione non rende Live Voice device-verified.
 
 ## v1.15 — 2026-09-27
 
