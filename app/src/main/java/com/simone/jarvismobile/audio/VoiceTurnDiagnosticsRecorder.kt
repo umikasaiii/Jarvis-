@@ -49,6 +49,8 @@ class VoiceTurnDiagnosticsRecorder @Inject constructor() {
         @Volatile var ttsFinishedAtMs: Long? = null
         @Volatile var bargeInRequestedAtMs: Long? = null
         @Volatile var ttsPlaybackStartAtMs: Long? = null
+        @Volatile var speechStartedAtMs: Long? = null
+        @Volatile var speechEndedAtMs: Long? = null
         @Volatile var cancellationRequested: Boolean = false
 
         fun elapsedMs(): Long = (System.nanoTime() - startedAtNanos) / 1_000_000L
@@ -62,6 +64,8 @@ class VoiceTurnDiagnosticsRecorder @Inject constructor() {
             ttsFinishedAtMs = ttsFinishedAtMs,
             bargeInRequestedAtMs = bargeInRequestedAtMs,
             ttsPlaybackStartAtMs = ttsPlaybackStartAtMs,
+            speechStartedAtMs = speechStartedAtMs,
+            speechEndedAtMs = speechEndedAtMs,
         )
     }
 
@@ -101,6 +105,19 @@ class VoiceTurnDiagnosticsRecorder @Inject constructor() {
      * invocation id before this is ever called.
      */
     fun markTtsPlaybackStarted() = mark { if (it.ttsPlaybackStartAtMs == null) it.ttsPlaybackStartAtMs = it.elapsedMs() }
+
+    /**
+     * Called from [SessionCoordinator] when a real [SttSpeechEvent.Type.STARTED]
+     * observation arrives for the in-flight turn's current STT invocation
+     * (Live Voice Phase 0.3) — [SessionCoordinator] independently fences by
+     * invocation id before this is ever called, exactly like
+     * [markTtsPlaybackStarted]. Idempotent — only the first observation per
+     * turn is kept — and a no-op once the turn has already finished.
+     */
+    fun markUserSpeechStarted() = mark { if (it.speechStartedAtMs == null) it.speechStartedAtMs = it.elapsedMs() }
+
+    /** Same discipline as [markUserSpeechStarted], for [SttSpeechEvent.Type.ENDED]. */
+    fun markUserSpeechEnded() = mark { if (it.speechEndedAtMs == null) it.speechEndedAtMs = it.elapsedMs() }
 
     /**
      * Called from [SessionCoordinator.interruptAndListen] — reachable only

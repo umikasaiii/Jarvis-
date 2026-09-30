@@ -80,6 +80,23 @@ data class VoiceTurnTimestamps(
      * "first audible sample", everywhere this is named.
      */
     val ttsPlaybackStartAtMs: Long? = null,
+    /**
+     * Live Voice Phase 0.3 — set only from a genuine platform
+     * `RecognitionListener.onBeginningOfSpeech()` callback (see
+     * [com.simone.jarvismobile.audio.AndroidOnDeviceSpeechEngine]), never
+     * inferred from STT-started or any other timing. Marks when the
+     * platform itself first detected the user beginning to speak.
+     */
+    val speechStartedAtMs: Long? = null,
+    /**
+     * Live Voice Phase 0.3 — set only from a genuine platform
+     * `RecognitionListener.onEndOfSpeech()` callback, never inferred. Marks
+     * when the platform itself first detected the user stopping speaking —
+     * the anchor for [VoiceTurnDiagnostics.responsePlaybackAfterSpeechMs],
+     * the primary product metric this phase adds: "how long after the user
+     * stops speaking does JARVIS start playback?"
+     */
+    val speechEndedAtMs: Long? = null,
 )
 
 /**
@@ -126,6 +143,31 @@ data class VoiceTurnDiagnostics(
      * above is independent of [bargeInRequested].
      */
     val ttsPlaybackStartLatencyMs: Long?,
+    /**
+     * Live Voice Phase 0.3 — onBeginningOfSpeech -> onEndOfSpeech, i.e. how
+     * long the platform observed the user actually speaking. Null unless
+     * both boundary callbacks were observed for this same turn AND are
+     * correctly ordered (start <= end) — never fabricated, never negative.
+     */
+    val userSpeechDurationMs: Long?,
+    /**
+     * Live Voice Phase 0.3 — onEndOfSpeech -> the final [com.simone.jarvismobile.audio.SttResult]
+     * (see [sttFinalAtMs][VoiceTurnTimestamps.sttFinalAtMs] via [sttFinalLatencyMs]'s
+     * own start point). How long STT took to finalize after the platform
+     * detected the user had stopped speaking. Null unless both endpoints
+     * were observed and speechEnd <= sttFinal.
+     */
+    val sttFinalizationAfterSpeechMs: Long?,
+    /**
+     * Live Voice Phase 0.3 — the PRIMARY product metric this phase adds:
+     * onEndOfSpeech -> the same trustworthy TTS playback-start evidence
+     * Phase 0.2 introduced ([ttsPlaybackStartLatencyMs]'s own end point) —
+     * "how long after the user stops speaking does JARVIS start playback?"
+     * Null unless both endpoints were observed and speechEnd <=
+     * ttsPlaybackStart. Deliberately named for exactly what it measures,
+     * never "conversational latency" or any other undocumented alias.
+     */
+    val responsePlaybackAfterSpeechMs: Long?,
 ) {
     companion object {
 
@@ -177,6 +219,18 @@ data class VoiceTurnDiagnostics(
                 null
             }
 
+            // Live Voice Phase 0.3 — same non-negative/correctly-ordered
+            // discipline as ttsPlaybackStartLatencyMs above: a pair is only
+            // ever claimed when both endpoints exist AND the earlier one is
+            // <= the later one, otherwise null (never a fabricated or
+            // negative duration).
+            fun orderedLatency(startMs: Long?, endMs: Long?): Long? =
+                if (startMs != null && endMs != null && startMs <= endMs) endMs - startMs else null
+
+            val userSpeechDurationMs = orderedLatency(timestamps.speechStartedAtMs, timestamps.speechEndedAtMs)
+            val sttFinalizationAfterSpeechMs = orderedLatency(timestamps.speechEndedAtMs, timestamps.sttFinalAtMs)
+            val responsePlaybackAfterSpeechMs = orderedLatency(timestamps.speechEndedAtMs, timestamps.ttsPlaybackStartAtMs)
+
             return VoiceTurnDiagnostics(
                 turnId = turnId,
                 startedAtEpochMs = startedAtEpochMs,
@@ -191,6 +245,9 @@ data class VoiceTurnDiagnostics(
                 bargeInRequested = bargeInRequested,
                 ttsStoppedAfterBargeInMs = ttsStoppedAfterBargeInMs,
                 ttsPlaybackStartLatencyMs = ttsPlaybackStartLatencyMs,
+                userSpeechDurationMs = userSpeechDurationMs,
+                sttFinalizationAfterSpeechMs = sttFinalizationAfterSpeechMs,
+                responsePlaybackAfterSpeechMs = responsePlaybackAfterSpeechMs,
             )
         }
 

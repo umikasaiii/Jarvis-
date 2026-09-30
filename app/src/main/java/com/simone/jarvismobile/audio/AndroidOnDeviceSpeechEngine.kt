@@ -13,10 +13,14 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -37,7 +41,29 @@ class AndroidOnDeviceSpeechEngine @Inject constructor(
     private val _partial = MutableStateFlow("")
     override val partial = _partial.asStateFlow()
 
+    private val _speechEvents = MutableSharedFlow<SttSpeechEvent>(replay = 0, extraBufferCapacity = 4)
+    override val speechEvents: SharedFlow<SttSpeechEvent> = _speechEvents.asSharedFlow()
+
     @Volatile private var recognizer: SpeechRecognizer? = null
+
+    /**
+     * Live Voice Phase 0.3 — monotonically increasing generation, bumped
+     * once per internal recognizer attempt ([attempt] below), whether that
+     * attempt belongs to a brand-new [transcribe] invocation or one of this
+     * engine's own internal transient retries of the same invocation. One
+     * counter does both levels of fencing at once: a late
+     * [RecognitionListener] callback compares the generation it captured at
+     * its own attempt's start against [attemptGeneration]'s current value
+     * and only emits when they still match — deterministically rejecting a
+     * stale callback (from an abandoned retry attempt, or from an entirely
+     * different, already-superseded invocation) the instant a newer attempt
+     * has begun, never by a time window. Instance-scoped (never a companion
+     * object), so [RecognizerWakeWordEngine]'s own separate instance of
+     * this engine has its own independent counter. This is the only place
+     * that reads/writes it; [System.nanoTime] itself is never read here —
+     * see [VoiceTurnDiagnosticsRecorder], the sole clock owner.
+     */
+    private val attemptGeneration = AtomicLong(0L)
 
     override fun isAvailable(): Boolean =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -58,18 +84,18 @@ class AndroidOnDeviceSpeechEngine @Inject constructor(
      * real no-speech / permission / unavailable / language result is returned as-is
      * the moment it appears — those are never retried.
      */
-    override suspend fun transcribe(languageTag: String): SttResult {
+    override suspend fun transcribe(languageTag: String, invocationId: String): SttResult {
         var lastTransient: SttResult.Failure? = null
         for (settle in RETRY_BACKOFF_MS) {
             if (settle > 0) delay(settle)
-            val r = attempt(languageTag)
+            val r = attempt(languageTag, invocationId)
             if (r !is SttResult.Failure || r.code !in TRANSIENT_CODES) return r
             lastTransient = r
         }
         return lastTransient ?: SttResult.Failure("stt_unknown")
     }
 
-    private suspend fun attempt(languageTag: String): SttResult = withContext(Dispatchers.Main) {
+    private suspend fun attempt(languageTag: String, invocationId: String): SttResult = withContext(Dispatchers.Main) {
         _partial.value = ""
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             !runCatching { SpeechRecognizer.isOnDeviceRecognitionAvailable(context) }.getOrDefault(false)
@@ -84,13 +110,30 @@ class AndroidOnDeviceSpeechEngine @Inject constructor(
         }
         recognizer = rec
 
+        // Live Voice Phase 0.3 — this specific attempt's own generation,
+        // captured once here and compared against attemptGeneration's live
+        // value inside the listener callbacks below; see attemptGeneration's
+        // own doc comment for what this fences against.
+        val myGeneration = attemptGeneration.incrementAndGet()
+
         val deferred = CompletableDeferred<SttResult>()
         rec.setRecognitionListener(object : RecognitionListener {
             override fun onReadyForSpeech(params: Bundle?) {}
-            override fun onBeginningOfSpeech() {}
+
+            override fun onBeginningOfSpeech() {
+                if (myGeneration == attemptGeneration.get()) {
+                    _speechEvents.tryEmit(SttSpeechEvent(invocationId, SttSpeechEvent.Type.STARTED))
+                }
+            }
+
             override fun onRmsChanged(rmsdB: Float) {}
             override fun onBufferReceived(buffer: ByteArray?) {}
-            override fun onEndOfSpeech() {}
+
+            override fun onEndOfSpeech() {
+                if (myGeneration == attemptGeneration.get()) {
+                    _speechEvents.tryEmit(SttSpeechEvent(invocationId, SttSpeechEvent.Type.ENDED))
+                }
+            }
 
             override fun onPartialResults(partialResults: Bundle?) {
                 bestOf(partialResults)?.let { _partial.value = it }

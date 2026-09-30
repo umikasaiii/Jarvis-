@@ -500,7 +500,7 @@ class SessionCoordinator @Inject constructor(
         while (true) {
             voiceDiagnostics.beginTurn(followUpIndex = turn)
             voiceDiagnostics.markSttStarted()
-            val sttResult = stt.transcribe("it-IT")
+            val sttResult = transcribeWithSpeechBoundaries()
             voiceDiagnostics.markSttFinal()
             val spoke = processTurn(sttResult, isFollowUp = turn > 0)
             if (!spoke) return // a terminal/no-speech outcome was handled inside
@@ -536,6 +536,51 @@ class SessionCoordinator @Inject constructor(
             machine.dispatch(ConversationEvent.SpeechStarted) // FollowUpWindow -> PreparingAudio
             machine.dispatch(ConversationEvent.AudioReady)    // -> Listening
             turn++
+        }
+    }
+
+    /**
+     * Live Voice Phase 0.3 — around the same `stt.transcribe()` call this
+     * always made, arms a short-lived listener for real user-speech-boundary
+     * observations ([SttSpeechEvent]) tagged with this exact call's own
+     * [invocationId]. Mirrors [speakOut]'s own subscription-confirmed
+     * barrier below (see its doc comment for why the ordering matters): the
+     * `ready` barrier guarantees the listener is already subscribed before
+     * `transcribe()` can possibly start recognizing, so a genuinely fast
+     * platform event can never race past an unsubscribed collector;
+     * filtering by [invocationId] is what deterministically rejects a stale
+     * event from any other invocation — never a time window. The listener
+     * is torn down the moment `transcribe()` returns (normally, on error,
+     * or on cancellation — `finally` runs either way), so it can never
+     * attribute a late event to a later turn.
+     *
+     * [RecognizerWakeWordEngine]'s own separate [AndroidOnDeviceSpeechEngine]
+     * instance never reaches this function — it calls `stt.transcribe()`
+     * directly, so its speech-boundary events (if any consumer ever
+     * subscribed to them, which none does today) can never contaminate this
+     * turn's diagnostics.
+     */
+    private suspend fun transcribeWithSpeechBoundaries(languageTag: String = "it-IT"): SttResult {
+        val invocationId = UUID.randomUUID().toString()
+        return coroutineScope {
+            val listenerReady = CompletableDeferred<Unit>()
+            val listener = launch {
+                stt.speechEvents
+                    .onSubscription { listenerReady.complete(Unit) }
+                    .collect { event ->
+                        if (event.invocationId != invocationId) return@collect
+                        when (event.type) {
+                            SttSpeechEvent.Type.STARTED -> voiceDiagnostics.markUserSpeechStarted()
+                            SttSpeechEvent.Type.ENDED -> voiceDiagnostics.markUserSpeechEnded()
+                        }
+                    }
+            }
+            listenerReady.await()
+            try {
+                stt.transcribe(languageTag, invocationId)
+            } finally {
+                listener.cancel()
+            }
         }
     }
 

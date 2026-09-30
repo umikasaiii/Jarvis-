@@ -4,8 +4,8 @@
 
 - **Project:** JARVIS
 - **Document role:** project map / architectural control plane / living source of project intent
-- **Version:** 1.14
-- **Generated:** 2026-09-27
+- **Version:** 1.16
+- **Generated:** 2026-09-30
 - **Primary language:** Italiano
 - **Status:** ACTIVE — living document
 - **Repository target:** `umikasaiii/Jarvis-`
@@ -3388,7 +3388,7 @@ Ordine consigliato:
 6. mantenere Pass 14 artifact gate separato;
 7. eseguire 14B sul PC — il runner è ora pronto (§15): `cd tools\semantic_classifier` poi `.\run_real_training.ps1 -ModelDir ".\models" -OutputDir ".\real_run"` dopo aver scaricato i due file reali per `models/README.md`;
 8. solo dopo real semantic artifact gate procedere verso Pass 15;
-9. Live Voice: progettazione può continuare, full implementation dopo semantic/orchestration foundation. **Live Voice Phase 0.1** (foundation hardening + timing diagnostics, §129) e **Phase 0.2** (real TTS playback-start observability, §130) implementate — device acceptance non ancora eseguita per nessuna delle due, streaming LLM→TTS reale non avviato.
+9. Live Voice: progettazione può continuare, full implementation dopo semantic/orchestration foundation. **Live Voice Phase 0.1** (foundation hardening + timing diagnostics, §129), **Phase 0.2** (real TTS playback-start observability, §130) e **Phase 0.3** (real user-speech boundary + end-to-end response latency, §131) implementate — device acceptance non ancora eseguita per nessuna delle tre, streaming LLM→TTS reale non avviato.
 
 ---
 
@@ -3558,6 +3558,7 @@ MINICPM5                     CANDIDATE
 LIVE VOICE ENGINE            PLANNED (v1 full-duplex, non iniziato)
 LIVE VOICE PHASE 0.1         CODE PRESENT / AUTOMATED TESTED / CI VERIFIED (run #460) / DEVICE PENDING (§129)
 LIVE VOICE PHASE 0.2         CODE PRESENT / AUTOMATED TESTED / CI VERIFIED (run #462) / DEVICE PENDING (§130)
+LIVE VOICE PHASE 0.3         CODE PRESENT / AUTOMATED TESTED / CI VERIFIED PENDING / DEVICE PENDING (§131)
 REFLEX LAYER                 PLANNED / CANDIDATES UNDER QUALIFICATION
 DESERT ANT SUITE             CANDIDATE PROVIDER / NOT ARCHITECTURALLY REQUIRED
 CLEAR                        CANDIDATE / LIVE LATENCY QUALIFICATION REQUIRED
@@ -4821,7 +4822,226 @@ automaticamente lo streaming LLM→TTS reale.**
 
 ---
 
-# 131. MASTER CHANGELOG
+# 131. LIVE VOICE PHASE 0.3 — REAL USER-SPEECH BOUNDARY + END-TO-END RESPONSE LATENCY
+
+Status: **CODE PRESENT / AUTOMATED TESTED (`:core` 1506/1506) / CI VERIFIED PENDING (questo push) / DEVICE VERIFIED ❌**.
+
+Baseline: HEAD confermato `82816004bd2db4cde28dd74ada7c094d7531db32` (Phase 0.2's
+final HEAD) prima di iniziare, nessuna divergenza locale/remota.
+
+Estende (mai sostituisce) §129/§130: usa le callback di piattaforma
+`RecognitionListener.onBeginningOfSpeech()`/`onEndOfSpeech()` — presenti
+da sempre in `AndroidOnDeviceSpeechEngine` ma finora no-op — per derivare
+tre nuove metriche genuine, usando solo evidenza reale di piattaforma, mai
+inferita/fabbricata. Zero cambi di comportamento/routing/semantica;
+nessun secondo owner introdotto.
+
+## 131.1 Owner reali preservati (nessun secondo owner creato)
+
+- `AndroidOnDeviceSpeechEngine` — resta l'unico `RecognitionListener`
+  owner; le due callback esistenti (già dichiarate, mai rimosse) sono
+  solo riempite, mai sostituite con un secondo meccanismo.
+- `SessionCoordinator` — resta l'unico owner di sessione;
+  `runTurn()`'s unico call site `stt.transcribe(...)` guadagna solo un
+  listener effimero attorno alla stessa chiamata, mirror esatto del
+  pattern già stabilito da `speakOut()` in §130.
+- `VoiceTurnDiagnosticsRecorder` — resta l'unico punto che chiama
+  `System.nanoTime()`; i nuovi `markUserSpeechStarted()`/
+  `markUserSpeechEnded()` seguono esattamente il pattern idempotente già
+  in uso per `markTtsPlaybackStarted()`.
+- `RecognizerWakeWordEngine` — resta strutturalmente isolato: possiede
+  una propria istanza separata di `AndroidOnDeviceSpeechEngine`
+  (`private val stt = AndroidOnDeviceSpeechEngine(context)`, mai il
+  singleton condiviso) e non sottoscrive mai `speechEvents` — nessuna
+  contaminazione della diagnostica di `SessionCoordinator`, nessun nuovo
+  codice necessario per garantirlo, solo verificato. Nessun secondo
+  recognizer manager introdotto.
+- `SpeechToTextEngine` — contratto esteso in modo additivo
+  (`speechEvents: SharedFlow<SttSpeechEvent>`, `transcribe(languageTag,
+  invocationId = UUID.randomUUID().toString())` con default — ogni call
+  site preesistente, incluso `WakeWordEngine`/`LiveTranslatorManager`/
+  `testStt()`, resta source-compatible, invariato).
+
+Nessun `AndroidOnDeviceSpeechEngine2`, nessun secondo recognizer manager,
+nessun nuovo voice-session coordinator.
+
+## 131.2 Contratto evento minimo
+
+`SttSpeechEvent(invocationId: String, type: Type)` con
+`Type = {STARTED, ENDED}` — id opaco (mai il testo), zero contenuto (mai
+transcript/parziale/audio/lingua/PII), tassonomia chiusa a due valori,
+mirror diretto del precedente `TtsPlaybackStartedEvent` di §130. Nessuna
+variante aggiuntiva (nessun `SPEECH_PAUSED`/`SPEECH_RESUMED`): nulla in
+questo ambito ne ha bisogno oggi, aggiungerne sarebbe una seconda fonte
+di verità del ciclo di vita STT ridondante, esattamente ciò che questo
+contratto non deve diventare.
+
+## 131.3 Fencing a due livelli, un solo contatore
+
+`AndroidOnDeviceSpeechEngine.attemptGeneration` (`AtomicLong`,
+instance-scoped, mai companion object) è incrementato una volta per ogni
+chiamata interna ad `attempt()` — sia che appartenga a una nuova
+invocazione esterna di `transcribe()`, sia a un retry transitorio interno
+della stessa invocazione (`RETRY_BACKOFF_MS`/`TRANSIENT_CODES`,
+comportamento di retry esistente **preservato esattamente**, invariato).
+Ogni callback confronta la propria generazione catturata contro il
+valore corrente prima di emettere — rigetta deterministicamente un
+callback tardivo (da un retry interno abbandonato o da un'invocazione
+esterna già superata) nell'istante in cui un tentativo più recente è
+iniziato, mai per finestra temporale. I numeri di tentativo di retry non
+sono mai esposti oltre questo confine (non nell'evento, non alla
+diagnostica, non a `SessionCoordinator`).
+
+## 131.4 Identità di invocazione esterna + barrier di sottoscrizione
+
+`SessionCoordinator.transcribeWithSpeechBoundaries()` — nuovo, unico call
+site di `stt.transcribe(...)` nel loop hands-free — genera un
+`invocationId` opaco, arma un listener su `stt.speechEvents` filtrato per
+quell'id, attende un barrier (`CompletableDeferred` + `onSubscription`,
+identico a `speakOut()`) che garantisce la sottoscrizione **prima** che
+`transcribe()` possa iniziare a riconoscere, poi chiama
+`stt.transcribe(languageTag, invocationId)`; il listener è cancellato nel
+`finally`, indipendentemente dall'esito (successo, errore, cancellazione).
+Mai una finestra temporale — solo confronto esplicito per identità.
+
+## 131.5 Clock — nessuna dispersione di `System.nanoTime()`
+
+`VoiceTurnDiagnosticsRecorder` resta l'unico punto che legge l'orologio.
+`AndroidOnDeviceSpeechEngine` segnala solo *che* un evento reale è
+accaduto, opaco e privo di timestamp proprio; il recorder timbra il
+momento in cui riceve la notifica (via `SessionCoordinator`'s listener),
+esattamente come ogni altro `mark*` di Phase 0.1/0.2.
+
+## 131.6 Metriche aggiunte
+
+Estende (non sostituisce) `VoiceTurnTimestamps`/`VoiceTurnDiagnostics`
+(`:core`) con due campi grezzi opzionali (`speechStartedAtMs`,
+`speechEndedAtMs`) e tre metriche derivate, ognuna `null` a meno che
+entrambi gli estremi siano stati osservati E correttamente ordinati (mai
+una durata negativa/fabbricata):
+
+- `userSpeechDurationMs` = onBeginningOfSpeech → onEndOfSpeech;
+- `sttFinalizationAfterSpeechMs` = onEndOfSpeech → risultato STT finale;
+- `responsePlaybackAfterSpeechMs` — **la metrica prodotto primaria di
+  questa fase**: onEndOfSpeech → la stessa evidenza affidabile di avvio
+  riproduzione TTS introdotta da §130 ("quanto tempo dopo che l'utente
+  smette di parlare JARVIS inizia a rispondere?"). Nome esplicito e
+  onesto, mai "conversational latency" o altro alias non documentato.
+
+## 131.7 UI — Diagnostica esistente riusata
+
+Estesa la stessa card "Diagnostica vocale (debug)" (mai una seconda
+schermata): una riga `parlato=Xms · finalizzazioneSTT=Xms ·
+rispostaDopoFineVoce=Xms`, con `n/d`/`non disponibile` quando la
+rispettiva metrica non è disponibile — nessun nuovo componente
+Diagnostica.
+
+## 131.8 Wake word / cancellazione / retry interno — comportamento verificato, non riscritto
+
+`RecognizerWakeWordEngine` non chiama mai `transcribeWithSpeechBoundaries()`
+(usa `stt.transcribe(languageTag)` direttamente sulla propria istanza
+separata) — nessun cambiamento di comportamento del wake word, nessun
+`wakeWordLatencyMs` aggiunto, come esplicitamente richiesto di non fare.
+Il retry transitorio interno di `AndroidOnDeviceSpeechEngine` è invariato
+byte-per-byte nella sua logica di backoff/codici transitori — solo
+recintato dalla stessa generazione già discussa in §131.3. Una
+cancellazione di turno (`SessionCoordinator.cancel()`) propaga
+`CancellationException` attraverso `transcribeWithSpeechBoundaries()`
+esattamente come già faceva attraverso `stt.transcribe()` da solo — nessun
+nuovo `catch` generico introdotto in nessuno dei file toccati; un turno
+annullato senza evidenza di confine vocale non ne fabbrica una dalla
+cancellazione stessa (il recorder resta `current = null` dopo `finish()`).
+
+## 131.9 Test aggiunti
+
+`:core` (`VoiceTurnDiagnosticsTest`, +8): durata reale con estremi
+ordinati; estremo mancante lascia il campo non disponibile (entrambi i
+casi, start e end); una coppia end-prima-di-start è rigettata (mai
+negativa); `sttFinalizationAfterSpeechMs` valido/rigettato per ordinamento
+rispetto al risultato STT finale; `responsePlaybackAfterSpeechMs` (la
+metrica primaria) valido/rigettato per ordinamento rispetto all'evidenza
+di avvio riproduzione; nessuna evidenza di confine vocale lascia tutte e
+tre le metriche non disponibili, mai zero.
+`app/` (`VoiceTurnDiagnosticsRecorderTest`, esteso — zero dipendenze
+Android, scritto/verificato per bilanciamento parentesi, non eseguibile
+in questo ambiente): chiamate senza turno in corso sono un no-op sicuro;
+solo la prima coppia start/end per turno è accettata; un evento tardivo
+dopo `finish()` non muta mai il record già pubblicato; una fine senza un
+inizio precedente non fabbrica mai una durata; l'evidenza di fine confine
+alimenta correttamente `sttFinalizationAfterSpeechMs`/
+`responsePlaybackAfterSpeechMs` end-to-end attraverso il vero recorder;
+un nuovo turno parte senza l'evidenza di confine vocale del turno
+precedente.
+
+## 131.10 Semantic/Protocol Impact Check
+
+Tutti NO: nessuna modifica al classificatore, al dataset, al routing, a
+`jarvis-protocol`, agli schemi wire Android↔Core. OOD/ambiguità/grounding/
+ereditarietà del contesto/`ToolRegistry`/autorizzazione/policy/proprietà
+dei side-effect tutti invariati — nessun evento di ciclo di vita del
+parlato è mai esposto a Core o al motore semantico. Nessuna nuova
+egress — la diagnostica resta interamente locale, privacy-safe per
+costruzione (id opachi, enum STARTED/ENDED, timestamp relativi, durate,
+booleani — mai transcript/parziale/audio/prompt/risposta/argomenti tool).
+
+## 131.11 Device Acceptance
+
+**Non dichiarato Live Voice DEVICE VERIFIED.** Da verificare su
+un'APK/qualifica dispositivo separata: `onBeginningOfSpeech`/
+`onEndOfSpeech` reali; enunciato normale/breve/lungo; timeout senza
+parlato; cancellazione a metà parlato; turni ripetuti; follow-up;
+Bluetooth; MagicOS. Il candidato Honor `1236015` (pinnato da MICRO-PATCH
+E.1) **resta pinnato** — nessuna nuova APK di questo commit lo sostituisce
+nella qualificazione in corso del Work Package E.
+
+## 131.12 Conferme esplicite richieste
+
+- Pass 14B: **PAUSED / RUNNER READY, USER-PC REAL EXECUTION PENDING**
+  — non toccato da questa fase.
+- BLIND: **UNTOUCHED** — non toccato da questa fase.
+- Pass 15: **NOT STARTED** — non avviato da questa fase.
+- Honor candidate `1236015`: **resta PINNATO** — invariato.
+- `jarvis-core`/`jarvis-protocol`: **non toccati**.
+- LLM-token→TTS streaming: **ANCORA NON IMPLEMENTATO** — §129.4 resta
+  invariato, questa fase riguarda solo il confine reale di parlato
+  dell'utente e la latenza fino all'avvio della risposta sul percorso
+  a-risposta-completa esistente.
+
+**Fermato qui, come esplicitamente richiesto — non avviato
+automaticamente lo streaming LLM→TTS reale.**
+
+---
+
+# 132. MASTER CHANGELOG
+
+## v1.16 — 2026-09-30
+
+**LIVE VOICE PHASE 0.3 — REAL USER-SPEECH BOUNDARY + END-TO-END RESPONSE
+LATENCY** (nuovo §131). Estende Phase 0.1/0.2 (§129/§130) riempiendo le
+callback `onBeginningOfSpeech()`/`onEndOfSpeech()` di
+`AndroidOnDeviceSpeechEngine` (finora no-op) per derivare
+`userSpeechDurationMs`, `sttFinalizationAfterSpeechMs`, e — la metrica
+prodotto primaria — `responsePlaybackAfterSpeechMs`. Nuovo contratto
+evento minimo `SttSpeechEvent(invocationId, type=STARTED|ENDED)`, mirror
+diretto di `TtsPlaybackStartedEvent`. Fencing a due livelli (invocazione
+esterna + retry interno transitorio) unificato in un solo contatore di
+generazione instance-scoped su `AndroidOnDeviceSpeechEngine`, mai una
+finestra temporale. Nuovo `SessionCoordinator.transcribeWithSpeechBoundaries()`
+mirror esatto del barrier di sottoscrizione già stabilito da `speakOut()`
+in §130. `RecognizerWakeWordEngine` verificato strutturalmente isolato
+(propria istanza separata dell'engine, mai sottoscrive `speechEvents`) —
+nessun `wakeWordLatencyMs` aggiunto. Retry transitorio interno
+dell'engine preservato byte-per-byte. `VoiceTurnDiagnosticsRecorder`
+resta l'unico owner dell'orologio; contratto `SpeechToTextEngine` esteso
+in modo additivo (default su `invocationId`, ogni call site preesistente
+source-compatible, incluso `WakeWordEngine`/`LiveTranslatorManager`).
+8 nuovi test `:core` (`VoiceTurnDiagnosticsTest`, suite **1506/1506**) +
+`VoiceTurnDiagnosticsRecorderTest` (`app/`) esteso. Pass 14B `PAUSED`,
+BLIND `UNTOUCHED`, Pass 15 `NOT STARTED`, candidato Honor `1236015`
+pinnato, `jarvis-core`/`jarvis-protocol` non toccati — nessuno di questi
+toccato. Streaming LLM-token→TTS reale **non implementato**, come
+esplicitamente richiesto di non avviare. Non dichiarato Live Voice
+device-verified.
 
 ## v1.15 — 2026-09-27
 
@@ -5205,4 +5425,4 @@ Decisione chiave:
 **JARVIS adotta il pattern “specialized reflexes → semantic intelligence → planner/BRAIN escalation”, ma resta vendor-agnostic e non trasforma i micro-modelli in un secondo sistema semantico.**
 
 
-**END OF JARVIS MASTER ARCHITECTURE v1.11**
+**END OF JARVIS MASTER ARCHITECTURE v1.16**

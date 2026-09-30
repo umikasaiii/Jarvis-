@@ -111,4 +111,135 @@ class VoiceTurnDiagnosticsRecorderTest {
         assertEquals(2, turns.size)
         assertNull(turns[1].ttsPlaybackStartLatencyMs)
     }
+
+    // --- Live Voice Phase 0.3 — markUserSpeechStarted/markUserSpeechEnded --
+
+    @Test
+    fun `speech-boundary calls with no in-flight turn are a safe no-op`() {
+        val recorder = VoiceTurnDiagnosticsRecorder()
+        recorder.markUserSpeechStarted()
+        recorder.markUserSpeechEnded()
+        assertEquals(0, recorder.history.value.size)
+    }
+
+    @Test
+    fun `ordered start and end for the same turn produce a real userSpeechDurationMs`() {
+        val recorder = VoiceTurnDiagnosticsRecorder()
+        recorder.beginTurn(followUpIndex = 0)
+        recorder.markUserSpeechStarted()
+        Thread.sleep(10)
+        recorder.markUserSpeechEnded()
+        recorder.finish(VoiceTurnOutcome.COMPLETED, VoiceTurnFailureStage.NONE)
+
+        val record = recorder.history.value.single()
+        val duration = record.userSpeechDurationMs
+        assertTrue("expected a non-null, non-negative duration, got $duration", duration != null && duration >= 0)
+    }
+
+    @Test
+    fun `only the first start and first end observation are kept for a turn`() {
+        val recorder = VoiceTurnDiagnosticsRecorder()
+        recorder.beginTurn(followUpIndex = 0)
+        recorder.markUserSpeechStarted()
+        recorder.markUserSpeechEnded()
+        // A second, wrongly-accepted pair of observations would measurably
+        // move the duration forward if it were not ignored.
+        Thread.sleep(60)
+        recorder.markUserSpeechStarted()
+        recorder.markUserSpeechEnded()
+        recorder.finish(VoiceTurnOutcome.COMPLETED, VoiceTurnFailureStage.NONE)
+
+        val record = recorder.history.value.single()
+        assertTrue(
+            "second observations must be ignored, but duration was ${record.userSpeechDurationMs}ms",
+            (record.userSpeechDurationMs ?: Long.MAX_VALUE) < 60,
+        )
+    }
+
+    @Test
+    fun `a late speech-boundary call after the turn already finished never mutates the finished record`() {
+        val recorder = VoiceTurnDiagnosticsRecorder()
+        recorder.beginTurn(followUpIndex = 0)
+        recorder.markUserSpeechStarted()
+        recorder.finish(VoiceTurnOutcome.COMPLETED, VoiceTurnFailureStage.NONE)
+
+        val before = recorder.history.value.single()
+        assertNull(before.userSpeechDurationMs)
+
+        // A stale event arriving after finish() — must not throw, and must
+        // not retroactively change the already-published record.
+        recorder.markUserSpeechEnded()
+
+        val after = recorder.history.value.single()
+        assertEquals(before, after)
+        assertNull(after.userSpeechDurationMs)
+    }
+
+    @Test
+    fun `speech-end without a preceding speech-start never fabricates a duration`() {
+        val recorder = VoiceTurnDiagnosticsRecorder()
+        recorder.beginTurn(followUpIndex = 0)
+        // No markUserSpeechStarted() at all.
+        recorder.markUserSpeechEnded()
+        recorder.finish(VoiceTurnOutcome.COMPLETED, VoiceTurnFailureStage.NONE)
+
+        val record = recorder.history.value.single()
+        assertNull(record.userSpeechDurationMs)
+        // But the raw speech-end mark itself is still real evidence, usable
+        // for sttFinalizationAfterSpeechMs/responsePlaybackAfterSpeechMs.
+        recorder.markSttFinal()
+    }
+
+    @Test
+    fun `speech-end feeds sttFinalizationAfterSpeechMs end to end through the recorder`() {
+        val recorder = VoiceTurnDiagnosticsRecorder()
+        recorder.beginTurn(followUpIndex = 0)
+        recorder.markSttStarted()
+        recorder.markUserSpeechStarted()
+        recorder.markUserSpeechEnded()
+        Thread.sleep(10)
+        recorder.markSttFinal()
+        recorder.finish(VoiceTurnOutcome.COMPLETED, VoiceTurnFailureStage.NONE)
+
+        val record = recorder.history.value.single()
+        val finalization = record.sttFinalizationAfterSpeechMs
+        assertTrue("expected a non-null, non-negative value, got $finalization", finalization != null && finalization >= 0)
+    }
+
+    @Test
+    fun `speech-end feeds responsePlaybackAfterSpeechMs end to end through the recorder`() {
+        val recorder = VoiceTurnDiagnosticsRecorder()
+        recorder.beginTurn(followUpIndex = 0)
+        recorder.markUserSpeechStarted()
+        recorder.markUserSpeechEnded()
+        recorder.markSttFinal()
+        recorder.markAnswerStarted()
+        recorder.markAnswerReady()
+        recorder.markTtsRequested()
+        Thread.sleep(10)
+        recorder.markTtsPlaybackStarted()
+        recorder.finish(VoiceTurnOutcome.COMPLETED, VoiceTurnFailureStage.NONE)
+
+        val record = recorder.history.value.single()
+        val playback = record.responsePlaybackAfterSpeechMs
+        assertTrue("expected a non-null, non-negative value, got $playback", playback != null && playback >= 0)
+    }
+
+    @Test
+    fun `a new turn after a finished one starts with no speech-boundary evidence of its own`() {
+        val recorder = VoiceTurnDiagnosticsRecorder()
+
+        recorder.beginTurn(followUpIndex = 0)
+        recorder.markUserSpeechStarted()
+        recorder.markUserSpeechEnded()
+        recorder.finish(VoiceTurnOutcome.COMPLETED, VoiceTurnFailureStage.NONE)
+
+        recorder.beginTurn(followUpIndex = 1)
+        // No markUserSpeechStarted()/markUserSpeechEnded() for this second turn.
+        recorder.finish(VoiceTurnOutcome.COMPLETED, VoiceTurnFailureStage.NONE)
+
+        val turns = recorder.history.value
+        assertEquals(2, turns.size)
+        assertNull(turns[1].userSpeechDurationMs)
+    }
 }

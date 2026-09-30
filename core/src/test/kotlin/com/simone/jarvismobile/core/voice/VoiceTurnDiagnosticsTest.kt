@@ -6,7 +6,12 @@ import kotlin.test.assertNull
 
 class VoiceTurnDiagnosticsTest {
 
-    private fun full(bargeInAtMs: Long? = null, playbackStartAtMs: Long? = null) = VoiceTurnTimestamps(
+    private fun full(
+        bargeInAtMs: Long? = null,
+        playbackStartAtMs: Long? = null,
+        speechStartedAtMs: Long? = null,
+        speechEndedAtMs: Long? = null,
+    ) = VoiceTurnTimestamps(
         sttStartedAtMs = 0,
         sttFinalAtMs = 300,
         answerStartedAtMs = 300,
@@ -15,6 +20,8 @@ class VoiceTurnDiagnosticsTest {
         ttsFinishedAtMs = 2400,
         bargeInRequestedAtMs = bargeInAtMs,
         ttsPlaybackStartAtMs = playbackStartAtMs,
+        speechStartedAtMs = speechStartedAtMs,
+        speechEndedAtMs = speechEndedAtMs,
     )
 
     @Test
@@ -357,5 +364,144 @@ class VoiceTurnDiagnosticsTest {
             finishedAtMs = 10,
         )
         assertEquals("opaque-id-not-reply-text-15", record.turnId)
+    }
+
+    // --- Live Voice Phase 0.3 — real user-speech boundary metrics ----------
+
+    @Test
+    fun `ordered start and end produce a real userSpeechDurationMs`() {
+        val record = VoiceTurnDiagnostics.compute(
+            turnId = "s1",
+            startedAtEpochMs = 0,
+            followUpIndex = 0,
+            cancellationRequested = false,
+            outcome = VoiceTurnOutcome.COMPLETED,
+            failureStage = VoiceTurnFailureStage.NONE,
+            timestamps = full(speechStartedAtMs = 50, speechEndedAtMs = 1_850),
+            finishedAtMs = 2400,
+        )
+        assertEquals(1800, record.userSpeechDurationMs)
+    }
+
+    @Test
+    fun `missing start or end leaves userSpeechDurationMs unavailable`() {
+        val missingStart = VoiceTurnDiagnostics.compute(
+            turnId = "s2a",
+            startedAtEpochMs = 0,
+            followUpIndex = 0,
+            cancellationRequested = false,
+            outcome = VoiceTurnOutcome.COMPLETED,
+            failureStage = VoiceTurnFailureStage.NONE,
+            timestamps = full(speechStartedAtMs = null, speechEndedAtMs = 1_850),
+            finishedAtMs = 2400,
+        )
+        assertNull(missingStart.userSpeechDurationMs)
+
+        val missingEnd = VoiceTurnDiagnostics.compute(
+            turnId = "s2b",
+            startedAtEpochMs = 0,
+            followUpIndex = 0,
+            cancellationRequested = false,
+            outcome = VoiceTurnOutcome.COMPLETED,
+            failureStage = VoiceTurnFailureStage.NONE,
+            timestamps = full(speechStartedAtMs = 50, speechEndedAtMs = null),
+            finishedAtMs = 2400,
+        )
+        assertNull(missingEnd.userSpeechDurationMs)
+    }
+
+    @Test
+    fun `an end-before-start pair is rejected, never a negative userSpeechDurationMs`() {
+        val record = VoiceTurnDiagnostics.compute(
+            turnId = "s3",
+            startedAtEpochMs = 0,
+            followUpIndex = 0,
+            cancellationRequested = false,
+            outcome = VoiceTurnOutcome.COMPLETED,
+            failureStage = VoiceTurnFailureStage.NONE,
+            timestamps = full(speechStartedAtMs = 1_000, speechEndedAtMs = 500),
+            finishedAtMs = 2400,
+        )
+        assertNull(record.userSpeechDurationMs)
+    }
+
+    @Test
+    fun `sttFinalizationAfterSpeechMs is valid when speech ends before the STT final result`() {
+        val record = VoiceTurnDiagnostics.compute(
+            turnId = "s4",
+            startedAtEpochMs = 0,
+            followUpIndex = 0,
+            cancellationRequested = false,
+            outcome = VoiceTurnOutcome.COMPLETED,
+            failureStage = VoiceTurnFailureStage.NONE,
+            // sttFinalAtMs=300 from full(); speech ended at 180 -> 120ms finalization.
+            timestamps = full(speechStartedAtMs = 20, speechEndedAtMs = 180),
+            finishedAtMs = 2400,
+        )
+        assertEquals(120, record.sttFinalizationAfterSpeechMs)
+    }
+
+    @Test
+    fun `sttFinalizationAfterSpeechMs is rejected when speech end is after the STT final result`() {
+        val record = VoiceTurnDiagnostics.compute(
+            turnId = "s5",
+            startedAtEpochMs = 0,
+            followUpIndex = 0,
+            cancellationRequested = false,
+            outcome = VoiceTurnOutcome.COMPLETED,
+            failureStage = VoiceTurnFailureStage.NONE,
+            // sttFinalAtMs=300 from full(); a stale/out-of-order speechEndedAtMs=400.
+            timestamps = full(speechStartedAtMs = 20, speechEndedAtMs = 400),
+            finishedAtMs = 2400,
+        )
+        assertNull(record.sttFinalizationAfterSpeechMs)
+    }
+
+    @Test
+    fun `responsePlaybackAfterSpeechMs, the primary product metric, is valid when ordered correctly`() {
+        val record = VoiceTurnDiagnostics.compute(
+            turnId = "s6",
+            startedAtEpochMs = 0,
+            followUpIndex = 0,
+            cancellationRequested = false,
+            outcome = VoiceTurnOutcome.COMPLETED,
+            failureStage = VoiceTurnFailureStage.NONE,
+            // ttsPlaybackStartAtMs=1300 from playbackStartAtMs; speech ended at 200.
+            timestamps = full(speechStartedAtMs = 20, speechEndedAtMs = 200, playbackStartAtMs = 1_300),
+            finishedAtMs = 2400,
+        )
+        assertEquals(1100, record.responsePlaybackAfterSpeechMs)
+    }
+
+    @Test
+    fun `responsePlaybackAfterSpeechMs is rejected when playback-start evidence precedes speech end`() {
+        val record = VoiceTurnDiagnostics.compute(
+            turnId = "s7",
+            startedAtEpochMs = 0,
+            followUpIndex = 0,
+            cancellationRequested = false,
+            outcome = VoiceTurnOutcome.COMPLETED,
+            failureStage = VoiceTurnFailureStage.NONE,
+            timestamps = full(speechStartedAtMs = 20, speechEndedAtMs = 1_500, playbackStartAtMs = 1_100),
+            finishedAtMs = 2400,
+        )
+        assertNull(record.responsePlaybackAfterSpeechMs)
+    }
+
+    @Test
+    fun `no speech-boundary evidence at all leaves all three Phase 0_3 metrics unavailable, not zero`() {
+        val record = VoiceTurnDiagnostics.compute(
+            turnId = "s8",
+            startedAtEpochMs = 0,
+            followUpIndex = 0,
+            cancellationRequested = false,
+            outcome = VoiceTurnOutcome.COMPLETED,
+            failureStage = VoiceTurnFailureStage.NONE,
+            timestamps = full(),
+            finishedAtMs = 2400,
+        )
+        assertNull(record.userSpeechDurationMs)
+        assertNull(record.sttFinalizationAfterSpeechMs)
+        assertNull(record.responsePlaybackAfterSpeechMs)
     }
 }

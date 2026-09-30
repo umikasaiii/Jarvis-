@@ -378,6 +378,18 @@ fun DiagnosticsScreen(
                                 "avvioRiproduzione=${turn.ttsPlaybackStartLatencyMs?.let { "${it}ms" } ?: "non disponibile"}",
                                 style = MaterialTheme.typography.bodySmall,
                             )
+                            // Live Voice Phase 0.3 — real user-speech-boundary
+                            // metrics, derived only from genuine platform
+                            // onBeginningOfSpeech()/onEndOfSpeech() callbacks
+                            // (see AndroidOnDeviceSpeechEngine). "n/d" when the
+                            // callbacks were never observed for this turn —
+                            // never a fabricated/zero value.
+                            Text(
+                                "parlato=${turn.userSpeechDurationMs?.let { "${it}ms" } ?: "n/d"} · " +
+                                    "finalizzazioneSTT=${turn.sttFinalizationAfterSpeechMs?.let { "${it}ms" } ?: "n/d"} · " +
+                                    "rispostaDopoFineVoce=${turn.responsePlaybackAfterSpeechMs?.let { "${it}ms" } ?: "non disponibile"}",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
                             if (turn.bargeInRequested) {
                                 Text(
                                     "bargeIn=true · stopDopoBargeIn=${turn.ttsStoppedAfterBargeInMs?.let { "${it}ms" } ?: "non disponibile"}",
