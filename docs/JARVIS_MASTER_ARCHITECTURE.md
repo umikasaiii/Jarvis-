@@ -106,9 +106,9 @@ Branch Android attivo: `claude/jarvis-mobile-automazioni-dashboard-b4xa7e`
 
 Branch Core storico: `claude/jarvis-core-7uhajh`
 
-## 2.1 Stato remoto Android verificato al 2026-09-30
+## 2.1 Baseline runtime Android verificata al 2026-09-30
 
-Remote branch HEAD verificato:
+Ultimo commit **runtime/code-bearing** verificato prima dei successivi aggiornamenti docs-only:
 
 `7c4a4fbc805a38c0467a085506c9380da47b9a55`
 
@@ -132,11 +132,13 @@ CI verificata sullo SHA esatto:
 Stato del branch corrente:
 
 ```text
-LATEST ANDROID HEAD          7c4a4fbc805a38c0467a085506c9380da47b9a55
-LATEST CI                    #464 SUCCESS
+LATEST RUNTIME CODE BASELINE 7c4a4fbc805a38c0467a085506c9380da47b9a55
+RUNTIME BASELINE CI          #464 SUCCESS
 LIVE VOICE PHASE 0.3         CODE PRESENT / AUTOMATED TESTED / CI VERIFIED
 LIVE VOICE DEVICE VERIFIED   ❌
 ```
+
+**Nota sullo SHA:** i commit docs-only successivi a questa baseline possono cambiare il branch HEAD senza cambiare il runtime Android; per device/runtime acceptance usare sempre l'ultimo commit code-bearing esplicitamente identificato.
 
 **Separazione fondamentale:** il branch corrente NON è il candidato ancora
 in uso per la qualificazione Work Package E sul telefono. Il candidato Honor
@@ -5473,8 +5475,8 @@ autonomia sono una view/mapping sopra `ToolPolicy`/`ActionRisk`/
 capability policy; l'Action Router agentico, se necessario, delega agli owner
 esistenti. Nuovo ADR-014.
 
-Riconciliato anche lo stato reale: branch HEAD
-`7c4a4fbc805a38c0467a085506c9380da47b9a55`, Live Voice Phase 0.3 CI
+Riconciliato anche lo stato reale: runtime code baseline
+`7c4a4fbc805a38c0467a085506c9380da47b9a55` (i commit successivi di questo pass sono docs-only), Live Voice Phase 0.3 CI
 **#464 SUCCESS** (core 1506/1506; APK SHA-256
 `41f9fa58c482f86345c3addb39a6ab6aee44a047c1022de5c76ce3137ea9b8a4`).
 Sul candidato Honor E.1 `1236015`, nuovo device evidence: Morning Briefing
