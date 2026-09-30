@@ -4,7 +4,7 @@
 
 - **Project:** JARVIS
 - **Document role:** project map / architectural control plane / living source of project intent
-- **Version:** 1.18
+- **Version:** 1.19
 - **Generated:** 2026-09-30
 - **Primary language:** Italiano
 - **Status:** ACTIVE — living document
@@ -2222,32 +2222,69 @@ fix, nessun `fallbackToDestructiveMigration()` invocato su
 
 ### 30.16.2 Evidenza device successiva — Morning Briefing 08:50-only
 
-Sul candidato Honor E.1 `1236015`, l'utente riporta un comportamento
-ripetuto: il briefing mattutino viene consegnato all'orario configurato
-**08:50** e non risulta influenzato né dagli sblocchi né dalla sveglia.
+Sul candidato Honor E.1 `1236015`, l'utente ha osservato per più giorni il
+briefing al configured/fallback time **08:50**. La successiva lettura della
+diagnostica persistente restringe però il problema in modo più preciso.
 
-Per la gerarchia di evidenza §0.3 questo aggiorna lo stato device:
+**SERVICE / receiver:** il foreground service risulta realmente avviato in più
+sessioni; `SERVICE_ON_CREATE`, `SERVICE_ON_START_COMMAND`,
+`RECEIVER_REGISTERED` e `AUTOMATION_SETTING_ENABLED` sono presenti. Quindi
+non è più corretto trattare genericamente "service non attivo" come spiegazione
+principale.
+
+**FIRST_UNLOCK:** nella card diagnostica compare
+`(nessun checkpoint registrato in questo storico)` nonostante il receiver sia
+registrato. Non esiste quindi evidenza che `ACTION_USER_PRESENT` abbia
+raggiunto `AutomationEventService.onUnlock()` nelle sessioni conservate. Il
+failure boundary è ora ristretto **a monte della chiamata proattiva**:
+delivery del broadcast / receiver / reale lock→unlock durante una sessione
+viva. Prima di una patch serve un test controllato lock→unlock con la stessa
+sessione SERVICE e nuova lettura immediata dei checkpoint.
+
+**NEXT_ALARM:** il source NON è assente. Il device espone realmente
+`observed=1790837100000`, cioè **2026-10-01 08:45 Europe/Rome**, e la card
+mostra `NEXT_ALARM_OBSERVER_REGISTERED` + `NEXT_ALARM_READ`. Sul candidate
+E.1 `morningNextAlarmOffsetMinutes` ha default **+5 min**, quindi quel source
+porta a un intended fire time **08:50** — esattamente lo stesso minuto del
+configured fallback. Perciò il solo fatto che l'utente veda il briefing alle
+08:50 **non può distinguere NEXT_ALARM da CONFIGURED_TIME**. NEXT_ALARM viene
+riclassificato da "FAILED-DEVICE" a **SOURCE OBSERVED / DELIVERY PATH NOT
+INDEPENDENTLY QUALIFIED** finché i due orari non vengono separati.
+
+**CONFIGURED_TIME:** è provato end-to-end nella diagnostica:
+`CONFIGURED_TIME_RECEIVER_FIRED` → `PROACTIVE_CALL_ATTEMPTED` →
+`PROACTIVE_CALL_SUCCEEDED`, seguito dal re-arm del giorno successivo.
+
+Stato aggiornato:
 
 ```text
-CONFIGURED_TIME / FALLBACK   OBSERVED WORKING
-FIRST_UNLOCK                 FAILED-DEVICE / ROOT CAUSE OPEN
-NEXT_ALARM                   FAILED-DEVICE / ROOT CAUSE OPEN
+CONFIGURED_TIME / FALLBACK   OBSERVED WORKING END-TO-END
+FIRST_UNLOCK                 SOURCE NOT OBSERVED / CONTROLLED RETEST REQUIRED
+NEXT_ALARM SOURCE            OBSERVED (08:45)
+NEXT_ALARM DELIVERY          NOT INDEPENDENTLY QUALIFIED (08:45 + 5 = 08:50 collision)
 MORNING DEVICE ACCEPTANCE    FAIL / OPEN
 WORK PACKAGE E               OPEN
 ```
 
-Questa evidenza **non prova ancora la causa**. Il codice contiene i call path
-previsti per FIRST_UNLOCK/NEXT_ALARM, mentre CONFIGURED_TIME raggiunge
-correttamente la delivery. Prima di modificare il runtime occorre usare le
-diagnostiche persistenti già presenti (`TriggerEvidenceStore`, schedule plan
-revision, Morning receipts) per distinguere: producer non osservato, service/
-receiver non vivo, NEXT_ALARM non esposto, schedule/intent stale, evaluation
-fallita o claim già posseduto.
+**Test controllati prima del codice:**
+1. con SERVICE già vivo, bloccare realmente il telefono, attendere, sbloccare
+   con keyguard/biometria e leggere subito FIRST_UNLOCK; se resta vuoto,
+   `ACTION_USER_PRESENT` observation è device-failed/provata;
+2. per NEXT_ALARM separare gli orari (esempio: sveglia 08:30, offset +5 →
+   08:35; configured fallback 08:50) e verificare
+   `NEXT_ALARM_SCHEDULE_ATTEMPTED/SCHEDULED/RECEIVER_FIRED/PROACTIVE_CALL_*`.
+   Solo così il percorso può essere dichiarato PASS/FAIL sul device.
 
-La Persistent Agent Architecture di §65.1/ADR-014 è approvata come evoluzione
-del sistema, ma non deve mascherare un producer rotto: una Responsibility può
-coordinare osservazioni reali, non inventare un FIRST_UNLOCK/NEXT_ALARM che il
-device non ha consegnato.
+La Persistent Agent Architecture di §65.1/ADR-014 resta l'evoluzione approvata,
+ma non deve mascherare un producer rotto: una Responsibility coordina
+osservazioni reali, non le inventa.
+
+**Evidenza startup secondaria:** la card "Avvio precedente" mostra
+`INCOMPLETE_STARTUP` con numerosi checkpoint di sync OK ma senza
+`ROOT_UI_READY`, e nessuna Java exception osservata. Poiché l'app attuale si
+apre, questo è registrato come anomalia diagnostica separata, non come causa
+provata del Morning failure e non come nuovo cold-start FAIL senza riproduzione
+controllata.
 
 Il candidate `1236015` resta pinnato per questa raccolta di evidenza finché
 una nuova runtime qualification build non viene scelta esplicitamente.
@@ -2894,20 +2931,19 @@ Sul candidato Honor E.1 `1236015`:
 
 - app opens: osservato;
 - `CONFIGURED_TIME` / fallback delle **08:50**: osservato ripetutamente;
-- `FIRST_UNLOCK`: non influenza la consegna osservata → **FAILED-DEVICE / ROOT CAUSE OPEN**;
-- `NEXT_ALARM`: non influenza la consegna osservata → **FAILED-DEVICE / ROOT CAUSE OPEN**;
+- `FIRST_UNLOCK`: nessun checkpoint USER_PRESENT nello storico nonostante SERVICE/receiver reali → **SOURCE NOT OBSERVED / CONTROLLED RETEST REQUIRED**;
+- `NEXT_ALARM`: source realmente letto (08:45 nel caso osservato), ma con offset +5 collide con CONFIGURED_TIME 08:50 → **SOURCE OBSERVED / DELIVERY NOT INDEPENDENTLY QUALIFIED**;
 - Work Package E: **OPEN**;
 - i duplicati appartengono alla storia reale e restano un requisito di
   non-regressione; il comportamento attuale non va dichiarato corretto finché i
   segnali non superano acceptance sul device.
 
-Il fatto che il fallback delle 08:50 consegni dimostra che almeno quel percorso
-raggiunge occurrence/dispatcher/notifier; **non prova** ancora perché
-FIRST_UNLOCK/NEXT_ALARM non arrivino o non vincano. Prima di attribuire il
-failure alla nuova architettura, usare la diagnostica persistente già presente
-(`TriggerEvidenceStore`, ricevute Morning, plan revision) per distinguere
-producer assente, service/receiver non vivo, source alarm non esposto,
-scheduling fallito, stale intent, evaluation fallita o claim già posseduto.
+Il fallback delle 08:50 è provato end-to-end. La diagnostica ha inoltre
+dimostrato che il NEXT_ALARM source è esposto dal device, mentre FIRST_UNLOCK
+non ha alcun USER_PRESENT checkpoint nello storico. La prossima discriminante
+non è più una patch generica: (a) lock→unlock controllato con SERVICE vivo per
+FIRST_UNLOCK; (b) separazione intenzionale fra NEXT_ALARM+offset e
+CONFIGURED_TIME per qualificare il path alarm senza collisione temporale.
 
 ### Persistent Agent Architecture — TARGET APPROVATO, ADATTATO
 
@@ -3485,25 +3521,25 @@ First qualification responsibility: **MORNING_ASSISTANCE**.
 
 Evidenza reale più recente sul candidato Honor E.1 `1236015`:
 
-- briefing osservato **sempre al configured/fallback time 08:50**;
-- FIRST_UNLOCK non modifica il momento di consegna osservato;
-- NEXT_ALARM non modifica il momento di consegna osservato;
-- CONFIGURED_TIME/fallback è quindi il solo path di delivery osservato come
-  efficace in questa campagna;
-- stato sorgente-specifico: FIRST_UNLOCK **FAILED-DEVICE**, NEXT_ALARM
-  **FAILED-DEVICE**, CONFIGURED_TIME **OBSERVED WORKING**;
+- CONFIGURED_TIME/fallback 08:50: **OBSERVED WORKING END-TO-END**;
+- SERVICE realmente avviato e receiver registrato;
+- FIRST_UNLOCK: **nessun checkpoint USER_PRESENT nello storico** →
+  **SOURCE NOT OBSERVED / CONTROLLED RETEST REQUIRED**;
+- NEXT_ALARM source: **OBSERVED**, con alarm letto alle 08:45 nel caso corrente;
+- offset candidate default: **+5 min**, quindi NEXT_ALARM intended fire = 08:50;
+- configured fallback = 08:50: i due path collidono nello stesso minuto;
+- NEXT_ALARM delivery: **NOT INDEPENDENTLY QUALIFIED**, non più correttamente
+  classificabile come FAILED soltanto dal timestamp della notifica;
 - Work Package E resta **OPEN**.
 
-La root cause precisa non è ancora provata. Il downstream
-occurrence→dispatcher→notification è almeno raggiungibile sul path configured,
-ma il failure può ancora essere producer/service/receiver/source-exposure/
-schedule/revision/evaluation/claim. Prima di una patch runtime leggere
-`Diagnostica trigger briefing mattutino` + ricevute di consegna persistenti.
+La root cause FIRST_UNLOCK è ormai ristretta all'observation path a monte di
+`onUnlock()`, ma richiede un lock→unlock controllato durante una sessione
+SERVICE viva prima di modificare codice. NEXT_ALARM richiede invece un test con
+orari separati per distinguere source alarm e fallback. §30.16.2 contiene la
+procedura esatta.
 
-La Persistent Agent Architecture (§65.1, ADR-014) è adottata come evoluzione
-target, ma **non sostituisce** il root-cause audit: una Responsibility non può
-compensare un ACTION_USER_PRESENT mai osservato o un NEXT_ALARM non esposto dal
-device.
+La Persistent Agent Architecture (§65.1, ADR-014) resta il target, ma non
+sostituisce questi producer/device gates.
 
 ### EmbeddingGemma
 - real artifact acquisition/qualification pending — tooling and Windows
@@ -3996,7 +4032,7 @@ ARCHITECTURE MANUAL          AVAILABLE
 TARGET ARCHITECTURE          AVAILABLE
 DEEP AUDIT                   AVAILABLE
 SEGNALE                      AVAILABLE
-MASTER ARCHITECTURE          THIS FILE / v1.17
+MASTER ARCHITECTURE          THIS FILE / v1.19
 
 ANDROID-FIRST                ACTIVE
 CORE OPTIONAL ENHANCER       ACTIVE
@@ -4009,8 +4045,9 @@ WORK PACKAGE E               OPEN
 HONOR E.1 CANDIDATE          1236015 PINNED
 HONOR APP STARTUP            APP OPENS OBSERVED / FULL QUALIFICATION PENDING
 MORNING CONFIGURED_TIME      OBSERVED WORKING @ 08:50
-MORNING FIRST_UNLOCK         FAILED-DEVICE / ROOT CAUSE OPEN
-MORNING NEXT_ALARM           FAILED-DEVICE / ROOT CAUSE OPEN
+MORNING FIRST_UNLOCK         SOURCE NOT OBSERVED / CONTROLLED RETEST
+MORNING NEXT_ALARM SOURCE     OBSERVED
+MORNING NEXT_ALARM DELIVERY   NOT INDEPENDENTLY QUALIFIED (08:50 COLLISION)
 MORNING DUPLICATE SAFETY     HISTORICAL FAILURE / NON-REGRESSION GATE
 
 SEMANTIC PIPELINE            IMPLEMENTED / NOT FULLY QUALIFIED
@@ -5493,6 +5530,25 @@ automaticamente lo streaming LLM→TTS reale.**
 ---
 
 # 132. MASTER CHANGELOG
+
+## v1.19 — 2026-09-30
+
+**HONOR MORNING DIAGNOSTICS — SOURCE-LEVEL RECONCILIATION.** Nessun runtime
+code modificato. Gli screenshot reali del candidate `1236015` restringono il
+failure: SERVICE/receiver sono realmente attivi; FIRST_UNLOCK non ha alcun
+USER_PRESENT checkpoint nello storico; NEXT_ALARM è invece realmente esposto
+e letto dal device (`1790837100000` = 2026-10-01 08:45 Europe/Rome). Con il
+default +5 min il path NEXT_ALARM cade alle 08:50, lo stesso minuto del
+CONFIGURED_TIME, quindi la precedente classificazione NEXT_ALARM
+FAILED-DEVICE viene superseded da **SOURCE OBSERVED / DELIVERY NOT
+INDEPENDENTLY QUALIFIED**. CONFIGURED_TIME è provato end-to-end da
+RECEIVER_FIRED→PROACTIVE_CALL_ATTEMPTED→SUCCEEDED. §30.16.2, §65.1, §71 e
+§100 aggiornati con due test controllati prima di qualsiasi patch runtime.
+Registrata separatamente anche la card `INCOMPLETE_STARTUP` senza Java
+exception come anomalia non ancora causale. Work Package E resta OPEN;
+Persistent Agent design invariato; candidate Honor `1236015` pinnato; Pass
+14B PAUSED, BLIND UNTOUCHED, Pass 15 NOT STARTED.
+
 
 ## v1.18 — 2026-09-30
 
