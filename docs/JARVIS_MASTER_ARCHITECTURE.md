@@ -4,7 +4,7 @@
 
 - **Project:** JARVIS
 - **Document role:** project map / architectural control plane / living source of project intent
-- **Version:** 1.17
+- **Version:** 1.18
 - **Generated:** 2026-09-30
 - **Primary language:** Italiano
 - **Status:** ACTIVE — living document
@@ -2220,6 +2220,40 @@ modello semantico toccato, Pass 15 non iniziato, `jarvis-core`/
 fix, nessun `fallbackToDestructiveMigration()` invocato su
 `JarvisDatabase`.
 
+### 30.16.2 Evidenza device successiva — Morning Briefing 08:50-only
+
+Sul candidato Honor E.1 `1236015`, l'utente riporta un comportamento
+ripetuto: il briefing mattutino viene consegnato all'orario configurato
+**08:50** e non risulta influenzato né dagli sblocchi né dalla sveglia.
+
+Per la gerarchia di evidenza §0.3 questo aggiorna lo stato device:
+
+```text
+CONFIGURED_TIME / FALLBACK   OBSERVED WORKING
+FIRST_UNLOCK                 FAILED-DEVICE / ROOT CAUSE OPEN
+NEXT_ALARM                   FAILED-DEVICE / ROOT CAUSE OPEN
+MORNING DEVICE ACCEPTANCE    FAIL / OPEN
+WORK PACKAGE E               OPEN
+```
+
+Questa evidenza **non prova ancora la causa**. Il codice contiene i call path
+previsti per FIRST_UNLOCK/NEXT_ALARM, mentre CONFIGURED_TIME raggiunge
+correttamente la delivery. Prima di modificare il runtime occorre usare le
+diagnostiche persistenti già presenti (`TriggerEvidenceStore`, schedule plan
+revision, Morning receipts) per distinguere: producer non osservato, service/
+receiver non vivo, NEXT_ALARM non esposto, schedule/intent stale, evaluation
+fallita o claim già posseduto.
+
+La Persistent Agent Architecture di §65.1/ADR-014 è approvata come evoluzione
+del sistema, ma non deve mascherare un producer rotto: una Responsibility può
+coordinare osservazioni reali, non inventare un FIRST_UNLOCK/NEXT_ALARM che il
+device non ha consegnato.
+
+Il candidate `1236015` resta pinnato per questa raccolta di evidenza finché
+una nuova runtime qualification build non viene scelta esplicitamente.
+
+---
+
 # 31. MICRO-PATCH 14.2.1 — CONFIGURABLE BRIEFING TIME
 
 UI target:
@@ -3488,7 +3522,7 @@ device.
 - Core streaming latency;
 - auth/TLS pairing;
 - unified orchestration ancora roadmap;
-- Live Voice non implementato;
+- Live Voice foundation 0.1/0.2/0.3 implementata e CI-verified; full v1 full-duplex, acoustic barge-in/AEC e LLM-token→TTS streaming non implementati;
 - long-term PI non completo;
 - device actions advanced non complete;
 - full driving navigation production backend non complete.
@@ -5262,10 +5296,18 @@ automaticamente lo streaming LLM→TTS reale.**
 
 # 131. LIVE VOICE PHASE 0.3 — REAL USER-SPEECH BOUNDARY + END-TO-END RESPONSE LATENCY
 
-Status: **CODE PRESENT / AUTOMATED TESTED (`:core` 1506/1506) / CI VERIFIED PENDING (questo push) / DEVICE VERIFIED ❌**.
+Status: **CODE PRESENT / AUTOMATED TESTED (`:core` 1506/1506) / CI VERIFIED ✅ (run #464, commit `7c4a4fb`, run id `36695775885`) / DEVICE VERIFIED ❌**.
 
 Baseline: HEAD confermato `82816004bd2db4cde28dd74ada7c094d7531db32` (Phase 0.2's
 final HEAD) prima di iniziare, nessuna divergenza locale/remota.
+
+**CI osservata dopo l'implementazione:** commit runtime
+`7c4a4fbc805a38c0467a085506c9380da47b9a55`, GitHub Actions run #464
+(`36695775885`) **COMPLETED / SUCCESS** su entrambi i job. Core
+**1506/1506**, assemble debug, Android unit tests, compile instrumented tests,
+lint e publish verdi. APK SHA-256:
+`41f9fa58c482f86345c3addb39a6ab6aee44a047c1022de5c76ce3137ea9b8a4`.
+Questo chiude il gate CI della Phase 0.3 ma non la device acceptance.
 
 Estende (mai sostituisce) §129/§130: usa le callback di piattaforma
 `RecognitionListener.onBeginningOfSpeech()`/`onEndOfSpeech()` — presenti
@@ -5451,6 +5493,21 @@ automaticamente lo streaming LLM→TTS reale.**
 ---
 
 # 132. MASTER CHANGELOG
+
+## v1.18 — 2026-09-30
+
+**DOCS CONSISTENCY / DEVICE-EVIDENCE RECONCILIATION.** Nessun runtime code
+modificato. Corrette tre incoerenze residue della v1.17 senza rimuovere alcuna
+informazione: §131 ora registra direttamente Live Voice Phase 0.3 come
+**CI VERIFIED ✅ run #464** con commit/runtime APK SHA corretti; §71 non dice
+più genericamente "Live Voice non implementato" ma distingue foundation
+0.1/0.2/0.3 già implementata dal full-duplex/streaming ancora assente; nuova
+§30.16.2 preserva cronologicamente l'evidenza Honor reale del Morning
+08:50-only (CONFIGURED_TIME observed working, FIRST_UNLOCK/NEXT_ALARM
+FAILED-DEVICE / root cause open). Persistent Agent Architecture, roadmap §65,
+ADR-014, Pass 14B PAUSED, BLIND UNTOUCHED, Pass 15 NOT STARTED e candidate
+Honor `1236015` restano invariati.
+
 
 ## v1.17 — 2026-09-30
 
