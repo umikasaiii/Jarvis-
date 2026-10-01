@@ -3454,6 +3454,7 @@ dedup, authorization, retry safety o completion.
 - Pass 14.2 — `e6b4e0baae36dd3070ca0e151bd591480cd46d56`
 - Pass 14.2.2 primary fix — `df686d525feab671fb93ed865649316bdce46073`
 - Latest follow-up fix — `6a66d3247cff01a9dde36fb899196b22c16ff453`
+- PA-1A — `c28b65b2866cc1139327bfb474c19469aef19b4e` — CI run #469, both jobs SUCCESS (core 1524/1524, assemble debug APK, Android unit tests, compile instrumented tests, lint, APK SHA-256, upload, publish, PS5.1 job)
 
 Nota: gli SHA abbreviati più vecchi sono storici; verificare full SHA nel repository prima di usarli come exact starting gate.
 
