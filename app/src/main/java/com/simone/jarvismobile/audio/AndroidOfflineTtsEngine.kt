@@ -7,6 +7,7 @@ import android.media.AudioManager
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.speech.tts.Voice
+import com.simone.jarvismobile.tts.AudioFocusObservation
 import com.simone.jarvismobile.core.speech.SpeechShaper
 import com.simone.jarvismobile.core.speech.SpeechStyle
 import com.simone.jarvismobile.data.SettingsRepository
@@ -55,6 +56,15 @@ class AndroidOfflineTtsEngine @Inject constructor(
     private val _playbackStartEvents = MutableSharedFlow<TtsPlaybackStartedEvent>(extraBufferCapacity = 4)
     override val playbackStartEvents = _playbackStartEvents.asSharedFlow()
 
+    // Live Voice Phase 0.4 — this engine owns its own AudioManager focus
+    // dance (separate from app/tts/AudioFocusGate, which HybridTtsEngine
+    // uses) because it is a distinct, independent TextToSpeechEngine
+    // implementation. Same observation-only contract: never changes
+    // whether/when playback stops, only reports what the real focus
+    // request/callback actually did.
+    private val _audioFocusEvents = MutableSharedFlow<AudioFocusObservation>(extraBufferCapacity = 8)
+    override val audioFocusEvents = _audioFocusEvents.asSharedFlow()
+
     private var tts: TextToSpeech? = null
     private var ready = false
     private val pending = ConcurrentHashMap<String, CompletableDeferred<Unit>>()
@@ -80,6 +90,15 @@ class AndroidOfflineTtsEngine @Inject constructor(
     }
     private var focusRequest: AudioFocusRequest? = null
     private val focusListener = AudioManager.OnAudioFocusChangeListener { change ->
+        _audioFocusEvents.tryEmit(
+            when (change) {
+                AudioManager.AUDIOFOCUS_GAIN -> AudioFocusObservation.GAIN
+                AudioManager.AUDIOFOCUS_LOSS -> AudioFocusObservation.LOST_PERMANENT
+                AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> AudioFocusObservation.LOST_TRANSIENT
+                AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> AudioFocusObservation.LOST_TRANSIENT_CAN_DUCK
+                else -> AudioFocusObservation.UNKNOWN
+            },
+        )
         // If something with higher priority takes over (e.g. a phone call), stop
         // talking rather than speak over it.
         if (change == AudioManager.AUDIOFOCUS_LOSS ||
@@ -102,7 +121,15 @@ class AndroidOfflineTtsEngine @Inject constructor(
             .setWillPauseWhenDucked(true)
             .build()
         focusRequest = request
-        runCatching { audioManager.requestAudioFocus(request) }
+        val result = runCatching { audioManager.requestAudioFocus(request) }.getOrNull()
+        _audioFocusEvents.tryEmit(
+            when (result) {
+                AudioManager.AUDIOFOCUS_REQUEST_GRANTED -> AudioFocusObservation.GRANTED
+                AudioManager.AUDIOFOCUS_REQUEST_FAILED -> AudioFocusObservation.DENIED
+                AudioManager.AUDIOFOCUS_REQUEST_DELAYED -> AudioFocusObservation.DELAYED
+                else -> AudioFocusObservation.UNKNOWN
+            },
+        )
     }
 
     private fun abandonAudioFocus() {

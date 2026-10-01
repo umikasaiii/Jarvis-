@@ -2,6 +2,7 @@ package com.simone.jarvismobile.audio
 
 import android.content.Context
 import android.media.AudioAttributes
+import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioFocusRequest
 import android.media.AudioManager
@@ -60,7 +61,7 @@ class AndroidAudioRouteManager @Inject constructor(
     // invoked today (see this class's own class-level doc comment / the
     // Master Architecture's "Live Voice Phase 0.4" section for the audit
     // this is derived from).
-    private val deviceCallback = object : AudioManager.AudioDeviceCallback() {
+    private val deviceCallback = object : AudioDeviceCallback() {
         override fun onAudioDevicesAdded(addedDevices: Array<AudioDeviceInfo>) = refreshObservedRoute()
         override fun onAudioDevicesRemoved(removedDevices: Array<AudioDeviceInfo>) = refreshObservedRoute()
     }
