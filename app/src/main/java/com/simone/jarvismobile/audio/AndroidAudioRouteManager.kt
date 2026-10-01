@@ -8,6 +8,7 @@ import android.media.AudioManager
 import android.os.Build
 import android.util.Log
 import androidx.annotation.RequiresApi
+import androidx.core.content.ContextCompat
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -42,6 +43,83 @@ class AndroidAudioRouteManager @Inject constructor(
 
     private var previousMode: Int = AudioManager.MODE_NORMAL
     private var focusRequest: AudioFocusRequest? = null
+
+    // --- Live Voice Phase 0.4 — passive, continuous route observability ---
+    //
+    // Entirely separate from beginSession()/endSession() above: never
+    // selects/applies a device, never requests focus, never touches
+    // AudioManager.mode. It only classifies what Android itself already
+    // reports as connected/preferred/active right now, via two real
+    // platform callbacks — AudioManager.AudioDeviceCallback (device add/
+    // remove) and, API 31+, OnCommunicationDeviceChangedListener (a
+    // genuinely active communication device, from any source, not only
+    // this class's own dead beginSession() Bluetooth branch). Registered
+    // once, for this Singleton's entire lifetime (the same lifetime as
+    // audioManager itself) — not a leak, and deliberately not scoped to
+    // beginSession()/endSession() since that pairing is not reliably
+    // invoked today (see this class's own class-level doc comment / the
+    // Master Architecture's "Live Voice Phase 0.4" section for the audit
+    // this is derived from).
+    private val deviceCallback = object : AudioManager.AudioDeviceCallback() {
+        override fun onAudioDevicesAdded(addedDevices: Array<AudioDeviceInfo>) = refreshObservedRoute()
+        override fun onAudioDevicesRemoved(removedDevices: Array<AudioDeviceInfo>) = refreshObservedRoute()
+    }
+
+    @RequiresApi(Build.VERSION_CODES.S)
+    private val communicationDeviceListener =
+        AudioManager.OnCommunicationDeviceChangedListener { refreshObservedRoute() }
+
+    init {
+        runCatching { audioManager.registerAudioDeviceCallback(deviceCallback, null) }
+            .onFailure { Log.w(TAG, "register_audio_device_callback_failed ${it.javaClass.simpleName}") }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            runCatching {
+                audioManager.addOnCommunicationDeviceChangedListener(
+                    ContextCompat.getMainExecutor(context),
+                    communicationDeviceListener,
+                )
+            }.onFailure { Log.w(TAG, "register_communication_device_listener_failed ${it.javaClass.simpleName}") }
+        }
+        refreshObservedRoute()
+    }
+
+    /**
+     * Recomputes [AudioRouteState.observedInputKind]/[AudioRouteState.observedOutputKind]/
+     * [AudioRouteState.observedCommunicationDeviceKind] from real, current
+     * [AudioManager] state. Deliberately a SEPARATE preference-order helper
+     * from [selectInputEndpoint]/[currentOutputEndpoint] below, which stay
+     * untouched (zero risk to the live beginSession()/Bluetooth dance) —
+     * this one is pure observation, never a selection JARVIS acts on.
+     */
+    private fun refreshObservedRoute() {
+        val inputs = runCatching {
+            audioManager.getDevices(AudioManager.GET_DEVICES_INPUTS).map { it.toEndpoint(isSource = true) }
+        }.getOrDefault(emptyList())
+        val outputs = runCatching {
+            audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).map { it.toEndpoint(isSource = false) }
+        }.getOrDefault(emptyList())
+        val commKind = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            runCatching { audioManager.communicationDevice }.getOrNull()
+                ?.let { classify(it.type, it.productName?.toString().orEmpty()) }
+        } else {
+            null
+        }
+        _routeState.update {
+            it.copy(
+                observedInputKind = preferredKindOf(inputs),
+                observedOutputKind = preferredKindOf(outputs),
+                observedCommunicationDeviceKind = commKind,
+            )
+        }
+    }
+
+    /** Same closed-world preference order already used for live routing (AirPods > BT headset > wired > phone/speaker), applied here only for passive classification, never for selection. */
+    private fun preferredKindOf(endpoints: List<AudioEndpoint>): AudioDeviceKind {
+        for (kind in OBSERVATION_PREFERENCE_ORDER) {
+            if (endpoints.any { it.kind == kind }) return kind
+        }
+        return endpoints.firstOrNull()?.kind ?: AudioDeviceKind.UNKNOWN
+    }
 
     override suspend fun beginSession(preferBluetooth: Boolean): AudioEndpoint {
         previousMode = audioManager.mode
@@ -228,6 +306,14 @@ class AndroidAudioRouteManager @Inject constructor(
         const val TAG = "JarvisAudioRoute"
         /** Grace for the Bluetooth SCO voice link to come up before capturing. */
         const val SCO_SETTLE_MS = 350L
+        /** Live Voice Phase 0.4 — closed-world preference order for passive observation only (mirrors the existing live-routing preference, never used to select/apply anything). */
+        val OBSERVATION_PREFERENCE_ORDER = listOf(
+            AudioDeviceKind.AIRPODS,
+            AudioDeviceKind.BLUETOOTH_HEADSET,
+            AudioDeviceKind.WIRED_HEADSET,
+            AudioDeviceKind.PHONE,
+            AudioDeviceKind.SPEAKER,
+        )
     }
 }
 

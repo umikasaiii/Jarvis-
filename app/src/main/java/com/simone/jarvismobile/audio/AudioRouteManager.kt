@@ -33,6 +33,27 @@ data class AudioRouteState(
     val usingBluetoothInput: Boolean = false,
     /** Last technical audio error code (redacted; no personal data). */
     val lastError: String? = null,
+    /**
+     * Live Voice Phase 0.4 — passive, continuously observed classification
+     * of the best-available/preferred input device, kept current by
+     * [AudioManager.AudioDeviceCallback] for the manager's entire lifetime —
+     * entirely separate from [input] above (which stays session-scoped,
+     * populated only by [AudioRouteManager.beginSession]/[AudioRouteManager.endSession],
+     * unchanged by this phase). Reflects what IS CONNECTED/preferred right
+     * now, never proof that capture actually used it — the on-device
+     * recognizer owns its own mic path and exposes no such introspection to
+     * the app (docs/JARVIS_MASTER_ARCHITECTURE.md, "Live Voice Phase 0.4").
+     */
+    val observedInputKind: AudioDeviceKind = AudioDeviceKind.UNKNOWN,
+    val observedOutputKind: AudioDeviceKind = AudioDeviceKind.UNKNOWN,
+    /**
+     * Genuinely proven active communication device (`AudioManager.communicationDevice`,
+     * API 31+), classified — `null` means communication mode is not
+     * currently engaged (the normal case for a hands-free turn today, since
+     * capture/TTS never request it — see [AndroidAudioRouteManager]'s class
+     * doc comment) or the observation is unavailable, never inferred.
+     */
+    val observedCommunicationDeviceKind: AudioDeviceKind? = null,
 )
 
 /**

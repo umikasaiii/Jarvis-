@@ -1,5 +1,7 @@
 package com.simone.jarvismobile.audio
 
+import com.simone.jarvismobile.core.voice.ObservedAudioFocusState
+import com.simone.jarvismobile.core.voice.ObservedAudioRoute
 import com.simone.jarvismobile.core.voice.VoiceTurnFailureStage
 import com.simone.jarvismobile.core.voice.VoiceTurnOutcome
 import org.junit.Assert.assertEquals
@@ -241,5 +243,175 @@ class VoiceTurnDiagnosticsRecorderTest {
         val turns = recorder.history.value
         assertEquals(2, turns.size)
         assertNull(turns[1].userSpeechDurationMs)
+    }
+
+    // --- Live Voice Phase 0.4 — audio route + audio focus causal observability --
+
+    @Test
+    fun `a route observation with no in-flight turn is a safe no-op`() {
+        val recorder = VoiceTurnDiagnosticsRecorder()
+        recorder.markAudioRouteObservation(ObservedAudioRoute.PHONE, ObservedAudioRoute.PHONE, false)
+        assertEquals(0, recorder.history.value.size)
+    }
+
+    @Test
+    fun `a focus observation with no in-flight turn is a safe no-op`() {
+        val recorder = VoiceTurnDiagnosticsRecorder()
+        recorder.markAudioFocusObservation(ObservedAudioFocusState.GRANTED)
+        assertEquals(0, recorder.history.value.size)
+    }
+
+    @Test
+    fun `the first route observation of a turn becomes both initial and final, never a fabricated change`() {
+        val recorder = VoiceTurnDiagnosticsRecorder()
+        recorder.beginTurn(followUpIndex = 0)
+        recorder.markAudioRouteObservation(ObservedAudioRoute.PHONE, ObservedAudioRoute.SPEAKER, true)
+        recorder.finish(VoiceTurnOutcome.COMPLETED, VoiceTurnFailureStage.NONE)
+
+        val record = recorder.history.value.single()
+        assertEquals(ObservedAudioRoute.PHONE, record.initialInputRoute)
+        assertEquals(ObservedAudioRoute.PHONE, record.finalInputRoute)
+        assertEquals(ObservedAudioRoute.SPEAKER, record.initialOutputRoute)
+        assertEquals(ObservedAudioRoute.SPEAKER, record.finalOutputRoute)
+        assertEquals(true, record.communicationRouteAppliedAtStart)
+        assertEquals(false, record.routeChangedDuringTurn)
+        assertEquals(0, record.routeChangeCount)
+    }
+
+    @Test
+    fun `a genuine real route observation change bumps routeChangeCount and updates final`() {
+        val recorder = VoiceTurnDiagnosticsRecorder()
+        recorder.beginTurn(followUpIndex = 0)
+        recorder.markAudioRouteObservation(ObservedAudioRoute.PHONE, ObservedAudioRoute.PHONE, false)
+        recorder.markAudioRouteObservation(ObservedAudioRoute.BLUETOOTH_HEADSET, ObservedAudioRoute.PHONE, false)
+        recorder.finish(VoiceTurnOutcome.COMPLETED, VoiceTurnFailureStage.NONE)
+
+        val record = recorder.history.value.single()
+        assertEquals(ObservedAudioRoute.PHONE, record.initialInputRoute)
+        assertEquals(ObservedAudioRoute.BLUETOOTH_HEADSET, record.finalInputRoute)
+        assertEquals(true, record.routeChangedDuringTurn)
+        assertEquals(1, record.routeChangeCount)
+        assertEquals(true, record.bluetoothInputObserved)
+    }
+
+    @Test
+    fun `a duplicate route observation reporting the same value never fabricates a second change`() {
+        val recorder = VoiceTurnDiagnosticsRecorder()
+        recorder.beginTurn(followUpIndex = 0)
+        recorder.markAudioRouteObservation(ObservedAudioRoute.PHONE, ObservedAudioRoute.PHONE, false)
+        recorder.markAudioRouteObservation(ObservedAudioRoute.PHONE, ObservedAudioRoute.PHONE, false) // duplicate callback, same real state
+        recorder.markAudioRouteObservation(ObservedAudioRoute.PHONE, ObservedAudioRoute.PHONE, false) // another duplicate
+        recorder.finish(VoiceTurnOutcome.COMPLETED, VoiceTurnFailureStage.NONE)
+
+        val record = recorder.history.value.single()
+        assertEquals(0, record.routeChangeCount)
+        assertEquals(false, record.routeChangedDuringTurn)
+    }
+
+    @Test
+    fun `a late route observation after the turn already finished never mutates the finished record`() {
+        val recorder = VoiceTurnDiagnosticsRecorder()
+        recorder.beginTurn(followUpIndex = 0)
+        recorder.markAudioRouteObservation(ObservedAudioRoute.PHONE, ObservedAudioRoute.PHONE, false)
+        recorder.finish(VoiceTurnOutcome.COMPLETED, VoiceTurnFailureStage.NONE)
+
+        val before = recorder.history.value.single()
+        recorder.markAudioRouteObservation(ObservedAudioRoute.BLUETOOTH_HEADSET, ObservedAudioRoute.BLUETOOTH_HEADSET, true)
+
+        val after = recorder.history.value.single()
+        assertEquals(before, after)
+        assertEquals(0, after.routeChangeCount)
+    }
+
+    @Test
+    fun `initial focus granted with no later event is represented honestly through the recorder`() {
+        val recorder = VoiceTurnDiagnosticsRecorder()
+        recorder.beginTurn(followUpIndex = 0)
+        recorder.markAudioFocusObservation(ObservedAudioFocusState.GRANTED)
+        recorder.finish(VoiceTurnOutcome.COMPLETED, VoiceTurnFailureStage.NONE)
+
+        val record = recorder.history.value.single()
+        assertEquals(ObservedAudioFocusState.GRANTED, record.audioFocusAtStart)
+        assertEquals(false, record.audioFocusLostDuringTurn)
+        assertEquals(false, record.audioFocusRegainedDuringTurn)
+        assertEquals(0, record.focusChangeCount)
+    }
+
+    @Test
+    fun `a real focus loss then a real gain is recorded as lost and regained with a correct final state`() {
+        val recorder = VoiceTurnDiagnosticsRecorder()
+        recorder.beginTurn(followUpIndex = 0)
+        recorder.markAudioFocusObservation(ObservedAudioFocusState.GRANTED)
+        recorder.markAudioFocusObservation(ObservedAudioFocusState.LOST_TRANSIENT)
+        recorder.markAudioFocusObservation(ObservedAudioFocusState.GAIN)
+        recorder.finish(VoiceTurnOutcome.COMPLETED, VoiceTurnFailureStage.NONE)
+
+        val record = recorder.history.value.single()
+        assertEquals(true, record.audioFocusLostDuringTurn)
+        assertEquals(true, record.audioFocusRegainedDuringTurn)
+        assertEquals(2, record.focusChangeCount)
+    }
+
+    @Test
+    fun `a gain with no prior loss is never counted as a regain`() {
+        val recorder = VoiceTurnDiagnosticsRecorder()
+        recorder.beginTurn(followUpIndex = 0)
+        recorder.markAudioFocusObservation(ObservedAudioFocusState.GRANTED)
+        recorder.markAudioFocusObservation(ObservedAudioFocusState.GAIN) // no loss ever observed first
+        recorder.finish(VoiceTurnOutcome.COMPLETED, VoiceTurnFailureStage.NONE)
+
+        val record = recorder.history.value.single()
+        assertEquals(false, record.audioFocusLostDuringTurn)
+        assertEquals(false, record.audioFocusRegainedDuringTurn)
+    }
+
+    @Test
+    fun `a cancellation co-occurring with a real focus loss stays CANCELLED through the recorder, never reclassified`() {
+        val recorder = VoiceTurnDiagnosticsRecorder()
+        recorder.beginTurn(followUpIndex = 0)
+        recorder.markAudioFocusObservation(ObservedAudioFocusState.GRANTED)
+        recorder.markAudioFocusObservation(ObservedAudioFocusState.LOST_PERMANENT)
+        recorder.markCancellationRequested()
+        recorder.finishCancelled()
+
+        val record = recorder.history.value.single()
+        assertEquals(VoiceTurnOutcome.CANCELLED, record.outcome)
+        assertEquals(true, record.audioFocusLostDuringTurn)
+    }
+
+    @Test
+    fun `routeChangeCount and focusChangeCount are bounded and never grow without limit`() {
+        val recorder = VoiceTurnDiagnosticsRecorder()
+        recorder.beginTurn(followUpIndex = 0)
+        var route = ObservedAudioRoute.PHONE
+        repeat(200) {
+            route = if (route == ObservedAudioRoute.PHONE) ObservedAudioRoute.BLUETOOTH_HEADSET else ObservedAudioRoute.PHONE
+            recorder.markAudioRouteObservation(route, route, false)
+        }
+        recorder.finish(VoiceTurnOutcome.COMPLETED, VoiceTurnFailureStage.NONE)
+
+        val record = recorder.history.value.single()
+        assertTrue("expected routeChangeCount to be bounded, got ${record.routeChangeCount}", record.routeChangeCount <= 50)
+    }
+
+    @Test
+    fun `a new turn after a finished one starts with entirely clean route and focus evidence`() {
+        val recorder = VoiceTurnDiagnosticsRecorder()
+
+        recorder.beginTurn(followUpIndex = 0)
+        recorder.markAudioRouteObservation(ObservedAudioRoute.BLUETOOTH_HEADSET, ObservedAudioRoute.BLUETOOTH_HEADSET, true)
+        recorder.markAudioFocusObservation(ObservedAudioFocusState.GRANTED)
+        recorder.markAudioFocusObservation(ObservedAudioFocusState.LOST_PERMANENT)
+        recorder.finish(VoiceTurnOutcome.COMPLETED, VoiceTurnFailureStage.NONE)
+
+        recorder.beginTurn(followUpIndex = 1)
+        // No route/focus marks at all for this second turn.
+        recorder.finish(VoiceTurnOutcome.COMPLETED, VoiceTurnFailureStage.NONE)
+
+        val second = recorder.history.value[1]
+        assertEquals(ObservedAudioRoute.NOT_AVAILABLE, second.initialInputRoute)
+        assertEquals(ObservedAudioFocusState.NOT_AVAILABLE, second.audioFocusAtStart)
+        assertEquals(false, second.audioFocusLostDuringTurn)
+        assertEquals(0, second.routeChangeCount)
     }
 }

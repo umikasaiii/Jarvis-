@@ -100,6 +100,68 @@ data class VoiceTurnTimestamps(
 )
 
 /**
+ * Live Voice Phase 0.4 — bounded, privacy-safe classification of an audio
+ * endpoint observed by [com.simone.jarvismobile.audio.AndroidAudioRouteManager]
+ * — never a product name, MAC address, serial or any other Android device
+ * string. [NOT_AVAILABLE] means "never observed this turn" (e.g. platform
+ * evidence genuinely absent); it is distinct from [UNKNOWN], which means a
+ * device WAS observed but did not match any of the known closed-world
+ * classifications — the same distinction [com.simone.jarvismobile.audio.AudioDeviceKind]
+ * already draws for [UNKNOWN] alone, extended here with an explicit
+ * not-yet-observed case so a genuinely missing observation is never
+ * conflated with "observed but unclassifiable".
+ */
+enum class ObservedAudioRoute { PHONE, SPEAKER, WIRED_HEADSET, BLUETOOTH_HEADSET, AIRPODS, UNKNOWN, NOT_AVAILABLE }
+
+/**
+ * Live Voice Phase 0.4 — bounded, closed-world audio-focus observation.
+ * [GRANTED]/[DENIED]/[DELAYED] come only from `AudioManager.requestAudioFocus()`'s
+ * own return value (see [com.simone.jarvismobile.tts.AudioFocusGate.acquire]);
+ * [GAIN]/[LOST_PERMANENT]/[LOST_TRANSIENT]/[LOST_TRANSIENT_CAN_DUCK] come only
+ * from a real `AudioManager.OnAudioFocusChangeListener` callback — never
+ * inferred from the mere fact that a request was made. [NOT_AVAILABLE] means
+ * "never observed this turn" (distinct from [UNKNOWN], which means a real
+ * callback/result fired but did not map to any of the known constants).
+ */
+enum class ObservedAudioFocusState { GRANTED, DENIED, DELAYED, GAIN, LOST_PERMANENT, LOST_TRANSIENT, LOST_TRANSIENT_CAN_DUCK, UNKNOWN, NOT_AVAILABLE }
+
+/**
+ * Live Voice Phase 0.4 — raw, privacy-safe audio route/focus evidence for one
+ * voice turn, assembled by [com.simone.jarvismobile.audio.VoiceTurnDiagnosticsRecorder]
+ * from real platform callbacks forwarded by [com.simone.jarvismobile.audio.SessionCoordinator]
+ * (see that class's own doc comments for the exact observation contract).
+ * Every field is closed-world/bounded by construction — no field here can
+ * ever carry a product name, device id, or other free-form Android string.
+ *
+ * This is derived observability only, exactly like [VoiceTurnTimestamps]:
+ * nothing here ever drove, or is driven by, an actual routing/focus
+ * decision — [com.simone.jarvismobile.audio.AndroidAudioRouteManager] and
+ * [com.simone.jarvismobile.tts.AudioFocusGate] remain the sole authorities
+ * for that, unchanged by this phase.
+ */
+data class VoiceTurnAudioEvidence(
+    val initialInputRoute: ObservedAudioRoute = ObservedAudioRoute.NOT_AVAILABLE,
+    val initialOutputRoute: ObservedAudioRoute = ObservedAudioRoute.NOT_AVAILABLE,
+    val finalInputRoute: ObservedAudioRoute = ObservedAudioRoute.NOT_AVAILABLE,
+    val finalOutputRoute: ObservedAudioRoute = ObservedAudioRoute.NOT_AVAILABLE,
+    /**
+     * Whether a genuinely active communication device (`AudioManager.communicationDevice`,
+     * API 31+) was observed at the moment of the turn's first route
+     * observation. `null` means never observed this turn — never coerced to
+     * `false`, which would wrongly claim proof of absence.
+     */
+    val communicationRouteAppliedAtStart: Boolean? = null,
+    /** Bounded count of genuine (de-duplicated) route changes observed during the turn — never unbounded. */
+    val routeChangeCount: Int = 0,
+    val audioFocusAtStart: ObservedAudioFocusState = ObservedAudioFocusState.NOT_AVAILABLE,
+    val audioFocusLostDuringTurn: Boolean = false,
+    /** Only ever true if a loss was observed first — a gain with no prior loss is not a "regain". */
+    val audioFocusRegainedDuringTurn: Boolean = false,
+    /** Bounded count of genuine (de-duplicated) focus-state changes observed during the turn — never unbounded. */
+    val focusChangeCount: Int = 0,
+)
+
+/**
  * One structured, privacy-safe voice-turn timing record.
  *
  * Contains ONLY timestamps/durations/enums/counters/booleans — never
@@ -168,6 +230,22 @@ data class VoiceTurnDiagnostics(
      * never "conversational latency" or any other undocumented alias.
      */
     val responsePlaybackAfterSpeechMs: Long?,
+    /** Live Voice Phase 0.4 — see [VoiceTurnAudioEvidence]'s own doc comment for the observation contract. */
+    val initialInputRoute: ObservedAudioRoute,
+    val initialOutputRoute: ObservedAudioRoute,
+    val finalInputRoute: ObservedAudioRoute,
+    val finalOutputRoute: ObservedAudioRoute,
+    /** Derived only from [initialInputRoute]/[finalInputRoute] — never from mere Bluetooth connectivity, which proves nothing about what STT/capture actually used (§22: never infer "Bluetooth mic in use" from connectivity alone). */
+    val bluetoothInputObserved: Boolean,
+    val bluetoothOutputObserved: Boolean,
+    val communicationRouteAppliedAtStart: Boolean?,
+    /** True only when [routeChangeCount] is greater than zero — never inferred any other way. */
+    val routeChangedDuringTurn: Boolean,
+    val routeChangeCount: Int,
+    val audioFocusAtStart: ObservedAudioFocusState,
+    val audioFocusLostDuringTurn: Boolean,
+    val audioFocusRegainedDuringTurn: Boolean,
+    val focusChangeCount: Int,
 ) {
     companion object {
 
@@ -184,6 +262,8 @@ data class VoiceTurnDiagnostics(
             failureStage: VoiceTurnFailureStage,
             timestamps: VoiceTurnTimestamps,
             finishedAtMs: Long?,
+            /** Live Voice Phase 0.4 — defaulted so every existing caller/test is unaffected. */
+            audio: VoiceTurnAudioEvidence = VoiceTurnAudioEvidence(),
         ): VoiceTurnDiagnostics {
             val bargeInRequested = timestamps.bargeInRequestedAtMs != null
             // Only claimed when the barge-in request happened before (or at)
@@ -248,8 +328,24 @@ data class VoiceTurnDiagnostics(
                 userSpeechDurationMs = userSpeechDurationMs,
                 sttFinalizationAfterSpeechMs = sttFinalizationAfterSpeechMs,
                 responsePlaybackAfterSpeechMs = responsePlaybackAfterSpeechMs,
+                initialInputRoute = audio.initialInputRoute,
+                initialOutputRoute = audio.initialOutputRoute,
+                finalInputRoute = audio.finalInputRoute,
+                finalOutputRoute = audio.finalOutputRoute,
+                bluetoothInputObserved = audio.initialInputRoute.isBluetooth() || audio.finalInputRoute.isBluetooth(),
+                bluetoothOutputObserved = audio.initialOutputRoute.isBluetooth() || audio.finalOutputRoute.isBluetooth(),
+                communicationRouteAppliedAtStart = audio.communicationRouteAppliedAtStart,
+                routeChangedDuringTurn = audio.routeChangeCount > 0,
+                routeChangeCount = audio.routeChangeCount,
+                audioFocusAtStart = audio.audioFocusAtStart,
+                audioFocusLostDuringTurn = audio.audioFocusLostDuringTurn,
+                audioFocusRegainedDuringTurn = audio.audioFocusRegainedDuringTurn,
+                focusChangeCount = audio.focusChangeCount,
             )
         }
+
+        private fun ObservedAudioRoute.isBluetooth(): Boolean =
+            this == ObservedAudioRoute.BLUETOOTH_HEADSET || this == ObservedAudioRoute.AIRPODS
 
         /**
          * Infers which stage a cancellation/crash interrupted, from which

@@ -504,4 +504,184 @@ class VoiceTurnDiagnosticsTest {
         assertNull(record.sttFinalizationAfterSpeechMs)
         assertNull(record.responsePlaybackAfterSpeechMs)
     }
+
+    // --- Live Voice Phase 0.4 — audio route + audio focus causal observability --
+
+    private fun recordWithAudio(
+        audio: VoiceTurnAudioEvidence,
+        outcome: VoiceTurnOutcome = VoiceTurnOutcome.COMPLETED,
+        failureStage: VoiceTurnFailureStage = VoiceTurnFailureStage.NONE,
+    ) = VoiceTurnDiagnostics.compute(
+        turnId = "audio-test",
+        startedAtEpochMs = 0,
+        followUpIndex = 0,
+        cancellationRequested = false,
+        outcome = outcome,
+        failureStage = failureStage,
+        timestamps = full(),
+        finishedAtMs = 2400,
+        audio = audio,
+    )
+
+    @Test
+    fun `stable route across the turn leaves routeChangedDuringTurn false`() {
+        val record = recordWithAudio(
+            VoiceTurnAudioEvidence(
+                initialInputRoute = ObservedAudioRoute.PHONE,
+                finalInputRoute = ObservedAudioRoute.PHONE,
+                routeChangeCount = 0,
+            ),
+        )
+        assertEquals(false, record.routeChangedDuringTurn)
+        assertEquals(0, record.routeChangeCount)
+    }
+
+    @Test
+    fun `a genuine route change is represented as routeChangedDuringTurn true with the real count`() {
+        val record = recordWithAudio(
+            VoiceTurnAudioEvidence(
+                initialInputRoute = ObservedAudioRoute.PHONE,
+                finalInputRoute = ObservedAudioRoute.BLUETOOTH_HEADSET,
+                routeChangeCount = 1,
+            ),
+        )
+        assertEquals(true, record.routeChangedDuringTurn)
+        assertEquals(1, record.routeChangeCount)
+    }
+
+    @Test
+    fun `routeChangeCount passes through unaltered -- bounding itself is the recorder's job, never fabricated here`() {
+        val record = recordWithAudio(VoiceTurnAudioEvidence(routeChangeCount = 7))
+        assertEquals(7, record.routeChangeCount)
+        assertEquals(true, record.routeChangedDuringTurn)
+    }
+
+    @Test
+    fun `input and output route remain independently tracked, never swapped or conflated`() {
+        val record = recordWithAudio(
+            VoiceTurnAudioEvidence(
+                initialInputRoute = ObservedAudioRoute.BLUETOOTH_HEADSET,
+                initialOutputRoute = ObservedAudioRoute.PHONE,
+                finalInputRoute = ObservedAudioRoute.BLUETOOTH_HEADSET,
+                finalOutputRoute = ObservedAudioRoute.SPEAKER,
+            ),
+        )
+        assertEquals(ObservedAudioRoute.BLUETOOTH_HEADSET, record.initialInputRoute)
+        assertEquals(ObservedAudioRoute.PHONE, record.initialOutputRoute)
+        assertEquals(ObservedAudioRoute.BLUETOOTH_HEADSET, record.finalInputRoute)
+        assertEquals(ObservedAudioRoute.SPEAKER, record.finalOutputRoute)
+        assertEquals(true, record.bluetoothInputObserved)
+        assertEquals(false, record.bluetoothOutputObserved)
+    }
+
+    @Test
+    fun `bluetooth input observed is derived only from the actual input route, never from mere connectivity`() {
+        // Input stayed PHONE the entire turn; a Bluetooth device could be
+        // connected elsewhere in the system, but that is not this field's
+        // source of truth -- only initialInputRoute/finalInputRoute are.
+        val record = recordWithAudio(
+            VoiceTurnAudioEvidence(
+                initialInputRoute = ObservedAudioRoute.PHONE,
+                finalInputRoute = ObservedAudioRoute.PHONE,
+            ),
+        )
+        assertEquals(false, record.bluetoothInputObserved)
+    }
+
+    @Test
+    fun `initial focus granted with no later event is represented honestly -- no loss, no fabricated change`() {
+        val record = recordWithAudio(
+            VoiceTurnAudioEvidence(
+                audioFocusAtStart = ObservedAudioFocusState.GRANTED,
+                audioFocusLostDuringTurn = false,
+                audioFocusRegainedDuringTurn = false,
+                focusChangeCount = 0,
+            ),
+        )
+        assertEquals(ObservedAudioFocusState.GRANTED, record.audioFocusAtStart)
+        assertEquals(false, record.audioFocusLostDuringTurn)
+        assertEquals(false, record.audioFocusRegainedDuringTurn)
+        assertEquals(0, record.focusChangeCount)
+    }
+
+    @Test
+    fun `a real focus loss is recorded as audioFocusLostDuringTurn true`() {
+        val record = recordWithAudio(
+            VoiceTurnAudioEvidence(
+                audioFocusAtStart = ObservedAudioFocusState.GRANTED,
+                audioFocusLostDuringTurn = true,
+                focusChangeCount = 1,
+            ),
+        )
+        assertEquals(true, record.audioFocusLostDuringTurn)
+        assertEquals(1, record.focusChangeCount)
+    }
+
+    @Test
+    fun `loss then gain records both -- lost and regained -- with the final state correct`() {
+        val record = recordWithAudio(
+            VoiceTurnAudioEvidence(
+                audioFocusAtStart = ObservedAudioFocusState.GRANTED,
+                audioFocusLostDuringTurn = true,
+                audioFocusRegainedDuringTurn = true,
+                focusChangeCount = 2,
+            ),
+        )
+        assertEquals(true, record.audioFocusLostDuringTurn)
+        assertEquals(true, record.audioFocusRegainedDuringTurn)
+        assertEquals(2, record.focusChangeCount)
+    }
+
+    @Test
+    fun `a fresh turn's default audio evidence is entirely clean -- never available, never changed, never lost`() {
+        val record = recordWithAudio(VoiceTurnAudioEvidence())
+        assertEquals(ObservedAudioRoute.NOT_AVAILABLE, record.initialInputRoute)
+        assertEquals(ObservedAudioRoute.NOT_AVAILABLE, record.initialOutputRoute)
+        assertEquals(ObservedAudioRoute.NOT_AVAILABLE, record.finalInputRoute)
+        assertEquals(ObservedAudioRoute.NOT_AVAILABLE, record.finalOutputRoute)
+        assertNull(record.communicationRouteAppliedAtStart)
+        assertEquals(false, record.routeChangedDuringTurn)
+        assertEquals(0, record.routeChangeCount)
+        assertEquals(ObservedAudioFocusState.NOT_AVAILABLE, record.audioFocusAtStart)
+        assertEquals(false, record.audioFocusLostDuringTurn)
+        assertEquals(false, record.audioFocusRegainedDuringTurn)
+        assertEquals(0, record.focusChangeCount)
+    }
+
+    @Test
+    fun `no field of VoiceTurnAudioEvidence can ever carry a product name, device id or other free-form string`() {
+        val offending = VoiceTurnAudioEvidence::class.java.declaredFields
+            .filterNot { it.isSynthetic }
+            .filterNot {
+                it.type == java.lang.Boolean::class.java || it.type == Boolean::class.javaPrimitiveType ||
+                    it.type == Int::class.javaPrimitiveType || it.type.isEnum
+            }
+        assertEquals(
+            emptyList<String>(),
+            offending.map { "${it.name}:${it.type}" },
+            "VoiceTurnAudioEvidence must only ever carry Int/Boolean/enum fields",
+        )
+    }
+
+    @Test
+    fun `an unknown route stays UNKNOWN -- never silently coerced into a known classification`() {
+        val record = recordWithAudio(
+            VoiceTurnAudioEvidence(initialInputRoute = ObservedAudioRoute.UNKNOWN, finalInputRoute = ObservedAudioRoute.UNKNOWN),
+        )
+        assertEquals(ObservedAudioRoute.UNKNOWN, record.initialInputRoute)
+        assertEquals(ObservedAudioRoute.UNKNOWN, record.finalInputRoute)
+        assertEquals(false, record.bluetoothInputObserved)
+    }
+
+    @Test
+    fun `a cancellation co-occurring with a focus loss is still reported as CANCELLED, never reclassified as a focus failure`() {
+        val record = recordWithAudio(
+            audio = VoiceTurnAudioEvidence(audioFocusLostDuringTurn = true, focusChangeCount = 1),
+            outcome = VoiceTurnOutcome.CANCELLED,
+            failureStage = VoiceTurnFailureStage.STT,
+        )
+        assertEquals(VoiceTurnOutcome.CANCELLED, record.outcome)
+        assertEquals(VoiceTurnFailureStage.STT, record.failureStage)
+        assertEquals(true, record.audioFocusLostDuringTurn)
+    }
 }

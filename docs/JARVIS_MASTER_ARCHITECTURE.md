@@ -4224,7 +4224,7 @@ ARCHITECTURE MANUAL          AVAILABLE
 TARGET ARCHITECTURE          AVAILABLE
 DEEP AUDIT                   AVAILABLE
 SEGNALE                      AVAILABLE
-MASTER ARCHITECTURE          THIS FILE / v1.21
+MASTER ARCHITECTURE          THIS FILE / v1.22
 
 ANDROID-FIRST                ACTIVE
 CORE OPTIONAL ENHANCER       ACTIVE
@@ -4259,6 +4259,7 @@ LIVE VOICE FOUNDATION        ACTIVE PARALLEL TRACK
 LIVE VOICE PHASE 0.1         CI VERIFIED (#460) / DEVICE PENDING
 LIVE VOICE PHASE 0.2         CI VERIFIED (#462) / DEVICE PENDING
 LIVE VOICE PHASE 0.3         CI VERIFIED (#464) / DEVICE PENDING
+LIVE VOICE PHASE 0.4         CODE PRESENT / AUTOMATED TESTED (core 1560/1560) / CI PENDING THIS PUSH / DEVICE PENDING
 LLM-TOKEN→TTS STREAMING      NOT IMPLEMENTED
 FULL LIVE VOICE              NOT DEVICE VERIFIED
 
@@ -5721,7 +5722,286 @@ automaticamente lo streaming LLM→TTS reale.**
 
 ---
 
+# 131.5 LIVE VOICE PHASE 0.4 — AUDIO ROUTE + AUDIO FOCUS CAUSAL OBSERVABILITY
+
+Status: **CODE PRESENT / AUTOMATED TESTED (`:core` 1560/1560, +12) / CI
+PENDING THIS PUSH / DEVICE VERIFIED ❌**.
+
+Estende (mai sostituisce) §129/§130/§131: chiude il prossimo gap di
+osservabilità — route audio e audio focus durante un turno vocale — senza
+alcun cambio di comportamento/routing/semantica. §0 Baseline Gate completo:
+TRUE remote HEAD confermato `75bfa9577ff893b251d0809f783ca8d2deca4629`
+(il commit PA-1B's docs-confirmation), CI run #472/#473 `completed`/`success`
+riverificati via GitHub Actions API, Master Architecture + CLAUDE.md riletti
+per intero.
+
+## 131.5.1 Audit — una scoperta reale, non assunta
+
+Il task assumeva che `AndroidAudioRouteManager` gestisse attivamente il
+routing durante ogni turno vocale. La trace `costruzione → DI → callsite →
+consumer` (§131.5.2) ha provato invece, leggendo il codice e non
+ipotizzando, che:
+
+- **`AndroidAudioRouteManager.beginSession()` non ha ALCUN call site** in
+  tutto `app/` — zero chiamate, verificato via grep su tutto il repository.
+  Solo `endSession()` viene chiamato (da `SessionCoordinator.resetAudio()`).
+  Questo non è un bug: il doc comment di classe di `SessionCoordinator`
+  stesso lo dichiara esplicitamente come scelta architetturale intenzionale
+  — "no audio-focus/communication-mode juggling around listening — that was
+  what blocked the mic on MagicOS" — il percorso di cattura usa
+  `android.speech.SpeechRecognizer` (che apre il proprio mic internamente,
+  nessuna introspezione possibile da parte dell'app) e non la danza
+  comunicazione/focus di `beginSession()`'s ramo Bluetooth.
+- Il vero, **reale e vivo** proprietario dell'audio focus durante un turno
+  non è `AndroidAudioRouteManager` (il cui `AudioRouteState.hasAudioFocus`
+  resta sempre al suo default `false`, mai popolato) ma **`AudioFocusGate`**
+  (`app/tts/`), usato da `HybridTtsEngine.speak()`/`stop()` per il solo
+  output TTS (`focus.acquire { stop() }`/`focus.release()`) — una classe non
+  nominata dal task ma scoperta dall'audit stesso, esattamente il tipo di
+  divergenza che l'istruzione "Do not assume. Prove from code." anticipava.
+  Prima di questa fase, il risultato reale di `requestAudioFocus()` veniva
+  scartato del tutto (`runCatching { audioManager.requestAudioFocus(built) }`,
+  mai letto), e i quattro valori di `OnAudioFocusChangeListener` venivano
+  collassati in un'unica decisione booleana (perdita permanente e transitoria
+  trattate identicamente per fermare la riproduzione — comportamento
+  **invariato** da questa fase, solo ora osservato onestamente).
+
+## 131.5.2 Trace reale (costruzione → DI → callsite → consumer)
+
+```text
+AudioRouteManager (interfaccia) ← AudioModule.bindAudioRouteManager
+  → AndroidAudioRouteManager (@Singleton)
+      - beginSession(): ZERO call site in app/ (verificato via grep)
+      - endSession(): un solo call site, SessionCoordinator.resetAudio()
+      - routeState: StateFlow<AudioRouteState>, esposto da
+        SessionCoordinator.routeState (letto dalla UI)
+      - NUOVO: AudioManager.AudioDeviceCallback + (API 31+, sempre vera
+        dato minSdk=31) OnCommunicationDeviceChangedListener, registrati
+        una sola volta nell'init{} del Singleton (stessa vita del processo,
+        mai un leak) → refreshObservedRoute() aggiorna
+        observedInputKind/observedOutputKind/observedCommunicationDeviceKind
+
+AudioFocusGate (app/tts/, @Singleton) ← HybridTtsEngine (unico consumer)
+  - acquire()/release(): comportamento INVARIATO
+  - NUOVO: focusEvents: SharedFlow<AudioFocusObservation> (GRANTED/DENIED/
+    DELAYED dal vero valore di ritorno di requestAudioFocus(), mai scartato;
+    GAIN/LOST_PERMANENT/LOST_TRANSIENT/LOST_TRANSIENT_CAN_DUCK/UNKNOWN da
+    OGNI valore reale del callback, non solo i due già gestiti)
+
+TextToSpeechEngine (interfaccia) ← HybridTtsEngine
+  - NUOVO: audioFocusEvents: SharedFlow<AudioFocusObservation> =
+    focus.focusEvents (passthrough diretto, nessun bridging necessario)
+
+SessionCoordinator.init{} (NUOVO, due collector per l'intera vita del
+coordinatore, mai scoped a un singolo turno — mark* è già un no-op sicuro
+fuori da un turno in corso)
+  → audioRouteManager.routeState.map{...}.distinctUntilChanged().collect{}
+      → voiceDiagnostics.markAudioRouteObservation(input, output, commActive)
+  → tts.audioFocusEvents.collect{}
+      → voiceDiagnostics.markAudioFocusObservation(state)
+
+VoiceTurnDiagnosticsRecorder (unico owner di timing/turno, invariato)
+  - MutableTurn guadagna l'accumulo raw (initial*/final*/lastKnown*/
+    routeChangeCount/focusChangeCount, de-duplicato, bounded a 50)
+  - toAudioEvidence() → VoiceTurnAudioEvidence passato a
+    VoiceTurnDiagnostics.compute(..., audio = ...) in finish()
+
+VoiceTurnDiagnostics (:core, puro) — ESTESO additivamente
+  - ObservedAudioRoute/ObservedAudioFocusState (enum closed-world, con
+    NOT_AVAILABLE distinto da UNKNOWN)
+  - VoiceTurnAudioEvidence (raw evidence)
+  - initialInputRoute/initialOutputRoute/finalInputRoute/finalOutputRoute/
+    bluetoothInputObserved/bluetoothOutputObserved/
+    communicationRouteAppliedAtStart/routeChangedDuringTurn/routeChangeCount/
+    audioFocusAtStart/audioFocusLostDuringTurn/audioFocusRegainedDuringTurn/
+    focusChangeCount — tutti derivati puramente in compute()
+
+DiagnosticsScreen.kt "Diagnostica vocale (debug)" (riusata, non una nuova
+schermata) — due nuove righe bounded per turno: route=X→Y · btIn=sì/no ·
+cambiRoute=N, e focus=inizio:X·perso:Y·ripreso:Z · cambiFocus=N
+```
+
+## 131.5.3 Risposta esplicita a §6 del task
+
+**`AudioRouteState` era snapshot-only, non genuinamente live, prima di
+questa fase** — provato dal grep di cui sopra, non assunto: `input`/`output`
+restavano ai valori di default (mai popolati) perché `beginSession()` non
+viene mai chiamato; l'unico scrittore reale, `endSession()`, resetta a un
+nuovo `AudioRouteState()` default preservando solo `bluetoothConnected`/
+`airPodsDetected` (anch'essi mai realmente popolati). Questa fase rende
+`observedInputKind`/`observedOutputKind`/`observedCommunicationDeviceKind`
+**genuinamente live** (aggiornati da callback di piattaforma reali, non da
+begin/end) **senza toccare** `input`/`output`/`hasAudioFocus`/
+`requestedCommunicationDevice`/`communicationDeviceApplied` esistenti, che
+restano esattamente come prima (session-scoped, invariati) — due concetti
+distinti e onestamente separati, mai conflati.
+
+**`hasAudioFocus` era initial-request-only (anzi: il suo stesso valore di
+ritorno era scartato del tutto)** — `AndroidAudioRouteManager.requestFocus()`
+confronta il risultato con `AUDIOFOCUS_REQUEST_GRANTED` ma quel campo non
+viene mai realmente usato per TTS (che passa invece da `AudioFocusGate`,
+mai letto da `AndroidAudioRouteManager`). `AudioFocusGate.acquire()`
+scartava il proprio risultato di `requestAudioFocus()` con un
+`runCatching { ... }` il cui valore non veniva mai letto — zero segnale
+su DENIED/DELAYED. Questa fase rende il grant iniziale osservabile
+(`GRANTED`/`DENIED`/`DELAYED`/`UNKNOWN`) e distingue perdita permanente da
+transitoria da transitoria-con-duck da guadagno — mai più una singola
+decisione booleana collassata.
+
+## 131.5.4 Owner reali confermati (nessun secondo owner introdotto)
+
+- `AndroidAudioRouteManager` resta l'unico platform-routing owner — i nuovi
+  callback (`AudioDeviceCallback`/`OnCommunicationDeviceChangedListener`)
+  vivono lì, non in `SessionCoordinator`/altrove.
+- `AudioFocusGate` resta l'unico audio-focus owner (per TTS) — nessun
+  `AudioFocusController2` creato, la nuova osservabilità estende la classe
+  già esistente.
+- `TextToSpeechEngine`/`HybridTtsEngine` restano l'unico TTS owner —
+  `audioFocusEvents` è solo un passthrough, nessuna seconda pipeline.
+- `VoiceTurnDiagnosticsRecorder` resta l'unico timing/turn recorder —
+  nessun `System.nanoTime()` sparso nel codice di routing (i nuovi campi
+  sono stato/enum/contatori, non timestamp propri).
+- `SessionCoordinator` osserva e inoltra soltanto — non gestisce mai
+  `AudioManager` direttamente, non introduce una seconda session lifecycle.
+
+## 131.5.5 Fencing eventi stantii — riuso dell'identità esistente
+
+Nessun nuovo meccanismo di identità/finestra temporale introdotto: i due
+collector in `SessionCoordinator.init{}` girano per l'intera vita del
+coordinatore (mai scoped a un turno), e `VoiceTurnDiagnosticsRecorder.mark*`
+è già, per ogni altro campo esistente, un no-op sicuro quando
+`current == null` (nessun turno in corso) — lo stesso identico gate
+riusato qui, senza introdurre un token opaco aggiuntivo. Un evento
+osservato fra due turni o dopo `finish()` è quindi strutturalmente
+inerte, mai applicato al record sbagliato.
+
+## 131.5.6 Deliberatamente NON fatto (§21/§18, invariato)
+
+Nessuna modifica a: percorso minimale PHONE/workaround MagicOS, policy
+MODE_IN_COMMUNICATION, preferenza Bluetooth, `SCO_SETTLE_MS`, selezione
+motore TTS, retry STT, comportamento wake-word, loop follow-up, barge-in,
+routing LLM. Nessun VAD acustico/AEC3/full-duplex/streaming LLM→TTS/nuovo
+wake-word/arbitro microfono/seconda `AudioTrack`/nuovo router audio/
+planner/cambio semantico/integrazione Persistent Agent.
+
+## 131.5.7 Privacy
+
+Zero nomi prodotto/MAC/seriale/stringa Android libera in
+`VoiceTurnAudioEvidence`/`VoiceTurnDiagnostics` — provato per riflessione
+Java pura (`VoiceTurnDiagnosticsTest`, un test dedicato verifica che ogni
+campo sia solo `Int`/`Boolean`/enum). Nessuna nuova egress, nessun audio/
+transcript/risposta persistiti.
+
+## 131.5.8 Test
+
+24 nuovi, zero regressioni: 12 puri `:core`
+(`VoiceTurnDiagnosticsTest.kt` — route stabile/cambiata/passthrough-bounded/
+input-output distinti/bluetooth-derivato-solo-da-route/focus-iniziale-
+onesto/perdita/perdita-poi-guadagno/evidenza-pulita-di-default/riflessione-
+nessun-campo-libero/UNKNOWN-mai-coerciso/cancellazione-non-riclassificata-
+da-focus) + 12 `app/` (`VoiceTurnDiagnosticsRecorderTest.kt` — no-op senza
+turno (route e focus separatamente), prima osservazione mai un cambio
+fabbricato, cambio genuino conta, duplicato non fabbrica un secondo
+cambio, evento tardivo dopo finish non muta, focus onesto senza eventi
+successivi, perdita+guadagno entrambi registrati, guadagno senza perdita
+precedente mai un "regain", cancellazione+perdita focus resta CANCELLED,
+bound a 50 mai superato, nuovo turno parte pulito) — scritti, non
+eseguibili in questo ambiente (nessun SDK Android), CI/device-pending come
+ogni altra modifica `app/` di questo progetto. `cd core && ./gradlew test`
+verde — **1560/1560** (nessuna regressione sui 1548 preesistenti).
+
+## 131.5.9 Semantic/Protocol/Privacy Impact Check
+
+Tutti NO — nessun dominio/intent/operazione/slot/classificatore/dataset/
+retraining/calibrazione/OOD toccato, `BLIND` non toccato, `core/semantic/*`
+non toccato (verificato via grep); `jarvis-protocol`/`jarvis-core` non
+toccati; nessuna nuova egress.
+
+## 131.5.10 Device Acceptance
+
+**Non eseguita in questo pass**, come esplicitamente richiesto — vedi
+`docs/DEVICE_TEST_LIVE_VOICE_PHASE_0_4.md` (7 scenari A-G). Il candidato
+Honor `1236015` (pinnato da MICRO-PATCH E.1) **resta pinnato**, nessuna
+nuova APK di questo commit lo sostituisce.
+
+## 131.5.11 Conferme esplicite richieste
+
+- DEVICE VERIFIED: **NO**.
+- PA-2: **NOT STARTED** — non toccato da questa fase.
+- Pass 14B: **PAUSED/USER-PC REQUIRED** — non toccato.
+- Pass 15: **NOT STARTED** — non toccato.
+- BLIND: **UNTOUCHED** — non toccato.
+- Honor candidate `1236015`: **PINNED** — invariato.
+- Work Package E: **OPEN** — non applicabile a questo passaggio.
+
+**Fermato qui, come esplicitamente richiesto — non avviata
+automaticamente la Phase 0.5, full-duplex, VAD/AEC o LLM streaming.**
+
+---
+
 # 132. MASTER CHANGELOG
+
+## v1.22 — 2026-10-01
+
+**LIVE VOICE PHASE 0.4 — AUDIO ROUTE + AUDIO FOCUS CAUSAL OBSERVABILITY.**
+§0 Baseline Gate completo: TRUE remote HEAD confermato
+`75bfa9577ff893b251d0809f783ca8d2deca4629`, CI run #472/#473
+`completed`/`success` riverificati, Master Architecture + CLAUDE.md riletti
+per intero, implementazione corrente di Live Voice Phase 0.1/0.2/0.3
+ispezionata.
+
+**Scoperta reale dall'audit (§131.5.1), non assunta dal task**: a differenza
+di quanto il task assumeva, `AndroidAudioRouteManager.beginSession()` non ha
+ALCUN call site in `app/` (verificato via grep) — il percorso di cattura usa
+esclusivamente `android.speech.SpeechRecognizer`, per scelta architetturale
+già documentata nel doc comment di `SessionCoordinator` stesso (il
+workaround MagicOS). Il vero, vivo proprietario dell'audio focus durante un
+turno è `AudioFocusGate` (`app/tts/`, usato da `HybridTtsEngine` per il solo
+output TTS), non nominato dal task ma scoperto dall'audit — prima di questa
+fase il suo `requestAudioFocus()` scartava interamente il proprio risultato,
+e i quattro valori `OnAudioFocusChangeListener` collassavano in un'unica
+decisione booleana (comportamento invariato, solo ora osservato onestamente).
+
+Estesi additivamente, nessun secondo owner introdotto: `AndroidAudioRouteManager`
+guadagna un `AudioManager.AudioDeviceCallback` + (API 31+, sempre vera dato
+minSdk=31) `OnCommunicationDeviceChangedListener`, registrati una sola volta
+per l'intera vita del Singleton, che popolano tre nuovi campi
+genuinamente live su `AudioRouteState` (`observedInputKind`/
+`observedOutputKind`/`observedCommunicationDeviceKind`) — distinti e mai
+conflati con i campi session-scoped esistenti (`input`/`output`/
+`hasAudioFocus`, invariati). `AudioFocusGate` guadagna un
+`focusEvents: SharedFlow<AudioFocusObservation>` (GRANTED/DENIED/DELAYED dal
+vero valore di `requestAudioFocus()`, mai più scartato; GAIN/LOST_PERMANENT/
+LOST_TRANSIENT/LOST_TRANSIENT_CAN_DUCK/UNKNOWN da ogni valore reale del
+callback) esposto via `TextToSpeechEngine.audioFocusEvents`
+(`HybridTtsEngine`, passthrough diretto). `SessionCoordinator` guadagna due
+collector nel proprio `init{}` (mai scoped a un singolo turno — il recorder
+è già un no-op sicuro fuori da un turno in corso, nessun nuovo token di
+identità necessario) che inoltrano a `VoiceTurnDiagnosticsRecorder`, estesa
+con `VoiceTurnAudioEvidence` accumulata per turno (de-duplicata, contatori
+bounded a 50). `:core`'s `VoiceTurnDiagnostics` estesa additivamente con
+`ObservedAudioRoute`/`ObservedAudioFocusState` (closed-world, `NOT_AVAILABLE`
+distinto da `UNKNOWN`) e 12 nuovi campi derivati puramente in `compute()`.
+La card "Diagnostica vocale (debug)" esistente (mai una nuova schermata)
+guadagna due righe bounded per turno.
+
+Zero cambio di comportamento/routing/focus/TTS/STT/semantica/protocollo —
+solo osservabilità, come richiesto esplicitamente. Nessun nome prodotto/
+MAC/seriale mai esposto (provato per riflessione Java pura).
+
+**Test**: 24 nuovi — 12 puri `:core` (`VoiceTurnDiagnosticsTest.kt`) + 12
+`app/` (`VoiceTurnDiagnosticsRecorderTest.kt`, scritti non eseguibili in
+questo ambiente) — `cd core && ./gradlew test` verde, **1560/1560**, nessuna
+regressione sui 1548 preesistenti.
+
+**Device acceptance: NON eseguita in questo pass**, come esplicitamente
+richiesto — vedi `docs/DEVICE_TEST_LIVE_VOICE_PHASE_0_4.md` (7 scenari).
+Candidato Honor `1236015` resta PINNED, invariato. Confermati tutti i
+freeze-state: PA-2 NOT STARTED, Pass 14B PAUSED, Pass 15 NOT STARTED, BLIND
+UNTOUCHED, Work Package E OPEN. `jarvis-core`/`jarvis-protocol` non toccati.
+
+**STOP ESPLICITO dopo Phase 0.4, come da istruzione vincolante — Phase 0.5,
+full-duplex, VAD/AEC e LLM streaming non iniziati automaticamente.**
 
 ## v1.21 — 2026-10-01
 

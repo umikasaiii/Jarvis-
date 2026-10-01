@@ -14,9 +14,12 @@ import com.simone.jarvismobile.core.state.ConversationEvent
 import com.simone.jarvismobile.core.state.ConversationState
 import com.simone.jarvismobile.core.state.ConversationStateMachine
 import com.simone.jarvismobile.core.state.RouteTarget
+import com.simone.jarvismobile.core.voice.ObservedAudioFocusState
+import com.simone.jarvismobile.core.voice.ObservedAudioRoute
 import com.simone.jarvismobile.core.voice.VoiceTurnDiagnostics
 import com.simone.jarvismobile.core.voice.VoiceTurnFailureStage
 import com.simone.jarvismobile.core.voice.VoiceTurnOutcome
+import com.simone.jarvismobile.tts.AudioFocusObservation
 import com.simone.jarvismobile.core.routing.AssistantReplyCleaner
 import com.simone.jarvismobile.core.routing.ComplexityHeuristic
 import com.simone.jarvismobile.core.routing.ToolIntentGate
@@ -65,7 +68,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onSubscription
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -152,6 +157,39 @@ class SessionCoordinator @Inject constructor(
                     _lastError.value = null
                     machine.dispatch(ConversationEvent.Reset) // -> Idle
                 }
+            }
+        }
+
+        // Live Voice Phase 0.4 — forwards real, continuously observed route/
+        // focus evidence into VoiceTurnDiagnosticsRecorder. Both collectors
+        // run for this coordinator's entire lifetime (mirroring the
+        // auto-recovery collector just above) rather than being scoped to
+        // a single turn: voiceDiagnostics.mark*() is already a safe no-op
+        // outside an in-flight turn (see VoiceTurnDiagnosticsRecorder's own
+        // doc comment), so nothing here manages AudioManager itself or
+        // introduces a second session lifecycle — it only observes and
+        // forwards what AndroidAudioRouteManager/AudioFocusGate (the real,
+        // unchanged owners) already report.
+        scope.launch {
+            audioRouteManager.routeState
+                .map { Triple(it.observedInputKind, it.observedOutputKind, it.observedCommunicationDeviceKind) }
+                .distinctUntilChanged()
+                .collect { (input, output, comm) ->
+                    // Build >= S (minSdk is 31 = S itself, so this observation
+                    // is always genuinely available on any device this app
+                    // runs on) — null from AndroidAudioRouteManager means a
+                    // real, successful query that found no active
+                    // communication device, i.e. proven false, never unknown.
+                    voiceDiagnostics.markAudioRouteObservation(
+                        input = input.toObservedAudioRoute(),
+                        output = output.toObservedAudioRoute(),
+                        communicationDeviceActive = comm != null,
+                    )
+                }
+        }
+        scope.launch {
+            tts.audioFocusEvents.collect { event ->
+                voiceDiagnostics.markAudioFocusObservation(event.toObservedAudioFocusState())
             }
         }
     }
@@ -2447,4 +2485,26 @@ class SessionCoordinator @Inject constructor(
         )
         private const val TAG = "JarvisSession"
     }
+}
+
+/** Live Voice Phase 0.4 — maps the app-side closed-world route classification onto :core's mirror enum. Exhaustive `when`: a future AudioDeviceKind value fails to compile here, never silently falls through. */
+private fun AudioDeviceKind.toObservedAudioRoute(): ObservedAudioRoute = when (this) {
+    AudioDeviceKind.PHONE -> ObservedAudioRoute.PHONE
+    AudioDeviceKind.SPEAKER -> ObservedAudioRoute.SPEAKER
+    AudioDeviceKind.WIRED_HEADSET -> ObservedAudioRoute.WIRED_HEADSET
+    AudioDeviceKind.BLUETOOTH_HEADSET -> ObservedAudioRoute.BLUETOOTH_HEADSET
+    AudioDeviceKind.AIRPODS -> ObservedAudioRoute.AIRPODS
+    AudioDeviceKind.UNKNOWN -> ObservedAudioRoute.UNKNOWN
+}
+
+/** Live Voice Phase 0.4 — maps [AudioFocusObservation] (tts/ package) onto :core's mirror enum. Exhaustive `when`. */
+private fun AudioFocusObservation.toObservedAudioFocusState(): ObservedAudioFocusState = when (this) {
+    AudioFocusObservation.GRANTED -> ObservedAudioFocusState.GRANTED
+    AudioFocusObservation.DENIED -> ObservedAudioFocusState.DENIED
+    AudioFocusObservation.DELAYED -> ObservedAudioFocusState.DELAYED
+    AudioFocusObservation.GAIN -> ObservedAudioFocusState.GAIN
+    AudioFocusObservation.LOST_PERMANENT -> ObservedAudioFocusState.LOST_PERMANENT
+    AudioFocusObservation.LOST_TRANSIENT -> ObservedAudioFocusState.LOST_TRANSIENT
+    AudioFocusObservation.LOST_TRANSIENT_CAN_DUCK -> ObservedAudioFocusState.LOST_TRANSIENT_CAN_DUCK
+    AudioFocusObservation.UNKNOWN -> ObservedAudioFocusState.UNKNOWN
 }

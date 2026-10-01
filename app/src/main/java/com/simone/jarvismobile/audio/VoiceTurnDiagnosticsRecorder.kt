@@ -1,5 +1,8 @@
 package com.simone.jarvismobile.audio
 
+import com.simone.jarvismobile.core.voice.ObservedAudioFocusState
+import com.simone.jarvismobile.core.voice.ObservedAudioRoute
+import com.simone.jarvismobile.core.voice.VoiceTurnAudioEvidence
 import com.simone.jarvismobile.core.voice.VoiceTurnDiagnostics
 import com.simone.jarvismobile.core.voice.VoiceTurnFailureStage
 import com.simone.jarvismobile.core.voice.VoiceTurnOutcome
@@ -52,6 +55,79 @@ class VoiceTurnDiagnosticsRecorder @Inject constructor() {
         @Volatile var speechStartedAtMs: Long? = null
         @Volatile var speechEndedAtMs: Long? = null
         @Volatile var cancellationRequested: Boolean = false
+
+        // Live Voice Phase 0.4 — raw audio route/focus accumulation. `null`
+        // for the two "*route"/"*FocusState" pairs below means "never
+        // observed yet this turn" (the first real observation captures
+        // initial*; every value — including the first — becomes final*/the
+        // new focus state immediately, so a turn with exactly one
+        // observation correctly reports initial == final, not a fabricated
+        // change). lastKnown* are purely for de-duplication (never
+        // exposed): a duplicate platform callback reporting the same value
+        // again must never bump a change count.
+        @Volatile var initialInputRoute: ObservedAudioRoute? = null
+        @Volatile var initialOutputRoute: ObservedAudioRoute? = null
+        @Volatile var finalInputRoute: ObservedAudioRoute = ObservedAudioRoute.NOT_AVAILABLE
+        @Volatile var finalOutputRoute: ObservedAudioRoute = ObservedAudioRoute.NOT_AVAILABLE
+        @Volatile var communicationRouteAppliedAtStart: Boolean? = null
+        @Volatile var routeChangeCount: Int = 0
+        @Volatile var audioFocusAtStart: ObservedAudioFocusState? = null
+        @Volatile var audioFocusLostDuringTurn: Boolean = false
+        @Volatile var audioFocusRegainedDuringTurn: Boolean = false
+        @Volatile var focusChangeCount: Int = 0
+        private var lastKnownInputRoute: ObservedAudioRoute? = null
+        private var lastKnownOutputRoute: ObservedAudioRoute? = null
+        private var lastKnownFocusState: ObservedAudioFocusState? = null
+
+        /** Records one real route observation. Returns true only if this was a genuine (de-duplicated) change, never the turn's first observation. */
+        fun recordRouteObservation(input: ObservedAudioRoute, output: ObservedAudioRoute, communicationDeviceActive: Boolean?): Boolean {
+            val isFirst = initialInputRoute == null
+            if (isFirst) {
+                initialInputRoute = input
+                initialOutputRoute = output
+                communicationRouteAppliedAtStart = communicationDeviceActive
+            }
+            val changed = !isFirst &&
+                ((lastKnownInputRoute != null && lastKnownInputRoute != input) || (lastKnownOutputRoute != null && lastKnownOutputRoute != output))
+            if (changed) routeChangeCount = (routeChangeCount + 1).coerceAtMost(MAX_BOUNDED_COUNT)
+            lastKnownInputRoute = input
+            lastKnownOutputRoute = output
+            finalInputRoute = input
+            finalOutputRoute = output
+            return changed
+        }
+
+        /** Records one real focus observation. Returns true only if this was a genuine (de-duplicated) change, never the turn's first observation. */
+        fun recordFocusObservation(state: ObservedAudioFocusState): Boolean {
+            val isFirst = audioFocusAtStart == null
+            if (isFirst) audioFocusAtStart = state
+            val changed = !isFirst && lastKnownFocusState != null && lastKnownFocusState != state
+            if (changed) {
+                focusChangeCount = (focusChangeCount + 1).coerceAtMost(MAX_BOUNDED_COUNT)
+                when (state) {
+                    ObservedAudioFocusState.LOST_PERMANENT,
+                    ObservedAudioFocusState.LOST_TRANSIENT,
+                    ObservedAudioFocusState.LOST_TRANSIENT_CAN_DUCK -> audioFocusLostDuringTurn = true
+                    ObservedAudioFocusState.GAIN -> if (audioFocusLostDuringTurn) audioFocusRegainedDuringTurn = true
+                    else -> {}
+                }
+            }
+            lastKnownFocusState = state
+            return changed
+        }
+
+        fun toAudioEvidence(): VoiceTurnAudioEvidence = VoiceTurnAudioEvidence(
+            initialInputRoute = initialInputRoute ?: ObservedAudioRoute.NOT_AVAILABLE,
+            initialOutputRoute = initialOutputRoute ?: ObservedAudioRoute.NOT_AVAILABLE,
+            finalInputRoute = finalInputRoute,
+            finalOutputRoute = finalOutputRoute,
+            communicationRouteAppliedAtStart = communicationRouteAppliedAtStart,
+            routeChangeCount = routeChangeCount,
+            audioFocusAtStart = audioFocusAtStart ?: ObservedAudioFocusState.NOT_AVAILABLE,
+            audioFocusLostDuringTurn = audioFocusLostDuringTurn,
+            audioFocusRegainedDuringTurn = audioFocusRegainedDuringTurn,
+            focusChangeCount = focusChangeCount,
+        )
 
         fun elapsedMs(): Long = (System.nanoTime() - startedAtNanos) / 1_000_000L
 
@@ -131,6 +207,27 @@ class VoiceTurnDiagnosticsRecorder @Inject constructor() {
     /** Called from [SessionCoordinator.cancel] — marks the in-flight turn, if any, as having been asked to stop. */
     fun markCancellationRequested() = mark { it.cancellationRequested = true }
 
+    /**
+     * Live Voice Phase 0.4 — called from [SessionCoordinator] whenever
+     * [com.simone.jarvismobile.audio.AndroidAudioRouteManager]'s passively
+     * observed route state changes (see that class's own doc comment for
+     * the real platform callbacks backing this). A no-op outside an
+     * in-flight turn, exactly like every other mark here — a route change
+     * observed between turns (or after this turn has already finished)
+     * never mutates a finished or unrelated record.
+     */
+    fun markAudioRouteObservation(input: ObservedAudioRoute, output: ObservedAudioRoute, communicationDeviceActive: Boolean?) =
+        mark { it.recordRouteObservation(input, output, communicationDeviceActive) }
+
+    /**
+     * Live Voice Phase 0.4 — called from [SessionCoordinator] whenever
+     * [TextToSpeechEngine.audioFocusEvents] emits a real observation (see
+     * [com.simone.jarvismobile.tts.AudioFocusGate], the sole focus owner).
+     * Same no-op-outside-a-turn discipline as [markAudioRouteObservation].
+     */
+    fun markAudioFocusObservation(state: ObservedAudioFocusState) =
+        mark { it.recordFocusObservation(state) }
+
     /** Finishes the in-flight turn (if any) with an explicit outcome/stage. A no-op if no turn is in flight. */
     fun finish(outcome: VoiceTurnOutcome, failureStage: VoiceTurnFailureStage) {
         runCatching {
@@ -145,6 +242,7 @@ class VoiceTurnDiagnosticsRecorder @Inject constructor() {
                 failureStage = failureStage,
                 timestamps = turn.toTimestamps(),
                 finishedAtMs = turn.elapsedMs(),
+                audio = turn.toAudioEvidence(),
             )
             _history.value = _history.value.appendBounded(record, MAX_HISTORY)
         }
@@ -169,5 +267,7 @@ class VoiceTurnDiagnosticsRecorder @Inject constructor() {
 
     private companion object {
         const val MAX_HISTORY = 20
+        /** Live Voice Phase 0.4 — bounds routeChangeCount/focusChangeCount; a flapping device/focus source must never grow a turn's evidence unboundedly. */
+        const val MAX_BOUNDED_COUNT = 50
     }
 }

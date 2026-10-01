@@ -1,6 +1,7 @@
 package com.simone.jarvismobile.audio
 
 import com.simone.jarvismobile.core.speech.SpeechStyle
+import com.simone.jarvismobile.tts.AudioFocusObservation
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import java.util.UUID
@@ -42,6 +43,14 @@ interface TextToSpeechEngine {
      * this existed.
      */
     val playbackStartEvents: SharedFlow<TtsPlaybackStartedEvent>
+
+    /**
+     * Live Voice Phase 0.4 — real audio-focus events observed around this
+     * engine's own playback focus (see [com.simone.jarvismobile.tts.AudioFocusGate],
+     * the sole focus owner for anything JARVIS plays). Bounded/closed-world,
+     * never inferred — see [AudioFocusObservation]'s own doc comment.
+     */
+    val audioFocusEvents: SharedFlow<AudioFocusObservation>
 
     /** True once an offline Italian voice has been resolved and is ready. */
     suspend fun ensureReady(): Boolean

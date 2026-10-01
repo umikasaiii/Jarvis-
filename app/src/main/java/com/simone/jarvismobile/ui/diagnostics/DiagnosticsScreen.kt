@@ -396,6 +396,26 @@ fun DiagnosticsScreen(
                                     style = MaterialTheme.typography.bodySmall,
                                 )
                             }
+                            // Live Voice Phase 0.4 — real audio route/focus
+                            // observability, closed-world/bounded only, never
+                            // a product name/MAC/device id. Route is
+                            // "preferred-available classification", never
+                            // proof of what STT/capture actually used (the
+                            // on-device recognizer exposes no such
+                            // introspection); focus is the real
+                            // AudioFocusGate observation around TTS.
+                            Text(
+                                "route=${turn.initialInputRoute}→${turn.finalInputRoute} · " +
+                                    "btIn=${if (turn.bluetoothInputObserved) "sì" else "no"} · " +
+                                    "cambiRoute=${turn.routeChangeCount}",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            Text(
+                                "focus=inizio:${turn.audioFocusAtStart}·perso:${if (turn.audioFocusLostDuringTurn) "sì" else "no"}" +
+                                    "·ripreso:${if (turn.audioFocusRegainedDuringTurn) "sì" else "no"} · " +
+                                    "cambiFocus=${turn.focusChangeCount}",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
                         }
                     }
                 }

@@ -5,6 +5,7 @@ import com.simone.jarvismobile.core.speech.SpeechShaper
 import com.simone.jarvismobile.core.speech.SpeechStyle
 import com.simone.jarvismobile.data.SettingsRepository
 import com.simone.jarvismobile.tts.AudioFocusGate
+import com.simone.jarvismobile.tts.AudioFocusObservation
 import com.simone.jarvismobile.tts.NeuralTtsRepository
 import com.simone.jarvismobile.tts.PcmPlayer
 import kotlinx.coroutines.CompletableDeferred
@@ -70,6 +71,12 @@ class HybridTtsEngine @Inject constructor(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val _playbackStartEvents = MutableSharedFlow<TtsPlaybackStartedEvent>(extraBufferCapacity = 8)
     override val playbackStartEvents: SharedFlow<TtsPlaybackStartedEvent> = _playbackStartEvents.asSharedFlow()
+
+    // Live Voice Phase 0.4 — direct passthrough: AudioFocusGate is already the
+    // sole, real focus owner for both the neural and Android TTS paths (both
+    // go through the same speak()/stop() below), so there is nothing to
+    // bridge/reconcile here, unlike playbackStartEvents above.
+    override val audioFocusEvents: SharedFlow<AudioFocusObservation> = focus.focusEvents
 
     init {
         scope.launch {
