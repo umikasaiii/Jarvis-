@@ -3560,7 +3560,7 @@ dedup, authorization, retry safety o completion.
 - Pass 14.2.2 primary fix — `df686d525feab671fb93ed865649316bdce46073`
 - Latest follow-up fix — `6a66d3247cff01a9dde36fb899196b22c16ff453`
 - PA-1A — `c28b65b2866cc1139327bfb474c19469aef19b4e` — CI run #469, both jobs SUCCESS (core 1524/1524, assemble debug APK, Android unit tests, compile instrumented tests, lint, APK SHA-256, upload, publish, PS5.1 job)
-- PA-1B — commit/CI pending this push (core 1548/1548 verified locally before push — see v1.21 changelog entry below for the exact SHA/run once confirmed)
+- PA-1B — `231837ff8ccb8eb15e2e9cabb5655dbf0e4dc49f` — CI run #472, both jobs SUCCESS (core 1548/1548, assemble debug APK, Android unit tests, compile instrumented tests, lint, APK SHA-256, upload, publish, PS5.1 job)
 
 Nota: gli SHA abbreviati più vecchi sono storici; verificare full SHA nel repository prima di usarli come exact starting gate.
 
@@ -4230,7 +4230,7 @@ ANDROID-FIRST                ACTIVE
 CORE OPTIONAL ENHANCER       ACTIVE
 
 PERSISTENT AGENT TARGET      APPROVED / ADAPTED (§65.1, ADR-014)
-RESPONSIBILITY KERNEL        PA-1A IMPLEMENTED/CI VERIFIED(#469); PA-1B IMPLEMENTED/CI PENDING THIS PUSH; PA-2 NOT STARTED
+RESPONSIBILITY KERNEL        PA-1A IMPLEMENTED/CI VERIFIED(#469); PA-1B IMPLEMENTED/CI VERIFIED(#472); PA-2 NOT STARTED
 MORNING_ASSISTANCE           FIRST VERTICAL SLICE / PA-2 NOT STARTED
 
 WORK PACKAGE E               OPEN
