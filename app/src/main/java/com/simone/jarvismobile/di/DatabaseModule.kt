@@ -24,6 +24,9 @@ import com.simone.jarvismobile.proactive.ProactiveSchedulePlanDao
 import com.simone.jarvismobile.proactive.ProactiveSchedulePlanMigrations
 import com.simone.jarvismobile.proactive.TriggerEvidenceDao
 import com.simone.jarvismobile.proactive.TriggerEvidenceMigrations
+import com.simone.jarvismobile.responsibility.ResponsibilityDao
+import com.simone.jarvismobile.responsibility.ResponsibilityJournalDao
+import com.simone.jarvismobile.responsibility.ResponsibilityMigrations
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -45,7 +48,7 @@ object DatabaseModule {
             .addMigrations(
                 *RuleMigrations.ALL, *ArchiveMigrations.ALL, *EngineMemoryMigrations.ALL,
                 *ProactiveOccurrenceMigrations.ALL, *TriggerEvidenceMigrations.ALL,
-                *ProactiveSchedulePlanMigrations.ALL,
+                *ProactiveSchedulePlanMigrations.ALL, *ResponsibilityMigrations.ALL,
             )
             // The fallback remains only for the older, cache-only versions (the
             // document and navigation tables can be regenerated from the vault
@@ -115,4 +118,12 @@ object DatabaseModule {
     @Provides
     fun provideProactiveSchedulePlanDao(database: JarvisDatabase): ProactiveSchedulePlanDao =
         database.proactiveSchedulePlanDao()
+
+    @Provides
+    fun provideResponsibilityDao(database: JarvisDatabase): ResponsibilityDao =
+        database.responsibilityDao()
+
+    @Provides
+    fun provideResponsibilityJournalDao(database: JarvisDatabase): ResponsibilityJournalDao =
+        database.responsibilityJournalDao()
 }

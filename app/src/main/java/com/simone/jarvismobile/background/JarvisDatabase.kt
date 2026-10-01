@@ -32,6 +32,10 @@ import com.simone.jarvismobile.proactive.ProactiveSchedulePlanDao
 import com.simone.jarvismobile.proactive.ProactiveSchedulePlanEntity
 import com.simone.jarvismobile.proactive.TriggerEvidenceDao
 import com.simone.jarvismobile.proactive.TriggerEvidenceRowEntity
+import com.simone.jarvismobile.responsibility.ResponsibilityDao
+import com.simone.jarvismobile.responsibility.ResponsibilityEntity
+import com.simone.jarvismobile.responsibility.ResponsibilityJournalDao
+import com.simone.jarvismobile.responsibility.ResponsibilityJournalRowEntity
 
 @Database(
     entities = [
@@ -44,8 +48,10 @@ import com.simone.jarvismobile.proactive.TriggerEvidenceRowEntity
         ProactiveOccurrenceEntity::class,
         TriggerEvidenceRowEntity::class,
         ProactiveSchedulePlanEntity::class,
+        ResponsibilityEntity::class,
+        ResponsibilityJournalRowEntity::class,
     ],
-    version = 14,
+    version = 15,
     exportSchema = false,
 )
 abstract class JarvisDatabase : RoomDatabase() {
@@ -89,4 +95,13 @@ abstract class JarvisDatabase : RoomDatabase() {
     // can validate its own plan identity against the current one (§15). See
     // ProactiveSchedulePlanMigrations.
     abstract fun proactiveSchedulePlanDao(): ProactiveSchedulePlanDao
+
+    // § JARVIS — PERSISTENT AGENT KERNEL — PA-1A. Durable Responsibility
+    // records (logical key, lifecycle state, CAS revision fencing) and
+    // their bounded, privacy-safe transition journal. See
+    // ResponsibilityMigrations. PA-1A ships the generic kernel only — no
+    // Morning Briefing runtime path reads or writes these tables yet (that
+    // wiring is PA-2, explicitly out of scope for this pass).
+    abstract fun responsibilityDao(): ResponsibilityDao
+    abstract fun responsibilityJournalDao(): ResponsibilityJournalDao
 }

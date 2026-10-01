@@ -3187,6 +3187,17 @@ del codice, non inventato dentro un Worker.
 - distinguere root cause del segnale da limiti dell'architettura;
 - nessuna nuova authority.
 
+**Stato PA-0 (aggiornato in PA-1A):** la parte di audit architetturale/
+codice è COMPLETE — già catturata in questa stessa sezione §65.1 prima di
+PA-1A (root cause FIRST_UNLOCK ristretta all'observation path a monte di
+`onUnlock()`, NEXT_ALARM source osservata con collisione 08:50, vedi sopra).
+Il **controlled device retest** che §65.1 stesso richiede (lock→unlock con
+SERVICE vivo per FIRST_UNLOCK; separazione oraria NEXT_ALARM/CONFIGURED_TIME
+per qualificare il path alarm) resta **TEMPORARILY PAUSED, in attesa di una
+nuova osservazione reale del Morning Briefing sul device** — non eseguito in
+questo passaggio, non bloccante per PA-1A (infrastruttura generica,
+type-agnostic, zero dipendenza dal runtime Morning Briefing).
+
 **PA-1 — Minimum Responsibility Kernel**
 - responsibility type/key/lifecycle;
 - persistence minima;
@@ -3196,6 +3207,79 @@ del codice, non inventato dentro un Worker.
 - typed verification;
 - bounded journal;
 - nessun LLM richiesto.
+
+**PA-1A — CORE CONTRACTS + DURABLE RESPONSIBILITY STATE: IMPLEMENTED.**
+Sotto-passo esplicito di PA-1 (deliberatamente più stretto, per istruzione
+esplicita dell'utente — "non proseguire automaticamente a PA-1B"): solo i
+contratti puri `:core` e lo stato durevole Room, **senza** observation
+reducer, decision policy, action router o integrazione runtime — quelle
+restano PA-1B.
+
+- `core/responsibility/Responsibility.kt` (puro, `:core`): closed-world
+  `ResponsibilityType` (solo `MORNING_ASSISTANCE`), `ResponsibilityLifecycleState`
+  (WAITING/READY/ACTING/VERIFYING/COMPLETED/BLOCKED/FAILED/EXPIRED — niente
+  `INACTIVE`, nessuno stato senza una transizione reale), `ResponsibilityKey`
+  (type+logicalScope, round-trip `toString()`/`parse()`), bounded
+  `ResponsibilityDecision` (WAIT/ACT/VERIFY/RECHECK_AT/ASK_USER/COMPLETE/ABORT
+  — solo la tassonomia, nessuna policy che la usa), bounded
+  `ResponsibilityVerificationOutcome` (SUCCESS/RETRYABLE_FAILURE/
+  TERMINAL_FAILURE/UNKNOWN), `ResponsibilityRecord` (revision = token di CAS
+  fencing), `ResponsibilityLifecycle` (validatore puro delle transizioni —
+  tabella esplicita di edge legali, terminal-state immutabile verificato
+  incondizionatamente, `targetStateForVerification()` mappa UNKNOWN sempre a
+  BLOCKED, mai ad ACTING — l'invariante "UNKNOWN non autorizza mai un blind
+  retry" come codice, non solo come commento), `ResponsibilityJournalEntry`/
+  `ResponsibilityJournalPolicy` (bounded, privacy-safe, stesso schema di
+  sanitizzazione di `TriggerEvidencePolicy`).
+- Stato durevole Room: `JarvisDatabase` v14→v15, nuove tabelle
+  `agent_responsibilities` (PRIMARY KEY `logicalKey`, CAS fencing esplicito
+  `UPDATE ... WHERE logicalKey = :key AND revision = :expectedRevision` via
+  `ResponsibilityDao.transitionIfRevisionMatches`) e
+  `agent_responsibility_journal` (indici `key`/`atMs`, bounded a 40 righe per
+  chiave, retention 30 giorni). `ResponsibilityMigrations.MIGRATION_14_15`
+  non distruttiva, `indices` dell'entity verificati combaciare esattamente
+  con il SQL raw della migrazione (lezione diretta di MICRO-PATCH E.1 —
+  documentata nel doc-comment della migrazione stessa).
+  `ResponsibilityMigrationRegressionTest` (androidTest) riproduce lo stesso
+  pattern upgrade-in-place di `TriggerEvidenceMigrationRegressionTest`.
+- `ResponsibilityStore` (`app/`, Singleton): `createIfAbsent` (race-safe,
+  mai due righe per la stessa chiave), `get` (sola lettura), `transition`
+  (CAS-fenced — `Applied`/`Rejected`/`NotFound`/`StaleRevision`, mai un
+  overwrite silenzioso di uno scrittore concorrente), `journal`
+  (lettura bounded), `prune` (solo righe terminali oltre la retention — mai
+  una responsibility in-flight, a differenza di `ProactiveOccurrenceStore.pruneOld`).
+  DI esclusivamente tramite `DatabaseModule` esistente, nessun modulo nuovo.
+- Nessun duplicato: verificato via grep sull'intero repository che nessun
+  simbolo `Responsibility`/`AgentKernel` esisteva prima di questo passaggio;
+  `ProactiveOccurrenceStore`/`ProactiveDeliveryDispatcher`/`ProactiveScheduler`/
+  `TriggerEvidenceStore`/`ContextEngine`/`ProactiveGovernor`/`RuleGate`/
+  `ActionRegistry`/`ActionRisk`/`CapabilityStatus`/`ToolPolicy`/`ToolRegistry`/
+  `AutomationExecutor`/`ActionHandlerRegistry` non toccati, non duplicati —
+  confermato per lettura diretta della loro firma pubblica prima di scrivere
+  codice.
+- Test: 34 nuovi (18 puri `:core` in `ResponsibilityTest.kt` — ogni edge
+  legale/illegale, terminal-state immutabile, same-state no-op,
+  `targetStateForVerification` incluso l'invariante UNKNOWN→BLOCKED,
+  bounds/sanitizzazione; 15 store/journal in `ResponsibilityStoreTest.kt`
+  con `FakeResponsibilityDao`/`FakeResponsibilityJournalDao`/
+  `RacingResponsibilityDao` — CAS fencing contro un vero scrittore
+  concorrente simulato deterministicamente; 1 migration regression
+  androidTest) — `cd core && ./gradlew test` verde, nessuna regressione
+  sulla suite preesistente.
+- **Nessuna integrazione Morning Briefing**: `AutomationEventService`/
+  `ProactiveScheduler`/`AlarmReceiver`/`ProactiveManager`/
+  `MorningWindowPolicy`/`SourceAlarmReconciler`/`ProactiveComposer`/
+  `ProactiveDeliveryDispatcher` non toccati — verificato via grep, zero
+  riferimenti a `Responsibility*` fuori da `core/responsibility/` e
+  `app/.../responsibility/`. Nessun PolicyEngine duplicato, nessun
+  `AgentActionRouter`, nessun loop LLM/planner, nessuno scheduler/
+  Worker/BroadcastReceiver/servizio in background nuovo, zero nuova egress.
+- **Device acceptance: NONE per PA-1A** (per istruzione esplicita) — nessuna
+  modifica al candidato Honor pinnato `1236015`, nessuna claim di
+  "DEVICE VERIFIED".
+- **STOP ESPLICITO dopo PA-1A — PA-1B (observation reducer, decision
+  policy/`MorningAssistancePolicy`, wiring MORNING_ASSISTANCE) non
+  iniziato automaticamente.**
 
 **PA-2 — MORNING_ASSISTANCE vertical slice**
 - migrare FIRST_UNLOCK/NEXT_ALARM/fallback come observations;
@@ -3338,6 +3422,7 @@ dedup, authorization, retry safety o completion.
 | 14.2.2 | MorningRefresh multi-alert fix; latest device retest pending |
 | 14B | real EmbeddingGemma execution handoff — Windows runner built + validated end-to-end against a toy artifact; user-PC real execution pending |
 | Proactivity Closure A | side-effect ownership (single dispatcher, typed notifier, CAS-fenced occurrence state machine, evening joins occurrence authority) — automated green, Honor 200 device acceptance pending |
+| PA-1A | Persistent Agent Kernel — core contracts + durable Responsibility state (generic, type-agnostic; closed-world type/lifecycle/decision/verification taxonomy, CAS-fenced Room store + bounded journal) — no Morning Briefing runtime wiring, no device acceptance applicable; MORNING_ASSISTANCE vertical slice is PA-2, not started |
 
 ---
 
@@ -4032,14 +4117,14 @@ ARCHITECTURE MANUAL          AVAILABLE
 TARGET ARCHITECTURE          AVAILABLE
 DEEP AUDIT                   AVAILABLE
 SEGNALE                      AVAILABLE
-MASTER ARCHITECTURE          THIS FILE / v1.19
+MASTER ARCHITECTURE          THIS FILE / v1.20
 
 ANDROID-FIRST                ACTIVE
 CORE OPTIONAL ENHANCER       ACTIVE
 
 PERSISTENT AGENT TARGET      APPROVED / ADAPTED (§65.1, ADR-014)
-RESPONSIBILITY KERNEL        PLANNED / CODE NOT STARTED
-MORNING_ASSISTANCE           FIRST VERTICAL SLICE / CODE NOT STARTED
+RESPONSIBILITY KERNEL        PA-1A IMPLEMENTED (CORE CONTRACTS + DURABLE STATE) / CI PENDING
+MORNING_ASSISTANCE           FIRST VERTICAL SLICE / PA-2 NOT STARTED
 
 WORK PACKAGE E               OPEN
 HONOR E.1 CANDIDATE          1236015 PINNED
@@ -5530,6 +5615,99 @@ automaticamente lo streaming LLM→TTS reale.**
 ---
 
 # 132. MASTER CHANGELOG
+
+## v1.20 — 2026-10-01
+
+**PA-1A — PERSISTENT AGENT KERNEL: CORE CONTRACTS + DURABLE RESPONSIBILITY
+STATE.** Implementa il sotto-passo esplicito di §65.1's PA-1 (deliberatamente
+più stretto — "non proseguire automaticamente a PA-1B"). Mandatory pre-work
+completo: TRUE remote HEAD verificato (`ba9a123d01371f350a072365cfb47e25d8309216`,
+combacia la baseline attesa), CI run #468 per quel commit `completed`/
+`success`, Master Architecture riletto per intero (incluse §65.1, ADR-013/
+014, §70, §71, changelog recente) insieme a `CLAUDE.md` e all'intero stack
+di file audit-first richiesti (`JarvisDatabase.kt`, `DatabaseModule.kt`,
+`ProactiveOccurrence*`/`TriggerEvidence*` entities+store+migrations+
+regression test come pattern di riferimento diretto, `ToolPolicy`/
+`ToolRegistry`/`ExecutionGate`/`Registries`/`AutomationExecutor`/
+`ActionHandlers`/`ProactiveDeliveryDispatcher` per confermarne i confini —
+nessuno toccato). Grep sull'intero repository ha confermato zero simboli
+`Responsibility`/`AgentKernel` preesistenti: nessun riuso possibile, tutto
+costruito da zero seguendo esattamente i pattern Room/CAS-fencing già
+stabiliti da `ProactiveOccurrenceStore`/`TriggerEvidenceStore`.
+
+Nuovo `core/responsibility/Responsibility.kt` (puro, `:core`): `ResponsibilityType`
+closed-world (solo `MORNING_ASSISTANCE`), `ResponsibilityLifecycleState` a 8
+valori (WAITING/READY/ACTING/VERIFYING/COMPLETED/BLOCKED/FAILED/EXPIRED,
+`isTerminal` per COMPLETED/FAILED/EXPIRED), `ResponsibilityKey` (round-trip
+`toString()`/`parse()`), `ResponsibilityDecision` (WAIT/ACT/VERIFY/
+RECHECK_AT/ASK_USER/COMPLETE/ABORT — solo tassonomia, nessuna policy),
+`ResponsibilityVerificationOutcome` (SUCCESS/RETRYABLE_FAILURE/
+TERMINAL_FAILURE/UNKNOWN), `ResponsibilityRecord` (con `revision` come
+token di CAS fencing), `ResponsibilityLifecycle` (validatore puro delle
+transizioni — tabella esplicita di edge legali, ogni stato terminale
+rifiuta incondizionatamente qualunque transizione in uscita, same-state
+sempre rifiutato come no-op, `targetStateForVerification()` mappa
+deterministicamente VERIFYING+UNKNOWN → BLOCKED, mai → ACTING — l'invariante
+"UNKNOWN non autorizza mai un blind retry" è ora codice eseguito e testato,
+non solo un commento), `ResponsibilityJournalEntry`/`ResponsibilityJournalPolicy`
+(bounded, privacy-safe, stessa disciplina di sanitizzazione di
+`TriggerEvidencePolicy`).
+
+Stato durevole: `JarvisDatabase` v14→v15, nuove tabelle
+`agent_responsibilities` (CAS fencing esplicito via
+`UPDATE agent_responsibilities SET ... WHERE logicalKey = :key AND revision = :expectedRevision`)
+e `agent_responsibility_journal` (indici `key`/`atMs`, bounded 40 righe per
+chiave, retention 30 giorni) — `ResponsibilityMigrations.MIGRATION_14_15`
+non distruttiva, con gli `indices` delle due `@Entity` verificati combaciare
+esattamente col SQL raw della migrazione (lezione diretta di MICRO-PATCH
+E.1, documentata nel doc-comment della migrazione stessa).
+`ResponsibilityMigrationRegressionTest` (androidTest) riproduce lo stesso
+pattern upgrade-in-place di `TriggerEvidenceMigrationRegressionTest`
+(seed a schema v14 raw, run della migrazione reale, verifica validazione +
+reopen). Nuovo `ResponsibilityStore` (`app/`, Singleton, mutex + CAS Room,
+stesso two-layer defense di `ProactiveOccurrenceStore`): `createIfAbsent`
+(race-safe), `get` (sola lettura), `transition` (CAS-fenced — `Applied`/
+`Rejected`/`NotFound`/`StaleRevision`, mai un overwrite silenzioso),
+`journal` (lettura bounded), `prune` (solo righe terminali oltre la
+retention, mai una responsibility in-flight). DI esclusivamente tramite
+`DatabaseModule` esistente.
+
+**Confermato esplicitamente nessuna integrazione runtime**: `AutomationEventService`/
+`ProactiveScheduler`/`AlarmReceiver`/`ProactiveManager`/`MorningWindowPolicy`/
+`SourceAlarmReconciler`/`ProactiveComposer`/`ProactiveDeliveryDispatcher`/
+`ToolPolicy`/`ToolRegistry`/`AutomationExecutor`/`ActionHandlerRegistry` non
+toccati — verificato via grep, zero riferimenti a `Responsibility*` fuori
+dal nuovo codice. Nessun PolicyEngine duplicato, nessun `AgentActionRouter`,
+nessun loop LLM/planner, nessuno scheduler/Worker/BroadcastReceiver/servizio
+in background nuovo, zero semantic/protocol change, zero nuova egress.
+Nessuna azione reale eseguita, nessun candidato Honor toccato o sostituito.
+
+**Test**: 34 nuovi — 18 puri `:core` (`ResponsibilityTest.kt`: ogni edge
+legale/illegale enumerato esplicitamente, terminal-state immutabile
+incondizionato, same-state no-op, `targetStateForVerification` incluso
+l'invariante UNKNOWN→BLOCKED, bounds di `ResponsibilityRecord`/sanitizzazione
+del journal) + 15 store/journal (`ResponsibilityStoreTest.kt`, con
+`FakeResponsibilityDao`/`FakeResponsibilityJournalDao`/`RacingResponsibilityDao`
+— quest'ultimo simula deterministicamente un vero scrittore concorrente fra
+`find()` e il commit CAS, provando `StaleRevision` end-to-end senza vera
+concorrenza) + 1 migration regression (androidTest). `cd core && ./gradlew test`
+verde (1524/1524, nessuna regressione sui 1506 preesistenti). `app/` non
+compilabile in questo ambiente (nessun Android SDK) — ogni file nuovo/
+modificato verificato con bilanciamento parentesi/graffe/quadre
+programmatico, CI/device-pending come ogni altra modifica `app/` di questo
+progetto.
+
+**Device acceptance: NONE per PA-1A**, come esplicitamente richiesto —
+nessuna claim "DEVICE VERIFIED", candidato Honor `1236015` invariato.
+**Confermati tutti e quattro i freeze-state**: Pass 14B `PAUSED/USER-PC
+REQUIRED` (invariato), BLIND `UNTOUCHED` (invariato), Pass 15
+`NOT STARTED` (invariato), Honor candidate `1236015` `PINNED` (invariato);
+Work Package E resta `OPEN` (invariato, non applicabile a questo passaggio).
+`jarvis-core`/`jarvis-protocol` non toccati (ADR-013 FROZEN, invariato).
+
+**STOP ESPLICITO dopo PA-1A, come da istruzione vincolante — PA-1B
+(observation reducer, `ResponsibilityDecisionPolicy`/`MorningAssistancePolicy`,
+wiring MORNING_ASSISTANCE) non iniziato automaticamente.**
 
 ## v1.19 — 2026-09-30
 
