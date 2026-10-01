@@ -3281,6 +3281,110 @@ restano PA-1B.
   policy/`MorningAssistancePolicy`, wiring MORNING_ASSISTANCE) non
   iniziato automaticamente.**
 
+**PA-1B — OBSERVATION MODEL + PURE REDUCER + DETERMINISTIC COORDINATION
+CONTRACT: IMPLEMENTED.** Sotto-passo esplicito di PA-1 (deliberatamente più
+stretto di questo stesso §65.1's PA-1, per istruzione esplicita dell'utente —
+"STOP after PA-1B. DO NOT proceed automatically to PA-2."): il reducer puro,
+l'observation model, il contratto di policy generico e i relativi invarianti
+— **senza** alcuna `MorningAssistancePolicy`, nessuna wiring runtime, nessun
+cambiamento allo stato durevole introdotto da PA-1A.
+
+- Baseline gate verificato: TRUE remote HEAD `c28b65b2866cc1139327bfb474c19469aef19b4e`
+  (il commit PA-1A stesso), CI run #469 `success` per quella SHA, Master
+  Architecture + CLAUDE.md riletti per intero, `Responsibility.kt`/
+  `ResponsibilityTest.kt`/`ResponsibilityStore.kt`/`ResponsibilityStoreTest.kt`
+  riletti freschi in questa sessione, più l'audit-first completo
+  (`ContextEngine.kt`/`ProactiveGovernor.kt`/`ExecutionGate.kt`/
+  `ToolPolicy.kt`/`ToolRegistry.kt`, più un grep repository-wide per
+  reducer/coordinator/decision-policy/evaluator/planner/agent/
+  responsibility/observation/directive — nessuna astrazione generica
+  riusabile trovata: `ConditionEvaluator` è il valutatore a tre valori del
+  motore automazioni, `ProactiveGovernor` decide SE notificare non il
+  lifecycle di una responsibility, nessun `ResponsibilityObservation`/
+  `ResponsibilityDecisionPolicy`/reducer preesisteva).
+- Nuovo `core/responsibility/ResponsibilityObservation.kt` (puro, `:core`):
+  `ResponsibilityObservation` (sealed interface, chiuso — `ExternalEventObserved`/
+  `RecheckDue`/`ProcessRestored`/`DeadlineReached`/`CapabilityChanged`/
+  `VerificationResultObserved`, ogni variante porta solo timestamp Long ed
+  enum closed-world, mai una `Map<String, Any>`/stringa libera/callback —
+  provato per riflessione Java pura, nessuna dipendenza di test aggiunta),
+  `ResponsibilityTriggerIdentifier` (FIRST_UNLOCK/NEXT_ALARM/CONFIGURED_TIME/
+  PERIODIC_FALLBACK introdotti come identificatori closed-world per il FUTURO
+  PA-2+, esplicitamente **non** cablati a nessun `BroadcastReceiver`/
+  `AlarmManager`/`WorkManager`/notifica reale, nessuna policy di timing di
+  prodotto inferita qui), `ResponsibilityContextSnapshot` (marker interface —
+  niente mappa di stato universale, nessun `MorningAssistanceContextSnapshot`
+  richiesto), `NoResponsibilityContext` (il context snapshot vuoto tipizzato).
+- Nuovo `core/responsibility/ResponsibilityDecisionPolicy.kt` (puro): bounded
+  `ResponsibilityDecisionReasonCode` (12 valori closed-world, mai testo
+  libero), `ResponsibilityPolicyResult` (decision+reasonCode+recheckAtMs
+  opzionale), `ResponsibilityDecisionPolicy` (interfaccia pura — nessun
+  callback Android/`Runnable`/`Intent`/nome di tool arbitrario; PA-1B spedisce
+  solo l'interfaccia + policy fake/deterministiche nei test, mai una
+  `MorningAssistancePolicy` con timing di prodotto hardcoded — quella resta
+  PA-2).
+- Nuovo `core/responsibility/ResponsibilityKernel.kt` (puro): `ResponsibilityCoordinationResult`
+  (sealed — NoOp/TransitionProposal/ActionRequested/VerificationRequested/
+  RecheckRequested/AskUserRequested/Rejected, strutturalmente impossibile
+  confondere "il kernel dice ACT" con "l'azione è avvenuta" — `ActionRequested`/
+  `VerificationRequested` sono direttive pure, mai bundled con una transizione
+  di stato), `ResponsibilityReductionRejection` (4 valori closed-world), e
+  `ResponsibilityKernel.reduce(record, observation, policyResult, now)` — il
+  reducer puro che prende PA-1A's `ResponsibilityLifecycle` come unica
+  autorità di validità degli edge, **mai** una seconda state machine.
+  Invarianti A-I enforced indipendentemente dalla policy di dominio: (A)
+  stato terminale mai riaperto, controllato per primo e incondizionatamente;
+  (B) `DeadlineReached` propone EXPIRED solo quando è un edge legale; (C/D)
+  un'osservazione di verifica è ridotta ESCLUSIVAMENTE via
+  `ResponsibilityLifecycle.targetStateForVerification` — mai via la decisione
+  della policy per quella stessa osservazione, quindi UNKNOWN non può mai
+  autorizzare un retry indipendentemente da cosa deciderebbe una policy
+  futura malfunzionante; (E) `RECHECK_AT` onorato solo con un timestamp
+  genuinamente futuro, altrimenti `Rejected`; (F/G) `ACT`/`VERIFY` riducono
+  SEMPRE a una direttiva pura, mai a una transizione — l'esplicito test §15
+  prova che la riduzione da sola non implica alcun dispatch; (H) `COMPLETE`
+  deciso da una policy è SEMPRE `Rejected` — l'unico percorso verso
+  `COMPLETED` resta l'osservazione di verifica autoritativa con esito
+  SUCCESS; (I) `reduce()` ritorna esattamente un valore per chiamata,
+  nessun loop interno.
+- **Audit esplicito §15 completato**: la mappatura PA-1A esistente
+  `VERIFYING + RETRYABLE_FAILURE → ACTING` (`ResponsibilityLifecycle.targetStateForVerification`,
+  invariata) **non** implica un secondo dispatch immediato nel reducer di
+  PA-1B — `reduce()` restituisce un bare `TransitionProposal(ACTING, ...)`,
+  strutturalmente distinto da `ActionRequested`: è "l'eligibilità del target
+  lifecycle" che un futuro store (PA-2+) potrebbe scegliere di committare,
+  mai "l'azione è stata dispacciata". Pinnato da un test dedicato
+  (`ResponsibilityKernelTest`, test #7) che verifica esplicitamente
+  `result !is ActionRequested` e che la mappatura PA-1A sottostante resta
+  bit-per-bit invariata.
+- **Nessuna modifica a Room/`JarvisDatabase`** (resta v15, come preferito da
+  PA-1B) — il kernel è interamente testabile senza Room; `ResponsibilityStore`
+  (PA-1A) non toccato, nessun secondo journal/store creato.
+- **Nessuna integrazione runtime**: verificato via grep che nessun file fuori
+  da `core/responsibility/` referenzia `ResponsibilityObservation`/
+  `ResponsibilityDecisionPolicy`/`ResponsibilityKernel` — `AutomationEventService`/
+  `ProactiveScheduler`/`AlarmReceiver`/`ProactiveManager`/`ProactiveComposer`/
+  `ProactiveDeliveryDispatcher`/`ToolPolicy`/`ToolRegistry`/`AutomationExecutor`/
+  `ActionHandlerRegistry`/`ContextEngine` non toccati. Nessun `PlannerPort`/
+  BRAIN/MiniCPM/Needle3/LLM-policy/ReAct/AutoGPT/goal self-generato. Nessuna
+  azione reale, nessun candidato Honor toccato.
+- Test: 24 nuovi, tutti puri `:core` — 20 in `ResponsibilityKernelTest.kt`
+  (ogni invariante A-I enumerato esplicitamente, incluso il test critico §15
+  su VERIFYING+RETRYABLE_FAILURE, determinismo, totalità su ogni combinazione
+  stato×osservazione×decisione non-terminale, fail-closed con una policy fake
+  senza contesto) + 4 in `ResponsibilityObservationTest.kt` (riflessione Java
+  pura — ogni variante di `ResponsibilityObservation`/`ResponsibilityCoordinationResult`
+  porta solo Long/Boolean/enum, mai una mappa/stringa libera/callback;
+  `NoResponsibilityContext` non porta alcun campo oltre al singleton Kotlin
+  stesso). `cd core && ./gradlew test` verde — **1548/1548**, nessuna
+  regressione sui 1524 preesistenti.
+- **Device acceptance: NOT APPLICABLE per PA-1B** (per istruzione esplicita)
+  — nessun APK installato, nessun unpinning del candidato Honor `1236015`,
+  nessuna claim che Morning sia risolto.
+- **STOP ESPLICITO dopo PA-1B, come da istruzione vincolante — PA-2
+  (observation→action wiring, `MorningAssistancePolicy`, la vertical slice
+  MORNING_ASSISTANCE) non iniziato automaticamente.**
+
 **PA-2 — MORNING_ASSISTANCE vertical slice**
 - migrare FIRST_UNLOCK/NEXT_ALARM/fallback come observations;
 - una sola responsibility giornaliera;
@@ -3423,6 +3527,7 @@ dedup, authorization, retry safety o completion.
 | 14B | real EmbeddingGemma execution handoff — Windows runner built + validated end-to-end against a toy artifact; user-PC real execution pending |
 | Proactivity Closure A | side-effect ownership (single dispatcher, typed notifier, CAS-fenced occurrence state machine, evening joins occurrence authority) — automated green, Honor 200 device acceptance pending |
 | PA-1A | Persistent Agent Kernel — core contracts + durable Responsibility state (generic, type-agnostic; closed-world type/lifecycle/decision/verification taxonomy, CAS-fenced Room store + bounded journal) — no Morning Briefing runtime wiring, no device acceptance applicable; MORNING_ASSISTANCE vertical slice is PA-2, not started |
+| PA-1B | Persistent Agent Kernel — observation model + pure reducer + deterministic coordination contract (closed-world `ResponsibilityObservation`, generic `ResponsibilityDecisionPolicy` interface, pure `ResponsibilityKernel.reduce()` enforcing invariants A-I, §15 VERIFYING+RETRYABLE_FAILURE audit closed — eligibility, not dispatch) — no Room schema change, no runtime wiring, no `MorningAssistancePolicy`, device acceptance not applicable; PA-2 not started |
 
 ---
 
@@ -3455,6 +3560,7 @@ dedup, authorization, retry safety o completion.
 - Pass 14.2.2 primary fix — `df686d525feab671fb93ed865649316bdce46073`
 - Latest follow-up fix — `6a66d3247cff01a9dde36fb899196b22c16ff453`
 - PA-1A — `c28b65b2866cc1139327bfb474c19469aef19b4e` — CI run #469, both jobs SUCCESS (core 1524/1524, assemble debug APK, Android unit tests, compile instrumented tests, lint, APK SHA-256, upload, publish, PS5.1 job)
+- PA-1B — commit/CI pending this push (core 1548/1548 verified locally before push — see v1.21 changelog entry below for the exact SHA/run once confirmed)
 
 Nota: gli SHA abbreviati più vecchi sono storici; verificare full SHA nel repository prima di usarli come exact starting gate.
 
@@ -4118,13 +4224,13 @@ ARCHITECTURE MANUAL          AVAILABLE
 TARGET ARCHITECTURE          AVAILABLE
 DEEP AUDIT                   AVAILABLE
 SEGNALE                      AVAILABLE
-MASTER ARCHITECTURE          THIS FILE / v1.20
+MASTER ARCHITECTURE          THIS FILE / v1.21
 
 ANDROID-FIRST                ACTIVE
 CORE OPTIONAL ENHANCER       ACTIVE
 
 PERSISTENT AGENT TARGET      APPROVED / ADAPTED (§65.1, ADR-014)
-RESPONSIBILITY KERNEL        PA-1A IMPLEMENTED / CI VERIFIED (#469) / PA-1B NOT STARTED
+RESPONSIBILITY KERNEL        PA-1A IMPLEMENTED/CI VERIFIED(#469); PA-1B IMPLEMENTED/CI PENDING THIS PUSH; PA-2 NOT STARTED
 MORNING_ASSISTANCE           FIRST VERTICAL SLICE / PA-2 NOT STARTED
 
 WORK PACKAGE E               OPEN
@@ -5616,6 +5722,99 @@ automaticamente lo streaming LLM→TTS reale.**
 ---
 
 # 132. MASTER CHANGELOG
+
+## v1.21 — 2026-10-01
+
+**PA-1B — OBSERVATION MODEL + PURE REDUCER + DETERMINISTIC COORDINATION
+CONTRACT.** Implementa il sotto-passo esplicito di PA-1A's STOP instruction
+("non proseguire automaticamente a PA-1B") e il mandato esplicito e vincolante
+di questo stesso passaggio ("STOP after PA-1B. DO NOT proceed automatically to
+PA-2."). §0 Baseline Gate completo: TRUE remote HEAD confermato
+`c28b65b2866cc1139327bfb474c19469aef19b4e` (il commit PA-1A), CI run #469
+`completed`/`success` per quella SHA (riverificato via GitHub Actions API in
+questa sessione), Master Architecture + CLAUDE.md riletti per intero, i
+quattro file PA-1A (`Responsibility.kt`/`ResponsibilityTest.kt`/
+`ResponsibilityStore.kt`/`ResponsibilityStoreTest.kt`) riletti freschi, più
+l'intero §5 audit-first (`ContextEngine.kt`/`ProactiveGovernor.kt`/
+`ExecutionGate.kt`/`ToolPolicy.kt`/`ToolRegistry.kt`) e un grep
+repository-wide per reducer/coordinator/decision-policy/evaluator/planner/
+agent/responsibility/observation/directive — nessuna astrazione generica
+riusabile trovata, nessun `ResponsibilityObservation`/
+`ResponsibilityDecisionPolicy`/reducer preesisteva.
+
+Tre nuovi file puri `:core`: `core/responsibility/ResponsibilityObservation.kt`
+(`ResponsibilityObservation` sealed — `ExternalEventObserved`/`RecheckDue`/
+`ProcessRestored`/`DeadlineReached`/`CapabilityChanged`/
+`VerificationResultObserved`, ogni variante solo Long/enum, mai una
+`Map<String, Any>`/stringa libera/callback, provato per riflessione Java
+pura; `ResponsibilityTriggerIdentifier` — FIRST_UNLOCK/NEXT_ALARM/
+CONFIGURED_TIME/PERIODIC_FALLBACK, closed-world per il FUTURO PA-2+,
+esplicitamente non cablati a nulla di reale qui; `ResponsibilityContextSnapshot`
+marker + `NoResponsibilityContext`, niente mappa di stato universale);
+`core/responsibility/ResponsibilityDecisionPolicy.kt` (`ResponsibilityDecisionReasonCode`
+bounded a 12 valori, `ResponsibilityPolicyResult`, `ResponsibilityDecisionPolicy`
+interfaccia pura — nessun callback Android/`Runnable`/`Intent`/tool
+arbitrario, nessuna `MorningAssistancePolicy` hardcoded, quella resta PA-2);
+`core/responsibility/ResponsibilityKernel.kt` (`ResponsibilityCoordinationResult`
+sealed — NoOp/TransitionProposal/ActionRequested/VerificationRequested/
+RecheckRequested/AskUserRequested/Rejected — e `ResponsibilityKernel.reduce()`,
+il reducer puro `(record, observation, policyResult, now) -> result` che
+riusa `ResponsibilityLifecycle` di PA-1A come unica autorità di edge legali,
+mai una seconda state machine).
+
+Invarianti A-I enforced indipendentemente dalla policy di dominio: (A) stato
+terminale mai riaperto, controllato per primo e incondizionatamente; (B)
+`DeadlineReached` propone EXPIRED solo quando è un edge legale dal
+lifecycle corrente; (C/D) un'osservazione di verifica è ridotta
+ESCLUSIVAMENTE via `ResponsibilityLifecycle.targetStateForVerification` —
+mai via la decisione della policy per quella stessa osservazione, quindi
+UNKNOWN non può mai autorizzare un retry; (E) `RECHECK_AT` onorato solo con
+un timestamp genuinamente futuro; (F/G) `ACT`/`VERIFY` riducono sempre a una
+direttiva pura, mai a una transizione bundled; (H) `COMPLETE` deciso da una
+policy è sempre `Rejected` — l'unico percorso verso `COMPLETED` resta
+l'osservazione di verifica autoritativa con esito SUCCESS; (I) `reduce()`
+ritorna esattamente un valore per chiamata, nessun loop interno.
+
+**Audit esplicito §15 completato**: la mappatura PA-1A esistente
+`VERIFYING + RETRYABLE_FAILURE → ACTING` (invariata) non implica un secondo
+dispatch immediato nel reducer — `reduce()` restituisce un bare
+`TransitionProposal(ACTING, ...)`, strutturalmente distinto da
+`ActionRequested`: "l'eligibilità del target lifecycle", mai "l'azione è
+stata dispacciata". Pinnato da un test dedicato.
+
+Nessuna modifica a Room/`JarvisDatabase` (resta v15) — il kernel è
+interamente testabile senza Room; `ResponsibilityStore` (PA-1A) non toccato.
+Nessuna integrazione runtime: verificato via grep che nessun file fuori da
+`core/responsibility/` referenzia i tre nuovi tipi — `AutomationEventService`/
+`ProactiveScheduler`/`AlarmReceiver`/`ProactiveManager`/`ProactiveComposer`/
+`ProactiveDeliveryDispatcher`/`ToolPolicy`/`ToolRegistry`/`AutomationExecutor`/
+`ActionHandlerRegistry`/`ContextEngine` non toccati. Nessun `PlannerPort`/
+BRAIN/LLM-policy/ReAct/AutoGPT/goal self-generato. Nessuna azione reale,
+nessun candidato Honor toccato o sostituito.
+
+**Test**: 24 nuovi, tutti puri `:core` — 20 in `ResponsibilityKernelTest.kt`
+(ogni invariante A-I enumerato esplicitamente, incluso il test critico §15,
+determinismo, totalità su ogni combinazione stato×osservazione×decisione
+non-terminale, fail-closed con una policy fake senza contesto) + 4 in
+`ResponsibilityObservationTest.kt` (riflessione Java pura — ogni variante
+porta solo Long/Boolean/enum). `cd core && ./gradlew test` verde —
+**1548/1548**, nessuna regressione sui 1524 preesistenti (eseguito
+realmente in questa sessione, non solo verificato per bilanciamento di
+parentesi — il modulo `:core` è puro Kotlin JVM, compilabile in questo
+ambiente).
+
+**Device acceptance: NOT APPLICABLE per PA-1B**, come esplicitamente
+richiesto — nessun APK installato, nessun unpinning del candidato Honor
+`1236015`, nessuna claim che Morning sia risolto. Confermati tutti e quattro
+i freeze-state: Pass 14B `PAUSED/USER-PC REQUIRED` (invariato), BLIND
+`UNTOUCHED` (invariato), Pass 15 `NOT STARTED` (invariato), Honor candidate
+`1236015` `PINNED` (invariato); Work Package E resta `OPEN` (invariato, non
+applicabile a questo passaggio). `jarvis-core`/`jarvis-protocol` non
+toccati (ADR-013 FROZEN, invariato).
+
+**STOP ESPLICITO dopo PA-1B, come da istruzione vincolante — PA-2
+(observation→action wiring, `MorningAssistancePolicy`, la vertical slice
+MORNING_ASSISTANCE) non iniziato automaticamente.**
 
 ## v1.20 — 2026-10-01
 
