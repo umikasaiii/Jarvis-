@@ -4261,7 +4261,7 @@ LIVE VOICE PHASE 0.1         CI VERIFIED (#460) / DEVICE PENDING
 LIVE VOICE PHASE 0.2         CI VERIFIED (#462) / DEVICE PENDING
 LIVE VOICE PHASE 0.3         CI VERIFIED (#464) / DEVICE PENDING
 LIVE VOICE PHASE 0.4         CI VERIFIED (#475, commit e80be62) / DEVICE PENDING
-LIVE VOICE PHASE 0.5         CODE PRESENT / AUTOMATED TESTED (core 1570/1570) / CI PENDING THIS PUSH / DEVICE PENDING
+LIVE VOICE PHASE 0.5         CODE PRESENT / AUTOMATED TESTED (core 1570/1570) / CI VERIFIED (#477, commit db97cc0) / DEVICE PENDING
 LLM-TOKEN→TTS STREAMING      NOT IMPLEMENTED
 FULL LIVE VOICE              NOT DEVICE VERIFIED
 
@@ -5963,7 +5963,21 @@ automaticamente la Phase 0.5, full-duplex, VAD/AEC o LLM streaming.**
 # 131.6 LIVE VOICE PHASE 0.5 — STT LISTEN-READY + COLD-START CAUSAL OBSERVABILITY
 
 Status: **CODE PRESENT / AUTOMATED TESTED (`:core` 1570/1570, +10) / CI
-PENDING THIS PUSH / DEVICE VERIFIED ❌**.
+VERIFIED ✅ (run #477, commit `db97cc08fa758bed27def133354064d45bf0c4c8`,
+https://github.com/umikasaiii/Jarvis-/actions/runs/37061995256) / DEVICE
+VERIFIED ❌**.
+
+**Riconciliazione CI, 2026-10-02**: il primo push di questa fase
+(`a897ae2`, run #476) è fallito `:app:compileDebugUnitTestKotlin` su un
+unico nome di test con un carattere `/` illegale in un identificatore JVM
+(`VoiceTurnDiagnosticsRecorderTest.kt:556`) — un puro vincolo di naming
+Kotlin/JVM, nessun difetto di logica. Corretto rinominando solo quel nome
+di funzione (nessun cambio al corpo del test, al comportamento runtime, a
+STT, al retry o alla semantica diagnostica), commit `db97cc0`, push,
+run #477: tutti gli step verdi su entrambi i job (core tests, assemble
+debug APK, Android unit tests, compile instrumented tests, lint, APK
+SHA-256, upload, publish, PS5.1 compatibility). TRUE remote HEAD
+riverificato = `db97cc08fa758bed27def133354064d45bf0c4c8`.
 
 §0 Baseline Gate completo: TRUE remote HEAD confermato
 `e80be623812fcc8b34aa7a1451d7fa9ff7827ae2`, CI run #475 (id
