@@ -553,7 +553,7 @@ class VoiceTurnDiagnosticsRecorderTest {
     }
 
     @Test
-    fun `a cancelled turn keeps the CANCELLED outcome regardless of ready/attempt evidence`() {
+    fun `a cancelled turn keeps the CANCELLED outcome regardless of ready and attempt evidence`() {
         val recorder = VoiceTurnDiagnosticsRecorder()
         recorder.beginTurn(followUpIndex = 0)
         recorder.markSttStarted()
