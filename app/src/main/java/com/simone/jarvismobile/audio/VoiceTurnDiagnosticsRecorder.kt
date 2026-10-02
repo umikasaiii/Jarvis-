@@ -6,6 +6,7 @@ import com.simone.jarvismobile.core.voice.VoiceTurnAudioEvidence
 import com.simone.jarvismobile.core.voice.VoiceTurnDiagnostics
 import com.simone.jarvismobile.core.voice.VoiceTurnFailureStage
 import com.simone.jarvismobile.core.voice.VoiceTurnOutcome
+import com.simone.jarvismobile.core.voice.VoiceTurnSttAttemptEvidence
 import com.simone.jarvismobile.core.voice.VoiceTurnTimestamps
 import com.simone.jarvismobile.core.voice.appendBounded
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -54,6 +55,8 @@ class VoiceTurnDiagnosticsRecorder @Inject constructor() {
         @Volatile var ttsPlaybackStartAtMs: Long? = null
         @Volatile var speechStartedAtMs: Long? = null
         @Volatile var speechEndedAtMs: Long? = null
+        @Volatile var sttReadyAtMs: Long? = null
+        @Volatile var sttAttemptCount: Int? = null
         @Volatile var cancellationRequested: Boolean = false
 
         // Live Voice Phase 0.4 — raw audio route/focus accumulation. `null`
@@ -116,6 +119,10 @@ class VoiceTurnDiagnosticsRecorder @Inject constructor() {
             return changed
         }
 
+        fun toSttAttemptEvidence(): VoiceTurnSttAttemptEvidence = VoiceTurnSttAttemptEvidence(
+            attemptCount = sttAttemptCount,
+        )
+
         fun toAudioEvidence(): VoiceTurnAudioEvidence = VoiceTurnAudioEvidence(
             initialInputRoute = initialInputRoute ?: ObservedAudioRoute.NOT_AVAILABLE,
             initialOutputRoute = initialOutputRoute ?: ObservedAudioRoute.NOT_AVAILABLE,
@@ -142,6 +149,7 @@ class VoiceTurnDiagnosticsRecorder @Inject constructor() {
             ttsPlaybackStartAtMs = ttsPlaybackStartAtMs,
             speechStartedAtMs = speechStartedAtMs,
             speechEndedAtMs = speechEndedAtMs,
+            sttReadyAtMs = sttReadyAtMs,
         )
     }
 
@@ -196,6 +204,29 @@ class VoiceTurnDiagnosticsRecorder @Inject constructor() {
     fun markUserSpeechEnded() = mark { if (it.speechEndedAtMs == null) it.speechEndedAtMs = it.elapsedMs() }
 
     /**
+     * Live Voice Phase 0.5 — called from [SessionCoordinator] when a real
+     * [SttSpeechEvent.Type.READY] observation (the platform's own
+     * `RecognitionListener.onReadyForSpeech()`) arrives for the in-flight
+     * turn's current STT invocation — [SessionCoordinator] independently
+     * fences by invocation id before this is ever called, exactly like
+     * [markUserSpeechStarted]. Idempotent — only the first observation per
+     * turn is kept — and a no-op once the turn has already finished.
+     */
+    fun markSttReady() = mark { if (it.sttReadyAtMs == null) it.sttReadyAtMs = it.elapsedMs() }
+
+    /**
+     * Live Voice Phase 0.5 — called from [SessionCoordinator] once per turn
+     * when a real [SttAttemptSummary] arrives (emitted synchronously by
+     * [AndroidOnDeviceSpeechEngine.transcribe] itself, not a platform
+     * callback, so there is no staleness risk to fence beyond the same
+     * invocation-id filtering [SessionCoordinator] already applies). A
+     * plain bounded count — never retry reasons/error text. Idempotent
+     * (only the first observation per turn is kept) and a no-op once the
+     * turn has already finished, same discipline as every other mark here.
+     */
+    fun markSttAttemptCount(count: Int) = mark { if (it.sttAttemptCount == null) it.sttAttemptCount = count }
+
+    /**
      * Called from [SessionCoordinator.interruptAndListen] — reachable only
      * while this same in-flight turn's own `speakOut()` is still suspended
      * waiting for TTS, since that branch is gated on TTS actually speaking;
@@ -243,6 +274,7 @@ class VoiceTurnDiagnosticsRecorder @Inject constructor() {
                 timestamps = turn.toTimestamps(),
                 finishedAtMs = turn.elapsedMs(),
                 audio = turn.toAudioEvidence(),
+                sttAttempts = turn.toSttAttemptEvidence(),
             )
             _history.value = _history.value.appendBounded(record, MAX_HISTORY)
         }

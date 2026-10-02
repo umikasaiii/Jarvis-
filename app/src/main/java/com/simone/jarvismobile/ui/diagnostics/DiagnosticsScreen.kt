@@ -390,6 +390,18 @@ fun DiagnosticsScreen(
                                     "rispostaDopoFineVoce=${turn.responsePlaybackAfterSpeechMs?.let { "${it}ms" } ?: "non disponibile"}",
                                 style = MaterialTheme.typography.bodySmall,
                             )
+                            // Live Voice Phase 0.5 — real onReadyForSpeech()
+                            // observability plus cold-start/internal-retry
+                            // attempt count ("tentativi"). "n/d" when READY
+                            // was never observed this turn — never fabricated.
+                            // READY does not mean the user started speaking;
+                            // see "voce dopo pronto" for that gap specifically.
+                            Text(
+                                "STT pronto=${turn.sttReadyLatencyMs?.let { "${it}ms" } ?: "n/d"} · " +
+                                    "voce dopo pronto=${turn.speechStartAfterReadyMs?.let { "${it}ms" } ?: "n/d"} · " +
+                                    "tentativi=${turn.sttAttemptCount?.toString() ?: "n/d"}",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
                             if (turn.bargeInRequested) {
                                 Text(
                                     "bargeIn=true · stopDopoBargeIn=${turn.ttsStoppedAfterBargeInMs?.let { "${it}ms" } ?: "non disponibile"}",

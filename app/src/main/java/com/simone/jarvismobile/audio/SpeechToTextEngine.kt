@@ -36,6 +36,19 @@ interface SpeechToTextEngine {
      */
     val speechEvents: SharedFlow<SttSpeechEvent>
 
+    /**
+     * Live Voice Phase 0.5 — fired once per [transcribe] call, synchronously
+     * right before it returns, with that exact invocation's internal
+     * cold-start/retry attempt count ([SttAttemptSummary]). `replay = 0`,
+     * same discipline as [speechEvents] — a subscriber must already be
+     * collecting before calling [transcribe] to reliably observe it,
+     * though in practice [transcribe] always takes at least one real
+     * recognizer attempt's worth of time before emitting, so a collector
+     * armed immediately before the call (the same pattern [speechEvents]
+     * already established) never races it.
+     */
+    val attemptSummaries: SharedFlow<SttAttemptSummary>
+
     /** True if offline recognition can run on this device. */
     fun isAvailable(): Boolean
 

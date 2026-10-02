@@ -11,6 +11,7 @@ class VoiceTurnDiagnosticsTest {
         playbackStartAtMs: Long? = null,
         speechStartedAtMs: Long? = null,
         speechEndedAtMs: Long? = null,
+        sttReadyAtMs: Long? = null,
     ) = VoiceTurnTimestamps(
         sttStartedAtMs = 0,
         sttFinalAtMs = 300,
@@ -22,6 +23,7 @@ class VoiceTurnDiagnosticsTest {
         ttsPlaybackStartAtMs = playbackStartAtMs,
         speechStartedAtMs = speechStartedAtMs,
         speechEndedAtMs = speechEndedAtMs,
+        sttReadyAtMs = sttReadyAtMs,
     )
 
     @Test
@@ -683,5 +685,97 @@ class VoiceTurnDiagnosticsTest {
         assertEquals(VoiceTurnOutcome.CANCELLED, record.outcome)
         assertEquals(VoiceTurnFailureStage.STT, record.failureStage)
         assertEquals(true, record.audioFocusLostDuringTurn)
+    }
+
+    // --- Live Voice Phase 0.5 — STT listen-ready + cold-start observability --
+
+    private fun recordWithSttAttempts(
+        timestamps: VoiceTurnTimestamps,
+        sttAttempts: VoiceTurnSttAttemptEvidence = VoiceTurnSttAttemptEvidence(),
+    ) = VoiceTurnDiagnostics.compute(
+        turnId = "stt-ready-test",
+        startedAtEpochMs = 0,
+        followUpIndex = 0,
+        cancellationRequested = false,
+        outcome = VoiceTurnOutcome.COMPLETED,
+        failureStage = VoiceTurnFailureStage.NONE,
+        timestamps = timestamps,
+        finishedAtMs = 2400,
+        sttAttempts = sttAttempts,
+    )
+
+    @Test
+    fun `READY plus a valid STT start gives a real, non-negative sttReadyLatencyMs`() {
+        val record = recordWithSttAttempts(full(sttReadyAtMs = 150))
+        // sttStartedAtMs = 0 from full(); ready at 150 -> 150ms.
+        assertEquals(150, record.sttReadyLatencyMs)
+    }
+
+    @Test
+    fun `missing READY leaves sttReadyLatencyMs unavailable, not zero`() {
+        val record = recordWithSttAttempts(full(sttReadyAtMs = null))
+        assertNull(record.sttReadyLatencyMs)
+    }
+
+    @Test
+    fun `READY timestamped before the STT request is rejected, never negative`() {
+        // sttStartedAtMs = 0 from full(); a stale/out-of-order sttReadyAtMs
+        // would require readying before the request even happened.
+        val timestamps = VoiceTurnTimestamps(sttStartedAtMs = 500, sttReadyAtMs = 100)
+        val record = recordWithSttAttempts(timestamps)
+        assertNull(record.sttReadyLatencyMs)
+    }
+
+    @Test
+    fun `STARTED after READY produces a real speechStartAfterReadyMs`() {
+        val record = recordWithSttAttempts(full(sttReadyAtMs = 100, speechStartedAtMs = 260))
+        assertEquals(160, record.speechStartAfterReadyMs)
+    }
+
+    @Test
+    fun `STARTED before READY leaves speechStartAfterReadyMs unavailable, never negative`() {
+        val record = recordWithSttAttempts(full(sttReadyAtMs = 300, speechStartedAtMs = 50))
+        assertNull(record.speechStartAfterReadyMs)
+    }
+
+    @Test
+    fun `a successful first attempt reports attemptCount 1 and no cold-start retry`() {
+        val record = recordWithSttAttempts(full(), VoiceTurnSttAttemptEvidence(attemptCount = 1))
+        assertEquals(1, record.sttAttemptCount)
+        assertEquals(false, record.sttColdStartRetryObserved)
+    }
+
+    @Test
+    fun `a retry then success reports a bounded attemptCount greater than one, flagged as cold-start retry`() {
+        val record = recordWithSttAttempts(full(), VoiceTurnSttAttemptEvidence(attemptCount = 3))
+        assertEquals(3, record.sttAttemptCount)
+        assertEquals(true, record.sttColdStartRetryObserved)
+    }
+
+    @Test
+    fun `no attempt summary at all leaves attemptCount and coldStartRetryObserved unavailable, never zero or false by fabrication`() {
+        val record = recordWithSttAttempts(full())
+        assertNull(record.sttAttemptCount)
+        // null, not false: "unknown" must never be presented as "exactly one attempt was made".
+        assertNull(record.sttColdStartRetryObserved)
+    }
+
+    @Test
+    fun `no speech-boundary or readiness evidence at all leaves every Phase 0_5 metric unavailable`() {
+        val record = recordWithSttAttempts(full())
+        assertNull(record.sttReadyLatencyMs)
+        assertNull(record.speechStartAfterReadyMs)
+    }
+
+    @Test
+    fun `no field of VoiceTurnSttAttemptEvidence can ever carry a transcript or other free-form string`() {
+        val offending = VoiceTurnSttAttemptEvidence::class.java.declaredFields
+            .filterNot { it.isSynthetic }
+            .filterNot { it.type == Int::class.javaPrimitiveType || it.type == java.lang.Integer::class.java }
+        assertEquals(
+            emptyList<String>(),
+            offending.map { "${it.name}:${it.type}" },
+            "VoiceTurnSttAttemptEvidence must only ever carry an Int (count) field",
+        )
     }
 }

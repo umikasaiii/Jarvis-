@@ -597,27 +597,48 @@ class SessionCoordinator @Inject constructor(
      * directly, so its speech-boundary events (if any consumer ever
      * subscribed to them, which none does today) can never contaminate this
      * turn's diagnostics.
+     *
+     * Live Voice Phase 0.5 — the same pattern, now also for
+     * [SttSpeechEvent.Type.READY] (forwarded to
+     * [VoiceTurnDiagnosticsRecorder.markSttReady]) and for
+     * [SttAttemptSummary] (forwarded to
+     * [VoiceTurnDiagnosticsRecorder.markSttAttemptCount]) — a second,
+     * independent listener/readiness-barrier pair, since [SttAttemptSummary]
+     * is a deliberately separate channel from [SttSpeechEvent] (see that
+     * type's own doc comment).
      */
     private suspend fun transcribeWithSpeechBoundaries(languageTag: String = "it-IT"): SttResult {
         val invocationId = UUID.randomUUID().toString()
         return coroutineScope {
-            val listenerReady = CompletableDeferred<Unit>()
-            val listener = launch {
+            val boundaryListenerReady = CompletableDeferred<Unit>()
+            val boundaryListener = launch {
                 stt.speechEvents
-                    .onSubscription { listenerReady.complete(Unit) }
+                    .onSubscription { boundaryListenerReady.complete(Unit) }
                     .collect { event ->
                         if (event.invocationId != invocationId) return@collect
                         when (event.type) {
+                            SttSpeechEvent.Type.READY -> voiceDiagnostics.markSttReady()
                             SttSpeechEvent.Type.STARTED -> voiceDiagnostics.markUserSpeechStarted()
                             SttSpeechEvent.Type.ENDED -> voiceDiagnostics.markUserSpeechEnded()
                         }
                     }
             }
-            listenerReady.await()
+            val attemptListenerReady = CompletableDeferred<Unit>()
+            val attemptListener = launch {
+                stt.attemptSummaries
+                    .onSubscription { attemptListenerReady.complete(Unit) }
+                    .collect { summary ->
+                        if (summary.invocationId != invocationId) return@collect
+                        voiceDiagnostics.markSttAttemptCount(summary.attemptCount)
+                    }
+            }
+            boundaryListenerReady.await()
+            attemptListenerReady.await()
             try {
                 stt.transcribe(languageTag, invocationId)
             } finally {
-                listener.cancel()
+                boundaryListener.cancel()
+                attemptListener.cancel()
             }
         }
     }

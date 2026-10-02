@@ -4224,7 +4224,7 @@ ARCHITECTURE MANUAL          AVAILABLE
 TARGET ARCHITECTURE          AVAILABLE
 DEEP AUDIT                   AVAILABLE
 SEGNALE                      AVAILABLE
-MASTER ARCHITECTURE          THIS FILE / v1.22
+MASTER ARCHITECTURE          THIS FILE / v1.23
 
 ANDROID-FIRST                ACTIVE
 CORE OPTIONAL ENHANCER       ACTIVE
@@ -4237,10 +4237,11 @@ WORK PACKAGE E               OPEN
 HONOR E.1 CANDIDATE          1236015 PINNED
 HONOR APP STARTUP            APP OPENS OBSERVED / FULL QUALIFICATION PENDING
 MORNING CONFIGURED_TIME      OBSERVED WORKING @ 08:50
-MORNING FIRST_UNLOCK         SOURCE NOT OBSERVED / CONTROLLED RETEST
+MORNING FIRST_UNLOCK         SOURCE NOT OBSERVED / CONTROLLED RETEST (reconfirmed 2026-10-02)
 MORNING NEXT_ALARM SOURCE     OBSERVED
-MORNING NEXT_ALARM DELIVERY   NOT INDEPENDENTLY QUALIFIED (08:50 COLLISION)
+MORNING NEXT_ALARM DELIVERY   PROVEN FOR 2026-10-02 SCENARIO (real alarm 08:30, delivery 08:35:01, independent of the earlier 08:50 CONFIGURED_TIME collision) — still not a general qualification across repeated mornings
 MORNING DUPLICATE SAFETY     HISTORICAL FAILURE / NON-REGRESSION GATE
+MORNING OVERALL QUALIFICATION TEMPORARILY PAUSED / PENDING NEXT REAL-DEVICE MORNING RETEST
 
 SEMANTIC PIPELINE            IMPLEMENTED / NOT FULLY QUALIFIED
 REAL EMBEDDINGGEMMA          PAUSED / USER-PC RUN REQUIRED
@@ -4259,7 +4260,8 @@ LIVE VOICE FOUNDATION        ACTIVE PARALLEL TRACK
 LIVE VOICE PHASE 0.1         CI VERIFIED (#460) / DEVICE PENDING
 LIVE VOICE PHASE 0.2         CI VERIFIED (#462) / DEVICE PENDING
 LIVE VOICE PHASE 0.3         CI VERIFIED (#464) / DEVICE PENDING
-LIVE VOICE PHASE 0.4         CODE PRESENT / AUTOMATED TESTED (core 1560/1560) / CI PENDING THIS PUSH / DEVICE PENDING
+LIVE VOICE PHASE 0.4         CI VERIFIED (#475, commit e80be62) / DEVICE PENDING
+LIVE VOICE PHASE 0.5         CODE PRESENT / AUTOMATED TESTED (core 1570/1570) / CI PENDING THIS PUSH / DEVICE PENDING
 LLM-TOKEN→TTS STREAMING      NOT IMPLEMENTED
 FULL LIVE VOICE              NOT DEVICE VERIFIED
 
@@ -5725,7 +5727,26 @@ automaticamente lo streaming LLM→TTS reale.**
 # 131.5 LIVE VOICE PHASE 0.4 — AUDIO ROUTE + AUDIO FOCUS CAUSAL OBSERVABILITY
 
 Status: **CODE PRESENT / AUTOMATED TESTED (`:core` 1560/1560, +12) / CI
-PENDING THIS PUSH / DEVICE VERIFIED ❌**.
+VERIFIED ✅ (run #475, commit `e80be623812fcc8b34aa7a1451d7fa9ff7827ae2`,
+https://github.com/umikasaiii/Jarvis-/actions/runs/36937140609) / DEVICE
+VERIFIED ❌**.
+
+**Reconciliazione, 2026-10-02**: il primo push di questa fase (`97a9368`,
+run #474) è fallito `:app:compileDebugKotlin` con due errori reali — (1)
+`AndroidAudioRouteManager.kt`: `AudioDeviceCallback` è una classe top-level
+di `android.media`, non annidata in `AudioManager` (`AudioManager.AudioDeviceCallback`
+non esiste — l'`import android.media.AudioManager` non bastava); (2)
+`AndroidOfflineTtsEngine.kt` — un secondo implementatore di
+`TextToSpeechEngine` oltre a `HybridTtsEngine`, mai toccato dal primo push
+di questa fase — mancava del nuovo override `audioFocusEvents` aggiunto
+all'interfaccia, usando lo stesso pattern di osservazione focus già cablato
+in `AudioFocusGate`. Corretto (`e80be62`): import giusto +
+`object : AudioDeviceCallback()`; nuovo `_audioFocusEvents`/`audioFocusEvents`
+su `AndroidOfflineTtsEngine` con la stessa mappatura GRANTED/DENIED/DELAYED/
+GAIN/LOST_*/UNKNOWN di `AudioFocusGate` — nessun altro file toccato. Run #475
+**tutti i 17 step verdi** su entrambi i job (core 1560/1560, assemble debug
+APK, Android unit tests, compile instrumented tests, lint, APK SHA-256,
+upload, publish, PASS 14B Windows PowerShell 5.1 compatibility).
 
 Estende (mai sostituisce) §129/§130/§131: chiude il prossimo gap di
 osservabilità — route audio e audio focus durante un turno vocale — senza
@@ -5939,7 +5960,262 @@ automaticamente la Phase 0.5, full-duplex, VAD/AEC o LLM streaming.**
 
 ---
 
+# 131.6 LIVE VOICE PHASE 0.5 — STT LISTEN-READY + COLD-START CAUSAL OBSERVABILITY
+
+Status: **CODE PRESENT / AUTOMATED TESTED (`:core` 1570/1570, +10) / CI
+PENDING THIS PUSH / DEVICE VERIFIED ❌**.
+
+§0 Baseline Gate completo: TRUE remote HEAD confermato
+`e80be623812fcc8b34aa7a1451d7fa9ff7827ae2`, CI run #475 (id
+`36937140609`) `completed`/`success` riverificato via GitHub Actions API,
+Master Architecture + CLAUDE.md riletti per intero, Live Voice §§129-131.5
+rilette per intero, codice corrente di Phase 0.1/0.2/0.3/0.4 ispezionato.
+
+Estende (mai sostituisce) §129/§130/§131/§131.5: chiude il prossimo gap di
+osservabilità — quando il recognizer è davvero pronto all'ascolto dopo
+`SessionCoordinator` ha richiesto STT, e quanto overhead di cold-start/
+retry interno è occorso prima — usando il segnale di piattaforma reale già
+dichiarato ma finora vuoto, `RecognitionListener.onReadyForSpeech()`. Zero
+cambi di comportamento/routing/semantica; nessun secondo owner introdotto.
+
+## 131.6.1 Owner reali preservati (nessun secondo owner creato)
+
+- `AndroidOnDeviceSpeechEngine` — resta l'unico `RecognitionListener`
+  owner; `onReadyForSpeech()` (già dichiarata, vuota) è solo riempita, mai
+  sostituita con un secondo meccanismo. Il loop di retry (`RETRY_BACKOFF_MS`/
+  `TRANSIENT_CODES`, invariati byte-per-byte) resta esattamente lo stesso;
+  solo osservato, mai modificato.
+- `SessionCoordinator` — resta l'unico owner di sessione;
+  `transcribeWithSpeechBoundaries()` (già esistente dalla Phase 0.3)
+  guadagna un secondo listener/barriera parallelo, mirror esatto del primo,
+  mai una seconda funzione/coordinatore STT.
+- `VoiceTurnDiagnosticsRecorder` — resta l'unico punto che chiama
+  `System.nanoTime()`; i nuovi `markSttReady()`/`markSttAttemptCount()`
+  seguono esattamente il pattern idempotente/no-op-fuori-turno già in uso
+  per `markUserSpeechStarted()`/`markTtsPlaybackStarted()`.
+- `RecognizerWakeWordEngine` — riverificato strutturalmente isolato: la
+  propria istanza separata di `AndroidOnDeviceSpeechEngine` non sottoscrive
+  mai `speechEvents`/`attemptSummaries` — nessuna contaminazione, nessun
+  codice nuovo necessario per garantirlo, solo riverificato (§131.6.6).
+
+Nessun `AndroidOnDeviceSpeechEngine2`, nessun secondo recognizer manager,
+nessun nuovo voice-session coordinator.
+
+## 131.6.2 Trace reale (costruzione → DI → callsite → consumer)
+
+```text
+SpeechToTextEngine (interfaccia) ← AudioModule.bindSpeechToTextEngine
+  → AndroidOnDeviceSpeechEngine (@Singleton, unico implementatore reale)
+      - onReadyForSpeech(): NUOVO — prima vuota, ora emette
+        SttSpeechEvent(invocationId, READY) se myGeneration ==
+        attemptGeneration.get() (stesso fencing già usato da
+        onBeginningOfSpeech/onEndOfSpeech dalla Phase 0.3)
+      - transcribe(): NUOVO — conta attemptsMade nello stesso loop di
+        retry esistente (invariato), emette un SttAttemptSummary una sola
+        volta, sincronamente, subito prima di ritornare
+      - speechEvents: SharedFlow<SttSpeechEvent> ora READY|STARTED|ENDED
+      - attemptSummaries: SharedFlow<SttAttemptSummary> (NUOVO, canale
+        separato — mai infilato in SttSpeechEvent)
+
+SessionCoordinator.transcribeWithSpeechBoundaries() (esistente, Phase 0.3)
+  → NUOVO secondo listener su stt.attemptSummaries, stessa barriera
+    subscription-prima-della-chiamata del primo
+  → il listener esistente su stt.speechEvents ora gestisce anche READY
+      → voiceDiagnostics.markSttReady()
+      → voiceDiagnostics.markSttAttemptCount(summary.attemptCount)
+
+VoiceTurnDiagnosticsRecorder (invariato come clock owner)
+  - MutableTurn guadagna sttReadyAtMs/sttAttemptCount
+  - toTimestamps()/toSttAttemptEvidence() → passati a
+    VoiceTurnDiagnostics.compute(..., sttAttempts = ...) in finish()
+
+VoiceTurnDiagnostics (:core, puro) — ESTESO additivamente
+  - VoiceTurnTimestamps.sttReadyAtMs (nuovo campo raw)
+  - VoiceTurnSttAttemptEvidence (nuovo, attemptCount: Int?)
+  - sttReadyLatencyMs/speechStartAfterReadyMs/sttAttemptCount/
+    sttColdStartRetryObserved — tutti derivati puramente in compute(),
+    stessa disciplina ordered-or-null di ogni metrica precedente
+
+DiagnosticsScreen.kt "Diagnostica vocale (debug)" (riusata) — una nuova
+riga bounded: "STT pronto=Xms · voce dopo pronto=Xms · tentativi=N"
+```
+
+## 131.6.3 Il contratto evento, esattamente come richiesto
+
+`SttSpeechEvent.Type` passa da `{STARTED, ENDED}` a `{READY, STARTED,
+ENDED}` — nessuna stringa generica, nessuna `Map<String, Any>`/`Bundle`
+passthrough/testo di errore/transcript, `invocationId` fencing preservato
+identico. L'attempt count vive deliberatamente in un canale **separato**
+(`SttAttemptSummary`, non una quarta variante di `SttSpeechEvent.Type`):
+è bookkeeping di retry, non un confine di parlato, e infilarlo nella
+stessa tassonomia avrebbe confuso due domini di osservazione distinti.
+
+## 131.6.4 Fencing eventi stantii — generazione riusata, non reinventata
+
+`onReadyForSpeech()` usa **esattamente** lo stesso `attemptGeneration`
+(`AtomicLong`, instance-scoped) già usato da `onBeginningOfSpeech()`/
+`onEndOfSpeech()` dalla Phase 0.3 — un READY tardivo da un retry interno
+abbandonato, o da un'invocazione esterna già superata, è rigettato
+deterministicamente nell'istante in cui un tentativo più recente è
+iniziato, mai per finestra temporale. `SttAttemptSummary` non ha bisogno
+dello stesso fencing per generazione: è emesso **sincronamente** da
+`transcribe()` stesso (il proprietario del loop), non da un callback di
+piattaforma asincrono — l'unico filtro necessario (già applicato da
+`SessionCoordinator`) è il confronto per `invocationId`, identico a quello
+già usato per `speechEvents`.
+
+## 131.6.5 Cold-start/retry — osservato, mai modificato
+
+`RETRY_BACKOFF_MS = [0, 250, 500, 900, 1400]` e `TRANSIENT_CODES`
+restano byte-per-byte invariati. Il nuovo contatore `attemptsMade` è una
+variabile locale nello stesso loop già esistente, incrementata una volta
+per chiamata ad `attempt()` — mai un secondo loop, mai una policy di retry
+diversa. Esposto solo come conteggio bounded (`Int`) — mai motivo di
+retry/codice errore/testo libero, come richiesto esplicitamente da §8 del
+task.
+
+## 131.6.6 Wake word — isolamento riverificato, nessuna modifica
+
+`RecognizerWakeWordEngine` possiede la propria istanza separata di
+`AndroidOnDeviceSpeechEngine` (`private val stt = AndroidOnDeviceSpeechEngine(context)`,
+mai il singleton condiviso) e chiama `stt.transcribe(languageTag)` senza
+mai sottoscrivere `speechEvents`/`attemptSummaries` — riverificato per
+lettura diretta del codice, nessuna contaminazione possibile, nessun bug
+di isolamento trovato, nessuna modifica necessaria. `wakeWordLatencyMs`
+deliberatamente **non implementato**, come esplicitamente richiesto.
+
+## 131.6.7 Semantica esplicita — READY ≠ STARTED
+
+READY non significa: l'utente ha iniziato a parlare; l'audio del
+microfono è non-zero; lo STT finale avrà successo; esiste un transcript
+parziale. STARTED continua a significare solo `onBeginningOfSpeech()`
+reale; ENDED continua a significare solo `onEndOfSpeech()` reale — i tre
+fatti restano separati, mai conflati, in ogni doc comment e in ogni test.
+
+## 131.6.8 Privacy
+
+Zero transcript/testo libero/parametri recognizer grezzi in
+`SttSpeechEvent`/`SttAttemptSummary`/`VoiceTurnSttAttemptEvidence` —
+provato per riflessione Java pura (`VoiceTurnDiagnosticsTest`, lo stesso
+test dedicato già usato per `VoiceTurnAudioEvidence` in Phase 0.4, esteso
+qui per il nuovo tipo). Nessuna nuova egress.
+
+## 131.6.9 Test
+
+10 nuovi, zero regressioni: 9 puri `:core` (`VoiceTurnDiagnosticsTest.kt`
+— READY+STT-start-valido produce latenza reale/non-negativa; READY
+mancante → null; READY prima della richiesta STT → null, mai negativo;
+STARTED dopo READY → speechStartAfterReadyMs reale; STARTED prima di
+READY → null; primo tentativo riuscito → attemptCount=1,
+sttColdStartRetryObserved=false; retry poi successo → attemptCount>1,
+sttColdStartRetryObserved=true; nessun riepilogo tentativi →
+attemptCount/sttColdStartRetryObserved entrambi null, mai fabbricati come
+zero/false; nessuna evidenza di parlato/prontezza → ogni metrica Phase 0.5
+non disponibile) + 1 riflessione privacy (`VoiceTurnSttAttemptEvidence`
+porta solo un campo `Int`) + 13 `app/`
+(`VoiceTurnDiagnosticsRecorderTest.kt` — no-op senza turno (ready e
+attempt-count separatamente), coppia richiesta-poi-pronto produce latenza
+reale end-to-end, prontezza senza richiesta precedente non fabbrica mai
+una latenza, solo la prima osservazione di prontezza per turno è accettata,
+evento tardivo dopo finish non muta, prontezza alimenta
+speechStartAfterReadyMs end-to-end, conteggio tentativi end-to-end, solo
+il primo riepilogo tentativi per turno è accettato, riepilogo tardivo dopo
+finish non muta, turno annullato resta CANCELLED indipendentemente
+dall'evidenza ready/attempt, eventi wake-word non raggiungono mai questo
+recorder, nuovo turno parte pulito) — scritti, non eseguibili in questo
+ambiente (nessun SDK Android), CI/device-pending come ogni altra modifica
+`app/` di questo progetto. `cd core && ./gradlew test` verde —
+**1570/1570** (nessuna regressione sui 1560 preesistenti).
+
+## 131.6.10 Semantic/Protocol/Privacy Impact Check
+
+Tutti NO — nessun dominio/intent/operazione/slot/classificatore/dataset/
+retraining/calibrazione/OOD toccato, `BLIND` non toccato, `core/semantic/*`
+non toccato (verificato via grep); `jarvis-protocol`/`jarvis-core` non
+toccati; nessuna nuova egress.
+
+## 131.6.11 Device Acceptance
+
+**Non eseguita in questo pass**, come esplicitamente richiesto. Il
+candidato Honor `1236015` (pinnato da MICRO-PATCH E.1) **resta pinnato**,
+nessuna nuova APK di questo commit lo sostituisce. Una futura
+qualificazione dispositivo dedicata testerà l'affidabilità/latenza reale
+di `onReadyForSpeech()`.
+
+## 131.6.12 Conferme esplicite richieste
+
+- DEVICE VERIFIED: **NO**.
+- Morning runtime: **non toccato** da questa fase.
+- PA-2: **NOT STARTED** — non toccato.
+- Pass 14B: **PAUSED/USER-PC REQUIRED** — non toccato.
+- Pass 15: **NOT STARTED** — non toccato.
+- BLIND: **UNTOUCHED** — non toccato.
+- Honor candidate `1236015`: **PINNED** — invariato.
+- Work Package E: **OPEN** — non applicabile a questo passaggio.
+
+**Fermato qui, come esplicitamente richiesto — non avviata
+automaticamente la Phase 0.6, VAD, AEC, full-duplex, redesign wake-word o
+streaming LLM→TTS.**
+
+---
+
 # 132. MASTER CHANGELOG
+
+## v1.23 — 2026-10-02
+
+**RECONCILIAZIONE PHASE 0.4 → CI VERIFIED #475 + EVIDENZA MORNING
+2026-10-02 + LIVE VOICE PHASE 0.5 — STT LISTEN-READY + COLD-START CAUSAL
+OBSERVABILITY.** §0 Baseline Gate completo: TRUE remote HEAD confermato
+`e80be623812fcc8b34aa7a1451d7fa9ff7827ae2`, CI run #475 (id
+`36937140609`) `completed`/`success` riverificato via GitHub Actions API.
+
+**Riconciliazione Phase 0.4 (documentazione, nessun cambio runtime)**: il
+primo push di Phase 0.4 (`97a9368`, run #474) è fallito
+`:app:compileDebugKotlin` con due errori reali di compilazione — vedi
+§131.5 (sezione aggiornata) per il dettaglio — corretti nel push
+immediatamente successivo (`e80be62`, run #475, tutti i 17 step verdi).
+Phase 0.4 passa quindi da `CI PENDING THIS PUSH` a `CI VERIFIED ✅ (#475)`.
+
+**Nuova evidenza reale di dispositivo, 2026-10-02 — Morning NON chiuso**:
+un vero sblocco (≈08:25), un vero allarme di sistema (08:30), una
+consegna reale del briefing mattutino alle 08:35:01 con
+`triggerSource=NEXT_ALARM` (occurrence key `MORNING_DIGEST:2026-10-02`,
+claim WON, stato CLAIMED→DELIVERED, `NEXT_ALARM_RECEIVER_FIRED`/
+`PROACTIVE_CALL_ATTEMPTED`/`PROACTIVE_CALL_SUCCEEDED` tutti a 08:35:01).
+A differenza della precedente osservazione (collisione con CONFIGURED_TIME
+alle 08:50, che impediva di isolare NEXT_ALARM), questo scenario prova
+NEXT_ALARM **indipendentemente** — `MORNING NEXT_ALARM DELIVERY` passa da
+"NOT INDEPENDENTLY QUALIFIED" a "PROVEN FOR 2026-10-02 SCENARIO". FIRST_UNLOCK
+resta **senza alcun checkpoint** nella cronologia conservata — nessun
+cambio di stato. **Morning qualification complessiva resta NON chiusa** —
+richiede una riconferma reale su più mattine, non solo uno scenario
+isolato — nessuna inferenza oltre l'evidenza raccolta.
+
+**LIVE VOICE PHASE 0.5**: usa il segnale di piattaforma reale
+`RecognitionListener.onReadyForSpeech()` (già dichiarato in
+`AndroidOnDeviceSpeechEngine`, finora vuoto) per una nuova variante
+`SttSpeechEvent.Type.READY` (closed-world, insieme a STARTED/ENDED
+esistenti, stesso fencing per `attemptGeneration` già stabilito dalla
+Phase 0.3) più un canale separato `SttAttemptSummary` (conteggio bounded
+di tentativi interni di retry cold-start, emesso sincronamente da
+`transcribe()` stesso — mai infilato nella tassonomia degli eventi di
+confine di parlato). `VoiceTurnDiagnostics` (`:core`) estesa
+additivamente con `sttReadyLatencyMs`/`speechStartAfterReadyMs`/
+`sttAttemptCount`/`sttColdStartRetryObserved`, tutti `null` a meno che
+l'evidenza reale non sia stata osservata e correttamente ordinata — mai
+fabbricati. `RETRY_BACKOFF_MS`/`TRANSIENT_CODES` restano byte-per-byte
+invariati; `RecognizerWakeWordEngine` riverificato strutturalmente isolato
+(nessun bug trovato, nessuna modifica necessaria); `wakeWordLatencyMs`
+deliberatamente non implementato come richiesto esplicitamente. Vedi
+§131.6 per il dettaglio completo. 10 nuovi test (9 `:core` + 1 riflessione
+privacy, più 13 `app/` scritti/non eseguibili in questo ambiente) — `cd
+core && ./gradlew test` verde, **1570/1570**, nessuna regressione.
+
+**Fermato qui, come esplicitamente richiesto — non avviata
+automaticamente la Phase 0.6, VAD, AEC, full-duplex, redesign wake-word o
+streaming LLM→TTS.**
+
+---
 
 ## v1.22 — 2026-10-01
 

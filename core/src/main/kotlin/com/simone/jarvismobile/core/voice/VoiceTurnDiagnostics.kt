@@ -97,6 +97,38 @@ data class VoiceTurnTimestamps(
      * stops speaking does JARVIS start playback?"
      */
     val speechEndedAtMs: Long? = null,
+    /**
+     * Live Voice Phase 0.5 — set only from a genuine platform
+     * `RecognitionListener.onReadyForSpeech()` callback (see
+     * [com.simone.jarvismobile.audio.AndroidOnDeviceSpeechEngine]), never
+     * inferred from `transcribe()` being called, recognizer construction,
+     * or any other proxy. Means only that the recognizer reports it is
+     * ready for the user to speak — NOT that the user has started speaking,
+     * that microphone audio is non-zero, or that recognition will
+     * ultimately succeed. The anchor for
+     * [VoiceTurnDiagnostics.sttReadyLatencyMs] (paired with [sttStartedAtMs])
+     * and [VoiceTurnDiagnostics.speechStartAfterReadyMs] (paired with
+     * [speechStartedAtMs]).
+     */
+    val sttReadyAtMs: Long? = null,
+)
+
+/**
+ * Live Voice Phase 0.5 — cold-start/internal-retry evidence for one voice
+ * turn's STT invocation, assembled by
+ * [com.simone.jarvismobile.audio.VoiceTurnDiagnosticsRecorder] from
+ * [com.simone.jarvismobile.audio.SttAttemptSummary], a single summary
+ * emitted synchronously by `AndroidOnDeviceSpeechEngine.transcribe()`
+ * itself right before it returns (not a platform callback, so unlike the
+ * route/focus evidence in Phase 0.4 there is no staleness/generation
+ * concern here beyond the same invocation-id filtering already applied
+ * upstream, in [com.simone.jarvismobile.audio.SessionCoordinator]).
+ * `attemptCount == null` means never observed this turn — never fabricated
+ * as zero or one.
+ */
+data class VoiceTurnSttAttemptEvidence(
+    /** How many internal recognizer attempts (this engine's own transient cold-start retry loop) this turn's STT invocation needed. `null` if never observed. */
+    val attemptCount: Int? = null,
 )
 
 /**
@@ -230,6 +262,33 @@ data class VoiceTurnDiagnostics(
      * never "conversational latency" or any other undocumented alias.
      */
     val responsePlaybackAfterSpeechMs: Long?,
+    /**
+     * Live Voice Phase 0.5 — `SessionCoordinator` requests STT
+     * ([VoiceTurnTimestamps.sttStartedAtMs]) -> the real platform
+     * `onReadyForSpeech()` observation ([VoiceTurnTimestamps.sttReadyAtMs]).
+     * Null unless both endpoints were observed and ordered (request <=
+     * ready) — never fabricated, never negative.
+     */
+    val sttReadyLatencyMs: Long?,
+    /**
+     * Live Voice Phase 0.5 — `onReadyForSpeech()` -> the real platform
+     * `onBeginningOfSpeech()` observation ([VoiceTurnTimestamps.speechStartedAtMs]).
+     * Null unless both endpoints were observed and ordered (ready <=
+     * speech-started) — never fabricated, never negative. READY does not
+     * mean the user started speaking; this metric is exactly the gap
+     * between the two distinct platform facts.
+     */
+    val speechStartAfterReadyMs: Long?,
+    /**
+     * Live Voice Phase 0.5 — how many internal recognizer attempts
+     * ([com.simone.jarvismobile.audio.AndroidOnDeviceSpeechEngine]'s own
+     * transient cold-start retry loop, unchanged by this phase) this turn's
+     * STT invocation needed. `null` means never observed this turn — never
+     * fabricated as `1`.
+     */
+    val sttAttemptCount: Int?,
+    /** True only when [sttAttemptCount] is known AND greater than one — `null` (not `false`) when [sttAttemptCount] itself is unknown, never implying "exactly one attempt" from an absence of evidence. */
+    val sttColdStartRetryObserved: Boolean?,
     /** Live Voice Phase 0.4 — see [VoiceTurnAudioEvidence]'s own doc comment for the observation contract. */
     val initialInputRoute: ObservedAudioRoute,
     val initialOutputRoute: ObservedAudioRoute,
@@ -264,6 +323,8 @@ data class VoiceTurnDiagnostics(
             finishedAtMs: Long?,
             /** Live Voice Phase 0.4 — defaulted so every existing caller/test is unaffected. */
             audio: VoiceTurnAudioEvidence = VoiceTurnAudioEvidence(),
+            /** Live Voice Phase 0.5 — defaulted so every existing caller/test is unaffected. */
+            sttAttempts: VoiceTurnSttAttemptEvidence = VoiceTurnSttAttemptEvidence(),
         ): VoiceTurnDiagnostics {
             val bargeInRequested = timestamps.bargeInRequestedAtMs != null
             // Only claimed when the barge-in request happened before (or at)
@@ -311,6 +372,11 @@ data class VoiceTurnDiagnostics(
             val sttFinalizationAfterSpeechMs = orderedLatency(timestamps.speechEndedAtMs, timestamps.sttFinalAtMs)
             val responsePlaybackAfterSpeechMs = orderedLatency(timestamps.speechEndedAtMs, timestamps.ttsPlaybackStartAtMs)
 
+            // Live Voice Phase 0.5 — same ordered/never-fabricated discipline.
+            val sttReadyLatencyMs = orderedLatency(timestamps.sttStartedAtMs, timestamps.sttReadyAtMs)
+            val speechStartAfterReadyMs = orderedLatency(timestamps.sttReadyAtMs, timestamps.speechStartedAtMs)
+            val sttColdStartRetryObserved = sttAttempts.attemptCount?.let { it > 1 }
+
             return VoiceTurnDiagnostics(
                 turnId = turnId,
                 startedAtEpochMs = startedAtEpochMs,
@@ -328,6 +394,10 @@ data class VoiceTurnDiagnostics(
                 userSpeechDurationMs = userSpeechDurationMs,
                 sttFinalizationAfterSpeechMs = sttFinalizationAfterSpeechMs,
                 responsePlaybackAfterSpeechMs = responsePlaybackAfterSpeechMs,
+                sttReadyLatencyMs = sttReadyLatencyMs,
+                speechStartAfterReadyMs = speechStartAfterReadyMs,
+                sttAttemptCount = sttAttempts.attemptCount,
+                sttColdStartRetryObserved = sttColdStartRetryObserved,
                 initialInputRoute = audio.initialInputRoute,
                 initialOutputRoute = audio.initialOutputRoute,
                 finalInputRoute = audio.finalInputRoute,

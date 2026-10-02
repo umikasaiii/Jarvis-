@@ -414,4 +414,192 @@ class VoiceTurnDiagnosticsRecorderTest {
         assertEquals(false, second.audioFocusLostDuringTurn)
         assertEquals(0, second.routeChangeCount)
     }
+
+    // --- Live Voice Phase 0.5 — markSttReady/markSttAttemptCount ----------
+
+    @Test
+    fun `a ready call with no in-flight turn is a safe no-op`() {
+        val recorder = VoiceTurnDiagnosticsRecorder()
+        recorder.markSttReady()
+        assertEquals(0, recorder.history.value.size)
+    }
+
+    @Test
+    fun `an attempt-count call with no in-flight turn is a safe no-op`() {
+        val recorder = VoiceTurnDiagnosticsRecorder()
+        recorder.markSttAttemptCount(2)
+        assertEquals(0, recorder.history.value.size)
+    }
+
+    @Test
+    fun `a matching stt-started-then-ready pair produces a real non-negative sttReadyLatencyMs end to end`() {
+        val recorder = VoiceTurnDiagnosticsRecorder()
+        recorder.beginTurn(followUpIndex = 0)
+        recorder.markSttStarted()
+        Thread.sleep(10)
+        recorder.markSttReady()
+        recorder.finish(VoiceTurnOutcome.COMPLETED, VoiceTurnFailureStage.NONE)
+
+        val record = recorder.history.value.single()
+        val latency = record.sttReadyLatencyMs
+        assertTrue("expected a non-null, non-negative latency, got $latency", latency != null && latency >= 0)
+    }
+
+    @Test
+    fun `ready observed without a preceding stt-started mark never fabricates a latency`() {
+        val recorder = VoiceTurnDiagnosticsRecorder()
+        recorder.beginTurn(followUpIndex = 0)
+        // No markSttStarted() at all.
+        recorder.markSttReady()
+        recorder.finish(VoiceTurnOutcome.COMPLETED, VoiceTurnFailureStage.NONE)
+
+        val record = recorder.history.value.single()
+        assertNull(record.sttReadyLatencyMs)
+    }
+
+    @Test
+    fun `only the first ready observation is kept for a turn`() {
+        val recorder = VoiceTurnDiagnosticsRecorder()
+        recorder.beginTurn(followUpIndex = 0)
+        recorder.markSttStarted()
+        recorder.markSttReady()
+        // A second (wrongly-accepted) observation would measurably move the
+        // latency forward if it were not ignored.
+        Thread.sleep(60)
+        recorder.markSttReady()
+        recorder.finish(VoiceTurnOutcome.COMPLETED, VoiceTurnFailureStage.NONE)
+
+        val record = recorder.history.value.single()
+        assertTrue(
+            "second observation must be ignored, but latency was ${record.sttReadyLatencyMs}ms",
+            (record.sttReadyLatencyMs ?: Long.MAX_VALUE) < 60,
+        )
+    }
+
+    @Test
+    fun `a late ready call after the turn already finished never mutates the finished record`() {
+        val recorder = VoiceTurnDiagnosticsRecorder()
+        recorder.beginTurn(followUpIndex = 0)
+        recorder.markSttStarted()
+        recorder.finish(VoiceTurnOutcome.COMPLETED, VoiceTurnFailureStage.NONE)
+
+        val before = recorder.history.value.single()
+        assertNull(before.sttReadyLatencyMs)
+
+        // A stale event arriving after finish() — must not throw, and must
+        // not retroactively change the already-published record.
+        recorder.markSttReady()
+
+        val after = recorder.history.value.single()
+        assertEquals(before, after)
+        assertNull(after.sttReadyLatencyMs)
+    }
+
+    @Test
+    fun `ready feeds speechStartAfterReadyMs end to end through the recorder`() {
+        val recorder = VoiceTurnDiagnosticsRecorder()
+        recorder.beginTurn(followUpIndex = 0)
+        recorder.markSttStarted()
+        recorder.markSttReady()
+        Thread.sleep(10)
+        recorder.markUserSpeechStarted()
+        recorder.finish(VoiceTurnOutcome.COMPLETED, VoiceTurnFailureStage.NONE)
+
+        val record = recorder.history.value.single()
+        val gap = record.speechStartAfterReadyMs
+        assertTrue("expected a non-null, non-negative value, got $gap", gap != null && gap >= 0)
+    }
+
+    @Test
+    fun `attempt count observed through the recorder end to end`() {
+        val recorder = VoiceTurnDiagnosticsRecorder()
+        recorder.beginTurn(followUpIndex = 0)
+        recorder.markSttAttemptCount(3)
+        recorder.finish(VoiceTurnOutcome.COMPLETED, VoiceTurnFailureStage.NONE)
+
+        val record = recorder.history.value.single()
+        assertEquals(3, record.sttAttemptCount)
+        assertEquals(true, record.sttColdStartRetryObserved)
+    }
+
+    @Test
+    fun `only the first attempt-count observation is kept for a turn`() {
+        val recorder = VoiceTurnDiagnosticsRecorder()
+        recorder.beginTurn(followUpIndex = 0)
+        recorder.markSttAttemptCount(1)
+        // A second, wrongly-accepted summary must be ignored.
+        recorder.markSttAttemptCount(5)
+        recorder.finish(VoiceTurnOutcome.COMPLETED, VoiceTurnFailureStage.NONE)
+
+        val record = recorder.history.value.single()
+        assertEquals(1, record.sttAttemptCount)
+        assertEquals(false, record.sttColdStartRetryObserved)
+    }
+
+    @Test
+    fun `a late attempt-count call after the turn already finished never mutates the finished record`() {
+        val recorder = VoiceTurnDiagnosticsRecorder()
+        recorder.beginTurn(followUpIndex = 0)
+        recorder.finish(VoiceTurnOutcome.COMPLETED, VoiceTurnFailureStage.NONE)
+
+        val before = recorder.history.value.single()
+        assertNull(before.sttAttemptCount)
+
+        recorder.markSttAttemptCount(2)
+
+        val after = recorder.history.value.single()
+        assertEquals(before, after)
+        assertNull(after.sttAttemptCount)
+    }
+
+    @Test
+    fun `a cancelled turn keeps the CANCELLED outcome regardless of ready/attempt evidence`() {
+        val recorder = VoiceTurnDiagnosticsRecorder()
+        recorder.beginTurn(followUpIndex = 0)
+        recorder.markSttStarted()
+        recorder.markSttReady()
+        recorder.markSttAttemptCount(2)
+        recorder.markCancellationRequested()
+        recorder.finishCancelled()
+
+        val record = recorder.history.value.single()
+        assertEquals(VoiceTurnOutcome.CANCELLED, record.outcome)
+    }
+
+    @Test
+    fun `wake-word recognizer events never reach this recorder -- there is no subscriber wired to a second instance`() {
+        // RecognizerWakeWordEngine owns its own, entirely separate
+        // AndroidOnDeviceSpeechEngine instance and never subscribes this
+        // recorder to it (see SessionCoordinator's own doc comment) --
+        // this test documents that guarantee at the recorder level: a
+        // fresh turn with no marks at all has no ready/attempt evidence,
+        // exactly as if no wake-word activity could ever leak in.
+        val recorder = VoiceTurnDiagnosticsRecorder()
+        recorder.beginTurn(followUpIndex = 0)
+        recorder.finish(VoiceTurnOutcome.COMPLETED, VoiceTurnFailureStage.NONE)
+
+        val record = recorder.history.value.single()
+        assertNull(record.sttReadyLatencyMs)
+        assertNull(record.sttAttemptCount)
+    }
+
+    @Test
+    fun `a new turn after a finished one starts with no ready or attempt evidence of its own`() {
+        val recorder = VoiceTurnDiagnosticsRecorder()
+
+        recorder.beginTurn(followUpIndex = 0)
+        recorder.markSttStarted()
+        recorder.markSttReady()
+        recorder.markSttAttemptCount(3)
+        recorder.finish(VoiceTurnOutcome.COMPLETED, VoiceTurnFailureStage.NONE)
+
+        recorder.beginTurn(followUpIndex = 1)
+        // No markSttReady()/markSttAttemptCount() for this second turn.
+        recorder.finish(VoiceTurnOutcome.COMPLETED, VoiceTurnFailureStage.NONE)
+
+        val turns = recorder.history.value
+        assertEquals(2, turns.size)
+        assertNull(turns[1].sttReadyLatencyMs)
+        assertNull(turns[1].sttAttemptCount)
+    }
 }

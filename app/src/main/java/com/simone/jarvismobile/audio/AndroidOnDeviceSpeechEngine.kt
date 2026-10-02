@@ -44,11 +44,15 @@ class AndroidOnDeviceSpeechEngine @Inject constructor(
     private val _speechEvents = MutableSharedFlow<SttSpeechEvent>(replay = 0, extraBufferCapacity = 4)
     override val speechEvents: SharedFlow<SttSpeechEvent> = _speechEvents.asSharedFlow()
 
+    private val _attemptSummaries = MutableSharedFlow<SttAttemptSummary>(replay = 0, extraBufferCapacity = 4)
+    override val attemptSummaries: SharedFlow<SttAttemptSummary> = _attemptSummaries.asSharedFlow()
+
     @Volatile private var recognizer: SpeechRecognizer? = null
 
     /**
-     * Live Voice Phase 0.3 — monotonically increasing generation, bumped
-     * once per internal recognizer attempt ([attempt] below), whether that
+     * Live Voice Phase 0.3 (now also fencing [RecognitionListener.onReadyForSpeech]
+     * since Phase 0.5) — monotonically increasing generation, bumped once
+     * per internal recognizer attempt ([attempt] below), whether that
      * attempt belongs to a brand-new [transcribe] invocation or one of this
      * engine's own internal transient retries of the same invocation. One
      * counter does both levels of fencing at once: a late
@@ -57,11 +61,14 @@ class AndroidOnDeviceSpeechEngine @Inject constructor(
      * and only emits when they still match — deterministically rejecting a
      * stale callback (from an abandoned retry attempt, or from an entirely
      * different, already-superseded invocation) the instant a newer attempt
-     * has begun, never by a time window. Instance-scoped (never a companion
-     * object), so [RecognizerWakeWordEngine]'s own separate instance of
-     * this engine has its own independent counter. This is the only place
-     * that reads/writes it; [System.nanoTime] itself is never read here —
-     * see [VoiceTurnDiagnosticsRecorder], the sole clock owner.
+     * has begun, never by a time window. A stale `onReadyForSpeech` from an
+     * abandoned retry is fenced exactly the same way as a stale
+     * `onBeginningOfSpeech`/`onEndOfSpeech` — same comparison, same
+     * guarantee. Instance-scoped (never a companion object), so
+     * [RecognizerWakeWordEngine]'s own separate instance of this engine has
+     * its own independent counter. This is the only place that reads/writes
+     * it; [System.nanoTime] itself is never read here — see
+     * [VoiceTurnDiagnosticsRecorder], the sole clock owner.
      */
     private val attemptGeneration = AtomicLong(0L)
 
@@ -85,13 +92,25 @@ class AndroidOnDeviceSpeechEngine @Inject constructor(
      * the moment it appears — those are never retried.
      */
     override suspend fun transcribe(languageTag: String, invocationId: String): SttResult {
+        // Live Voice Phase 0.5 — purely observational: counts how many times
+        // this loop actually calls attempt() for THIS invocation, changes
+        // nothing about the loop itself (same backoff list, same transient-
+        // code check, same early return). Emitted once, synchronously,
+        // right before returning — see SttAttemptSummary's own doc comment
+        // for why this is deliberately not threaded through speechEvents.
+        var attemptsMade = 0
         var lastTransient: SttResult.Failure? = null
         for (settle in RETRY_BACKOFF_MS) {
             if (settle > 0) delay(settle)
+            attemptsMade++
             val r = attempt(languageTag, invocationId)
-            if (r !is SttResult.Failure || r.code !in TRANSIENT_CODES) return r
+            if (r !is SttResult.Failure || r.code !in TRANSIENT_CODES) {
+                _attemptSummaries.tryEmit(SttAttemptSummary(invocationId, attemptsMade))
+                return r
+            }
             lastTransient = r
         }
+        _attemptSummaries.tryEmit(SttAttemptSummary(invocationId, attemptsMade))
         return lastTransient ?: SttResult.Failure("stt_unknown")
     }
 
@@ -118,7 +137,11 @@ class AndroidOnDeviceSpeechEngine @Inject constructor(
 
         val deferred = CompletableDeferred<SttResult>()
         rec.setRecognitionListener(object : RecognitionListener {
-            override fun onReadyForSpeech(params: Bundle?) {}
+            override fun onReadyForSpeech(params: Bundle?) {
+                if (myGeneration == attemptGeneration.get()) {
+                    _speechEvents.tryEmit(SttSpeechEvent(invocationId, SttSpeechEvent.Type.READY))
+                }
+            }
 
             override fun onBeginningOfSpeech() {
                 if (myGeneration == attemptGeneration.get()) {
