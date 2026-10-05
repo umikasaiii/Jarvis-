@@ -102,7 +102,7 @@ quali repository sono coinvolte e ne verifica separatamente branch e HEAD.
 
 | Componente | Repository | Branch canonico | TRUE remote HEAD |
 |---|---|---|---|
-| Android / applicazione | `umikasaiii/Jarvis-` | `claude/jarvis-mobile-automazioni-dashboard-b4xa7e` | `e9e5e3f3170b79de680137d01f00c7b8ae31d841` (docs-only) |
+| Android / applicazione | `umikasaiii/Jarvis-` | `claude/jarvis-mobile-automazioni-dashboard-b4xa7e` | `be3c4b9bd2b566a4388004d547f75d791c3c3cdc` = ultimo commit runtime (Live Voice 0.6); il HEAD può essere un successivo commit docs-only, vedi §2.1 |
 | Core | `umikasaiii/Jarvis-core` | `claude/jarvis-core-server-7uhajh` (default GitHub) | `32bb8f42e91dc07da4d8086ea83ff7b482c85376` |
 | Protocol | `umikasaiii/Jarvis-protocol` | `main` (default GitHub) | `afb1350fadbdbf90cf3c40861731e4435e781f61` (v1.1.0) |
 
@@ -127,27 +127,31 @@ Android corrente: nessun file toccato dai passi PA-1A/PA-1B/Live Voice 0.x.
 Si distinguono esplicitamente HEAD del branch e ultimo commit runtime:
 
 ```text
-BRANCH HEAD (docs-only)        e9e5e3f3170b79de680137d01f00c7b8ae31d841   CI #478 SUCCESS
-LATEST RUNTIME/CODE COMMIT     db97cc08fa758bed27def133354064d45bf0c4c8   CI #477 SUCCESS
-LIVE VOICE PHASE 0.5           CODE PRESENT / AUTOMATED TESTED (core 1570/1570) / CI VERIFIED (#477) / DEVICE PENDING
+LATEST RUNTIME/CODE COMMIT     be3c4b9bd2b566a4388004d547f75d791c3c3cdc   CI #480 SUCCESS (Live Voice 0.6)
+PREVIOUS RUNTIME/CODE COMMIT   db97cc08fa758bed27def133354064d45bf0c4c8   CI #477 SUCCESS (Live Voice 0.5)
+BRANCH HEAD                    docs-only commits may follow be3c4b9; verify with git ls-remote
+LIVE VOICE PHASE 0.6           CODE PRESENT / AUTOMATED TESTED (core 1584/1584) / CI VERIFIED (#480) / DEVICE PENDING
 ```
 
-- **`db97cc0`** — fix JVM-safe del nome di un test Phase 0.5 — è l'ultimo
-  commit che porta codice/test. Chiude la Live Voice Phase 0.5, implementata
-  in `a897ae2`. Il primo push (`a897ae2`, run #476) era fallito perché un
-  nome di test Kotlin tra backtick conteneva un carattere `/` illegale in un
-  identificatore JVM; `db97cc0` ha corretto solo quel nome (nessun cambio a
-  corpo del test, runtime, STT, retry o semantica diagnostica). Run #477:
-  `completed`/`success` (id `37061995256`).
-- **`e9e5e3f`** — HEAD corrente del branch — è **docs-only** (riconciliazione
-  del Master a CI VERIFIED #477). **NON è una modifica runtime.** Run #478:
-  `completed`/`success` (id `37063952813`).
-- Qualsiasi commit docs-only successivo a `e9e5e3f` può cambiare il branch
-  HEAD senza cambiare il runtime Android: per device/runtime acceptance usare
-  sempre l'ultimo commit code-bearing esplicitamente identificato (oggi
-  `db97cc0`), mai il branch HEAD per inferenza.
-- Live Voice 0.1 #460, 0.2 #462, 0.3 #464, 0.4 #475, 0.5 #477: tutte
-  CI VERIFIED, **nessuna DEVICE VERIFIED** (device pending).
+- **`be3c4b9`** — Live Voice Phase 0.6 (primo parziale STT, §131.7) — è
+  l'ultimo commit che porta codice/test. Run #480: `completed`/`success`
+  (id `37330255985`), tutti gli step verdi. APK `latest-debug` costruito da
+  questo commit: package `com.simone.jarvismobile.debug`, versionCode 1,
+  firmato con il certificato di `app/debug.keystore` (SHA-256
+  `33:01:8D:7F:10:C4:A1:AA:07:CC:1E:60:9B:A5:41:CA:F1:CD:31:8D:7E:67:05:56:F9:C8:26:D2:9B:07:C8:FB`,
+  stabile: aggiornamento in-place compatibile). SHA-256 del file APK di
+  questo build: `43b5ee1c28176ad0dfa3e0011b001707e7ad2eefaac5c997835f15c31367c6d5`
+  — l'hash del FILE cambia a ogni build, l'identità stabile è il
+  certificato di firma.
+- **`db97cc0`** — fix JVM-safe del nome di un test Phase 0.5, run #477:
+  chiude la Live Voice Phase 0.5 (storia in §131.6). `e9e5e3f` (#478) e
+  `86abe8b` (#479) sono commit docs-only.
+- Qualsiasi commit docs-only successivo può cambiare il branch HEAD senza
+  cambiare il runtime Android: per device/runtime acceptance usare sempre
+  l'ultimo commit code-bearing esplicitamente identificato (oggi
+  `be3c4b9`), mai il branch HEAD per inferenza.
+- Live Voice 0.1 #460, 0.2 #462, 0.3 #464, 0.4 #475, 0.5 #477, 0.6 #480:
+  tutte CI VERIFIED, **nessuna DEVICE VERIFIED** (device pending).
 
 **Separazione fondamentale:** il branch corrente NON è il candidato ancora
 in uso per la qualificazione Work Package E sul telefono. Il candidato Honor
@@ -3527,7 +3531,7 @@ Stato:
 - Phase 0.3: CI VERIFIED (#464);
 - Phase 0.4: CI VERIFIED (#475) / DEVICE PENDING;
 - Phase 0.5: CI VERIFIED (#477) / DEVICE PENDING;
-- Phase 0.6: CODE PRESENT / AUTOMATED TESTED / CI PENDING THIS PUSH / DEVICE PENDING (§131.7);
+- Phase 0.6: CI VERIFIED (#480) / DEVICE PENDING (§131.7);
 - device qualification Live Voice: PENDING;
 - vero LLM-token→TTS streaming: **NON IMPLEMENTATO**.
 
@@ -4374,7 +4378,7 @@ LIVE VOICE PHASE 0.2         CI VERIFIED (#462) / DEVICE PENDING
 LIVE VOICE PHASE 0.3         CI VERIFIED (#464) / DEVICE PENDING
 LIVE VOICE PHASE 0.4         CI VERIFIED (#475, commit e80be62) / DEVICE PENDING
 LIVE VOICE PHASE 0.5         CODE PRESENT / AUTOMATED TESTED (core 1570/1570) / CI VERIFIED (#477, commit db97cc0) / DEVICE PENDING
-LIVE VOICE PHASE 0.6         CODE PRESENT / AUTOMATED TESTED (core 1584/1584) / CI PENDING THIS PUSH / DEVICE PENDING
+LIVE VOICE PHASE 0.6         CODE PRESENT / AUTOMATED TESTED (core 1584/1584) / CI VERIFIED (#480, commit be3c4b9) / DEVICE PENDING
 LLM-TOKEN→TTS STREAMING      NOT IMPLEMENTED
 FULL LIVE VOICE              NOT DEVICE VERIFIED
 
@@ -6289,7 +6293,8 @@ streaming LLM→TTS.**
 # 131.7 LIVE VOICE PHASE 0.6 — FIRST PARTIAL TRANSCRIPT CAUSAL OBSERVABILITY
 
 Status: **CODE PRESENT / AUTOMATED TESTED (`:core` 1584/1584, +14) / CI
-PENDING THIS PUSH / DEVICE VERIFIED ❌**. (Questa sezione è numerata
+VERIFIED ✅ (run #480, commit `be3c4b9bd2b566a4388004d547f75d791c3c3cdc`) /
+DEVICE VERIFIED ❌**. (Questa sezione è numerata
 131.7 come 131.5/131.6 per la sequenza delle fasi Live Voice; non è
 la sottosezione "131.7 UI" di Phase 0.3.)
 
