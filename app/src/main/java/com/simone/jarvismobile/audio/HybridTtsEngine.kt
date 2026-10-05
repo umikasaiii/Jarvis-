@@ -78,6 +78,16 @@ class HybridTtsEngine @Inject constructor(
     // bridge/reconcile here, unlike playbackStartEvents above.
     override val audioFocusEvents: SharedFlow<AudioFocusObservation> = focus.focusEvents
 
+    // Phase 0.9: AVAILABLE_PCM only while the neural path is genuinely writing PCM through PcmPlayer;
+    // UNAVAILABLE_PLATFORM_TTS while Android system TTS speaks; IDLE otherwise.
+    override val farEndReferenceCapability: com.simone.jarvismobile.core.voice.FarEndReferenceCapability
+        get() = when {
+            player.farEndSnapshot().capability == com.simone.jarvismobile.core.voice.FarEndReferenceCapability.AVAILABLE_PCM ->
+                com.simone.jarvismobile.core.voice.FarEndReferenceCapability.AVAILABLE_PCM
+            android.state.value == TtsState.SPEAKING -> android.farEndReferenceCapability
+            else -> com.simone.jarvismobile.core.voice.FarEndReferenceCapability.IDLE
+        }
+
     init {
         scope.launch {
             android.playbackStartEvents.collect { _playbackStartEvents.tryEmit(it) }

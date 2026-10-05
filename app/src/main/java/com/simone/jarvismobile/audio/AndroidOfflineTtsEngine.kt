@@ -65,6 +65,11 @@ class AndroidOfflineTtsEngine @Inject constructor(
     private val _audioFocusEvents = MutableSharedFlow<AudioFocusObservation>(extraBufferCapacity = 8)
     override val audioFocusEvents = _audioFocusEvents.asSharedFlow()
 
+    // Phase 0.9: android.speech.tts.TextToSpeech renders audio internally; JARVIS never sees the PCM.
+    // Deliberately NOT faked (no loopback / playback capture / re-synthesis).
+    override val farEndReferenceCapability: com.simone.jarvismobile.core.voice.FarEndReferenceCapability =
+        com.simone.jarvismobile.core.voice.FarEndReferenceCapability.UNAVAILABLE_PLATFORM_TTS
+
     private var tts: TextToSpeech? = null
     private var ready = false
     private val pending = ConcurrentHashMap<String, CompletableDeferred<Unit>>()

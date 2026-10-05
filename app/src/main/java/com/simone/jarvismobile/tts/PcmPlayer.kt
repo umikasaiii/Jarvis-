@@ -5,6 +5,10 @@ import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioTrack
 import android.util.Log
+import com.simone.jarvismobile.core.voice.FarEndPcmFrame
+import com.simone.jarvismobile.core.voice.FarEndReferenceRecorder
+import com.simone.jarvismobile.core.voice.FarEndReferenceSnapshot
+import com.simone.jarvismobile.core.voice.PlaybackWriteLoop
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -18,7 +22,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlin.math.min
 
 /**
  * Plays the float PCM a neural engine produces.
@@ -69,6 +72,15 @@ class PcmPlayer @Inject constructor() {
     val isPlaying: Boolean get() = track != null
 
     /**
+     * Live Voice Phase 0.9 — far-end reference: the PCM `AudioTrack.write` genuinely accepted,
+     * generation-fenced, bounded, replay=0, never blocking playback. Observation only: nothing
+     * here changes what or how audio is played. Taken BEFORE the track volume ([setVolume]).
+     */
+    private val farEnd = FarEndReferenceRecorder()
+    val farEndFrames: SharedFlow<FarEndPcmFrame> = farEnd.frames
+    fun farEndSnapshot(): FarEndReferenceSnapshot = farEnd.snapshot()
+
+    /**
      * Opens a track at [sampleRate]. Reuses the existing one when it matches.
      *
      * Returns an opaque generation token for this session — pass it back to
@@ -79,6 +91,7 @@ class PcmPlayer @Inject constructor() {
         val myGeneration = ++generation
         pollJob?.cancel()
         if (track != null && currentRate == sampleRate) {
+            farEnd.begin(myGeneration, sampleRate)
             stopped = false
             runCatching { track?.play() }
             armPlaybackStartWatch(myGeneration)
@@ -111,6 +124,7 @@ class PcmPlayer @Inject constructor() {
                 .setTransferMode(AudioTrack.MODE_STREAM)
                 .build()
         }.getOrNull() ?: return myGeneration
+        farEnd.begin(myGeneration, sampleRate) // after release(): release() ends the previous reference
         currentRate = sampleRate
         stopped = false
         track = created
@@ -149,6 +163,7 @@ class PcmPlayer @Inject constructor() {
 
     /** Applies a 0..1 volume to this track only, never to the system stream. */
     fun setVolume(volume: Float) {
+        farEnd.setOutputGain(volume)
         runCatching { track?.setVolume(volume.coerceIn(0f, 1f)) }
     }
 
@@ -159,19 +174,16 @@ class PcmPlayer @Inject constructor() {
      */
     suspend fun write(samples: FloatArray): Boolean = withContext(Dispatchers.IO) {
         val t = track ?: return@withContext false
-        var offset = 0
-        while (offset < samples.size) {
-            if (stopped) return@withContext false
-            val n = runCatching {
-                t.write(samples, offset, min(CHUNK, samples.size - offset), AudioTrack.WRITE_BLOCKING)
-            }.getOrDefault(-1)
-            if (n <= 0) {
-                if (n < 0) Log.w(TAG, "audiotrack_write=$n")
-                return@withContext false
-            }
-            offset += n
-        }
-        true
+        val myGeneration = generation
+        PlaybackWriteLoop.write(
+            samples = samples,
+            chunk = CHUNK,
+            generation = myGeneration,
+            isStopped = { stopped },
+            sink = { buf, off, len -> t.write(buf, off, len, AudioTrack.WRITE_BLOCKING) },
+            recorder = farEnd,
+            onWriteError = { Log.w(TAG, "audiotrack_write=$it") },
+        )
     }
 
     /** Lets the queued audio finish, then closes the track. */
@@ -195,6 +207,7 @@ class PcmPlayer @Inject constructor() {
 
     fun stop() {
         stopped = true
+        farEnd.end()
         pollJob?.cancel()
         runCatching { track?.pause() }
         runCatching { track?.flush() }
@@ -202,6 +215,7 @@ class PcmPlayer @Inject constructor() {
     }
 
     private fun release() {
+        farEnd.end()
         runCatching { track?.stop() }
         runCatching { track?.release() }
         track = null

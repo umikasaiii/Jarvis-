@@ -1,6 +1,7 @@
 package com.simone.jarvismobile.audio
 
 import com.simone.jarvismobile.core.speech.SpeechStyle
+import com.simone.jarvismobile.core.voice.FarEndReferenceCapability
 import com.simone.jarvismobile.tts.AudioFocusObservation
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -51,6 +52,15 @@ interface TextToSpeechEngine {
      * never inferred — see [AudioFocusObservation]'s own doc comment.
      */
     val audioFocusEvents: SharedFlow<AudioFocusObservation>
+
+    /**
+     * Live Voice Phase 0.9 — whether this engine can currently provide a genuine far-end PCM
+     * reference (see [com.simone.jarvismobile.core.voice.FarEndPcmFrame]). Platform
+     * [android.speech.tts.TextToSpeech] never exposes its playback PCM, so the safe default is
+     * UNAVAILABLE_PLATFORM_TTS; only an engine that really writes PCM it owns may say AVAILABLE_PCM.
+     */
+    val farEndReferenceCapability: FarEndReferenceCapability
+        get() = FarEndReferenceCapability.UNAVAILABLE_PLATFORM_TTS
 
     /** True once an offline Italian voice has been resolved and is ready. */
     suspend fun ensureReady(): Boolean
