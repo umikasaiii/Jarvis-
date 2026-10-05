@@ -6387,7 +6387,35 @@ redesign wake-word, streaming LLM e correzioni Morning non avviati.
 
 ---
 
+## 131.8 LIVE VOICE PHASE 0.7 — SINGLE CAPTURE OWNERSHIP + VAD INPUT FOUNDATION
+
+```text
+RUNTIME COMMIT   7d1c1f47808c9dce941e9c457ce3c68b2621f522   CI #483 SUCCESS
+LIVE VOICE PHASE 0.7   CODE PRESENT / AUTOMATED TESTED (core 1614/1614) / CI VERIFIED (#483) / DEVICE PENDING
+```
+
+Fondazione, non una feature utente. Un solo proprietario canonico di frame PCM
+(`PcmCaptureEngine`, `:core/voice`): `VoicePcmFrame` immutabile PCM16 mono
+16 kHz, fencing di generazione (`SessionEpoch`), `SharedFlow` replay=0 con
+buffer limitato e frame scartati misurati, fallimenti tipizzati, release
+esattamente una volta, `micLevel` dagli stessi frame. Contratto
+`VoiceActivityDetector` e `VadTurnPolicy` pura con isteresi (default
+PLACEHOLDER_UNQUALIFIED). `AudioRecordPcmSourceFactory` e l'unico `AudioRecord`;
+`AndroidAudioCapture.capture(durationMs)` legacy preservato.
+
+NON implementati: Silero runtime, barge-in acustico, AEC, full-duplex,
+collegamento VAD->TTS/stato. STT di produzione resta Android SpeechRecognizer.
+Morning, PA-2, Semantica, Protocollo, Core non toccati. DEVICE VERIFIED: NO
+(`docs/DEVICE_TEST_LIVE_VOICE_PHASE_0_7.md`). Convenzione 30 macro-step preservata;
+Live Voice v1 NON completo.
+
+---
+
 # 132. MASTER CHANGELOG
+
+## v1.25 — 2026-10-05
+
+- Live Voice Phase 0.7: single PCM capture owner + VAD input foundation (§131.8). Runtime `7d1c1f4`, CI #483. Device pending.
 
 ## v1.24 — 2026-10-05
 
@@ -7204,4 +7232,4 @@ Decisione chiave:
 **JARVIS adotta il pattern “specialized reflexes → semantic intelligence → planner/BRAIN escalation”, ma resta vendor-agnostic e non trasforma i micro-modelli in un secondo sistema semantico.**
 
 
-**END OF JARVIS MASTER ARCHITECTURE v1.24**
+**END OF JARVIS MASTER ARCHITECTURE v1.25**
