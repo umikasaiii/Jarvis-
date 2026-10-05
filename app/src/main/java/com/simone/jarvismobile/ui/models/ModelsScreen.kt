@@ -66,6 +66,11 @@ fun ModelsScreen(
         ActivityResultContracts.GetContent(),
     ) { uri -> uri?.let { viewModel.importModel(it) } }
 
+    val sileroStatus by viewModel.sileroStatus.collectAsStateWithLifecycle()
+    val sileroLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent(),
+    ) { uri -> uri?.let { viewModel.importSilero(it) } }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -208,6 +213,33 @@ fun ModelsScreen(
                         "completo per capire ogni richiesta — funziona comunque, solo un po' più lento.",
                     style = MaterialTheme.typography.bodySmall,
                 )
+            }
+        }
+
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Silero VAD (rilevamento voce)", style = MaterialTheme.typography.titleMedium)
+                HorizontalDivider()
+                Text(
+                    "Stato: " + when (sileroStatus.state) {
+                        com.simone.jarvismobile.core.voice.silero.SileroModelState.NOT_IMPORTED -> "Non importato"
+                        com.simone.jarvismobile.core.voice.silero.SileroModelState.LOADING -> "Caricamento…"
+                        com.simone.jarvismobile.core.voice.silero.SileroModelState.READY -> "Pronto"
+                        com.simone.jarvismobile.core.voice.silero.SileroModelState.INCOMPATIBLE,
+                        com.simone.jarvismobile.core.voice.silero.SileroModelState.ERROR -> "Errore"
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Text(
+                    "Modello di sola diagnostica per ora: non controlla ancora la conversazione. Scarica a mano " +
+                        "il file ufficiale silero_vad.onnx (MIT, snakers4/silero-vad) e importalo qui: viene accettato " +
+                        "solo se SHA-256, dimensione e grafo coincidono, poi resta sul telefono e funziona offline.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    Button(onClick = { sileroLauncher.launch("*/*") }, enabled = !busy, modifier = Modifier.weight(1f)) { Text("Importa") }
+                    OutlinedButton(onClick = viewModel::removeSilero, enabled = !busy, modifier = Modifier.weight(1f)) { Text("Rimuovi") }
+                }
             }
         }
 

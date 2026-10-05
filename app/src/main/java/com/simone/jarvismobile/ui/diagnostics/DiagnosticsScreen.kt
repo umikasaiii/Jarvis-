@@ -185,6 +185,8 @@ fun DiagnosticsScreen(
             Text(if (testing) "Test in corso…" else "Test microfono (registra 3 s)")
         }
 
+        SileroVadCard(viewModel = viewModel, testing = testing, onNeedMic = { requestMicPermissions() })
+
         Button(
             onClick = viewModel::runVoiceTest,
             enabled = !testing,
@@ -742,3 +744,55 @@ private fun Line(label: String, value: String) {
 }
 
 private fun yesNo(b: Boolean): String = if (b) "Sì" else "No"
+
+/** Live Voice Phase 0.8 — Silero VAD developer block. Counts only: no PCM, no transcript, no per-frame data. */
+@androidx.compose.runtime.Composable
+private fun SileroVadCard(viewModel: DiagnosticsViewModel, testing: Boolean, onNeedMic: () -> Unit) {
+    val status by viewModel.sileroStatus.collectAsStateWithLifecycle()
+    val q by viewModel.sileroQualificationState.collectAsStateWithLifecycle()
+    androidx.compose.runtime.LaunchedEffect(Unit) { viewModel.refreshSileroStatus() }
+    val running = q is com.simone.jarvismobile.audio.silero.SileroQualificationState.Running
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Silero VAD (debug)", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Stato modello: ${status.state}${status.failure?.let { " ($it)" } ?: ""} · SHA verificato: ${if (status.shaVerified) "sì" else "no"}",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Text("Soglia: 0.5 (default di riferimento, NON qualificata) · politica turno: segnaposto non qualificata", style = MaterialTheme.typography.bodySmall)
+            Button(
+                onClick = { if (viewModel.hasMicPermission()) viewModel.runSileroQualification() else onNeedMic() },
+                enabled = !testing && !running,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text(if (running) "Test VAD in corso (10 s)…" else "Test VAD 10 s") }
+            when (val s = q) {
+                is com.simone.jarvismobile.audio.silero.SileroQualificationState.Unavailable -> Text(
+                    when (s.reason) {
+                        com.simone.jarvismobile.core.voice.silero.SileroQualificationAvailability.MODEL_NOT_READY ->
+                            "Test VAD non disponibile: modello Silero non importato/pronto (Impostazioni › Modelli)"
+                        else -> "Test VAD non disponibile: microfono attualmente in uso o wake word attiva (${s.reason})"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                is com.simone.jarvismobile.audio.silero.SileroQualificationState.Done -> {
+                    val r = s.result
+                    Text(
+                        "Frame=${r.framesProcessed} · voce/non-voce=${r.framesSpeech}/${r.framesNonSpeech} · sconosciuti=${r.framesUnknown} · " +
+                            "inizi/fini=${r.speechStartedCount}/${r.speechEndedCount}",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Text(
+                        "Inferenza media=${r.averageInferenceMs?.let { "%.2f".format(it) } ?: "n/d"} ms · max=${r.maxInferenceMs?.let { "%.2f".format(it) } ?: "n/d"} ms · " +
+                            "p max=${r.maxProbability?.let { "%.2f".format(it) } ?: "n/d"} · p media=${r.meanProbability?.let { "%.2f".format(it) } ?: "n/d"}",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Text(
+                        "Frame persi=${r.captureFramesDropped} · errore cattura=${r.captureFailure ?: "nessuno"} · errore VAD=${r.vadFailure ?: "nessuno"}",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                else -> Unit
+            }
+        }
+    }
+}

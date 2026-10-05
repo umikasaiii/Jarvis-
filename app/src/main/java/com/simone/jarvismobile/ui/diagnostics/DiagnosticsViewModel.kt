@@ -81,6 +81,8 @@ class DiagnosticsViewModel @Inject constructor(
     private val semanticClassifier: EmbeddingSemanticClassifier,
     private val triggerEvidence: TriggerEvidenceStore,
     private val forecastReceipts: ForecastDecisionReceiptRepository,
+    private val sileroManager: com.simone.jarvismobile.audio.silero.SileroVadModelManager,
+    private val sileroQualification: com.simone.jarvismobile.audio.silero.SileroVadQualificationService,
 ) : AndroidViewModel(application) {
 
     /**
@@ -576,6 +578,18 @@ class DiagnosticsViewModel @Inject constructor(
     val lastError: StateFlow<String?> = coordinator.lastError
     val voiceTurnDiagnostics: StateFlow<List<com.simone.jarvismobile.core.voice.VoiceTurnDiagnostics>> =
         coordinator.voiceTurnDiagnostics
+
+    /** Live Voice Phase 0.8 — Silero VAD model status + manual 10 s qualification (diagnostics only). */
+    val sileroStatus: StateFlow<com.simone.jarvismobile.audio.silero.SileroModelStatus> = sileroManager.status
+    val sileroQualificationState: StateFlow<com.simone.jarvismobile.audio.silero.SileroQualificationState> = sileroQualification.state
+
+    fun refreshSileroStatus() {
+        viewModelScope.launch { sileroManager.refresh() }
+    }
+
+    fun runSileroQualification() {
+        viewModelScope.launch { sileroQualification.run() }
+    }
 
     private val _micStatus = MutableStateFlow("")
     val micStatus: StateFlow<String> = _micStatus.asStateFlow()

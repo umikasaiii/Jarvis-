@@ -1,5 +1,6 @@
 package com.simone.jarvismobile.ui.models
 
+import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -13,7 +14,12 @@ import com.simone.jarvismobile.llm.LlmRouter
 import com.simone.jarvismobile.llm.LocalModel
 import com.simone.jarvismobile.llm.ModelManager
 import com.simone.jarvismobile.llm.SemanticEmbeddingEngine
+import com.simone.jarvismobile.audio.silero.SileroImportOutcome
+import com.simone.jarvismobile.audio.silero.SileroModelStatus
+import com.simone.jarvismobile.audio.silero.SileroVadModelManager
+import com.simone.jarvismobile.core.voice.silero.SileroFailure
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -29,6 +35,8 @@ class ModelsViewModel @Inject constructor(
     private val settings: SettingsRepository,
     private val semanticEmbeddingEngine: SemanticEmbeddingEngine,
     private val semanticClassifier: EmbeddingSemanticClassifier,
+    private val sileroManager: SileroVadModelManager,
+    @ApplicationContext private val appContext: Context,
 ) : ViewModel() {
 
     val loadState: StateFlow<LlmLoadState> = llm.loadState
@@ -51,8 +59,42 @@ class ModelsViewModel @Inject constructor(
     private val _busy = MutableStateFlow(false)
     val busy: StateFlow<Boolean> = _busy.asStateFlow()
 
+    /** Live Voice Phase 0.8 — Silero VAD (user-imported, SHA-pinned; never bundled). */
+    val sileroStatus: StateFlow<SileroModelStatus> = sileroManager.status
+
     init {
         refresh()
+        viewModelScope.launch { sileroManager.refresh() }
+    }
+
+    fun importSilero(uri: Uri) {
+        if (_busy.value) return
+        _busy.value = true
+        _status.value = "Verifica del modello Silero VAD in corso…"
+        viewModelScope.launch {
+            val stream = runCatching { appContext.contentResolver.openInputStream(uri) }.getOrNull()
+            _status.value = if (stream == null) {
+                sileroFailureMessage(SileroFailure.UNREADABLE_FILE)
+            } else when (val r = sileroManager.import(stream)) {
+                is SileroImportOutcome.Ok -> "Silero VAD importato e verificato (SHA-256, dimensione, grafo). Funziona offline."
+                is SileroImportOutcome.Rejected -> sileroFailureMessage(r.failure)
+            }
+            _busy.value = false
+        }
+    }
+
+    fun removeSilero() {
+        viewModelScope.launch {
+            _status.value = if (sileroManager.remove()) "Silero VAD rimosso" else "Rimozione di Silero VAD non riuscita"
+        }
+    }
+
+    private fun sileroFailureMessage(f: SileroFailure): String = when (f) {
+        SileroFailure.SHA_MISMATCH -> "File non riconosciuto: l'SHA-256 non coincide con il modello Silero VAD ufficiale atteso. Il modello precedente (se presente) è invariato."
+        SileroFailure.SIZE_MISMATCH -> "File non riconosciuto: dimensione diversa dal modello Silero VAD atteso. Il modello precedente (se presente) è invariato."
+        SileroFailure.GRAPH_MISMATCH -> "Modello incompatibile: la struttura del grafo non corrisponde. Il modello precedente (se presente) è invariato."
+        SileroFailure.ORT_LOAD_FAILED -> "Modello incompatibile: ONNX Runtime non riesce a caricarlo. Il modello precedente (se presente) è invariato."
+        else -> "Importazione di Silero VAD non riuscita ($f). Il modello precedente (se presente) è invariato."
     }
 
     fun refresh() {

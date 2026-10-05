@@ -1,0 +1,15 @@
+{
+  "modelId": "silero_vad_onnx_v5",
+  "displayName": "Silero VAD",
+  "filename": "silero_vad.onnx",
+  "expectedSha256": "1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3",
+  "expectedSizeBytes": 2327524,
+  "sampleRateHz": 16000,
+  "frameSamples": 512,
+  "contextSamples": 64,
+  "effectiveInputSamples": 576,
+  "stateShape": [2, 1, 128],
+  "license": "MIT",
+  "upstreamProject": "snakers4/silero-vad",
+  "modelRevision": "upstream commit not determined; identity pinned by SHA-256 (audited 2026-10-05)"
+}

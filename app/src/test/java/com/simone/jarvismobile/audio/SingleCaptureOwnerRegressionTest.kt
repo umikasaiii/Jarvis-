@@ -35,7 +35,9 @@ class SingleCaptureOwnerRegressionTest {
 
     @Test
     fun `captureContinuous has no production caller yet`() {
-        val callers = allKt().filter { it.name != "AudioCapture.kt" && it.name != "AndroidAudioCapture.kt" }
+        // Phase 0.8: the ONLY allowed caller is the manual, diagnostics-only Silero qualification service
+        // (it proves the mic is free first; see SileroPhase08RegressionTest).
+        val callers = allKt().filter { it.name !in setOf("AudioCapture.kt", "AndroidAudioCapture.kt", "SileroVadQualificationService.kt") }
             .filter { f -> code(f).any { it.contains("captureContinuous(") } }.map { it.name }
         assertTrue("unexpected captureContinuous callers: $callers", callers.isEmpty())
     }
