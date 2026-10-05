@@ -12,6 +12,7 @@ class VoiceTurnDiagnosticsTest {
         speechStartedAtMs: Long? = null,
         speechEndedAtMs: Long? = null,
         sttReadyAtMs: Long? = null,
+        sttFirstPartialAtMs: Long? = null,
     ) = VoiceTurnTimestamps(
         sttStartedAtMs = 0,
         sttFinalAtMs = 300,
@@ -24,6 +25,7 @@ class VoiceTurnDiagnosticsTest {
         speechStartedAtMs = speechStartedAtMs,
         speechEndedAtMs = speechEndedAtMs,
         sttReadyAtMs = sttReadyAtMs,
+        sttFirstPartialAtMs = sttFirstPartialAtMs,
     )
 
     @Test
@@ -777,5 +779,67 @@ class VoiceTurnDiagnosticsTest {
             offending.map { "${it.name}:${it.type}" },
             "VoiceTurnSttAttemptEvidence must only ever carry an Int (count) field",
         )
+    }
+
+    // --- Live Voice Phase 0.6 — first partial transcript observability ------
+
+    @Test
+    fun `a valid first partial after the STT request gives a real partialTranscriptLatencyMs`() {
+        // sttStartedAtMs = 0 from full(); first partial at 215 -> 215ms.
+        val record = recordWithSttAttempts(full(sttFirstPartialAtMs = 215))
+        assertEquals(215, record.partialTranscriptLatencyMs)
+    }
+
+    @Test
+    fun `no partial observed leaves both partial metrics null even with a final transcript`() {
+        // full() always has sttFinalAtMs = 300: the final time is never substituted.
+        val record = recordWithSttAttempts(full(speechStartedAtMs = 100))
+        assertNull(record.partialTranscriptLatencyMs)
+        assertNull(record.partialAfterSpeechStartMs)
+    }
+
+    @Test
+    fun `a partial timestamp before the STT request is rejected, never negative`() {
+        val timestamps = VoiceTurnTimestamps(sttStartedAtMs = 500, sttFirstPartialAtMs = 100)
+        val record = recordWithSttAttempts(timestamps)
+        assertNull(record.partialTranscriptLatencyMs)
+    }
+
+    @Test
+    fun `a first partial after speech start gives a real partialAfterSpeechStartMs`() {
+        val record = recordWithSttAttempts(full(speechStartedAtMs = 100, sttFirstPartialAtMs = 260))
+        assertEquals(160, record.partialAfterSpeechStartMs)
+        assertEquals(260, record.partialTranscriptLatencyMs)
+    }
+
+    @Test
+    fun `a partial before speech start is invalid ordering and yields null for partialAfterSpeechStartMs`() {
+        val record = recordWithSttAttempts(full(speechStartedAtMs = 300, sttFirstPartialAtMs = 50))
+        assertNull(record.partialAfterSpeechStartMs)
+        // The STT-request anchored metric is still honestly available.
+        assertEquals(50, record.partialTranscriptLatencyMs)
+    }
+
+    @Test
+    fun `a partial without a speech start never fabricates partialAfterSpeechStartMs`() {
+        val record = recordWithSttAttempts(full(sttFirstPartialAtMs = 120))
+        assertNull(record.partialAfterSpeechStartMs)
+    }
+
+    @Test
+    fun `no timestamp or diagnostic field can carry a transcript or partial text`() {
+        val timestampOffenders = VoiceTurnTimestamps::class.java.declaredFields
+            .filterNot { it.isSynthetic }
+            .filterNot { it.type == java.lang.Long::class.java || it.type == Long::class.javaPrimitiveType }
+        assertEquals(
+            emptyList<String>(),
+            timestampOffenders.map { "${it.name}:${it.type}" },
+            "VoiceTurnTimestamps must only carry Long timestamps",
+        )
+        val stringFields = VoiceTurnDiagnostics::class.java.declaredFields
+            .filterNot { it.isSynthetic }
+            .filter { it.type == String::class.java }
+            .map { it.name }
+        assertEquals(listOf("turnId"), stringFields, "the only free-form string is the opaque turn id")
     }
 }

@@ -111,6 +111,16 @@ data class VoiceTurnTimestamps(
      * [speechStartedAtMs]).
      */
     val sttReadyAtMs: Long? = null,
+    /**
+     * Live Voice Phase 0.6 — set only from the FIRST genuine non-blank
+     * `onPartialResults()` observation of the turn's STT invocation (see
+     * [com.simone.jarvismobile.audio.SttSpeechEvent.Type.PARTIAL]). The
+     * transcript itself is never stored. Anchor for
+     * [VoiceTurnDiagnostics.partialTranscriptLatencyMs] (paired with
+     * [sttStartedAtMs]) and [VoiceTurnDiagnostics.partialAfterSpeechStartMs]
+     * (paired with [speechStartedAtMs]).
+     */
+    val sttFirstPartialAtMs: Long? = null,
 )
 
 /**
@@ -280,6 +290,21 @@ data class VoiceTurnDiagnostics(
      */
     val speechStartAfterReadyMs: Long?,
     /**
+     * Live Voice Phase 0.6 — STT request/start -> the FIRST real non-blank
+     * partial transcript observation ([VoiceTurnTimestamps.sttFirstPartialAtMs]).
+     * Null unless both endpoints were observed and ordered; a final result
+     * without any partial yields null — the final transcript time is never
+     * substituted.
+     */
+    val partialTranscriptLatencyMs: Long?,
+    /**
+     * Live Voice Phase 0.6 — real `onBeginningOfSpeech()` -> first real
+     * partial transcript observation. Null unless both endpoints were
+     * observed and ordered (speech-started <= first-partial); never
+     * negative, never fabricated.
+     */
+    val partialAfterSpeechStartMs: Long?,
+    /**
      * Live Voice Phase 0.5 — how many internal recognizer attempts
      * ([com.simone.jarvismobile.audio.AndroidOnDeviceSpeechEngine]'s own
      * transient cold-start retry loop, unchanged by this phase) this turn's
@@ -375,6 +400,9 @@ data class VoiceTurnDiagnostics(
             // Live Voice Phase 0.5 — same ordered/never-fabricated discipline.
             val sttReadyLatencyMs = orderedLatency(timestamps.sttStartedAtMs, timestamps.sttReadyAtMs)
             val speechStartAfterReadyMs = orderedLatency(timestamps.sttReadyAtMs, timestamps.speechStartedAtMs)
+            // Live Voice Phase 0.6 — same ordered/never-fabricated discipline.
+            val partialTranscriptLatencyMs = orderedLatency(timestamps.sttStartedAtMs, timestamps.sttFirstPartialAtMs)
+            val partialAfterSpeechStartMs = orderedLatency(timestamps.speechStartedAtMs, timestamps.sttFirstPartialAtMs)
             val sttColdStartRetryObserved = sttAttempts.attemptCount?.let { it > 1 }
 
             return VoiceTurnDiagnostics(
@@ -396,6 +424,8 @@ data class VoiceTurnDiagnostics(
                 responsePlaybackAfterSpeechMs = responsePlaybackAfterSpeechMs,
                 sttReadyLatencyMs = sttReadyLatencyMs,
                 speechStartAfterReadyMs = speechStartAfterReadyMs,
+                partialTranscriptLatencyMs = partialTranscriptLatencyMs,
+                partialAfterSpeechStartMs = partialAfterSpeechStartMs,
                 sttAttemptCount = sttAttempts.attemptCount,
                 sttColdStartRetryObserved = sttColdStartRetryObserved,
                 initialInputRoute = audio.initialInputRoute,

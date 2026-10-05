@@ -620,6 +620,7 @@ class SessionCoordinator @Inject constructor(
                             SttSpeechEvent.Type.READY -> voiceDiagnostics.markSttReady()
                             SttSpeechEvent.Type.STARTED -> voiceDiagnostics.markUserSpeechStarted()
                             SttSpeechEvent.Type.ENDED -> voiceDiagnostics.markUserSpeechEnded()
+                            SttSpeechEvent.Type.PARTIAL -> voiceDiagnostics.markFirstPartialObserved()
                         }
                     }
             }

@@ -8,6 +8,7 @@ import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.util.Log
+import com.simone.jarvismobile.core.voice.SttPartialPolicy
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -158,8 +159,26 @@ class AndroidOnDeviceSpeechEngine @Inject constructor(
                 }
             }
 
+            // Live Voice Phase 0.6 — same generation fence as READY/STARTED/
+            // ENDED. Before this phase the user-facing [_partial] update was
+            // unfenced, so a late callback from an abandoned retry attempt
+            // could overwrite the active attempt's partial text; it is now
+            // fenced too (minimal correctness fix, behavior otherwise
+            // unchanged). The diagnostics observation carries only the fact,
+            // never the text, and is emitted at most once per attempt.
+            private var partialObserved = false
+
             override fun onPartialResults(partialResults: Bundle?) {
-                bestOf(partialResults)?.let { _partial.value = it }
+                val decision = SttPartialPolicy.decide(
+                    isCurrentGeneration = myGeneration == attemptGeneration.get(),
+                    bestPartial = bestOf(partialResults),
+                    alreadyObservedThisAttempt = partialObserved,
+                )
+                decision.updateUiWith?.let { _partial.value = it }
+                if (decision.emitObserved) {
+                    partialObserved = true
+                    _speechEvents.tryEmit(SttSpeechEvent(invocationId, SttSpeechEvent.Type.PARTIAL))
+                }
             }
 
             override fun onResults(results: Bundle?) {

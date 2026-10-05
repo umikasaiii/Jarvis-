@@ -602,4 +602,111 @@ class VoiceTurnDiagnosticsRecorderTest {
         assertNull(turns[1].sttReadyLatencyMs)
         assertNull(turns[1].sttAttemptCount)
     }
+
+    // --- Live Voice Phase 0.6 — markFirstPartialObserved -------------------
+
+    @Test
+    fun `a first-partial call with no in-flight turn is a safe no-op`() {
+        val recorder = VoiceTurnDiagnosticsRecorder()
+        recorder.markFirstPartialObserved()
+        assertEquals(0, recorder.history.value.size)
+    }
+
+    @Test
+    fun `a matching stt-started-then-partial pair produces a real non-negative partialTranscriptLatencyMs`() {
+        val recorder = VoiceTurnDiagnosticsRecorder()
+        recorder.beginTurn(followUpIndex = 0)
+        recorder.markSttStarted()
+        Thread.sleep(10)
+        recorder.markFirstPartialObserved()
+        recorder.finish(VoiceTurnOutcome.COMPLETED, VoiceTurnFailureStage.NONE)
+
+        val latency = recorder.history.value.single().partialTranscriptLatencyMs
+        assertTrue("expected non-negative latency, got $latency", latency != null && latency >= 0)
+    }
+
+    @Test
+    fun `no partial observed yields null even when the turn completes normally`() {
+        val recorder = VoiceTurnDiagnosticsRecorder()
+        recorder.beginTurn(followUpIndex = 0)
+        recorder.markSttStarted()
+        recorder.markSttFinal()
+        recorder.finish(VoiceTurnOutcome.COMPLETED, VoiceTurnFailureStage.NONE)
+
+        val record = recorder.history.value.single()
+        assertNull(record.partialTranscriptLatencyMs)
+        assertNull(record.partialAfterSpeechStartMs)
+    }
+
+    @Test
+    fun `second and third partial observations never overwrite the first`() {
+        val recorder = VoiceTurnDiagnosticsRecorder()
+        recorder.beginTurn(followUpIndex = 0)
+        recorder.markSttStarted()
+        recorder.markFirstPartialObserved()
+        Thread.sleep(60)
+        recorder.markFirstPartialObserved()
+        recorder.markFirstPartialObserved()
+        recorder.finish(VoiceTurnOutcome.COMPLETED, VoiceTurnFailureStage.NONE)
+
+        val latency = recorder.history.value.single().partialTranscriptLatencyMs
+        assertTrue("later partials must be ignored, latency was ${latency}ms", (latency ?: Long.MAX_VALUE) < 60)
+    }
+
+    @Test
+    fun `a late partial call after the turn already finished never mutates the finished record`() {
+        val recorder = VoiceTurnDiagnosticsRecorder()
+        recorder.beginTurn(followUpIndex = 0)
+        recorder.markSttStarted()
+        recorder.finish(VoiceTurnOutcome.COMPLETED, VoiceTurnFailureStage.NONE)
+        val before = recorder.history.value.single()
+
+        recorder.markFirstPartialObserved()
+
+        assertEquals(before, recorder.history.value.single())
+        assertNull(recorder.history.value.single().partialTranscriptLatencyMs)
+    }
+
+    @Test
+    fun `partial after speech start feeds partialAfterSpeechStartMs end to end`() {
+        val recorder = VoiceTurnDiagnosticsRecorder()
+        recorder.beginTurn(followUpIndex = 0)
+        recorder.markSttStarted()
+        recorder.markUserSpeechStarted()
+        Thread.sleep(10)
+        recorder.markFirstPartialObserved()
+        recorder.finish(VoiceTurnOutcome.COMPLETED, VoiceTurnFailureStage.NONE)
+
+        val gap = recorder.history.value.single().partialAfterSpeechStartMs
+        assertTrue("expected non-negative gap, got $gap", gap != null && gap >= 0)
+    }
+
+    @Test
+    fun `a cancelled turn keeps the CANCELLED outcome regardless of partial evidence`() {
+        val recorder = VoiceTurnDiagnosticsRecorder()
+        recorder.beginTurn(followUpIndex = 0)
+        recorder.markSttStarted()
+        recorder.markFirstPartialObserved()
+        recorder.markCancellationRequested()
+        recorder.finishCancelled()
+
+        assertEquals(VoiceTurnOutcome.CANCELLED, recorder.history.value.single().outcome)
+    }
+
+    @Test
+    fun `a new turn after a finished one starts with no partial evidence of its own`() {
+        val recorder = VoiceTurnDiagnosticsRecorder()
+        recorder.beginTurn(followUpIndex = 0)
+        recorder.markSttStarted()
+        recorder.markFirstPartialObserved()
+        recorder.finish(VoiceTurnOutcome.COMPLETED, VoiceTurnFailureStage.NONE)
+
+        recorder.beginTurn(followUpIndex = 1)
+        recorder.finish(VoiceTurnOutcome.COMPLETED, VoiceTurnFailureStage.NONE)
+
+        val turns = recorder.history.value
+        assertEquals(2, turns.size)
+        assertNull(turns[1].partialTranscriptLatencyMs)
+        assertNull(turns[1].partialAfterSpeechStartMs)
+    }
 }

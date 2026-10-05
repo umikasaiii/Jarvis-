@@ -402,6 +402,13 @@ fun DiagnosticsScreen(
                                     "tentativi=${turn.sttAttemptCount?.toString() ?: "n/d"}",
                                 style = MaterialTheme.typography.bodySmall,
                             )
+                            // Live Voice Phase 0.6 — first genuine partial
+                            // observation only; never the partial text.
+                            Text(
+                                "Parziale STT=${turn.partialTranscriptLatencyMs?.let { "${it}ms" } ?: "n/d"} · " +
+                                    "parziale dopo voce=${turn.partialAfterSpeechStartMs?.let { "${it}ms" } ?: "n/d"}",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
                             if (turn.bargeInRequested) {
                                 Text(
                                     "bargeIn=true · stopDopoBargeIn=${turn.ttsStoppedAfterBargeInMs?.let { "${it}ms" } ?: "non disponibile"}",

@@ -56,6 +56,7 @@ class VoiceTurnDiagnosticsRecorder @Inject constructor() {
         @Volatile var speechStartedAtMs: Long? = null
         @Volatile var speechEndedAtMs: Long? = null
         @Volatile var sttReadyAtMs: Long? = null
+        @Volatile var sttFirstPartialAtMs: Long? = null
         @Volatile var sttAttemptCount: Int? = null
         @Volatile var cancellationRequested: Boolean = false
 
@@ -150,6 +151,7 @@ class VoiceTurnDiagnosticsRecorder @Inject constructor() {
             speechStartedAtMs = speechStartedAtMs,
             speechEndedAtMs = speechEndedAtMs,
             sttReadyAtMs = sttReadyAtMs,
+            sttFirstPartialAtMs = sttFirstPartialAtMs,
         )
     }
 
@@ -213,6 +215,17 @@ class VoiceTurnDiagnosticsRecorder @Inject constructor() {
      * turn is kept — and a no-op once the turn has already finished.
      */
     fun markSttReady() = mark { if (it.sttReadyAtMs == null) it.sttReadyAtMs = it.elapsedMs() }
+
+    /**
+     * Live Voice Phase 0.6 — called from [SessionCoordinator] when a real
+     * [SttSpeechEvent.Type.PARTIAL] observation arrives for the in-flight
+     * turn's STT invocation (fenced by invocation id there, and by
+     * `attemptGeneration` in the engine). Carries no text. Idempotent —
+     * only the FIRST accepted observation per turn is kept, later partials
+     * never overwrite it — and a no-op without an active turn or once the
+     * turn has finished.
+     */
+    fun markFirstPartialObserved() = mark { if (it.sttFirstPartialAtMs == null) it.sttFirstPartialAtMs = it.elapsedMs() }
 
     /**
      * Live Voice Phase 0.5 — called from [SessionCoordinator] once per turn

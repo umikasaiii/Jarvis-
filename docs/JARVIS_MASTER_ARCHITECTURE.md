@@ -4,7 +4,7 @@
 
 - **Project:** JARVIS
 - **Document role:** project map / architectural control plane / living source of project intent
-- **Version:** 1.23
+- **Version:** 1.24
 - **Generated:** 2026-09-30
 - **Primary language:** Italiano
 - **Status:** ACTIVE — living document
@@ -2334,6 +2334,36 @@ una nuova runtime qualification build non viene scelta esplicitamente.
 
 ---
 
+## 30.17 EVIDENZA MULTI-GIORNO MORNING — 2026-10-05 (solo documentazione, nessun runtime toccato)
+
+Nuova evidenza reale riportata dall'utente sull'Honor 200, **registrata
+senza modificare alcun codice Morning**:
+
+- dopo aver reinstallato l'app, il briefing mattutino è sembrato funzionare
+  **una volta**;
+- **dal secondo giorno in poi** la notifica è tornata ad arrivare all'orario
+  di fallback configurato, **08:50**;
+- la stessa cosa si è ripetuta nelle mattine successive.
+
+Interpretazione, senza cancellare la storia:
+
+- il successo di NEXT_ALARM del 2026-10-02 (allarme 08:30, consegna
+  08:35:01, §100/§131.6) **resta un evento storico reale** e prova che il
+  percorso PUÒ funzionare in uno scenario; **non** lo qualifica come
+  affidabile su più giorni — la nuova evidenza multi-giorno **supera ogni
+  lettura ottimistica di affidabilità** di quell'unico evento;
+- FIRST_UNLOCK resta **non osservato/consegnato in modo affidabile**;
+- NEXT_ALARM **non è abbastanza affidabile da chiudere Morning**;
+- CONFIGURED_TIME/fallback è oggi l'**unico percorso di consegna osservato
+  in modo consistente**;
+- la qualificazione Morning resta **OPEN**, Work Package E resta **OPEN**,
+  PA-2 resta **NOT STARTED**;
+- root cause e correzione sono **DEFERITE per decisione esplicita
+  dell'utente** mentre il lavoro continua su altri track (Live Voice).
+
+Nessun file Kotlin Morning (FIRST_UNLOCK/NEXT_ALARM/fallback/scheduler/
+dispatcher/occorrenze) è stato modificato dalla Live Voice Phase 0.6.
+
 # 31. MICRO-PATCH 14.2.1 — CONFIGURABLE BRIEFING TIME
 
 UI target:
@@ -3497,6 +3527,7 @@ Stato:
 - Phase 0.3: CI VERIFIED (#464);
 - Phase 0.4: CI VERIFIED (#475) / DEVICE PENDING;
 - Phase 0.5: CI VERIFIED (#477) / DEVICE PENDING;
+- Phase 0.6: CODE PRESENT / AUTOMATED TESTED / CI PENDING THIS PUSH / DEVICE PENDING (§131.7);
 - device qualification Live Voice: PENDING;
 - vero LLM-token→TTS streaming: **NON IMPLEMENTATO**.
 
@@ -4303,7 +4334,7 @@ ARCHITECTURE MANUAL          AVAILABLE
 TARGET ARCHITECTURE          AVAILABLE
 DEEP AUDIT                   AVAILABLE
 SEGNALE                      AVAILABLE
-MASTER ARCHITECTURE          THIS FILE / v1.23
+MASTER ARCHITECTURE          THIS FILE / v1.24
 
 ANDROID-FIRST                ACTIVE
 CORE OPTIONAL ENHANCER       ACTIVE
@@ -4319,6 +4350,8 @@ MORNING CONFIGURED_TIME      OBSERVED WORKING @ 08:50
 MORNING FIRST_UNLOCK         SOURCE NOT OBSERVED / CONTROLLED RETEST (reconfirmed 2026-10-02)
 MORNING NEXT_ALARM SOURCE     OBSERVED
 MORNING NEXT_ALARM DELIVERY   PROVEN FOR 2026-10-02 SCENARIO (real alarm 08:30, delivery 08:35:01, independent of the earlier 08:50 CONFIGURED_TIME collision) — still not a general qualification across repeated mornings
+MORNING MULTI-DAY EVIDENCE   2026-10-05: after reinstall Morning worked ONCE; from day 2 onward delivery returned to the CONFIGURED_TIME fallback (08:50) on every subsequent morning (§30.17) — NEXT_ALARM NOT reliable across days, FIRST_UNLOCK NOT reliably observed
+MORNING RELIABLE PATH         CONFIGURED_TIME/fallback only (consistently observed); root cause/fix DEFERRED by explicit user decision
 MORNING DUPLICATE SAFETY     HISTORICAL FAILURE / NON-REGRESSION GATE
 MORNING OVERALL QUALIFICATION TEMPORARILY PAUSED / PENDING NEXT REAL-DEVICE MORNING RETEST
 
@@ -4341,6 +4374,7 @@ LIVE VOICE PHASE 0.2         CI VERIFIED (#462) / DEVICE PENDING
 LIVE VOICE PHASE 0.3         CI VERIFIED (#464) / DEVICE PENDING
 LIVE VOICE PHASE 0.4         CI VERIFIED (#475, commit e80be62) / DEVICE PENDING
 LIVE VOICE PHASE 0.5         CODE PRESENT / AUTOMATED TESTED (core 1570/1570) / CI VERIFIED (#477, commit db97cc0) / DEVICE PENDING
+LIVE VOICE PHASE 0.6         CODE PRESENT / AUTOMATED TESTED (core 1584/1584) / CI PENDING THIS PUSH / DEVICE PENDING
 LLM-TOKEN→TTS STREAMING      NOT IMPLEMENTED
 FULL LIVE VOICE              NOT DEVICE VERIFIED
 
@@ -6252,7 +6286,109 @@ streaming LLM→TTS.**
 
 ---
 
+# 131.7 LIVE VOICE PHASE 0.6 — FIRST PARTIAL TRANSCRIPT CAUSAL OBSERVABILITY
+
+Status: **CODE PRESENT / AUTOMATED TESTED (`:core` 1584/1584, +14) / CI
+PENDING THIS PUSH / DEVICE VERIFIED ❌**. (Questa sezione è numerata
+131.7 come 131.5/131.6 per la sequenza delle fasi Live Voice; non è
+la sottosezione "131.7 UI" di Phase 0.3.)
+
+Chiude la metrica pianificata `partialTranscriptLatencyMs` (§24.6) con un
+segnale di piattaforma reale — `RecognitionListener.onPartialResults()` —
+senza mai memorizzare né esporre il testo parziale in diagnostica.
+
+## 131.7.1 Baseline e integrità APK
+
+TRUE remote HEAD canonico verificato `86abe8bd606ccf4c94f5f6e5ab645bb2a28edaf1`
+(docs-only), CI #479 e #477 `completed`/`success`, `db97cc0` antenato
+verificato; il working tree è il branch canonico
+`claude/jarvis-mobile-automazioni-dashboard-b4xa7e`, mai il default branch
+stale `claude/jarvis-mobile-android-ieubk5`.
+
+## 131.7.2 Audit del percorso reale (risposte A-F)
+
+- **A.** `onPartialResults` **non era fencato** da `attemptGeneration`.
+- **B.** **Sì**: un callback tardivo di un tentativo interno abbandonato
+  poteva sovrascrivere lo StateFlow `_partial` visibile all'utente.
+  Corretto (minimal correctness fix, §9): lo stesso fence
+  `myGeneration == attemptGeneration.get()` di READY/STARTED/ENDED ora
+  protegge anche `_partial`. Nessun altro comportamento di `_partial`
+  modificato (stesso testo, stessi clear, stessa selezione).
+- **C.** `_partial` è consumato da `SessionCoordinator.partialTranscript`
+  (chat/Home) e dal Live Translator — UI soltanto.
+- **D/E.** Nessun segnale tipizzato né timestamp di primo parziale esisteva.
+- **F.** L'engine privato del wake word non espone nulla nelle
+  diagnostiche di conversazione: nessun subscriber di `speechEvents`.
+
+## 131.7.3 Contratto
+
+`SttSpeechEvent.Type` guadagna `PARTIAL` (closed-world, solo l'`invocationId`
+opaco già in uso — nessun testo, Bundle, confidenze). Decisione per callback
+estratta in `:core` come `SttPartialPolicy.decide(isCurrentGeneration,
+bestPartial, alreadyObservedThisAttempt)` così è eseguita da test JVM reali:
+emette al più UNA osservazione per tentativo, solo se non-blank e
+current-generation; un parziale stantio non può né sovrascrivere la UI né
+diventare evidenza. Il clock resta esclusivamente di
+`VoiceTurnDiagnosticsRecorder.markFirstPartialObserved()` (idempotente:
+vince la prima osservazione; no-op fuori turno o dopo `finish()`).
+
+## 131.7.4 Metriche
+
+- `partialTranscriptLatencyMs`: richiesta STT → primo parziale reale;
+- `partialAfterSpeechStartMs`: `onBeginningOfSpeech()` → primo parziale.
+
+`null` se manca un estremo, se l'ordine è invalido, se non c'è alcun
+parziale (un risultato finale senza parziale non viene mai sostituito);
+mai negative, mai fabbricate. Una riga bounded nella card esistente
+"Diagnostica vocale (debug)" ("Parziale STT=… · parziale dopo voce=…").
+
+## 131.7.5 Non toccato
+
+Selezione `SpeechRecognizer`, policy on-device, `RETRY_BACKOFF_MS`,
+`RECOGNITION_TIMEOUT_MS`, mappatura errori, risultato finale, follow-up,
+state machine, TTS, route/focus, routing LLM/Core, wake word (nessun
+`wakeWordLatencyMs`), Morning, Persistent Agent, pipeline semantica.
+Nessuno streaming STT, VAD, AEC, full-duplex.
+
+## 131.7.6 Test
+
+14 nuovi `:core` eseguiti realmente (7 `VoiceTurnDiagnosticsTest` — latenza
+reale, nessun parziale → null, parziale prima della richiesta → null,
+partial-after-speech reale, ordine invalido → null, nessun speech-start →
+null, nessun campo di testo; 7 `SttPartialPolicyTest` — emissione singola,
+secondo parziale senza nuova osservazione, parziale stantio rifiutato,
+blank/null, scenario retry con il vero `AtomicLong`, regressione
+"una generazione abbandonata non sovrascrive la UI") e 8 `app/` recorder
+(`VoiceTurnDiagnosticsRecorderTest`, CI-only).
+
+## 131.7.7 Semantic/Protocol/Privacy Impact Check
+
+Tutti NO: nessun intent/dominio/op/slot, dataset, EmbeddingGemma, Learned
+Head, calibrazione, retraining; BLIND intatto; nessuna regex/keyword di
+comprensione; `jarvis-core`/`jarvis-protocol` non toccati; zero nuova
+egress; nessun transcript/audio/prompt in diagnostica.
+
+## 131.7.8 Device Acceptance
+
+**Non eseguita**, come richiesto. Candidato Honor `1236015` resta PINNED.
+
+## 131.7.9 Conferme
+
+DEVICE VERIFIED: **NO**; Morning runtime **non toccato** (solo evidenza
+documentata, §30.17); PA-2 **NOT STARTED**; Pass 14B **PAUSED/USER-PC
+REQUIRED**; Pass 15 **NOT STARTED**; BLIND **UNTOUCHED**; Work Package E
+**OPEN**. **Fermato dopo Phase 0.6** — Phase 0.7, VAD, AEC, full-duplex,
+redesign wake-word, streaming LLM e correzioni Morning non avviati.
+
+---
+
 # 132. MASTER CHANGELOG
+
+## v1.24 — 2026-10-05
+
+**LIVE VOICE PHASE 0.6 + EVIDENZA MORNING MULTI-GIORNO.** Aggiunti §131.7 (primo parziale STT, `partialTranscriptLatencyMs`/`partialAfterSpeechStartMs`, fix del fence su `_partial`) e §30.17 (evidenza Morning multi-giorno, solo documentazione). Etichette di versione corrente aggiornate a v1.24; repo map, baseline §2.1 e convenzione dei 30 macro-step (§65.7, mappatura TO BE CANONICALLY MAPPED) invariate. Nessuno stato congelato modificato.
+
+---
 
 ## v1.23 — 2026-10-02
 
@@ -7063,4 +7199,4 @@ Decisione chiave:
 **JARVIS adotta il pattern “specialized reflexes → semantic intelligence → planner/BRAIN escalation”, ma resta vendor-agnostic e non trasforma i micro-modelli in un secondo sistema semantico.**
 
 
-**END OF JARVIS MASTER ARCHITECTURE v1.23**
+**END OF JARVIS MASTER ARCHITECTURE v1.24**

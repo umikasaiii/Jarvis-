@@ -43,7 +43,16 @@ data class SttSpeechEvent(val invocationId: String, val type: Type) {
      * succeed — it is a distinct, earlier platform fact, never conflated
      * with the other two.
      */
-    enum class Type { READY, STARTED, ENDED }
+    /**
+     * [PARTIAL] — Live Voice Phase 0.6 — the FIRST genuine, non-blank
+     * `RecognitionListener.onPartialResults()` observation of one internal
+     * recognizer attempt. Carries only the FACT that a partial transcript
+     * was observed — never its text, confidence or any Bundle content (the
+     * user-facing [SpeechToTextEngine.partial] flow remains the only place
+     * partial text lives, unchanged). Fenced by the same `attemptGeneration`
+     * as the other three types; emitted at most once per attempt.
+     */
+    enum class Type { READY, STARTED, ENDED, PARTIAL }
 }
 
 /**
