@@ -4,7 +4,7 @@
 
 - **Project:** JARVIS
 - **Document role:** project map / architectural control plane / living source of project intent
-- **Version:** 1.19
+- **Version:** 1.23
 - **Generated:** 2026-09-30
 - **Primary language:** Italiano
 - **Status:** ACTIVE — living document
@@ -96,17 +96,66 @@ Queste percentuali sono target di prodotto, non metriche di codice.
 
 # 2. REPOSITORY E RIFERIMENTI
 
-| Componente | Repository |
-|---|---|
-| Android | `umikasaiii/Jarvis-` |
-| Core | `umikasaiii/Jarvis-core` |
-| Protocol | `jarvis-protocol` |
+Stato CURRENT verificato il 2026-10-05 (TRUE remote HEAD via `git ls-remote`).
+Le repository NON condividono lo stesso branch: ogni task identifica prima
+quali repository sono coinvolte e ne verifica separatamente branch e HEAD.
 
-Branch Android attivo: `claude/jarvis-mobile-automazioni-dashboard-b4xa7e`
+| Componente | Repository | Branch canonico | TRUE remote HEAD |
+|---|---|---|---|
+| Android / applicazione | `umikasaiii/Jarvis-` | `claude/jarvis-mobile-automazioni-dashboard-b4xa7e` | `e9e5e3f3170b79de680137d01f00c7b8ae31d841` (docs-only) |
+| Core | `umikasaiii/Jarvis-core` | `claude/jarvis-core-server-7uhajh` (default GitHub) | `32bb8f42e91dc07da4d8086ea83ff7b482c85376` |
+| Protocol | `umikasaiii/Jarvis-protocol` | `main` (default GitHub) | `afb1350fadbdbf90cf3c40861731e4435e781f61` (v1.1.0) |
 
-Branch Core storico: `claude/jarvis-core-7uhajh`
+Branch Android attivo (source of truth dello stato di progetto):
+`claude/jarvis-mobile-automazioni-dashboard-b4xa7e`.
 
-## 2.1 Baseline runtime Android verificata al 2026-09-30
+**Avvertenza sul default branch di `Jarvis-`:** il default branch GitHub,
+`claude/jarvis-mobile-android-ieubk5` (HEAD `3ae7ffa`), è **storico/stale**
+rispetto al branch di progetto attivo (ne è un antenato, senza commit propri
+più recenti) e **non va usato come source of truth dello stato di progetto**:
+non contiene questo Master né PA-1A/PA-1B né Live Voice 0.x.
+
+Branch Core: `claude/jarvis-core-server-7uhajh`. Il nome
+`claude/jarvis-core-7uhajh` usato da versioni precedenti di questo documento
+era **storico/errato** e non corrisponde a nessun branch remoto attuale.
+
+`jarvis-core` e `jarvis-protocol` restano FROZEN (ADR-013) rispetto al lavoro
+Android corrente: nessun file toccato dai passi PA-1A/PA-1B/Live Voice 0.x.
+
+## 2.1 Baseline runtime Android CURRENT (verificata al 2026-10-05)
+
+Si distinguono esplicitamente HEAD del branch e ultimo commit runtime:
+
+```text
+BRANCH HEAD (docs-only)        e9e5e3f3170b79de680137d01f00c7b8ae31d841   CI #478 SUCCESS
+LATEST RUNTIME/CODE COMMIT     db97cc08fa758bed27def133354064d45bf0c4c8   CI #477 SUCCESS
+LIVE VOICE PHASE 0.5           CODE PRESENT / AUTOMATED TESTED (core 1570/1570) / CI VERIFIED (#477) / DEVICE PENDING
+```
+
+- **`db97cc0`** — fix JVM-safe del nome di un test Phase 0.5 — è l'ultimo
+  commit che porta codice/test. Chiude la Live Voice Phase 0.5, implementata
+  in `a897ae2`. Il primo push (`a897ae2`, run #476) era fallito perché un
+  nome di test Kotlin tra backtick conteneva un carattere `/` illegale in un
+  identificatore JVM; `db97cc0` ha corretto solo quel nome (nessun cambio a
+  corpo del test, runtime, STT, retry o semantica diagnostica). Run #477:
+  `completed`/`success` (id `37061995256`).
+- **`e9e5e3f`** — HEAD corrente del branch — è **docs-only** (riconciliazione
+  del Master a CI VERIFIED #477). **NON è una modifica runtime.** Run #478:
+  `completed`/`success` (id `37063952813`).
+- Qualsiasi commit docs-only successivo a `e9e5e3f` può cambiare il branch
+  HEAD senza cambiare il runtime Android: per device/runtime acceptance usare
+  sempre l'ultimo commit code-bearing esplicitamente identificato (oggi
+  `db97cc0`), mai il branch HEAD per inferenza.
+- Live Voice 0.1 #460, 0.2 #462, 0.3 #464, 0.4 #475, 0.5 #477: tutte
+  CI VERIFIED, **nessuna DEVICE VERIFIED** (device pending).
+
+**Separazione fondamentale:** il branch corrente NON è il candidato ancora
+in uso per la qualificazione Work Package E sul telefono. Il candidato Honor
+200 resta deliberatamente pinnato a `1236015` finché quella campagna non
+viene chiusa o sostituita esplicitamente. Non usare automaticamente
+`latest-debug` per reinterpretare evidenza raccolta sul candidato E.1.
+
+## 2.1.1 Baseline runtime precedente al 2026-09-30 — STORICA / SUPERSEDED da §2.1
 
 Ultimo commit **runtime/code-bearing** verificato prima dei successivi aggiornamenti docs-only:
 
@@ -129,22 +178,16 @@ CI verificata sullo SHA esatto:
 - APK SHA-256 del build di Phase 0.3:
   `41f9fa58c482f86345c3addb39a6ab6aee44a047c1022de5c76ce3137ea9b8a4`
 
-Stato del branch corrente:
+Stato del branch al 2026-09-30 (STORICO — non più CURRENT):
 
 ```text
-LATEST RUNTIME CODE BASELINE 7c4a4fbc805a38c0467a085506c9380da47b9a55
+(STORICO) LATEST RUNTIME CODE BASELINE 7c4a4fbc805a38c0467a085506c9380da47b9a55
 RUNTIME BASELINE CI          #464 SUCCESS
 LIVE VOICE PHASE 0.3         CODE PRESENT / AUTOMATED TESTED / CI VERIFIED
 LIVE VOICE DEVICE VERIFIED   ❌
 ```
 
 **Nota sullo SHA:** i commit docs-only successivi a questa baseline possono cambiare il branch HEAD senza cambiare il runtime Android; per device/runtime acceptance usare sempre l'ultimo commit code-bearing esplicitamente identificato.
-
-**Separazione fondamentale:** il branch corrente NON è il candidato ancora
-in uso per la qualificazione Work Package E sul telefono. Il candidato Honor
-200 resta deliberatamente pinnato a `1236015` finché quella campagna non
-viene chiusa o sostituita esplicitamente. Non usare automaticamente
-`latest-debug` per reinterpretare evidenza raccolta sul candidato E.1.
 
 ## 2.2 Stop-hook Git false positive noto
 
@@ -3452,6 +3495,8 @@ Stato:
 - Phase 0.1: CI VERIFIED (#460);
 - Phase 0.2: CI VERIFIED (#462);
 - Phase 0.3: CI VERIFIED (#464);
+- Phase 0.4: CI VERIFIED (#475) / DEVICE PENDING;
+- Phase 0.5: CI VERIFIED (#477) / DEVICE PENDING;
 - device qualification Live Voice: PENDING;
 - vero LLM-token→TTS streaming: **NON IMPLEMENTATO**.
 
@@ -3500,6 +3545,40 @@ CORE ON  → qualità/capacità aumentano.
 
 Nessuna responsibility critica deve dipendere dal Core per persistence,
 dedup, authorization, retry safety o completion.
+
+## 65.7 ROADMAP PROGRESS INDEX — 30 FIXED MACRO-STEPS
+
+Convenzione di tracking scelta esplicitamente dal proprietario del progetto
+(2026-10-05). Esisteva nella conversazione di progetto ma **non** era mai stata
+resa canonica nel repository: questa sezione ne è la prima registrazione.
+
+Regole:
+
+1. Il denominatore è **permanentemente 30**.
+2. Micro-patch, PA-1A/PA-1B, Live Voice 0.x, round di qualifica e fix CI
+   **non** aumentano il denominatore: vivono come sotto-step sotto il
+   macro-step pertinente.
+3. L'indice serve **solo** a tracciare il progresso; **non sostituisce** le
+   track architetturali A0/A1/A2/A3/A4/B (§65.1–§65.6), che restano
+   autoritative.
+4. La terminologia storica PASSAGGIO 14/14B/15 non viene rinumerata.
+5. Nessuno stato viene inventato oltre quanto il Master supporta.
+
+**Mappatura numerica macro-step → roadmap corrente: TO BE CANONICALLY MAPPED.**
+
+La roadmap corrente non supporta in modo univoco una lista completa di 30
+voci. Gli elementi enumerabili in §65.1–§65.6 sono circa 26 (A0: PA-0…PA-4;
+A1: 6 passi; A2, A3, B: uno ciascuno; A4: 12 aree non ordinate) e A4 non ha
+un ordinamento né una granularità canonici. Derivare ora un 30-item mapping
+richiederebbe di inventare suddivisioni o ordinamenti. Non viene quindi
+assegnato alcun numero a nessun macro-step, né dichiarato alcun "N/30"
+corrente: una cifra come "7/30" riferita in conversazione resta **non
+canonica** finché un passaggio di mappatura dedicato non la fissa. Fino ad
+allora il progresso reale si legge dagli stati in §100 e §65.1–§65.6.
+
+Resta richiesto un **passaggio separato di mappatura** (docs-only) che
+definisca i 30 macro-step a partire dalle track §65, con stati
+DONE / ACTIVE / PAUSED / PLANNED supportati dal Master.
 
 # 66. IMPLEMENTATION PASS HISTORY
 
@@ -4070,7 +4149,7 @@ Ordine consigliato:
 6. mantenere Pass 14 artifact gate separato;
 7. eseguire 14B sul PC — il runner è ora pronto (§15): `cd tools\semantic_classifier` poi `.\run_real_training.ps1 -ModelDir ".\models" -OutputDir ".\real_run"` dopo aver scaricato i due file reali per `models/README.md`;
 8. solo dopo real semantic artifact gate procedere verso Pass 15;
-9. Live Voice: progettazione può continuare, full implementation dopo semantic/orchestration foundation. **Live Voice Phase 0.1** (foundation hardening + timing diagnostics, §129), **Phase 0.2** (real TTS playback-start observability, §130) e **Phase 0.3** (real user-speech boundary + end-to-end response latency, §131) implementate — device acceptance non ancora eseguita per nessuna delle tre, streaming LLM→TTS reale non avviato.
+9. Live Voice: progettazione può continuare, full implementation dopo semantic/orchestration foundation. **Live Voice Phase 0.1** (foundation hardening + timing diagnostics, §129), **Phase 0.2** (real TTS playback-start observability, §130) e **Phase 0.3** (real user-speech boundary + end-to-end response latency, §131) implementate — device acceptance non ancora eseguita per nessuna delle tre, streaming LLM→TTS reale non avviato. **Phase 0.4** (audio route/focus, §131.5, CI #475) e **Phase 0.5** (STT listen-ready, §131.6, CI #477) sono implementate e CI VERIFIED, anch'esse DEVICE PENDING.
 
 ---
 
@@ -6231,6 +6310,22 @@ streaming LLM→TTS.**
 
 ---
 
+### Addendum 2026-10-05 — riconciliazione documentale (docs-only, nessun cambio di versione)
+
+Nessun cambio runtime/architetturale. Corretti solo riferimenti CURRENT:
+etichette di versione del file (header e footer ora v1.23); mappa repository
+e branch in §2 (branch canonico, default branch `Jarvis-` storico/stale, nome
+Core `claude/jarvis-core-server-7uhajh`, HEAD verificati); baseline runtime
+CURRENT in §2.1 (HEAD docs-only `e9e5e3f` distinto dall'ultimo commit runtime
+`db97cc0`; baseline Live Voice 0.3 `7c4a4fb` spostata in §2.1.1 come
+storica); §65.3/§91 aggiornati con Live Voice 0.4/0.5; nuova §65.7 con la
+convenzione dei 30 macro-step fissi (mappatura numerica TO BE CANONICALLY
+MAPPED). Tutti gli stati congelati (PA-2 NOT STARTED, Morning aperta, Honor
+`1236015` PINNED, Pass 14B PAUSED, Pass 15 NOT STARTED, BLIND UNTOUCHED,
+Work Package E OPEN) invariati.
+
+---
+
 ## v1.22 — 2026-10-01
 
 **LIVE VOICE PHASE 0.4 — AUDIO ROUTE + AUDIO FOCUS CAUSAL OBSERVABILITY.**
@@ -6968,4 +7063,4 @@ Decisione chiave:
 **JARVIS adotta il pattern “specialized reflexes → semantic intelligence → planner/BRAIN escalation”, ma resta vendor-agnostic e non trasforma i micro-modelli in un secondo sistema semantico.**
 
 
-**END OF JARVIS MASTER ARCHITECTURE v1.16**
+**END OF JARVIS MASTER ARCHITECTURE v1.23**
