@@ -4338,7 +4338,7 @@ ARCHITECTURE MANUAL          AVAILABLE
 TARGET ARCHITECTURE          AVAILABLE
 DEEP AUDIT                   AVAILABLE
 SEGNALE                      AVAILABLE
-MASTER ARCHITECTURE          THIS FILE / v1.25
+MASTER ARCHITECTURE          THIS FILE / v1.26
 
 ANDROID-FIRST                ACTIVE
 CORE OPTIONAL ENHANCER       ACTIVE
@@ -6411,7 +6411,57 @@ Live Voice v1 NON completo.
 
 ---
 
+## 131.9 LIVE VOICE PHASE 0.8 — SILERO VAD RUNTIME + USER-IMPORT FOUNDATION
+
+```text
+RUNTIME COMMIT   c77555897034e0738af3946d97cbf97329d00cd2   CI #486 (attempt 2) SUCCESS
+LIVE VOICE PHASE 0.8   CODE PRESENT / AUTOMATED TESTED (core 1643/1643) / CI VERIFIED (#486) / REAL MODEL USER-IMPORT READY / DEVICE PENDING
+```
+
+Motore Silero VAD v5 reale (`:core/voice/silero`) sopra il PCM canonico di Phase 0.7:
+`VoicePcmFrame -> SileroVadEngine -> probabilita reale -> VadObservation -> VadTurnPolicy`.
+Contratto di streaming ufficiale implementato: contesto di 64 campioni (zeri a inizio
+sessione, coda del frame CORRENTE dopo ogni inferenza) + frame da 512 = 576 float in
+ingresso al modello; stato ricorrente [2,1,128] portato tra i frame (azzerato su reset,
+nuova generazione e salto di sequenza); sr = 16000 int64 scalare; PCM16 -> float = x/32768.
+Probabilita non valida (NaN/inf/<0/>1) o stato di dimensione errata -> UNKNOWN senza
+avanzare stato/contesto. Soglia 0.5 = valore di riferimento upstream, NON qualificata;
+isteresi = `VadTurnPolicy.PLACEHOLDER_UNQUALIFIED`.
+
+Modello: **user-imported, NON committato, NON nell'APK, NON scaricato da app o CI**
+(`.gitignore` invariato, `*.onnx` escluso). `silero_vad.onnx`, MIT, `snakers4/silero-vad`,
+2.327.524 byte, SHA-256 `1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3`.
+Accettato solo se dimensione, SHA-256 e grafo ONNX (input/state/sr, output/stateN) coincidono;
+copia in streaming su file temporaneo, promozione atomica in `files/silero_vad/<modelId>/`,
+un file rifiutato non tocca mai il modello precedente. Identita = id modello + SHA, non il nome file.
+Manifest committato `app/src/main/assets/model_manifests/silero_vad.json`, bloccato uguale alle
+costanti Kotlin da un test. Backend ORT sul `onnxruntime-android 1.20.0` gia presente
+(`OrtEnvironment` condiviso mai chiuso).
+
+UI: Impostazioni > Modelli (Importa/Rimuovi, stato) e blocco debug in Diagnostica
+(«Test VAD 10 s», solo aggregati: frame, voce/non-voce, inizi/fini, sconosciuti, inferenza
+media/max, frame persi). Il test parte solo se il microfono e provabilmente libero
+(conversazione a riposo, wake word disattivata e non in ascolto, traduttore fermo, nessuna
+altra cattura) — mai AudioRecord + SpeechRecognizer insieme.
+
+NON fatto: nessun collegamento a SessionCoordinator/STT/TTS/stato/wake word, nessun barge-in
+acustico, nessun AEC, nessun full-duplex. STT di produzione = SpeechRecognizer. Morning, PA-2,
+Semantica, Protocollo, Core non toccati; Pass 14B PAUSED, Pass 15 NOT STARTED, BLIND UNTOUCHED,
+Work Package E OPEN.
+
+Tre livelli di verita (non mescolare): (A) engine/contratto testato in JVM con backend finto: SI;
+(B) contratto del modello importato verificato a runtime (SHA/size/ORT/tensori): PENDING, solo su
+dispositivo dopo l'import; (C) inferenza reale su dispositivo: PENDING. La CI non puo eseguire il
+modello reale. DEVICE VERIFIED: NO (`docs/DEVICE_TEST_LIVE_VOICE_PHASE_0_8.md`). Live Voice v1
+NON completo; convenzione 30 macro-step preservata.
+
+---
+
 # 132. MASTER CHANGELOG
+
+## v1.26 — 2026-10-05
+
+- Live Voice Phase 0.8: Silero VAD runtime + user-import foundation (§131.9). Runtime `c775558`, CI #486. Device pending.
 
 ## v1.25 — 2026-10-05
 
@@ -7232,4 +7282,4 @@ Decisione chiave:
 **JARVIS adotta il pattern “specialized reflexes → semantic intelligence → planner/BRAIN escalation”, ma resta vendor-agnostic e non trasforma i micro-modelli in un secondo sistema semantico.**
 
 
-**END OF JARVIS MASTER ARCHITECTURE v1.25**
+**END OF JARVIS MASTER ARCHITECTURE v1.26**
