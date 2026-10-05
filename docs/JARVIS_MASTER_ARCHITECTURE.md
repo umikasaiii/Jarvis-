@@ -4338,7 +4338,7 @@ ARCHITECTURE MANUAL          AVAILABLE
 TARGET ARCHITECTURE          AVAILABLE
 DEEP AUDIT                   AVAILABLE
 SEGNALE                      AVAILABLE
-MASTER ARCHITECTURE          THIS FILE / v1.26
+MASTER ARCHITECTURE          THIS FILE / v1.27
 
 ANDROID-FIRST                ACTIVE
 CORE OPTIONAL ENHANCER       ACTIVE
@@ -6459,6 +6459,23 @@ NON completo; convenzione 30 macro-step preservata.
 
 # 132. MASTER CHANGELOG
 
+## 131.10 LIVE VOICE PHASE 0.9 — FAR-END PCM REFERENCE + DUPLEX FOUNDATION
+
+**Stato:** CODE PRESENT / AUTOMATED TESTED (core 1657) / CI VERIFIED (#488, runtime `5b8ee8f`) / DEVICE PENDING. Nessun AEC.
+
+- **Audit proprietà playback.** Neural (`HybridTtsEngine → NeuralTtsEngine → PcmPlayer → AudioTrack` float mono MODE_STREAM): PCM posseduto da JARVIS, sample rate reale noto, generazione nota, PCM accettato osservabile → `AVAILABLE_PCM`. Android `TextToSpeech`: PCM non esposto → `UNAVAILABLE_PLATFORM_TTS`, mai simulato (niente loopback/AudioPlaybackCapture/MediaProjection/ri-sintesi).
+- **`FarEndPcmFrame`** (`:core/voice`, float mono, copia immutabile, generation/sequence/sampleOffset/sampleRateHz, nessun testo/device/wall-clock, `toString` senza campioni). Tipo distinto da `VoicePcmFrame` (near-end PCM16 16 kHz).
+- **Punto di intercettazione:** `PlaybackWriteLoop` (loop di scrittura estratto da `PcmPlayer.write`, stessa semantica); emette un frame solo dopo che `AudioTrack.write` ha restituito n>0, contenente esattamente gli n campioni accettati. Write parziale avanza di n. `FarEndReferenceRecorder`: fence di generazione (`PcmPlayer.start` → `begin`, reset sequence/offset), `end()` su stop/release, `SharedFlow` replay=0 con buffer limitato, `tryEmit` non bloccante, drop contati; la timeline avanza anche se un consumer è lento.
+- **Gain:** AudioTrack applica il volume DOPO write → riferimento `PRE_OUTPUT_GAIN`; `outputGain` scalare esposto nello snapshot. Nessun rescaling.
+- **Sample rate:** quello reale del motore neurale; nessun resampling (near-end resta 16 kHz). Timestamp hardware: NON aggiunti (solo `sampleOffset` deterministico).
+- **Contratto duplex futuro:** `DuplexFrameConsumer(onNearEnd, onFarEnd)` — nessun nuovo owner di microfono o playback. `TextToSpeechEngine.farEndReferenceCapability` (default/Android: `UNAVAILABLE_PLATFORM_TTS`; Hybrid: AVAILABLE_PCM solo con PCM reale in scrittura).
+- **Non fatto:** AEC3, barge-in acustico, VAD→conversazione, cattura+playback simultanei, full-duplex. Silero e soglia 0.5 invariati. Zero persistenza/egress PCM.
+- **Evidenza device Phase 0.8 (PARZIALE, non DEVICE VERIFIED):** import modello, SHA, caricamento ORT e inferenza reale verificati; silenzio 308 frame 0 speech, avg 1.87 ms, 0 drop; run misto 69/240 speech 4 start/4 end, avg 4.49 ms; run difficile 126/182, avg 2.31 ms, max 42.52 ms, 0 drop. Qualità VAD completa, ownership microfono e reset/lifecycle: INCOMPLETI (matrice rimanente saltata dall'utente).
+
+## v1.27 — 2026-10-05
+
+- Live Voice Phase 0.9: far-end PCM reference foundation (§131.10). Runtime `5b8ee8f`, CI #488. Nessun AEC. Device pending; Phase 0.8 evidenza device parziale.
+
 ## v1.26 — 2026-10-05
 
 - Live Voice Phase 0.8: Silero VAD runtime + user-import foundation (§131.9). Runtime `c775558`, CI #486. Device pending.
@@ -7282,4 +7299,4 @@ Decisione chiave:
 **JARVIS adotta il pattern “specialized reflexes → semantic intelligence → planner/BRAIN escalation”, ma resta vendor-agnostic e non trasforma i micro-modelli in un secondo sistema semantico.**
 
 
-**END OF JARVIS MASTER ARCHITECTURE v1.26**
+**END OF JARVIS MASTER ARCHITECTURE v1.27**
