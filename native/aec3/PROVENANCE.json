@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "project": "pulseaudio/webrtc-audio-processing",
+  "release": "v2.1",
+  "commit": "846fe90a289f58b7c9303a635142aa2c7caa93e5",
+  "primarySourceUrl": "https://freedesktop.org/software/pulseaudio/webrtc-audio-processing/webrtc-audio-processing-2.1.tar.gz",
+  "fallbackSourceUrl": "https://gitlab.freedesktop.org/pulseaudio/webrtc-audio-processing/-/archive/846fe90a289f58b7c9303a635142aa2c7caa93e5/webrtc-audio-processing-846fe90a289f58b7c9303a635142aa2c7caa93e5.tar.gz",
+  "artifact": "webrtc-audio-processing-2.1.tar.gz",
+  "artifactSha256": "35e86b986d02ea15f3d04741a1a5a735ba399bc0fac0ee089c39480e35fc3253",
+  "artifactSizeBytes": 814872,
+  "license": "BSD-3-Clause (+ WebRTC PATENTS and bundled third-party notices preserved from the source tree)",
+  "targetAbi": "arm64-v8a",
+  "androidApi": 31,
+  "buildResult": "filled by CI: see native/aec3/BUILD_RESULT.json (committed after the first green reproducible build)"
+}

@@ -1,0 +1,20 @@
+name: AEC3 native build (LV-R1 checkpoint A)
+on:
+  push:
+    branches: [ "claude/**" ]
+    paths: [ "native/aec3/**", ".github/workflows/aec3-native.yml" ]
+  workflow_dispatch: {}
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: Tools
+        run: |
+          pip install meson==1.12.1 ninja
+          meson --version; ninja --version; echo "NDK=$ANDROID_NDK_HOME"; cat "$ANDROID_NDK_HOME/source.properties" || true
+      - name: Build
+        run: bash native/aec3/build_android.sh "$RUNNER_TEMP/aec3"
