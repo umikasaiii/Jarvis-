@@ -6457,6 +6457,23 @@ NON completo; convenzione 30 macro-step preservata.
 
 ---
 
+# 131.11 LIVE VOICE LV-R1 — AEC3 + DUPLEX MONITOR + POST-AEC SILERO + ACOUSTIC BARGE-IN
+
+Stato: **LV-R1 CODE PRESENT / AUTOMATED TESTED / CI VERIFIED (#run 37424847700, commit `e061297`) / DEVICE PENDING.**
+AEC3 runtime, Duplex, Post-AEC VAD = CODE PRESENT / DEVICE PENDING. Acoustic barge-in = IMPLEMENTED BUT DEVICE-GATED (default OFF).
+Non production-ready; nessuna claim DEVICE VERIFIED.
+
+- **AEC3**: sorgente ufficiale Freedesktop `pulseaudio/webrtc-audio-processing` v2.1 (commit `846fe90a…`), tarball `35e86b98…3253` (814872 B) verificato in CI prima del build (fail closed). Meson 1.12.1 + Ninja 1.13.0, NDK r27d, arm64-v8a, android-31, static, wrapper JNI di 4 simboli (`native/aec3/`). `libjarvis_aec3.so` 1.032.080 B, SHA-256 `01919f40…6e`, riproducibile (due build da zero identiche), NEEDED solo liblog/libm/libdl/libc (nessun libc++_shared). Provenance: `native/aec3/PROVENANCE.json`, `BUILD_RESULT.json`. Non usati: libwebrtc completa, JavaAudioDeviceModule, AcousticEchoCanceler di piattaforma.
+- **Pipeline**: PcmPlayer far-end (invariato) -> `AecDuplexPipeline` (blocchi esatti 10 ms, conservazione campioni, reset su gap) ; mic (UNICO owner `PcmCaptureEngine`, modalita `ECHO_CONTROLLED_RAW`: MIC->DEFAULT, senza VOICE_COMMUNICATION) -> AEC3 -> frame 512 post-AEC -> Silero (soglia 0.5 e isteresi invariate) -> `LiveDuplexMonitor` (un evento per esecuzione).
+- **Handoff**: conferma voce -> stop+release AudioRecord (attesa limitata) -> solo dopo `RELEASED` stop TTS -> SpeechRecognizer. Se il rilascio non e provato: nessun STT, TTS continua. `speakOut` fa join NonCancellable del job duplex prima di ritornare.
+- **Rate**: 16/24/32/48 kHz supportati; 22,05 kHz (Piper) NON forma blocchi da 10 ms esatti -> interruzione automatica negata (`FAR_RATE_UNSUPPORTED`), riproduzione normale. Android TTS: `UNAVAILABLE_PLATFORM_TTS`, solo tap barge-in.
+- **Timing/delay**: nessun ritardo esterno inventato (`externalDelayHintMs` sempre null); AEC3 stima il ritardo da se. Solo evidenza reale di ordinamento dell'orologio host.
+- **Opzione**: Impostazioni > Voce > "Interruzione vocale automatica", default OFF fino alla qualificazione su Honor.
+- **Privacy**: near/far/AEC output effimeri, mai salvati/loggati/inviati; zero nuova egress.
+- **APK**: `latest-debug` `e061297`, 216.852.611 B (prima 215.672.886 B, +1.179.725 B), SHA-256 `921954d2…87c3`; solo arm64-v8a; stesso package/keystore.
+- Test: core 1690 verdi (+33); guardie app `DuplexOwnershipRegressionTest`. Piano device: `docs/DEVICE_TEST_LIVE_VOICE_REALTIME_LV_R1.md`.
+- Non fatto (fuori scope): STT streaming, LLM streaming, token->TTS, full-duplex STT.
+
 # 132. MASTER CHANGELOG
 
 ## 131.10 LIVE VOICE PHASE 0.9 — FAR-END PCM REFERENCE + DUPLEX FOUNDATION
@@ -6471,6 +6488,10 @@ NON completo; convenzione 30 macro-step preservata.
 - **Contratto duplex futuro:** `DuplexFrameConsumer(onNearEnd, onFarEnd)` — nessun nuovo owner di microfono o playback. `TextToSpeechEngine.farEndReferenceCapability` (default/Android: `UNAVAILABLE_PLATFORM_TTS`; Hybrid: AVAILABLE_PCM solo con PCM reale in scrittura).
 - **Non fatto:** AEC3, barge-in acustico, VAD→conversazione, cattura+playback simultanei, full-duplex. Silero e soglia 0.5 invariati. Zero persistenza/egress PCM.
 - **Evidenza device Phase 0.8 (PARZIALE, non DEVICE VERIFIED):** import modello, SHA, caricamento ORT e inferenza reale verificati; silenzio 308 frame 0 speech, avg 1.87 ms, 0 drop; run misto 69/240 speech 4 start/4 end, avg 4.49 ms; run difficile 126/182, avg 2.31 ms, max 42.52 ms, 0 drop. Qualità VAD completa, ownership microfono e reset/lifecycle: INCOMPLETI (matrice rimanente saltata dall'utente).
+
+## v1.28 — 2026-10-06
+
+- LV-R1: AEC3 (webrtc-audio-processing 2.1 pinned) + duplex monitor + post-AEC Silero + acoustic barge-in (§131.11). Runtime `e061297`, CI verde. Device pending, opzione default OFF.
 
 ## v1.27 — 2026-10-05
 
@@ -7299,4 +7320,4 @@ Decisione chiave:
 **JARVIS adotta il pattern “specialized reflexes → semantic intelligence → planner/BRAIN escalation”, ma resta vendor-agnostic e non trasforma i micro-modelli in un secondo sistema semantico.**
 
 
-**END OF JARVIS MASTER ARCHITECTURE v1.27**
+**END OF JARVIS MASTER ARCHITECTURE v1.28**
