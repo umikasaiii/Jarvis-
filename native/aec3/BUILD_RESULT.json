@@ -1,0 +1,18 @@
+{
+  "libraryName": "libjarvis_aec3.so",
+  "sha256": "01919f40294cbfe63255e6d2fefe8cdeda1a7caf0c69932c34479f58f2664e6e",
+  "sizeBytes": 1032080,
+  "ndkRevision": "27.3.13750724",
+  "meson": "1.12.1",
+  "ninja": "1.13.0",
+  "androidApi": 31,
+  "abi": "arm64-v8a",
+  "buildType": "release",
+  "defaultLibrary": "static",
+  "sourceIdentity": "release-tarball sha256=35e86b986d02ea15f3d04741a1a5a735ba399bc0fac0ee089c39480e35fc3253 size=814872",
+  "abseilWrap": "abseil-cpp 20240722.0 (meson wrapdb patch 3, hash-pinned by its wrap file)",
+  "linkFlags": "-static-libstdc++ -llog -Wl,--version-script,--gc-sections,--exclude-libs,ALL,--build-id=none,-z,max-page-size=16384",
+  "reproducibility": "two from-scratch builds at the same work path gave identical SHA-256 (CI run 37424847654); identical to the exploration build (run 37423922727)",
+  "exportedJniSymbols": ["nativeCreate", "nativeProcessReverse", "nativeProcessNear", "nativeDestroy"],
+  "neededLibraries": ["liblog.so", "libm.so", "libdl.so", "libc.so"]
+}
