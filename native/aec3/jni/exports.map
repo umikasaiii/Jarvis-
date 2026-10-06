@@ -1,0 +1,6 @@
+{
+  global:
+    Java_com_simone_jarvismobile_voice_aec_NativeAec3_*;
+  local:
+    *;
+};
