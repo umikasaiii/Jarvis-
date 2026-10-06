@@ -150,6 +150,9 @@ class SettingsViewModel @Inject constructor(
     val speakBackgroundResponses: StateFlow<Boolean> = settings.speakBackgroundResponses
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
+    val acousticBargeIn: StateFlow<Boolean> = settings.acousticBargeInEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
     init {
         viewModelScope.launch { coordinator.refreshVoices() }
     }
@@ -243,6 +246,9 @@ class SettingsViewModel @Inject constructor(
 
     fun reindexKnowledge() = viewModelScope.launch { knowledge.rebuild() }
 
+    fun setAcousticBargeIn(value: Boolean) = viewModelScope.launch {
+        settings.setAcousticBargeInEnabled(value)
+    }
     fun setSpeakBackgroundResponses(value: Boolean) = viewModelScope.launch {
         settings.setSpeakBackgroundResponses(value)
     }

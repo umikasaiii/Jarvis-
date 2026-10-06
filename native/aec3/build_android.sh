@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Build standalone WebRTC AudioProcessing (arm64-v8a, android-31) from the pinned source.
-# Usage: build_android.sh <work_dir>
+# Usage: build_android.sh <work_dir> [out_jniLibs_dir]
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 WORK="${1:?work dir}"
+OUT_JNILIBS="${2:-}"
 NDK="${ANDROID_NDK_HOME:-${ANDROID_NDK_LATEST_HOME:?no NDK}}"
 TC="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
 API=31
@@ -33,14 +34,6 @@ meson setup "$WORK/build" "$SRC" --cross-file "$WORK/cross.ini" \
   --prefix "$WORK/prefix" --buildtype release -Ddefault_library=static 2>&1 | tee "$WORK/meson-setup.log"
 ninja -C "$WORK/build" 2>&1 | tail -30
 meson install -C "$WORK/build" 2>&1 | tail -30
-echo "=== installed tree"; find "$WORK/prefix" -type f | sort | head -300
-echo "=== pc files"; find "$WORK/prefix" -name '*.pc' -exec sh -c 'echo "--- $1"; cat "$1"' _ {} \;
-
-echo "=== header API excerpts"
-H="$WORK/prefix/include/webrtc-audio-processing-2/api/audio/audio_processing.h"
-grep -n -E "class .*AudioProcessing|AudioProcessingBuilder|Create\(|Build\(|ProcessStream|ProcessReverseStream|set_stream_delay|namespace|struct EchoCanceller|mobile_mode|high_pass_filter|noise_suppression|gain_controller|scoped_refptr|ApplyConfig|GetStatistics|StreamConfig" "$H" | head -80
-echo "=== absl in main .a?"; "$TC/llvm-nm" "$WORK/prefix/lib/libwebrtc-audio-processing-2.a" 2>/dev/null | grep -c -i absl || true
-find "$WORK/build/subprojects" -name 'libabsl_*.a' | head -30
 # ---- JNI wrapper
 PREFIX="$WORK/prefix"
 ABSL_LIBS=$(find "$WORK/build/subprojects" -name 'libabsl_*.a' | sort | tr '\n' ' ')
@@ -53,5 +46,28 @@ OUT_SO="$WORK/libjarvis_aec3.so"
   -Wl,--build-id=none -Wl,-z,max-page-size=16384 2>&1 | tail -60
 "$TC/llvm-strip" --strip-unneeded "$OUT_SO"
 ls -l "$OUT_SO"; sha256sum "$OUT_SO"
-echo "=== NEEDED"; "$TC/llvm-readelf" -d "$OUT_SO" | grep NEEDED
-echo "=== exported dynamic symbols"; "$TC/llvm-nm" -D --defined-only "$OUT_SO"
+echo "=== NEEDED"; "$TC/llvm-readelf" -d "$OUT_SO" | grep NEEDED | tee "$WORK/needed.txt"
+echo "=== exported dynamic symbols"; "$TC/llvm-nm" -D --defined-only "$OUT_SO" | tee "$WORK/exports.txt"
+# Fail closed on the contract: only system libs, no libc++_shared, exactly the 4 JNI symbols.
+if grep -q "libc++_shared" "$WORK/needed.txt"; then echo "FAIL: libc++_shared introduced" >&2; exit 1; fi
+if [ "$(wc -l < "$WORK/exports.txt")" != "4" ]; then echo "FAIL: unexpected exported symbols" >&2; exit 1; fi
+SO_SHA=$(sha256sum "$OUT_SO" | cut -d' ' -f1)
+cat > "$WORK/BUILD_RESULT.json" <<EOT
+{
+  "libraryName": "libjarvis_aec3.so",
+  "sha256": "$SO_SHA",
+  "sizeBytes": $(stat -c %s "$OUT_SO"),
+  "ndkRevision": "$(grep Pkg.Revision "$NDK/source.properties" | cut -d= -f2 | tr -d ' ')",
+  "meson": "$(meson --version)",
+  "ninja": "$(ninja --version)",
+  "androidApi": $API,
+  "abi": "arm64-v8a",
+  "buildType": "release",
+  "defaultLibrary": "static",
+  "sourceIdentity": "$(tr '\n' ' ' < "$WORK/fetch/source-identity.txt")",
+  "abseilWrap": "abseil-cpp 20240722.0 (meson wrapdb patch 3, hash-pinned by its wrap file)",
+  "linkFlags": "-static-libstdc++ -llog -Wl,--version-script,--gc-sections,--exclude-libs,ALL,--build-id=none,-z,max-page-size=16384"
+}
+EOT
+cat "$WORK/BUILD_RESULT.json"
+if [ -n "$OUT_JNILIBS" ]; then mkdir -p "$OUT_JNILIBS/arm64-v8a"; cp "$OUT_SO" "$OUT_JNILIBS/arm64-v8a/libjarvis_aec3.so"; fi

@@ -60,6 +60,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -134,6 +137,7 @@ class SessionCoordinator @Inject constructor(
     private val aiRouter: com.simone.jarvismobile.ai.AiRouter,
     private val remoteChatState: com.simone.jarvismobile.ai.RemoteChatState,
     private val voiceDiagnostics: VoiceTurnDiagnosticsRecorder,
+    private val duplex: com.simone.jarvismobile.audio.duplex.DuplexMonitorController,
 ) {
 
     /** Long-lived scope for fire-and-forget persistence; lives as long as the app. */
@@ -2256,10 +2260,16 @@ class SessionCoordinator @Inject constructor(
                         }
                 }
                 listenerReady.await()
+                // LV-R1: optional acoustic interruption (default OFF). Lives exactly as long as this
+                // utterance; on confirmed speech it releases the AudioRecord FIRST, then calls
+                // acousticInterrupt() (stop TTS) so the SpeechRecognizer can never overlap the recorder.
+                val duplexJob = launch { duplex.runDuringSpeech(tts) { acousticInterrupt() } }
                 try {
                     tts.speak(spoken, invocationId)
                 } finally {
                     listener.cancel()
+                    // Joined before returning: the microphone is guaranteed free when the follow-up STT starts.
+                    withContext(NonCancellable) { duplexJob.cancelAndJoin() }
                 }
             }
         } else {
@@ -2321,6 +2331,34 @@ class SessionCoordinator @Inject constructor(
 
     suspend fun configureVoice(name: String?, rate: Float, pitch: Float): Boolean =
         tts.configure(name, rate, pitch)
+
+    /**
+     * LV-R1 — acoustic barge-in confirmed by AEC3 + Silero. Called by the duplex monitor ONLY after the
+     * canonical AudioRecord has been released. Same effect as a visible mic press while speaking.
+     */
+    private fun acousticInterrupt() {
+        if (state.value == ConversationState.Speaking || tts.state.value == TtsState.SPEAKING) {
+            bargeInRequested = true
+            voiceDiagnostics.markBargeInRequested()
+            tts.stop()
+            _diagnostic.value = "interruzione vocale automatica…"
+        }
+    }
+
+    /**
+     * LV-R1 debug only (Diagnostica): speaks a long neural utterance through the SAME [speakOut] path so the
+     * AEC3 + Silero duplex monitor can be exercised without a conversation turn. Idle only; never stores audio.
+     */
+    fun debugAcousticInterruptionTest() {
+        if (state.value != ConversationState.Idle || tts.state.value == TtsState.SPEAKING) return
+        scope.launch {
+            try {
+                speakOut(DEBUG_DUPLEX_TEXT)
+            } finally {
+                bargeInRequested = false
+            }
+        }
+    }
 
     /** Stops the current sentence and lets the active visible session listen now. */
     fun interruptAndListen() {
@@ -2422,6 +2460,7 @@ class SessionCoordinator @Inject constructor(
             PackageManager.PERMISSION_GRANTED
 
     companion object {
+        private const val DEBUG_DUPLEX_TEXT = "Questo e un test di interruzione vocale. Parlo per diversi secondi: ora prova a interrompermi con la tua voce, senza toccare lo schermo. Continuo a leggere un testo abbastanza lungo, cosi puoi verificare che la mia stessa voce non mi interrompa da sola."
         const val DEFAULT_RECORD_MS = 3_000L
         const val FIXED_REPLY = "Sistema audio operativo. Sono pronto."
 

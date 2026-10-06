@@ -1,5 +1,6 @@
 package com.simone.jarvismobile.audio
 
+import com.simone.jarvismobile.core.voice.PcmCaptureMode
 import com.simone.jarvismobile.core.voice.VoiceCaptureOutcome
 import com.simone.jarvismobile.core.voice.VoiceCaptureSnapshot
 import com.simone.jarvismobile.core.voice.VoicePcmFrame
@@ -32,7 +33,7 @@ interface AudioCapture {
     val captureSnapshot: StateFlow<VoiceCaptureSnapshot>
 
     /** Captures until cancelled ([cancel] or coroutine cancellation), emitting [frames]. Not used in production yet. */
-    suspend fun captureContinuous(): VoiceCaptureOutcome
+    suspend fun captureContinuous(mode: PcmCaptureMode = PcmCaptureMode.STANDARD): VoiceCaptureOutcome
 
     /** Captures for [durationMs] then stops. Returns the outcome; never throws. */
     suspend fun capture(durationMs: Long): CaptureResult

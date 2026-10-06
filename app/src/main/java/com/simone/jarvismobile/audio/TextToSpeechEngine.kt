@@ -1,7 +1,10 @@
 package com.simone.jarvismobile.audio
 
 import com.simone.jarvismobile.core.speech.SpeechStyle
+import com.simone.jarvismobile.core.voice.FarEndPcmFrame
 import com.simone.jarvismobile.core.voice.FarEndReferenceCapability
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import com.simone.jarvismobile.tts.AudioFocusObservation
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -62,6 +65,13 @@ interface TextToSpeechEngine {
     val farEndReferenceCapability: FarEndReferenceCapability
         get() = FarEndReferenceCapability.UNAVAILABLE_PLATFORM_TTS
 
+    /**
+     * LV-R1 — the real far-end PCM frames (see [FarEndPcmFrame]) of the engine's OWN playback, the render
+     * reference for AEC3. Empty for platform TTS (it never exposes its PCM).
+     */
+    val farEndFrames: SharedFlow<FarEndPcmFrame>
+        get() = EmptyFarEndFrames
+
     /** True once an offline Italian voice has been resolved and is ready. */
     suspend fun ensureReady(): Boolean
 
@@ -94,3 +104,5 @@ interface TextToSpeechEngine {
 
     fun shutdown()
 }
+
+private val EmptyFarEndFrames: SharedFlow<FarEndPcmFrame> = MutableSharedFlow<FarEndPcmFrame>().asSharedFlow()

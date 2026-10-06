@@ -35,9 +35,10 @@ class SingleCaptureOwnerRegressionTest {
 
     @Test
     fun `captureContinuous has no production caller yet`() {
+        // LV-R1: the opt-in duplex controller is the second (and last) allowed caller.
         // Phase 0.8: the ONLY allowed caller is the manual, diagnostics-only Silero qualification service
         // (it proves the mic is free first; see SileroPhase08RegressionTest).
-        val callers = allKt().filter { it.name !in setOf("AudioCapture.kt", "AndroidAudioCapture.kt", "SileroVadQualificationService.kt") }
+        val callers = allKt().filter { it.name !in setOf("AudioCapture.kt", "AndroidAudioCapture.kt", "SileroVadQualificationService.kt", "DuplexMonitorController.kt") }
             .filter { f -> code(f).any { it.contains("captureContinuous(") } }.map { it.name }
         assertTrue("unexpected captureContinuous callers: $callers", callers.isEmpty())
     }

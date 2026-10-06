@@ -95,6 +95,16 @@ android {
         }
     }
 
+    // LV-R1: the standalone WebRTC AEC3 .so is built in CI (native/aec3/build_android.sh) from the
+    // pinned pulseaudio/webrtc-audio-processing v2.1 source into this directory. arm64-v8a only.
+    // When the directory is absent (local builds without the NDK) the app builds and AEC3 reports
+    // NATIVE_LIBRARY_MISSING at runtime: acoustic barge-in is then simply unavailable.
+    sourceSets {
+        getByName("main") {
+            jniLibs.srcDir("../native/aec3/out/jniLibs")
+        }
+    }
+
     buildFeatures {
         compose = true
         buildConfig = true

@@ -9,6 +9,8 @@ import android.media.MediaRecorder
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.simone.jarvismobile.core.security.LogRedactor
+import com.simone.jarvismobile.core.voice.ModalPcmSourceFactory
+import com.simone.jarvismobile.core.voice.PcmCaptureMode
 import com.simone.jarvismobile.core.voice.PcmSource
 import com.simone.jarvismobile.core.voice.PcmSourceFactory
 import com.simone.jarvismobile.core.voice.PcmSourceOpenResult
@@ -22,9 +24,9 @@ import com.simone.jarvismobile.core.voice.VoiceCaptureFailure
  *
  * Not compiled in the scaffolding container (no Android SDK); built in CI.
  */
-class AudioRecordPcmSourceFactory(private val context: Context) : PcmSourceFactory {
+class AudioRecordPcmSourceFactory(private val context: Context) : ModalPcmSourceFactory {
 
-    override fun open(): PcmSourceOpenResult {
+    override fun open(mode: PcmCaptureMode): PcmSourceOpenResult {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO)
             != PackageManager.PERMISSION_GRANTED
         ) return PcmSourceOpenResult.Failed(VoiceCaptureFailure.PERMISSION_DENIED, "permission_denied")
@@ -41,11 +43,20 @@ class AudioRecordPcmSourceFactory(private val context: Context) : PcmSourceFacto
 
         // Some devices/ROMs fail to initialize VOICE_COMMUNICATION when no
         // communication device is active; fall back to MIC then DEFAULT.
-        val sources = intArrayOf(
-            MediaRecorder.AudioSource.VOICE_COMMUNICATION,
-            MediaRecorder.AudioSource.MIC,
-            MediaRecorder.AudioSource.DEFAULT,
-        )
+        // LV-R1: when the app's own AEC3 runs (ECHO_CONTROLLED_RAW) the platform communication
+        // source is deliberately skipped, so an OEM AEC/NS is never silently stacked under ours.
+        // STANDARD keeps the legacy MagicOS-safe order untouched.
+        val sources = when (mode) {
+            PcmCaptureMode.STANDARD -> intArrayOf(
+                MediaRecorder.AudioSource.VOICE_COMMUNICATION,
+                MediaRecorder.AudioSource.MIC,
+                MediaRecorder.AudioSource.DEFAULT,
+            )
+            PcmCaptureMode.ECHO_CONTROLLED_RAW -> intArrayOf(
+                MediaRecorder.AudioSource.MIC,
+                MediaRecorder.AudioSource.DEFAULT,
+            )
+        }
         val states = StringBuilder()
         for (source in sources) {
             val candidate = try {

@@ -72,14 +72,14 @@ class PcmCaptureEngine(
     }
 
     /** Captures until [maxDurationMs] elapses (null = until cancelled). Never throws except CancellationException of the caller. */
-    suspend fun run(maxDurationMs: Long?): VoiceCaptureOutcome {
+    suspend fun run(maxDurationMs: Long?, mode: PcmCaptureMode = PcmCaptureMode.STANDARD): VoiceCaptureOutcome {
         if (!busy.compareAndSet(false, true)) {
             return outcome(VoiceCaptureFailure.ALREADY_OWNED, "already_owned", 0)
         }
         val generation = epoch.invalidate()
         _snapshot.value = VoiceCaptureSnapshot(state = VoiceCaptureState.OPENING, generation = generation)
         try {
-            return withContext(readDispatcher) { loop(generation, maxDurationMs) }
+            return withContext(readDispatcher) { loop(generation, maxDurationMs, mode) }
         } finally {
             _micLevel.value = 0f
             _snapshot.value = _snapshot.value.copy(state = VoiceCaptureState.IDLE)
@@ -87,8 +87,8 @@ class PcmCaptureEngine(
         }
     }
 
-    private suspend fun loop(generation: Long, maxDurationMs: Long?): VoiceCaptureOutcome {
-        val opened = factory.open()
+    private suspend fun loop(generation: Long, maxDurationMs: Long?, mode: PcmCaptureMode): VoiceCaptureOutcome {
+        val opened = (factory as? ModalPcmSourceFactory)?.open(mode) ?: factory.open()
         val source = when (opened) {
             is PcmSourceOpenResult.Failed -> return outcome(opened.failure, opened.detail, 0)
             is PcmSourceOpenResult.Opened -> opened.source

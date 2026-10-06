@@ -80,6 +80,8 @@ class HybridTtsEngine @Inject constructor(
 
     // Phase 0.9: AVAILABLE_PCM only while the neural path is genuinely writing PCM through PcmPlayer;
     // UNAVAILABLE_PLATFORM_TTS while Android system TTS speaks; IDLE otherwise.
+    override val farEndFrames: SharedFlow<com.simone.jarvismobile.core.voice.FarEndPcmFrame> get() = player.farEndFrames
+
     override val farEndReferenceCapability: com.simone.jarvismobile.core.voice.FarEndReferenceCapability
         get() = when {
             player.farEndSnapshot().capability == com.simone.jarvismobile.core.voice.FarEndReferenceCapability.AVAILABLE_PCM ->

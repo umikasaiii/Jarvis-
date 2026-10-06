@@ -60,3 +60,17 @@ fun interface PcmSourceFactory {
     /** Checks permission and opens (but does not start) a source. Never throws. */
     fun open(): PcmSourceOpenResult
 }
+
+/**
+ * LV-R1 — which platform source profile the (single, canonical) capture owner opens.
+ * STANDARD = legacy MagicOS-safe order (VOICE_COMMUNICATION -> MIC -> DEFAULT), unchanged.
+ * ECHO_CONTROLLED_RAW = the app's own AEC3 runs, so the platform communication source (which on many
+ * OEMs silently stacks its own AEC/NS) is NOT used: MIC -> DEFAULT only.
+ */
+enum class PcmCaptureMode { STANDARD, ECHO_CONTROLLED_RAW }
+
+/** A [PcmSourceFactory] that can open a source for an explicit [PcmCaptureMode]. */
+interface ModalPcmSourceFactory : PcmSourceFactory {
+    fun open(mode: PcmCaptureMode): PcmSourceOpenResult
+    override fun open(): PcmSourceOpenResult = open(PcmCaptureMode.STANDARD)
+}

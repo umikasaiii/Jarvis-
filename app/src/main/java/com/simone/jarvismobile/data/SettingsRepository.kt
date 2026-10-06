@@ -79,6 +79,7 @@ class SettingsRepository @Inject constructor(
         val TTS_PAUSE_SCALE = floatPreferencesKey("tts_pause_scale")
         val TTS_EXPRESSIVENESS = floatPreferencesKey("tts_expressiveness")
         val SPEAK_BACKGROUND_RESPONSES = booleanPreferencesKey("speak_background_responses")
+        val ACOUSTIC_BARGE_IN = booleanPreferencesKey("acoustic_barge_in")
         val WAKE_WORD_ENABLED = booleanPreferencesKey("wake_word_enabled")
         val WAKE_WORD = stringPreferencesKey("wake_word")
         val AUTOMATION_SERVICE = booleanPreferencesKey("automation_service_enabled")
@@ -503,6 +504,14 @@ class SettingsRepository @Inject constructor(
         }
 
     /** Optional and off by default: a finished background task may speak aloud. */
+    /** LV-R1 — "Interruzione vocale automatica" (AEC3 + Silero). Default OFF until Honor device qualification. */
+    val acousticBargeInEnabled: Flow<Boolean> =
+        context.settingsDataStore.data.map { it[Keys.ACOUSTIC_BARGE_IN] ?: false }
+
+    suspend fun setAcousticBargeInEnabled(value: Boolean) {
+        context.settingsDataStore.edit { it[Keys.ACOUSTIC_BARGE_IN] = value }
+    }
+
     val speakBackgroundResponses: Flow<Boolean> =
         context.settingsDataStore.data.map { it[Keys.SPEAK_BACKGROUND_RESPONSES] ?: false }
 

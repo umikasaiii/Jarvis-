@@ -2,6 +2,7 @@ package com.simone.jarvismobile.audio
 
 import android.content.Context
 import com.simone.jarvismobile.core.voice.PcmCaptureEngine
+import com.simone.jarvismobile.core.voice.PcmCaptureMode
 import com.simone.jarvismobile.core.voice.VoiceCaptureFailure
 import com.simone.jarvismobile.core.voice.VoiceCaptureOutcome
 import com.simone.jarvismobile.core.voice.VoiceCaptureSnapshot
@@ -41,7 +42,7 @@ class AndroidAudioCapture @Inject constructor(
 
     override suspend fun capture(durationMs: Long): CaptureResult = toLegacy(engine.run(durationMs))
 
-    override suspend fun captureContinuous(): VoiceCaptureOutcome = engine.run(null)
+    override suspend fun captureContinuous(mode: PcmCaptureMode): VoiceCaptureOutcome = engine.run(null, mode)
 
     private fun toLegacy(o: VoiceCaptureOutcome): CaptureResult = when (o.failure) {
         null -> CaptureResult.COMPLETED

@@ -70,3 +70,6 @@ Thumbs.db
 
 # Kotlin compiler
 .kotlin/
+
+# LV-R1: CI-built AEC3 native library (never committed; provenance in native/aec3/)
+native/aec3/out/

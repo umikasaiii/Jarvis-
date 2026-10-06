@@ -1,4 +1,4 @@
-name: AEC3 native build (LV-R1 checkpoint A)
+name: AEC3 native reproducibility (LV-R1)
 on:
   push:
     branches: [ "claude/**" ]
@@ -14,7 +14,9 @@ jobs:
         with: { python-version: '3.12' }
       - name: Tools
         run: |
-          pip install meson==1.12.1 ninja
+          pip install meson==1.12.1 ninja==1.13.0
           meson --version; ninja --version; echo "NDK=$ANDROID_NDK_HOME"; cat "$ANDROID_NDK_HOME/source.properties" || true
-      - name: Build
-        run: bash native/aec3/build_android.sh "$RUNNER_TEMP/aec3"
+      - name: Build twice from scratch and require identical SHA-256
+        run: bash native/aec3/verify_reproducible.sh "$RUNNER_TEMP/aec3"
+      - name: Build result (provenance values)
+        run: cat "$RUNNER_TEMP/aec3/BUILD_RESULT.json"

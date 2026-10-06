@@ -345,6 +345,48 @@ fun DiagnosticsScreen(
                 }
             }
 
+            // LV-R1 — AEC3 + duplex monitor + post-AEC Silero, last attempt. Bounded, content-free:
+            // enums, counters and latencies only; never PCM, never transcript.
+            val duplex by viewModel.duplexLast.collectAsStateWithLifecycle()
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Interruzione acustica (AEC3, debug)", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "libreria AEC3=${if (viewModel.aecNativeLoaded) "caricata" else "assente"} · " +
+                            "negato=${duplex.denial ?: "-"} · aecErrore=${duplex.aecFailure ?: "-"} · " +
+                            "farRate=${duplex.farRateHz}Hz",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Text(
+                        "eseguito=${duplex.ran} · confermato=${duplex.confirmed} · rilascio=${duplex.releaseResult ?: "-"} · " +
+                            "rilascioDopoConferma=${duplex.handoffReleaseMs?.let { "${it}ms" } ?: "n/d"} · " +
+                            "frameVAD=${duplex.vadFrames} · droppedCattura=${duplex.captureFramesDropped}",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    val aec = duplex.aec
+                    if (aec != null) {
+                        Text(
+                            "AEC stato=${aec.state} · farBlocchi=${aec.farBlocksFed}/${aec.farBlocksRejected} · " +
+                                "nearBlocchi=${aec.nearBlocksProcessed}/${aec.nearBlocksFailed} · reset=${aec.resetCount} · " +
+                                "media=${aec.avgProcessMs?.let { "%.2fms".format(it) } ?: "n/d"} · max=${"%.2fms".format(aec.maxProcessMs)}",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        Text(
+                            "timing: farPrimo→nearPrimo=${aec.timing.firstFarToFirstNearNs?.let { "${it / 1_000_000}ms" } ?: "n/d"} · " +
+                                "ritardoEsterno=${aec.timing.externalDelayHintMs?.let { "${it}ms" } ?: "sconosciuto (AEC3 stima da solo)"}",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    Text(
+                        "Silero media=${duplex.vadAvgMs?.let { "%.2fms".format(it) } ?: "n/d"} · max=${duplex.vadMaxMs?.let { "%.2fms".format(it) } ?: "n/d"}",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    OutlinedButton(onClick = viewModel::runDuplexDebugTest, modifier = Modifier.fillMaxWidth()) {
+                        Text("Test interruzione acustica (voce neurale, richiede l'opzione attiva)")
+                    }
+                }
+            }
+
             // Live Voice Phase 0.1 — bounded voice-turn timing diagnostics
             // (§ docs/JARVIS_MASTER_ARCHITECTURE.md "Live Voice Phase 0.1").
             // Timestamps/latencies/enums/counters/booleans only, never the

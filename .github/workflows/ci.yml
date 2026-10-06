@@ -57,6 +57,19 @@ jobs:
         with:
           packages: 'platform-tools'
 
+      # ---- LV-R1: standalone WebRTC AEC3 (pinned pulseaudio/webrtc-audio-processing v2.1) ----
+      # Source SHA-256 is verified before unpack (fail closed); arm64-v8a only; output goes to
+      # native/aec3/out/jniLibs, which app/build.gradle.kts packages. See native/aec3/PROVENANCE.json.
+      - name: Set up Python (meson/ninja for the AEC3 native build)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build AEC3 native library (arm64-v8a)
+        run: |
+          pip install meson==1.12.1 ninja==1.13.0
+          bash native/aec3/build_android.sh "$RUNNER_TEMP/aec3" "$GITHUB_WORKSPACE/native/aec3/out/jniLibs"
+
       # ---- Domain core (pure Kotlin/JVM). Runs as a standalone build via -p. ----
       - name: Core unit tests
         run: ./gradlew --no-daemon -p core test
@@ -78,6 +91,17 @@ jobs:
 
       - name: Android lint (debug)
         run: ./gradlew --no-daemon :app:lintDebug
+
+      # LV-R1 packaging proof: the AEC3 library is inside the APK, no ABI other than arm64-v8a,
+      # and no libc++_shared was introduced by it (the .so links libc++ statically).
+      - name: AEC3 APK packaging report
+        run: |
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          unzip -lv "$APK" | grep -E "lib/.*/libjarvis_aec3.so" || { echo "libjarvis_aec3.so missing from APK" >&2; exit 1; }
+          ABIS=$(unzip -l "$APK" | awk '{print $4}' | grep -E '^lib/[^/]+/' | cut -d/ -f2 | sort -u | tr '\n' ' ')
+          echo "ABIs in APK: $ABIS"
+          [ "$ABIS" = "arm64-v8a " ] || { echo "unexpected ABI set: $ABIS" >&2; exit 1; }
+          ls -l "$APK"
 
       - name: Compute APK SHA-256
         if: success()

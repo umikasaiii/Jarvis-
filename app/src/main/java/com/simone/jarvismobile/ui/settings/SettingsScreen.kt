@@ -106,6 +106,7 @@ fun SettingsScreen(
     val ttsRate by viewModel.ttsSpeechRate.collectAsStateWithLifecycle()
     val ttsPitch by viewModel.ttsPitch.collectAsStateWithLifecycle()
     val speakBackground by viewModel.speakBackgroundResponses.collectAsStateWithLifecycle()
+    val acousticBargeIn by viewModel.acousticBargeIn.collectAsStateWithLifecycle()
     val proModeActive by viewModel.proModeActive.collectAsStateWithLifecycle()
     val themeId by viewModel.themeId.collectAsStateWithLifecycle()
 
@@ -415,6 +416,21 @@ fun SettingsScreen(
                 Text(
                     "Disattivato per impostazione predefinita, per non leggere contenuti privati ad alta voce. " +
                         "Voce attiva: ${resolvedVoice ?: "nessuna voce offline pronta"}.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                ) {
+                    Text("Interruzione vocale automatica", style = MaterialTheme.typography.bodyMedium)
+                    Switch(checked = acousticBargeIn, onCheckedChange = viewModel::setAcousticBargeIn)
+                }
+                Text(
+                    "Sperimentale, spenta per impostazione predefinita. Mentre JARVIS parla con una voce neurale " +
+                        "(Kokoro/Supertonic) puoi interromperlo parlando: il microfono resta aperto solo per " +
+                        "questo e l'audio non viene mai salvato. Con la voce di sistema Android (e con Piper a " +
+                        "22,05 kHz) l'interruzione automatica non e disponibile: tocca il microfono.",
                     style = MaterialTheme.typography.bodySmall,
                 )
                 OutlinedButton(onClick = viewModel::refreshVoices, modifier = Modifier.fillMaxWidth()) {
