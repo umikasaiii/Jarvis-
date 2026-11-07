@@ -76,6 +76,12 @@ jobs:
           # never overwrite a committed schema
           for f in historical/*.json; do [ -e "$f" ] || continue; [ -e "$D/$(basename "$f")" ] || cp "$f" "$D/"; done
           echo "schemas available for the test:"; ls "$D"
+          # Print each regenerated schema with its sha256 so it can be reviewed and committed verbatim.
+          for f in "$D"/*.json; do
+            echo "=== SCHEMA $(basename "$f") sha256=$(sha256sum "$f" | cut -d' ' -f1)"
+            cat "$f"; echo
+            echo "=== END SCHEMA $(basename "$f")"
+          done
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
