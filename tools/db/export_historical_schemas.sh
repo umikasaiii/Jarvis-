@@ -14,11 +14,12 @@ DBDIR=com.simone.jarvismobile.background.JarvisDatabase
 CUR=$(grep -oE 'version = [0-9]+' "$REPO/$DBFILE" | head -1 | grep -oE '[0-9]+')
 VERSIONS=("$@"); [ ${#VERSIONS[@]} -gt 0 ] || VERSIONS=($(seq 1 $((CUR-1))))
 mkdir -p "$OUT/$DBDIR"
-INIT="$(mktemp)"
+INIT="$(mktemp --suffix=.gradle)"
 cat > "$INIT" <<'GRADLE'
+// Groovy init script: point KSP's Room processor at SCHEMA_OUT in whatever tree is being built.
 allprojects {
   plugins.withId("com.google.devtools.ksp") {
-    extensions.configure(com.google.devtools.ksp.gradle.KspExtension) { arg("room.schemaLocation", System.getenv("SCHEMA_OUT")) }
+    project.extensions.getByName("ksp").arg("room.schemaLocation", System.getenv("SCHEMA_OUT"))
   }
 }
 GRADLE
