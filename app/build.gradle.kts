@@ -52,6 +52,9 @@ android {
         // land in phases 2–3.
         ndk {
             abiFilters += listOf("arm64-v8a")
+            // STEP 2 — only for the CI emulator that runs the jarvis.db migration tests
+            // (-Pjarvis.emulatorAbi=x86_64). The shipped APK stays arm64-v8a only.
+            (project.findProperty("jarvis.emulatorAbi") as String?)?.let { abiFilters += it }
         }
     }
 
@@ -103,6 +106,12 @@ android {
         getByName("main") {
             jniLibs.srcDir("../native/aec3/out/jniLibs")
         }
+        // STEP 2 — Room exports every schema version to app/schemas/ (committed). The
+        // instrumented MigrationTestHelper reads them as assets to build real
+        // pre-upgrade databases.
+        getByName("androidTest") {
+            assets.srcDir("$projectDir/schemas")
+        }
     }
 
     buildFeatures {
@@ -148,6 +157,16 @@ android {
             isIncludeAndroidResources = true
         }
     }
+}
+
+// STEP 2 — export the Room schema (JarvisDatabase has exportSchema = true).
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+// The instrumented-test assets include app/schemas/, which kspDebugKotlin writes:
+// declare the ordering explicitly so Gradle's task validation stays satisfied.
+tasks.configureEach {
+    if (name == "mergeDebugAndroidTestAssets") dependsOn("kspDebugKotlin")
 }
 
 dependencies {
@@ -272,5 +291,7 @@ dependencies {
     // androidTest compile-classpath visibility.
     kspAndroidTest(libs.androidx.room.compiler)
     androidTestImplementation(libs.androidx.room.runtime)
+    // STEP 2 — MigrationTestHelper (jarvis.db upgrade paths).
+    androidTestImplementation(libs.androidx.room.testing)
     androidTestImplementation(libs.kotlinx.coroutines.android)
 }

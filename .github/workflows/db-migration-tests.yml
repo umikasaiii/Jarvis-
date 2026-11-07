@@ -1,0 +1,54 @@
+name: DB migration tests (emulator)
+
+# STEP 2 — actually RUNS the jarvis.db migration tests (JarvisMigrationInstrumentedTest) on an
+# Android emulator. The main CI only compiles instrumented tests; this is the workflow that
+# executes them. Separate from CI so a flaky emulator never blocks the debug-APK publish.
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [ "claude/**" ]
+    paths:
+      - 'app/src/main/java/com/simone/jarvismobile/background/**'
+      - 'app/src/main/java/com/simone/jarvismobile/**/*Migrations.kt'
+      - 'app/src/main/java/com/simone/jarvismobile/di/DatabaseModule.kt'
+      - 'app/src/androidTest/**'
+      - 'app/schemas/**'
+      - '.github/workflows/db-migration-tests.yml'
+
+# No job here may create, edit or delete releases/tags (see .github/scripts/ci_publish_guard.py).
+permissions:
+  contents: read
+
+jobs:
+  migrations:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
+      - name: Placeholder for the optional AEC3 jniLibs directory (not needed by these tests)
+        run: mkdir -p native/aec3/out/jniLibs
+      - name: Run jarvis.db migration tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          script: ./gradlew --no-daemon :app:connectedDebugAndroidTest -Pjarvis.emulatorAbi=x86_64 -Pandroid.testInstrumentationRunnerArguments.class=com.simone.jarvismobile.background.JarvisMigrationInstrumentedTest
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: migration-test-reports
+          path: app/build/reports/androidTests/
+          if-no-files-found: warn

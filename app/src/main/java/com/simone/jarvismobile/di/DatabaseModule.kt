@@ -5,28 +5,23 @@ import androidx.room.Room
 import com.simone.jarvismobile.archive.ArchiveDao
 import com.simone.jarvismobile.archive.ArchiveLinkDao
 import com.simone.jarvismobile.archive.ArchiveListDao
-import com.simone.jarvismobile.archive.ArchiveMigrations
 import com.simone.jarvismobile.automation.rule.AutomationExecutionDao
 import com.simone.jarvismobile.automation.rule.AutomationPlaceDao
 import com.simone.jarvismobile.automation.rule.AutomationRuleDao
 import com.simone.jarvismobile.automation.rule.ParkingLocationDao
-import com.simone.jarvismobile.automation.rule.RuleMigrations
 import com.simone.jarvismobile.background.AssistantTaskDao
+import com.simone.jarvismobile.background.DatabaseOpenGuard
 import com.simone.jarvismobile.background.JarvisDatabase
+import com.simone.jarvismobile.background.JarvisMigrations
 import com.simone.jarvismobile.backup.RestoreSanitizeCallback
 import com.simone.jarvismobile.document.DocumentDao
 import com.simone.jarvismobile.engine.memory.ConversationalMemoryDao
-import com.simone.jarvismobile.engine.memory.EngineMemoryMigrations
 import com.simone.jarvismobile.navigation.NavDao
 import com.simone.jarvismobile.proactive.ProactiveOccurrenceDao
-import com.simone.jarvismobile.proactive.ProactiveOccurrenceMigrations
 import com.simone.jarvismobile.proactive.ProactiveSchedulePlanDao
-import com.simone.jarvismobile.proactive.ProactiveSchedulePlanMigrations
 import com.simone.jarvismobile.proactive.TriggerEvidenceDao
-import com.simone.jarvismobile.proactive.TriggerEvidenceMigrations
 import com.simone.jarvismobile.responsibility.ResponsibilityDao
 import com.simone.jarvismobile.responsibility.ResponsibilityJournalDao
-import com.simone.jarvismobile.responsibility.ResponsibilityMigrations
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -39,21 +34,17 @@ import javax.inject.Singleton
 object DatabaseModule {
     @Provides
     @Singleton
-    fun provideDatabase(@ApplicationContext context: Context): JarvisDatabase =
-        Room.databaseBuilder(context, JarvisDatabase::class.java, "jarvis.db")
-            // Real migrations come first: from version 3 on, the database also
-            // holds automation rules and places, which the user typed and which
-            // nothing can rebuild. Losing those to a schema bump is not
-            // acceptable, so every version from here must ship a migration.
-            .addMigrations(
-                *RuleMigrations.ALL, *ArchiveMigrations.ALL, *EngineMemoryMigrations.ALL,
-                *ProactiveOccurrenceMigrations.ALL, *TriggerEvidenceMigrations.ALL,
-                *ProactiveSchedulePlanMigrations.ALL, *ResponsibilityMigrations.ALL,
-            )
-            // The fallback remains only for the older, cache-only versions (the
-            // document and navigation tables can be regenerated from the vault
-            // and the original files).
-            .fallbackToDestructiveMigration()
+    fun provideDatabase(@ApplicationContext context: Context): JarvisDatabase {
+        // STEP 2 — refuse (never wipe) a file this build cannot migrate, and keep a
+        // pre-upgrade copy before Room runs real migrations. Throws
+        // UnsupportedDatabaseVersionException; the file is left untouched.
+        DatabaseOpenGuard.preflight(context, "jarvis.db")
+        return Room.databaseBuilder(context, JarvisDatabase::class.java, "jarvis.db")
+            // Every version from 1 to the current one has a real migration, registered in
+            // JarvisMigrations (contiguity enforced by JarvisMigrationsTest). There is
+            // deliberately NO fallbackToDestructiveMigration(): a missing migration must
+            // fail loudly, not silently recreate the database empty.
+            .addMigrations(*JarvisMigrations.ALL)
             // § JARVIS Implementation Master Plan PASSAGGIO 10 §J — Room's own
             // onOpen() fires only after every migration above has already run,
             // so this is the one safe point to sanitize a just-restored
@@ -62,6 +53,7 @@ object DatabaseModule {
             // BackupRepository.restore() left its marker behind.
             .addCallback(RestoreSanitizeCallback(context))
             .build()
+    }
 
     @Provides
     fun provideAssistantTaskDao(database: JarvisDatabase): AssistantTaskDao =

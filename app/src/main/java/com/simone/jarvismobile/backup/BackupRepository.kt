@@ -822,13 +822,11 @@ class BackupRepository @Inject constructor(
 
         /**
          * The earliest `jarvis.db` schema version this build can still open —
-         * matches `RuleMigrations.MIGRATION_3_4`, the first migration
-         * `DatabaseModule` registers ("Real migrations come first: from
-         * version 3 on..."). A staged database older than this has no
-         * registered migration path and would otherwise only be reachable via
-         * `fallbackToDestructiveMigration()` — silently wiping it rather than
-         * refusing (§ JARVIS Implementation Master Plan PASSAGGIO 10 §H).
+         * `JarvisMigrations.OLDEST_SUPPORTED_VERSION` (STEP 2: every version from 1
+         * has a real, registered migration and the destructive fallback is gone).
+         * A staged database older than this is refused rather than opened
+         * (§ JARVIS Implementation Master Plan PASSAGGIO 10 §H).
          */
-        const val MIN_SUPPORTED_DB_SCHEMA_VERSION = 3
+        const val MIN_SUPPORTED_DB_SCHEMA_VERSION = com.simone.jarvismobile.background.JarvisMigrations.OLDEST_SUPPORTED_VERSION
     }
 }

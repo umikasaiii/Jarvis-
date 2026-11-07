@@ -6,18 +6,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 /**
  * Schema migrations for the automation tables.
  *
- * **Why these are hand-written and the other tables' are not.** The rest of
- * `jarvis.db` holds rebuildable caches — documents can be re-imported, the
- * navigation index can be regenerated — so the database is configured with
- * `fallbackToDestructiveMigration()`, and losing those tables on an upgrade
- * costs nothing but time. Automation rules and places are the opposite: the user
- * typed them, and nothing anywhere can rebuild them. A destructive upgrade would
- * silently delete work that only exists here.
- *
- * So every version bump from 3 onwards MUST ship a real migration covering these
- * tables. The destructive fallback stays in place for the older cache-only
- * versions, but it must never be what handles an upgrade that carries
- * automations.
+ * **Why these are hand-written.** Automation rules and places are data the user
+ * typed and nothing anywhere can rebuild. Historically `jarvis.db` kept a destructive
+ * fallback for its older cache-only versions; STEP 2 removed it, and every version
+ * from 1 now has a real migration (see `JarvisMigrations`). A version bump without a
+ * migration therefore fails loudly instead of silently deleting this work.
  */
 object RuleMigrations {
 

@@ -1,0 +1,38 @@
+name: Room historical schemas
+
+# STEP 2 — manual. Regenerates REAL Room schema JSONs for jarvis.db versions 1..14 from the
+# code of the commit that last shipped each version (tools/db/export_historical_schemas.sh) and
+# uploads them as an artifact. Commit the JSONs it produces into app/schemas/<fqcn>/ so that
+# JarvisMigrationInstrumentedTest can build genuine old databases. Versions that cannot be
+# rebuilt are listed in MISSING.txt and must be documented, never fabricated.
+on:
+  workflow_dispatch: {}
+
+# No job here may create, edit or delete releases/tags (see .github/scripts/ci_publish_guard.py).
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
+      - name: Export historical schemas
+        run: bash tools/db/export_historical_schemas.sh app/schemas
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: room-historical-schemas
+          path: app/schemas/
+          if-no-files-found: warn

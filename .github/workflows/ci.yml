@@ -12,15 +12,24 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# The ONLY ref allowed to (re)publish the shared 'latest-debug' release. Any other branch,
+# pull request or manual run from another branch builds and tests but can never publish.
+# Enforced structurally (separate 'publish' job; the build job's token is read-only) and
+# checked by .github/scripts/test-ci-publish-guard.sh on every run.
+env:
+  PUBLISH_REF: refs/heads/claude/jarvis-mobile-automazioni-dashboard-b4xa7e
+
 jobs:
   build:
     name: Core tests + Android debug build
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    # Needed to publish the debug APK as a GitHub Release (mobile-friendly,
-    # no-login download link).
+    # Read-only: this job can build, test and upload workflow artifacts but can NOT
+    # create or delete releases/tags. Publishing lives in the 'publish' job below.
     permissions:
-      contents: write
+      contents: read
+    outputs:
+      apk_impacting: ${{ steps.impact.outputs.apk_impacting }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -39,6 +48,10 @@ jobs:
           bash .github/scripts/test-classify-apk-impact.sh
           bash .github/scripts/classify-apk-impact.sh \
             "${{ github.event_name }}" "${{ github.event.before }}" "${{ github.sha }}" | tee -a "$GITHUB_OUTPUT"
+
+      # Fails the run if the release-publishing protection was weakened (see script header).
+      - name: Verify release-publish guard
+        run: bash .github/scripts/test-ci-publish-guard.sh
 
       - name: Validate Gradle wrapper
         uses: gradle/actions/wrapper-validation@v4
@@ -81,6 +94,25 @@ jobs:
       - name: Android unit tests
         run: ./gradlew --no-daemon :app:testDebugUnitTest
 
+      # STEP 2 — Room exports jarvis.db's schema during the build (exportSchema = true).
+      # Fail if the export did not happen for the current version, and keep the JSON as an
+      # artifact so it can be committed to app/schemas/ (MigrationTestHelper reads it).
+      - name: Verify exported Room schema
+        run: |
+          CUR=$(grep -oE 'version = [0-9]+' app/src/main/java/com/simone/jarvismobile/background/JarvisDatabase.kt | head -1 | grep -oE '[0-9]+')
+          F="app/schemas/com.simone.jarvismobile.background.JarvisDatabase/$CUR.json"
+          test -s "$F" || { echo "Room schema $F was not exported" >&2; exit 1; }
+          echo "exported: $F ($(wc -c < "$F") bytes)"
+          # If a schema for this version is already committed, the build must not have changed it.
+          git diff --exit-code -- "$F" || { echo "committed schema differs from the generated one: a schema change needs a new version + migration" >&2; exit 1; }
+
+      - name: Upload Room schemas
+        uses: actions/upload-artifact@v4
+        with:
+          name: room-schemas
+          path: app/schemas/
+          if-no-files-found: error
+
       # § MICRO-PATCH E.1 §9/§14 — compiles (never runs; no emulator here)
       # the instrumented test APK, so a new androidTest file (e.g. the Room
       # migration/schema-validation regression test) is at least confirmed
@@ -121,27 +153,6 @@ jobs:
             app/build/outputs/apk/debug/app-debug.apk.sha256
           if-no-files-found: error
 
-      # Publish the APK to a single, stable 'latest-debug' release so it can be
-      # downloaded directly on a phone with no login:
-      #   https://github.com/<owner>/<repo>/releases/download/latest-debug/app-debug.apk
-      - name: Publish APK to the 'latest-debug' release
-        # Skipped for docs-only pushes (see classifier above); latest-debug then
-        # keeps pointing at the last APK-impacting build / manual publish.
-        # Manual dispatches publish too: when the push event does not create a
-        # run (GitHub Actions queue incidents), the dispatch is the only way to
-        # get an installable APK, and a green build that publishes nothing is
-        # indistinguishable from no build at all for whoever is testing.
-        if: success() && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && steps.impact.outputs.apk_impacting == 'true'))
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          APK=app/build/outputs/apk/debug/app-debug.apk
-          gh release delete latest-debug --yes --cleanup-tag || true
-          gh release create latest-debug "$APK" "$APK.sha256" \
-            --title "JARVIS Mobile — debug (latest)" \
-            --notes "APK di debug piu recente. Commit ${{ github.sha }}. Firmato con app/debug.keystore (committato, stabile): si aggiorna in place, non serve disinstallare." \
-            --target "${{ github.sha }}"
-
       # Reports are uploaded even when a previous step failed, to diagnose errors.
       - name: Upload test & lint reports
         if: always()
@@ -156,6 +167,43 @@ jobs:
             app/build/outputs/lint-results-*.*
           if-no-files-found: warn
           retention-days: 14
+
+  # Publishes the APK to the single, stable 'latest-debug' release so it can be downloaded
+  # directly on a phone with no login:
+  #   https://github.com/<owner>/<repo>/releases/download/latest-debug/app-debug.apk
+  # ONLY runs for the canonical Android branch (PUBLISH_REF) in this repository, only after the
+  # build job (all tests green) succeeded, and only for APK-impacting pushes or a manual run on
+  # that same branch. No other ref can reach this job: verification branches never publish.
+  publish:
+    name: Publish latest-debug (canonical branch only)
+    needs: build
+    if: >-
+      github.repository == 'umikasaiii/Jarvis-' &&
+      github.ref == 'refs/heads/claude/jarvis-mobile-automazioni-dashboard-b4xa7e' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'push' && needs.build.outputs.apk_impacting == 'true'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download debug APK built by this run
+        uses: actions/download-artifact@v4
+        with:
+          name: app-debug
+          path: apk
+
+      - name: Publish APK to the 'latest-debug' release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          APK=apk/app-debug.apk
+          test -f "$APK" && test -f "$APK.sha256"
+          gh release delete latest-debug --yes --cleanup-tag --repo "$GITHUB_REPOSITORY" || true
+          gh release create latest-debug "$APK" "$APK.sha256" --repo "$GITHUB_REPOSITORY" \
+            --title "JARVIS Mobile — debug (latest)" \
+            --notes "APK di debug piu recente. Commit ${{ github.sha }}. Firmato con app/debug.keystore (committato, stabile): si aggiorna in place, non serve disinstallare." \
+            --target "${{ github.sha }}"
 
   # PASS 14B pre-execution compatibility gate. run_real_training.ps1 is the
   # sole Windows runner for the (still user-PC-only) real EmbeddingGemma

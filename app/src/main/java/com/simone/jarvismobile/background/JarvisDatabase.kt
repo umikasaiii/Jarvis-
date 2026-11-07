@@ -51,8 +51,11 @@ import com.simone.jarvismobile.responsibility.ResponsibilityJournalRowEntity
         ResponsibilityEntity::class,
         ResponsibilityJournalRowEntity::class,
     ],
+    // Keep in sync with JarvisMigrations.CURRENT_VERSION (pinned by JarvisMigrationsTest).
+    // exportSchema = true: schemas are written to app/schemas/ (ksp arg room.schemaLocation)
+    // and committed, so MigrationTestHelper can validate every upgrade path.
     version = 15,
-    exportSchema = false,
+    exportSchema = true,
 )
 abstract class JarvisDatabase : RoomDatabase() {
     abstract fun assistantTaskDao(): AssistantTaskDao
