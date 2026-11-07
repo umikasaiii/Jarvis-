@@ -65,7 +65,7 @@ class JarvisMigrationInstrumentedTest {
         val cur = JarvisMigrations.CURRENT_VERSION
         assertTrue("app/schemas/.../$cur.json missing: exportSchema/ksp arg not effective or file not generated", cur in schemaVersions())
         helper.createDatabase(dbName, cur).close()
-        openRealRoom().use { it.openHelper.writableDatabase }
+        openRealRoom().withDb { it.openHelper.writableDatabase }
     }
 
     @Test fun historicalSchemaCoverageIsReported() {
@@ -180,7 +180,7 @@ class JarvisMigrationInstrumentedTest {
     @Test fun version1UpgradesThroughTheWholeChainKeepingUserRows() {
         rawDb(1, v1Ddl, listOf(taskRow))
         assertEquals(DatabaseOpenGuard.Plan.Upgrade(1), DatabaseOpenGuard.preflight(context, dbName))
-        openRealRoom().use { room ->
+        openRealRoom().withDb { room ->
             val db = room.openHelper.writableDatabase // runs 1->15 and Room's schema validation of all tables
             assertEquals(JarvisMigrations.CURRENT_VERSION, db.version)
             db.query("SELECT input, status FROM assistant_tasks WHERE id='t1'").use {
@@ -201,7 +201,7 @@ class JarvisMigrationInstrumentedTest {
                 "INSERT INTO document_chunks VALUES ('c1','d1','testo','s',1,0,5,'T','a.pdf')",
             ),
         )
-        openRealRoom().use { room ->
+        openRealRoom().withDb { room ->
             val db = room.openHelper.writableDatabase
             db.query("SELECT title, pageCount FROM documents WHERE id='d1'").use {
                 assertTrue(it.moveToFirst()); assertEquals("T", it.getString(0)); assertEquals(3, it.getInt(1))
@@ -281,8 +281,12 @@ class JarvisMigrationInstrumentedTest {
     @Test fun aFreshInstallCreatesTheCurrentSchema() {
         context.deleteDatabase(dbName)
         assertEquals(DatabaseOpenGuard.Plan.Fresh, DatabaseOpenGuard.preflight(context, dbName))
-        openRealRoom().use { assertEquals(JarvisMigrations.CURRENT_VERSION, it.openHelper.writableDatabase.version) }
+        openRealRoom().withDb { assertEquals(JarvisMigrations.CURRENT_VERSION, it.openHelper.writableDatabase.version) }
     }
+
+    /** RoomDatabase is not Closeable: close it explicitly. */
+    private inline fun <T> JarvisDatabase.withDb(block: (JarvisDatabase) -> T): T =
+        try { block(this) } finally { close() }
 
     private fun openRealRoom(): JarvisDatabase =
         Room.databaseBuilder(context, JarvisDatabase::class.java, dbName)

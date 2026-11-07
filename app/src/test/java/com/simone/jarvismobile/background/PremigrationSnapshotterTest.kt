@@ -34,12 +34,15 @@ class PremigrationSnapshotterTest {
                 else -> { target.writeBytes(source.readBytes()); facts[target.name] = facts.getValue(srcName) }
             }
         }
-        override fun facts(db: File): DbFacts = facts[db.name] ?: throw IOException("unreadable ${db.name}")
+        // The snapshot is verified as `*.part` and later as its renamed final file: both names resolve.
+        override fun facts(db: File): DbFacts =
+            facts[db.name] ?: facts[db.name + PremigrationSnapshotter.PART] ?: throw IOException("unreadable ${db.name}")
     }
 
     private fun setup(srcFacts: DbFacts = good): Triple<File, File, FakeEngine> {
-        val db = tmp.newFile("jarvis.db").also { it.writeBytes(ByteArray(2048) { i -> i.toByte() }) }
-        val dir = File(tmp.root, "premigration")
+        val root = tmp.newFolder()
+        val db = File(root, "jarvis.db").also { it.writeBytes(ByteArray(2048) { i -> i.toByte() }) }
+        val dir = File(root, "premigration")
         return Triple(db, dir, FakeEngine(mutableMapOf(db.name to srcFacts), db.name))
     }
 
