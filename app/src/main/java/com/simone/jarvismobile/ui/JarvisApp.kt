@@ -28,6 +28,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.Apps
+import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Settings
@@ -60,11 +61,13 @@ import com.simone.jarvismobile.ui.models.ModelsScreen
 import com.simone.jarvismobile.ui.settings.SettingsScreen
 import com.simone.jarvismobile.ui.agenda.AgendaScreen
 import com.simone.jarvismobile.ui.tasks.TasksScreen
+import com.simone.jarvismobile.ui.offline.OfflineHubScreen
 
 private enum class Tab(val label: String, val icon: ImageVector) {
     HOME("Home", Icons.Filled.Home),
     CHAT("Chat", Icons.AutoMirrored.Filled.Chat),
     COMANDI("Comandi", Icons.Filled.Apps),
+    OFFLINE("Offline", Icons.Filled.Book),
     NOTIFICHE("Attività", Icons.Filled.CheckCircle),
     IMPOSTAZIONI("Impostazioni", Icons.Filled.Settings),
 }
@@ -187,6 +190,10 @@ fun JarvisApp(
                     )
                     Tab.CHAT -> Unit
                     Tab.COMANDI -> CommandsScreen()
+                    Tab.OFFLINE -> OfflineHubScreen(
+                        onOpenModels = { overlay = Overlay.MODELS },
+                        onOpenChat = { overlay = Overlay.CHAT },
+                    )
                     Tab.NOTIFICHE -> AgendaScreen()
                     Tab.IMPOSTAZIONI -> SettingsScreen(
                         onBack = { tab = Tab.HOME },

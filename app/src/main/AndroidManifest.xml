@@ -76,6 +76,10 @@
         <package android:name="com.google.android.apps.maps" />
         <package android:name="com.android.chrome" />
         <package android:name="md.obsidian" />
+        <!-- Explicit offline-app integrations (Android 11+ package visibility). -->
+        <package android:name="app.organicmaps" />
+        <package android:name="org.kiwix.kiwixmobile" />
+        <package android:name="org.kiwix.kiwixmobile.standalone" />
     </queries>
 
     <application

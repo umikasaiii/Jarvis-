@@ -4,6 +4,9 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.util.Log
+import android.text.Html
+import java.io.File
+import java.io.ByteArrayOutputStream
 import androidx.documentfile.provider.DocumentFile
 import com.simone.jarvismobile.core.knowledge.Evidence
 import com.simone.jarvismobile.core.knowledge.KnowledgeChunk
@@ -55,7 +58,60 @@ class KnowledgeRepository @Inject constructor(
     private val search = KnowledgeSearch()
     private val mutex = Mutex()
 
-    suspend fun isConfigured(): Boolean = settings.knowledgeUri.first().isNotBlank()
+    // Kept separate from personal Obsidian notes and chat history.
+    private val archiveDir: File get() = File(context.filesDir, "offline_reference").apply { mkdirs() }
+
+    suspend fun isConfigured(): Boolean =
+        settings.knowledgeUri.first().isNotBlank() ||
+            (archiveDir.listFiles()?.any { it.isFile } == true)
+
+    /** SAF import: create an app-private, persistent copy of a reference text. */
+    suspend fun importDocument(uri: Uri): String = withContext(Dispatchers.IO) {
+        try {
+            val display = DocumentFile.fromSingleUri(context, uri)?.name ?: "documento.txt"
+            if (SUPPORTED.none { display.endsWith(it, ignoreCase = true) }) {
+                return@withContext "Formato non supportato. Usa TXT, MD, HTML o CSV. PDF e ZIM richiedono un lettore dedicato."
+            }
+            val bytes = context.contentResolver.openInputStream(uri)?.use { input ->
+                val output = ByteArrayOutputStream()
+                val buf = ByteArray(8192)
+                while (true) {
+                    val count = input.read(buf)
+                    if (count < 0) break
+                    if (output.size() + count > MAX_FILE_BYTES) {
+                        throw IllegalArgumentException("file_too_large")
+                    }
+                    output.write(buf, 0, count)
+                }
+                output.toByteArray()
+            } ?: return@withContext "File non leggibile."
+            if (bytes.isEmpty()) return@withContext "Il file è vuoto."
+            val safeName = display.replace(Regex("[^A-Za-z0-9._-]"), "_").take(100)
+                .ifBlank { "documento.txt" }
+            File(archiveDir, System.currentTimeMillis().toString() + "_" + safeName).writeBytes(bytes)
+            rebuild()
+            "Importato nell'archivio offline: " + display
+        } catch (t: Exception) {
+            "Importazione non riuscita: " + t.javaClass.simpleName
+        }
+    }
+
+    /** Copy/paste an article excerpt from a dedicated offline reader, e.g. Kiwix. */
+    suspend fun saveExcerpt(title: String, article: String): String = withContext(Dispatchers.IO) {
+        if (article.isBlank()) return@withContext "Incolla prima il testo dell'articolo."
+        val safe = title.ifBlank { "estratto" }
+            .replace(Regex("[^A-Za-z0-9._-]"), "_").take(72)
+            .ifBlank { "estratto" }
+        File(archiveDir, System.currentTimeMillis().toString() + "_" + safe + ".txt")
+            .writeText(article.take(100_000))
+        rebuild()
+        "Estratto salvato nell'archivio offline."
+    }
+
+    fun importedDocuments(): List<String> =
+        archiveDir.listFiles()?.filter { it.isFile }?.map { it.name.substringAfter('_') }
+            ?.sorted().orEmpty()
+
 
     /** Persists the picked folder and takes a durable READ permission only. */
     suspend fun setLibrary(treeUri: Uri) {
@@ -81,7 +137,7 @@ class KnowledgeRepository @Inject constructor(
         }
         settings.setKnowledgeUri("")
         chunks = emptyList()
-        _status.value = Status(configured = false)
+        rebuild()
     }
 
     suspend fun libraryName(): String? {
@@ -106,10 +162,19 @@ class KnowledgeRepository @Inject constructor(
             _status.value = _status.value.copy(configured = true, indexing = true, lastError = null)
             try {
                 val uri = settings.knowledgeUri.first()
-                val tree = DocumentFile.fromTreeUri(context, Uri.parse(uri))
-                    ?: throw IllegalStateException("no_tree")
                 val docs = ArrayList<Pair<String, String>>()
-                collect(tree, "", docs)
+                if (uri.isNotBlank()) {
+                    val tree = DocumentFile.fromTreeUri(context, Uri.parse(uri))
+                        ?: throw IllegalStateException("no_tree")
+                    collect(tree, "", docs)
+                }
+                archiveDir.listFiles()?.filter { it.isFile }?.forEach { file ->
+                    if (docs.size >= MAX_DOCUMENTS) return@forEach
+                    if (file.length() > MAX_FILE_BYTES) return@forEach
+                    if (SUPPORTED.none { file.name.endsWith(it, ignoreCase = true) }) return@forEach
+                    val text = runCatching { file.readText() }.getOrNull() ?: return@forEach
+                    docs += ("Archivio/" + file.name.substringAfter('_')) to normalizeText(text, file.name)
+                }
                 val built = docs.flatMap { (path, text) ->
                     KnowledgeIndexer.chunk(
                         sourceId = path,
@@ -119,7 +184,7 @@ class KnowledgeRepository @Inject constructor(
                 }
                 chunks = built
                 _status.value = Status(
-                    configured = true,
+                    configured = uri.isNotBlank() || docs.isNotEmpty(),
                     indexing = false,
                     documentCount = docs.size,
                     passageCount = built.size,
@@ -149,9 +214,14 @@ class KnowledgeRepository @Inject constructor(
             val text = runCatching {
                 context.contentResolver.openInputStream(f.uri)?.bufferedReader()?.use { it.readText() }
             }.getOrNull() ?: continue
-            out += "$prefix$name" to text
+            out += "$prefix$name" to normalizeText(text, name)
         }
     }
+
+    private fun normalizeText(text: String, name: String): String =
+        if (name.endsWith(".html", true) || name.endsWith(".htm", true)) {
+            Html.fromHtml(text, Html.FROM_HTML_MODE_COMPACT).toString()
+        } else text
 
     private companion object {
         const val TAG = "JarvisKnowledge"
@@ -162,7 +232,7 @@ class KnowledgeRepository @Inject constructor(
          * rather than expanded into files — both are described in
          * docs/LOCAL_KNOWLEDGE.md and slot in behind this same interface.
          */
-        val SUPPORTED = listOf(".md", ".markdown", ".txt", ".text")
+        val SUPPORTED = listOf(".md", ".markdown", ".txt", ".text", ".html", ".htm", ".csv")
 
         /** Bounds so importing a huge folder cannot exhaust memory. */
         const val MAX_DOCUMENTS = 4_000
