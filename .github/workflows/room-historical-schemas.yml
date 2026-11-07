@@ -1,10 +1,9 @@
 name: Room historical schemas
 
-# STEP 2 — manual. Regenerates REAL Room schema JSONs for jarvis.db versions 1..14 from the
-# code of the commit that last shipped each version (tools/db/export_historical_schemas.sh) and
-# uploads them as an artifact. Commit the JSONs it produces into app/schemas/<fqcn>/ so that
-# JarvisMigrationInstrumentedTest can build genuine old databases. Versions that cannot be
-# rebuilt are listed in MISSING.txt and must be documented, never fabricated.
+# STEP 2 — manual cross-check. Regenerates the REAL Room schema JSON of jarvis.db versions 1..14 from
+# the code of the commit that last shipped each version (tools/db/export_historical_schemas.sh) and
+# compares it byte-for-byte with the committed copy in app/schemas/. The committed files are what
+# the migration tests use; this workflow only proves they are still reproducible.
 on:
   workflow_dispatch: {}
 
@@ -15,7 +14,11 @@ permissions:
 jobs:
   export:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        version: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -28,11 +31,9 @@ jobs:
       - uses: android-actions/setup-android@v4
         with:
           packages: 'platform-tools'
-      - name: Export historical schemas
-        run: bash tools/db/export_historical_schemas.sh app/schemas
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: room-historical-schemas
-          path: app/schemas/
-          if-no-files-found: warn
+      - name: Regenerate schema v${{ matrix.version }} into a scratch directory
+        run: bash tools/db/export_historical_schemas.sh "$RUNNER_TEMP/regen" ${{ matrix.version }}
+      - name: Compare with the committed schema
+        run: |
+          D=com.simone.jarvismobile.background.JarvisDatabase/${{ matrix.version }}.json
+          cmp "$RUNNER_TEMP/regen/$D" "app/schemas/$D" && echo "v${{ matrix.version }}: identical to the committed schema"

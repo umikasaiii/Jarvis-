@@ -68,12 +68,12 @@ class JarvisMigrationInstrumentedTest {
         openRealRoom().withDb { it.openHelper.writableDatabase }
     }
 
-    @Test fun historicalSchemaCoverageIsReported() {
+    @Test fun everyShippedSchemaVersionIsCommitted() {
         val have = schemaVersions()
         val missing = (JarvisMigrations.OLDEST_SUPPORTED_VERSION..JarvisMigrations.CURRENT_VERSION).filterNot { it in have }
-        Log.w(tag, "schema versions present=$have; NOT covered by MigrationTestHelper=$missing")
-        // Informational by design: versions 1-2 are covered by the raw-SQL tests below; the rest need
-        // the committed historical schemas (tools/db/export_historical_schemas.sh).
+        Log.w(tag, "schema versions present=$have missing=$missing")
+        // A missing authentic schema must be loud: it means a version is NOT verified by MigrationTestHelper.
+        assertTrue("schema JSON missing for versions $missing (see tools/db/export_historical_schemas.sh)", missing.isEmpty())
     }
 
     @Test fun everyAvailableOlderSchemaMigratesToCurrentWithoutLosingData() {
@@ -85,6 +85,7 @@ class JarvisMigrationInstrumentedTest {
             }
         }
         Log.w(tag, "schema versions exercised: $older; failures: ${failures.size}")
+        assertEquals("every older version must have been exercised", (JarvisMigrations.OLDEST_SUPPORTED_VERSION until JarvisMigrations.CURRENT_VERSION).toList(), older)
         assertTrue("migrations from authentic historical schemas failed:\n" + failures.joinToString("\n----\n"), failures.isEmpty())
     }
 

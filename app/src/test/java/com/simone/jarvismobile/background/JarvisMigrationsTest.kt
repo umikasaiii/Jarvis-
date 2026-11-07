@@ -60,6 +60,18 @@ class JarvisMigrationsTest {
         assertTrue(gradle.contains("room.schemaLocation"))
     }
 
+    @Test fun committedSchemasCoverEveryVersionAndMatchTheirFilename() {
+        val rel = "schemas/com.simone.jarvismobile.background.JarvisDatabase"
+        val dir = listOf(File(rel), File("app/$rel")).firstOrNull { it.isDirectory }
+            ?: error("schema directory $rel not found from ${File(".").absolutePath}")
+        for (v in JarvisMigrations.OLDEST_SUPPORTED_VERSION..JarvisMigrations.CURRENT_VERSION) {
+            val f = File(dir, "$v.json")
+            assertTrue("authentic Room schema $v.json is not committed", f.isFile)
+            val declared = Regex(""""version"\s*:\s*(\d+)""").find(f.readText())?.groupValues?.get(1)?.toInt()
+            assertEquals("$v.json declares another version", v, declared)
+        }
+    }
+
     /** Found by the authentic-schema run: v13/v14 clean installs lack trigger_evidence's indices. */
     @Test fun migrationsFrom13And14RepairTriggerEvidenceIndices() {
         listOf("proactive/ProactiveSchedulePlanMigrations.kt", "responsibility/ResponsibilityMigrations.kt").forEach {
