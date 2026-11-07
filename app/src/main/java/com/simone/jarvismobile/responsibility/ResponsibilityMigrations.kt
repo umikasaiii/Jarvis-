@@ -61,6 +61,9 @@ object ResponsibilityMigrations {
             )
             db.execSQL("CREATE INDEX IF NOT EXISTS `index_agent_responsibility_journal_key` ON `agent_responsibility_journal` (`key`)")
             db.execSQL("CREATE INDEX IF NOT EXISTS `index_agent_responsibility_journal_atMs` ON `agent_responsibility_journal` (`atMs`)")
+            // STEP 2: repair a v14 database whose trigger_evidence lacks its indices
+            // (clean install of a pre-E.1 v14 build). No-op everywhere else.
+            com.simone.jarvismobile.proactive.TriggerEvidenceMigrations.ensureIndices(db)
         }
     }
 

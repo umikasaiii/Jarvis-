@@ -60,6 +60,16 @@ class JarvisMigrationsTest {
         assertTrue(gradle.contains("room.schemaLocation"))
     }
 
+    /** Found by the authentic-schema run: v13/v14 clean installs lack trigger_evidence's indices. */
+    @Test fun migrationsFrom13And14RepairTriggerEvidenceIndices() {
+        listOf("proactive/ProactiveSchedulePlanMigrations.kt", "responsibility/ResponsibilityMigrations.kt").forEach {
+            assertTrue("$it must call TriggerEvidenceMigrations.ensureIndices", source(it).contains("TriggerEvidenceMigrations.ensureIndices(db)"))
+        }
+        val te = source("proactive/TriggerEvidenceMigrations.kt")
+        assertTrue(te.contains("index_trigger_evidence_source") && te.contains("index_trigger_evidence_eventAtMs"))
+        assertTrue("indices must be created idempotently", te.contains("CREATE INDEX IF NOT EXISTS `index_trigger_evidence_source`"))
+    }
+
     // ---- DatabaseOpenGuard (pure parts) ----
 
     @Test fun classifyCoversEveryCase() {

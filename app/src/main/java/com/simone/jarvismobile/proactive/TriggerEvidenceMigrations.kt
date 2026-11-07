@@ -23,9 +23,23 @@ object TriggerEvidenceMigrations {
                 )
                 """.trimIndent(),
             )
-            db.execSQL("CREATE INDEX IF NOT EXISTS `index_trigger_evidence_source` ON `trigger_evidence` (`source`)")
-            db.execSQL("CREATE INDEX IF NOT EXISTS `index_trigger_evidence_eventAtMs` ON `trigger_evidence` (`eventAtMs`)")
+            ensureIndices(db)
         }
+    }
+
+    /**
+     * The two indices [TriggerEvidenceRowEntity] declares. Idempotent.
+     *
+     * STEP 2 (found by running the migrations against the authentic exported schemas of
+     * versions 13 and 14): a database created by a CLEAN INSTALL of a v13/v14 build from before
+     * the E.1 fix has `trigger_evidence` WITHOUT these indices (the entity then declared none and
+     * no migration ran), while the current entity expects them — Room's schema validation then
+     * fails at open. Databases that reached v13 through [MIGRATION_12_13] already have them.
+     * Migrations 13→14 and 14→15 therefore call this too, so every path ends on the same shape.
+     */
+    fun ensureIndices(db: SupportSQLiteDatabase) {
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_trigger_evidence_source` ON `trigger_evidence` (`source`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_trigger_evidence_eventAtMs` ON `trigger_evidence` (`eventAtMs`)")
     }
 
     /** Every migration that must be registered on the database builder. */

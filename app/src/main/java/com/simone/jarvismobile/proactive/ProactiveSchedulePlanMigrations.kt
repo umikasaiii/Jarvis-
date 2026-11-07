@@ -33,6 +33,9 @@ object ProactiveSchedulePlanMigrations {
                 )
                 """.trimIndent(),
             )
+            // STEP 2: repair a v13 database whose trigger_evidence lacks its indices
+            // (clean install of a pre-E.1 v13 build). No-op everywhere else.
+            TriggerEvidenceMigrations.ensureIndices(db)
         }
     }
 
