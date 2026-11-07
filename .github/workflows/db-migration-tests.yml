@@ -49,6 +49,12 @@ jobs:
         run: bash tools/db/export_historical_schemas.sh app/schemas ${{ matrix.version }}
       - name: Require the schema file
         run: test -s "app/schemas/com.simone.jarvismobile.background.JarvisDatabase/${{ matrix.version }}.json"
+      - name: Print the regenerated schema with its sha256 (review / commit verbatim)
+        run: |
+          F="app/schemas/com.simone.jarvismobile.background.JarvisDatabase/${{ matrix.version }}.json"
+          echo "=== SCHEMA ${{ matrix.version }}.json sha256=$(sha256sum "$F" | cut -d' ' -f1)"
+          cat "$F"; echo
+          echo "=== END SCHEMA ${{ matrix.version }}.json"
       - uses: actions/upload-artifact@v4
         with:
           name: room-schema-v${{ matrix.version }}
@@ -76,12 +82,6 @@ jobs:
           # never overwrite a committed schema
           for f in historical/*.json; do [ -e "$f" ] || continue; [ -e "$D/$(basename "$f")" ] || cp "$f" "$D/"; done
           echo "schemas available for the test:"; ls "$D"
-          # Print each regenerated schema with its sha256 so it can be reviewed and committed verbatim.
-          for f in "$D"/*.json; do
-            echo "=== SCHEMA $(basename "$f") sha256=$(sha256sum "$f" | cut -d' ' -f1)"
-            cat "$f"; echo
-            echo "=== END SCHEMA $(basename "$f")"
-          done
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
