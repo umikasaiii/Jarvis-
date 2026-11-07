@@ -78,25 +78,34 @@ class JarvisMigrationInstrumentedTest {
 
     @Test fun everyAvailableOlderSchemaMigratesToCurrentWithoutLosingData() {
         val older = schemaVersions().filter { it < JarvisMigrations.CURRENT_VERSION }
+        val failures = mutableListOf<String>()
         for (v in older) {
-            context.deleteDatabase(dbName)
-            val before: Map<String, List<Map<String, String?>>> =
-                helper.createDatabase(dbName, v).use { db ->
-                    seedEveryTable(db)
-                    dumpAllTables(db)
-                }
-            assertTrue("v$v: seeding produced no rows at all", before.values.any { it.isNotEmpty() })
-            val migrated = helper.runMigrationsAndValidate(dbName, JarvisMigrations.CURRENT_VERSION, true, *JarvisMigrations.ALL)
-            migrated.use { db ->
-                val after = dumpAllTables(db)
-                for ((table, rows) in before) {
-                    assertTrue("v$v: table $table disappeared in the upgrade", table in after)
-                    assertEquals("v$v: row count of $table changed", rows.size, after.getValue(table).size)
-                    rows.forEachIndexed { i, oldRow ->
-                        val newRow = after.getValue(table)[i]
-                        for ((col, value) in oldRow) {
-                            if (col in newRow) assertEquals("v$v: $table.$col changed", value, newRow[col])
-                        }
+            runCatching { migrateOneVersion(v) }.onFailure { t ->
+                failures += "FROM v$v: ${t::class.simpleName}: ${t.message}"
+            }
+        }
+        Log.w(tag, "schema versions exercised: $older; failures: ${failures.size}")
+        assertTrue("migrations from authentic historical schemas failed:\n" + failures.joinToString("\n----\n"), failures.isEmpty())
+    }
+
+    private fun migrateOneVersion(v: Int) {
+        context.deleteDatabase(dbName)
+        val before: Map<String, List<Map<String, String?>>> =
+            helper.createDatabase(dbName, v).use { db ->
+                seedEveryTable(db)
+                dumpAllTables(db)
+            }
+        assertTrue("v$v: seeding produced no rows at all", before.values.any { it.isNotEmpty() })
+        val migrated = helper.runMigrationsAndValidate(dbName, JarvisMigrations.CURRENT_VERSION, true, *JarvisMigrations.ALL)
+        migrated.use { db ->
+            val after = dumpAllTables(db)
+            for ((table, rows) in before) {
+                assertTrue("v$v: table $table disappeared in the upgrade", table in after)
+                assertEquals("v$v: row count of $table changed", rows.size, after.getValue(table).size)
+                rows.forEachIndexed { i, oldRow ->
+                    val newRow = after.getValue(table)[i]
+                    for ((col, value) in oldRow) {
+                        if (col in newRow) assertEquals("v$v: $table.$col changed", value, newRow[col])
                     }
                 }
             }

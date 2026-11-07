@@ -117,7 +117,7 @@ jobs:
                       fail += 1
                       e = bad if bad is not None else err
                       print("FAILED:", tc.get("classname"), tc.get("name"))
-                      print("\n".join((e.get("message") or e.text or "")[:1500].splitlines()[:12]))
+                      print((e.get("message") or e.text or "")[:9000])
                   else:
                       print("passed:" if sk is None else "skipped:", tc.get("name"))
           print(f"SUMMARY tests={tot} failed={fail} skipped={skip}")
