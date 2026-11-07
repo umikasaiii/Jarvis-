@@ -37,8 +37,16 @@ jobs:
       - name: Set up Gradle (with cache)
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      # GitHub ubuntu-latest already includes the Android SDK. The old
+      # setup-android@v3 action asks sdkmanager for the removed "tools" package.
+      - name: Verify preinstalled Android SDK
+        run: |
+          SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          if [ ! -f "$SDK_ROOT/platforms/android-35/android.jar" ]; then
+            printf 'y\n%.0s' {1..30} | "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" \
+              --sdk_root="$SDK_ROOT" "platforms;android-35" "build-tools;35.0.0"
+          fi
 
       # ---- Domain core (pure Kotlin/JVM). Runs as a standalone build via -p. ----
       - name: Core unit tests
