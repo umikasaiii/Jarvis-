@@ -81,7 +81,10 @@ android {
     buildTypes {
         debug {
             isMinifyEnabled = false
-            applicationIdSuffix = ".debug"
+            // BETA 1/8: -Pjarvis.isolatedSuffix=.beta builds a SIDE-BY-SIDE test install
+            // (applicationId ….debug.beta, own data, same debug signature) so tests that must not
+            // touch the user's real JARVIS data can run in isolation. Unset = unchanged id.
+            applicationIdSuffix = ".debug" + ((project.findProperty("jarvis.isolatedSuffix") as String?) ?: "")
             signingConfig = signingConfigs.getByName("debug")
         }
         release {

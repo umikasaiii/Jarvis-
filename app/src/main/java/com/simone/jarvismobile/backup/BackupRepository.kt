@@ -686,6 +686,19 @@ class BackupRepository @Inject constructor(
                 out += Src("documents/${f.name}", EntryKind.FILE, bytes = f.readBytes())
             }
         }
+        // BETA 1/8 — user-written app-private files that were NOT part of any backup before: the local
+        // Memoria ("local-archive-only"), the local Agenda/Automazioni fallbacks (the only copy when
+        // no Obsidian vault is configured), the chat history, the conversational short memory and the
+        // note background images. Same generic relPath → filesDir round trip as `documents/`
+        // (RestoreStaging.cutoverOne), so the archive format is unchanged.
+        for (name in BackupPrivateFiles.FILES) {
+            val f = File(context.filesDir, name)
+            if (f.isFile) out += Src(name, EntryKind.FILE, bytes = f.readBytes())
+        }
+        File(context.filesDir, BackupPrivateFiles.BACKGROUNDS_DIR).takeIf { it.isDirectory }
+            ?.walkTopDown()?.filter { it.isFile }?.forEach { f ->
+                out += Src("${BackupPrivateFiles.BACKGROUNDS_DIR}/${f.name}", EntryKind.FILE, bytes = f.readBytes())
+            }
         return out
     }
 

@@ -205,6 +205,93 @@ jobs:
             --notes "APK di debug piu recente. Commit ${{ github.sha }}. Firmato con app/debug.keystore (committato, stabile): si aggiorna in place, non serve disinstallare." \
             --target "${{ github.sha }}"
 
+  # BETA 1/8 — read-only identity report of the APK THIS run built (provenance, SHA-256, application id,
+  # signing certificate, permissions) plus an in-place-update compatibility check against the
+  # currently published latest-debug APK. Reads the release (public download), never writes it.
+  apk-report:
+    name: APK identity & update-compatibility report (read-only)
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download the APK built by this run
+        uses: actions/download-artifact@v4
+        with:
+          name: app-debug
+          path: apk
+      - name: Report
+        run: |
+          {
+            echo "# APK report"; echo "commit: ${{ github.sha }}"; echo "ref: ${{ github.ref }}"; echo "run: ${{ github.run_id }} (#${{ github.run_number }})"; echo
+            echo "sha256 file from the build job: $(cat apk/app-debug.apk.sha256)"; echo
+            bash .github/scripts/inspect-apk.sh apk/app-debug.apk
+            echo; echo "committed debug keystore certificate:"
+            keytool -list -v -keystore app/debug.keystore -storepass android 2>/dev/null | sed -n 's/^\s*SHA256: /  SHA256: /p'
+          } | tee apk-report.txt
+          # the sha256 computed here must equal the one the build job wrote next to the APK
+          test "$(sha256sum apk/app-debug.apk | cut -d' ' -f1)" = "$(cut -d' ' -f1 apk/app-debug.apk.sha256)"
+      - name: In-place update compatibility vs the published latest-debug APK (read-only)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p published
+          if gh release download latest-debug --pattern app-debug.apk --dir published --repo "$GITHUB_REPOSITORY"; then
+            { echo; bash .github/scripts/inspect-apk.sh --compare published/app-debug.apk apk/app-debug.apk; } 2>&1 | tee -a apk-report.txt
+            exit "${PIPESTATUS[0]}"
+          else
+            echo "latest-debug APK not downloadable: compatibility not checked" | tee -a apk-report.txt
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: apk-report
+          path: apk-report.txt
+          if-no-files-found: warn
+
+  # BETA 1/8 — a SECOND debug APK of the same commit with applicationId com.simone.jarvismobile.debug.beta
+  # (own data, installable next to the real app). For tests that must never touch real personal data.
+  # Artifact only; never published.
+  isolated-apk:
+    name: Isolated test APK (applicationId ...debug.beta)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build AEC3 native library (arm64-v8a)
+        run: |
+          pip install meson==1.12.1 ninja==1.13.0
+          bash native/aec3/build_android.sh "$RUNNER_TEMP/aec3" "$GITHUB_WORKSPACE/native/aec3/out/jniLibs"
+      - name: Assemble the isolated debug APK
+        run: ./gradlew --no-daemon :app:assembleDebug -Pjarvis.isolatedSuffix=.beta
+      - name: Report and stage
+        run: |
+          mkdir -p isolated
+          cp app/build/outputs/apk/debug/app-debug.apk isolated/app-debug-isolated.apk
+          (cd isolated && sha256sum app-debug-isolated.apk > app-debug-isolated.apk.sha256)
+          { echo "commit: ${{ github.sha }}"; bash .github/scripts/inspect-apk.sh isolated/app-debug-isolated.apk; } | tee isolated/isolated-apk-report.txt
+          grep -q '^package=com.simone.jarvismobile.debug.beta$' isolated/isolated-apk-report.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-isolated
+          path: isolated/
+          if-no-files-found: error
+
   # PASS 14B pre-execution compatibility gate. run_real_training.ps1 is the
   # sole Windows runner for the (still user-PC-only) real EmbeddingGemma
   # qualification/training pipeline; it previously corrupted the parser on
