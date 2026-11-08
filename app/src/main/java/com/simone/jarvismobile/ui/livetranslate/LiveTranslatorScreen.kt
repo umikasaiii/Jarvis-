@@ -27,7 +27,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -46,6 +48,7 @@ import com.simone.jarvismobile.core.translate.ConversationSegment
 import com.simone.jarvismobile.core.translate.LiveTranslationState
 import com.simone.jarvismobile.core.translate.TranslationLanguage
 import com.simone.jarvismobile.core.translate.TranslationMode
+import com.simone.jarvismobile.core.translate.TranslatorMessages
 import com.simone.jarvismobile.translate.ModelStatus
 import com.simone.jarvismobile.ui.theme.LocalJarvisPalette
 
@@ -75,6 +78,9 @@ fun LiveTranslatorScreen(
     val partial by viewModel.partial.collectAsStateWithLifecycle()
     val listening by viewModel.listeningLanguage.collectAsStateWithLifecycle()
     val audioDetail by viewModel.audioDetail.collectAsStateWithLifecycle()
+    val notice by viewModel.notice.collectAsStateWithLifecycle()
+    val textUi by viewModel.text.collectAsStateWithLifecycle()
+    val required by viewModel.requiredModels.collectAsStateWithLifecycle()
 
     // "Active" for the controls means a session is running or spinning up — any
     // state other than the two at-rest ones (Idle, and Error you can restart from).
@@ -94,9 +100,9 @@ fun LiveTranslatorScreen(
             Text("Traduttore Live", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         }
         Text(
-            "Traduzione vocale offline, in tempo reale, tra due lingue. Non usa il " +
-                "modello dell'assistente: una volta scaricati i modelli funziona anche " +
-                "in modalità aereo.",
+            "Traduzione offline di voce e testo tra due lingue. Non usa il modello " +
+                "dell'assistente né Internet: una volta scaricati i modelli (una sola volta, " +
+                "con la rete) funziona anche in modalità aereo.",
             style = MaterialTheme.typography.bodySmall,
             color = Muted,
         )
@@ -123,10 +129,20 @@ fun LiveTranslatorScreen(
                     )
                 }
                 // Per-language offline model status + download.
-                ModelRow(langA, statuses[langA], onDownload = { viewModel.downloadModel(langA) })
-                ModelRow(langB, statuses[langB], onDownload = { viewModel.downloadModel(langB) })
+                required.forEach { lang ->
+                    ModelRow(
+                        lang, statuses[lang], onDownload = { viewModel.downloadModel(lang) },
+                        pivot = lang != langA && lang != langB,
+                    )
+                }
             }
         }
+
+        // --- Text translation (no microphone) -----------------------------------
+        TextTranslationCard(
+            langA = langA, langB = langB, ui = textUi,
+            onTranslate = viewModel::translateText, onSpeak = viewModel::speakText, onClear = viewModel::clearText,
+        )
 
         // --- Mode ------------------------------------------------------------
         Card(Modifier.fillMaxWidth()) {
@@ -139,13 +155,15 @@ fun LiveTranslatorScreen(
                     TranslationMode.entries.forEach { m ->
                         FilterChip(
                             selected = mode == m,
-                            onClick = { if (!active) viewModel.setMode(m) },
-                            enabled = !active,
+                            onClick = { viewModel.setMode(m) },
                             label = { Text(m.label()) },
                         )
                     }
                 }
                 Text(mode.help(), style = MaterialTheme.typography.bodySmall, color = Muted)
+                if (mode.autoDetects) {
+                    Text(TranslatorMessages.MODE_LIMIT_AUTO, style = MaterialTheme.typography.bodySmall, color = Color(0xFFF3A65B))
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Switch(checked = ttsEnabled, onCheckedChange = viewModel::setTtsEnabled)
                     Spacer(Modifier.height(0.dp))
@@ -168,6 +186,12 @@ fun LiveTranslatorScreen(
 
         // --- Controls --------------------------------------------------------
         StatusLine(state, listening)
+        notice?.let { n ->
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(TranslatorMessages.notice(n), color = Color(0xFFF3A65B), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                TextButton(onClick = viewModel::dismissNotice) { Text("OK") }
+            }
+        }
         if (!active) {
             Button(onClick = { viewModel.start() }, modifier = Modifier.fillMaxWidth()) {
                 Text("Avvia traduzione")
@@ -175,15 +199,25 @@ fun LiveTranslatorScreen(
         } else {
             if (mode == TranslationMode.PUSH_TO_TALK) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { viewModel.pushToTalk(langA) }, modifier = Modifier.weight(1f)) {
-                        Text("Parlo ${langA.display}")
-                    }
-                    OutlinedButton(onClick = { viewModel.pushToTalk(langB) }, modifier = Modifier.weight(1f)) {
-                        Text("Parla ${langB.display}")
+                    listOf(langA, langB).forEach { lang ->
+                        val listeningThis = state == LiveTranslationState.Listening && listening == lang
+                        // Tap to talk; tap again while listening to cancel. Disabled while the other side is being processed.
+                        Button(
+                            onClick = { viewModel.pushToTalk(lang) },
+                            enabled = state == LiveTranslationState.Ready || listeningThis,
+                            modifier = Modifier.weight(1f).height(64.dp),
+                        ) {
+                            Text(if (listeningThis) "Ascolto… (tocca per annullare)" else "Parla ${lang.display}")
+                        }
                     }
                 }
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (state == LiveTranslationState.Paused) {
+                    Button(onClick = { viewModel.resume() }, modifier = Modifier.weight(1f)) { Text("Riprendi") }
+                } else {
+                    OutlinedButton(onClick = { viewModel.pause() }, modifier = Modifier.weight(1f)) { Text("Pausa") }
+                }
                 OutlinedButton(onClick = { viewModel.clear() }, modifier = Modifier.weight(1f)) {
                     Text("Pulisci")
                 }
@@ -212,21 +246,8 @@ fun LiveTranslatorScreen(
 
 @Composable
 private fun StatusLine(state: LiveTranslationState, listening: TranslationLanguage?) {
-    val text = when (state) {
-        LiveTranslationState.Idle -> "Pronto ad avviare"
-        LiveTranslationState.CheckingModels -> "Controllo modelli…"
-        is LiveTranslationState.DownloadingModels -> "Scarico ${state.language?.display ?: "modelli"}…"
-        LiveTranslationState.Ready -> "In attesa"
-        LiveTranslationState.Listening -> "In ascolto${listening?.let { " (${it.display})" } ?: ""}…"
-        LiveTranslationState.Transcribing -> "Trascrizione…"
-        LiveTranslationState.Translating -> "Traduco…"
-        LiveTranslationState.Speaking -> "Riproduco…"
-        LiveTranslationState.Paused -> "In pausa"
-        LiveTranslationState.Stopping -> "Arresto…"
-        is LiveTranslationState.Error -> "Errore: ${state.reason}"
-    }
     val color = if (state is LiveTranslationState.Error) Color(0xFFF3776B) else Cyan
-    Text(text, color = color, style = MaterialTheme.typography.bodyMedium)
+    Text(TranslatorMessages.state(state, listening), color = color, style = MaterialTheme.typography.bodyMedium)
 }
 
 @Composable
@@ -255,9 +276,10 @@ private fun ModelRow(
     lang: TranslationLanguage,
     status: ModelStatus?,
     onDownload: () -> Unit,
+    pivot: Boolean = false,
 ) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(lang.display, modifier = Modifier.weight(1f))
+        Text(if (pivot) "${lang.display} (necessario per tradurre)" else lang.display, modifier = Modifier.weight(1f))
         when (status) {
             ModelStatus.DOWNLOADED -> Text("Pronto", color = Color(0xFF2ECC71), style = MaterialTheme.typography.labelMedium)
             ModelStatus.DOWNLOADING -> Text("Scarico…", color = Cyan, style = MaterialTheme.typography.labelMedium)
@@ -313,4 +335,56 @@ private fun TranslationMode.help(): String = when (this) {
     TranslationMode.SOLO_TESTO -> "Mostra solo il testo tradotto, senza voce."
     TranslationMode.VOCE_TESTO -> "Mostra originale e traduzione, e legge la traduzione."
     TranslationMode.SOLO_ASCOLTO -> "Ascolta l'altra persona e traduce nella tua lingua, senza parlare."
+}
+
+/** Typed translation: works with no session and no microphone, offline once the models are present. */
+@Composable
+private fun TextTranslationCard(
+    langA: TranslationLanguage,
+    langB: TranslationLanguage,
+    ui: TextTranslationUi,
+    onTranslate: (String, Boolean) -> Unit,
+    onSpeak: () -> Unit,
+    onClear: () -> Unit,
+) {
+    var input by remember { mutableStateOf("") }
+    var reverse by remember { mutableStateOf(false) }
+    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+    val from = if (reverse) langB else langA
+    val to = if (reverse) langA else langB
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Traduci un testo", fontWeight = FontWeight.SemiBold)
+            Text("Funziona anche senza microfono e senza Internet.", style = MaterialTheme.typography.bodySmall, color = Muted)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("${from.display} → ${to.display}", color = Cyan, modifier = Modifier.weight(1f))
+                TextButton(onClick = { reverse = !reverse }) { Text("Inverti") }
+            }
+            OutlinedTextField(
+                value = input,
+                onValueChange = { input = it },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("Scrivi o incolla il testo (${from.display})") },
+                minLines = 2,
+                maxLines = 6,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = { onTranslate(input, reverse) }, enabled = !ui.busy && input.isNotBlank()) {
+                    Text(if (ui.busy) "Traduco…" else "Traduci")
+                }
+                OutlinedButton(onClick = { input = ""; onClear() }, enabled = input.isNotEmpty() || ui.output.isNotEmpty()) { Text("Cancella") }
+            }
+            if (ui.output.isNotBlank()) {
+                Text("${ui.to?.heading ?: to.heading}", style = MaterialTheme.typography.labelSmall, color = Cyan)
+                Text(ui.output, style = MaterialTheme.typography.bodyLarge, color = Cyan)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = onSpeak) { Text("Leggi") }
+                    OutlinedButton(onClick = { clipboard.setText(androidx.compose.ui.text.AnnotatedString(ui.output)) }) { Text("Copia") }
+                }
+            }
+            if (ui.message.isNotBlank()) {
+                Text(ui.message, style = MaterialTheme.typography.bodySmall, color = Color(0xFFF3A65B))
+            }
+        }
+    }
 }

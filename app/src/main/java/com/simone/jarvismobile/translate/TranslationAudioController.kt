@@ -7,6 +7,7 @@ import android.media.AudioManager
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Log
+import com.simone.jarvismobile.core.translate.SpeakOutcome
 import com.simone.jarvismobile.core.translate.TranslationLanguage
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CompletableDeferred
@@ -131,53 +132,52 @@ class TranslationAudioController @Inject constructor(
      * stopped). Sets the engine language just before speaking, so consecutive
      * turns can alternate languages on a single engine instance.
      */
-    suspend fun speak(text: String, language: TranslationLanguage) {
+    suspend fun speak(text: String, language: TranslationLanguage): SpeakOutcome {
         val trimmed = text.trim()
-        if (trimmed.isEmpty()) return
+        if (trimmed.isEmpty()) return SpeakOutcome.SPOKEN
         if (!ensureReady()) {
             _lastDetail.value = "tts non inizializzato"
-            return
+            return SpeakOutcome.FAILED
         }
-        val engine = tts ?: return
+        val engine = tts ?: return SpeakOutcome.FAILED
         val id = UUID.randomUUID().toString()
         val done = CompletableDeferred<Unit>()
         pending[id] = done
         requestFocus()
         _speaking.value = true
-        // All engine calls on Main (see ensureReady): setLanguage returns a code
-        // — a missing/unsupported voice is the usual reason a translation is shown
-        // but never heard — and speak is queued from the same thread.
-        val ok = withContext(Dispatchers.Main) {
+        // All engine calls on Main (see ensureReady). A non-null result means "nothing was queued".
+        val notQueued: SpeakOutcome? = withContext(Dispatchers.Main) {
             ensureAudibleVolume()
-            var langResult = runCatching { engine.setLanguage(locale(language)) }
+            val langResult = runCatching { engine.setLanguage(locale(language)) }
                 .getOrDefault(TextToSpeech.LANG_NOT_SUPPORTED)
             if (langResult == TextToSpeech.LANG_MISSING_DATA || langResult == TextToSpeech.LANG_NOT_SUPPORTED) {
-                // The voice pack for this language isn't on the device. Prompt the
-                // user to install it (once) — silence otherwise looks like a bug.
+                // No offline voice for this language: do NOT read it with another language's voice.
+                // The caller keeps the translated text on screen and tells the user.
                 requestVoiceInstall()
                 _lastDetail.value = "voce ${language.code} non installata — installa i dati vocali"
                 Log.w(TAG, "tts_language_unavailable ${language.code} code=$langResult eng=$engineName")
-            } else {
-                val vol = mediaVolumePercent()
-                _lastDetail.value = "ok ${language.code} · voce=$engineName · vol=$vol%"
+                return@withContext SpeakOutcome.NO_VOICE
             }
+            _lastDetail.value = "ok ${language.code} · voce=$engineName · vol=${mediaVolumePercent()}%"
             // Force full utterance volume on the media stream: some ROMs otherwise
             // route the audio to a muted/near-silent stream and nothing is heard.
             val params = android.os.Bundle().apply {
                 putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f)
                 putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, AudioManager.STREAM_MUSIC)
             }
-            engine.speak(trimmed, TextToSpeech.QUEUE_FLUSH, params, id) == TextToSpeech.SUCCESS
+            if (engine.speak(trimmed, TextToSpeech.QUEUE_FLUSH, params, id) == TextToSpeech.SUCCESS) null
+            else SpeakOutcome.FAILED
         }
-        if (!ok) {
-            Log.w(TAG, "tts_speak_rejected ${language.code}")
+        if (notQueued != null) {
+            Log.w(TAG, "tts_not_queued ${language.code} $notQueued")
             finish(id)
             abandonFocus()
-            return
+            return notQueued
         }
-        try {
+        return try {
             // Never let a silent/stuck utterance hang the whole translation loop.
-            kotlinx.coroutines.withTimeoutOrNull(SPEAK_TIMEOUT_MS) { done.await() }
+            val finished = kotlinx.coroutines.withTimeoutOrNull(SPEAK_TIMEOUT_MS) { done.await() }
+            if (finished == null) SpeakOutcome.FAILED else SpeakOutcome.SPOKEN
         } finally {
             if (!done.isCompleted) {
                 engine.stop()
