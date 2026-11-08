@@ -81,6 +81,7 @@ fun SettingsScreen(
     onOpenFavorites: () -> Unit = {},
     onOpenBackup: () -> Unit = {},
     onOpenArchive: () -> Unit = {},
+    onOpenNotes: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val name by viewModel.assistantName.collectAsStateWithLifecycle()
@@ -818,8 +819,11 @@ fun SettingsScreen(
         OutlinedButton(onClick = onOpenMemory, modifier = Modifier.fillMaxWidth()) {
             Text("Memoria")
         }
+        OutlinedButton(onClick = onOpenNotes, modifier = Modifier.fillMaxWidth()) {
+            Text("Note")
+        }
         OutlinedButton(onClick = onOpenArchive, modifier = Modifier.fillMaxWidth()) {
-            Text("Archivio (note e da vedere)")
+            Text("Archivio (documenti, liste e ricordi)")
         }
         OutlinedButton(onClick = onOpenAutomations, modifier = Modifier.fillMaxWidth()) {
             Text("Automazioni")

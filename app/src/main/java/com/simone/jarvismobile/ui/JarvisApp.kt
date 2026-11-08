@@ -30,6 +30,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.simone.jarvismobile.ui.archive.ArchiveScreen
+import com.simone.jarvismobile.ui.archive.NotesScreen
 import com.simone.jarvismobile.ui.dashboard.DashboardScreen
 import com.simone.jarvismobile.ui.diagnostics.DiagnosticsScreen
 import com.simone.jarvismobile.ui.automation.AutomationsScreen
@@ -59,7 +60,7 @@ import com.simone.jarvismobile.ui.status.SystemStatusScreen
  */
 private enum class Overlay {
     CHAT, MODELS, MEMORY, DIAGNOSTICS, AUTOMATIONS, RULES, TRANSLATOR, DOCUMENTS,
-    NAVIGATION, MAPS, FAVORITES, BACKUP, ARCHIVE, SYSTEM_STATUS, AGENDA, SETTINGS,
+    NAVIGATION, MAPS, FAVORITES, BACKUP, ARCHIVE, NOTES, SYSTEM_STATUS, AGENDA, SETTINGS,
 }
 
 /**
@@ -132,6 +133,7 @@ fun JarvisApp(
                     onOpenTranslator = { overlay = Overlay.TRANSLATOR },
                     onOpenSystemStatus = { overlay = Overlay.SYSTEM_STATUS },
                     onOpenArchive = { overlay = Overlay.ARCHIVE },
+                    onOpenNotes = { overlay = Overlay.NOTES },
                 )
             }
         }
@@ -189,7 +191,7 @@ fun JarvisApp(
             overlay == Overlay.TRANSLATOR || overlay == Overlay.DOCUMENTS ||
             overlay == Overlay.NAVIGATION || overlay == Overlay.MAPS ||
             overlay == Overlay.FAVORITES || overlay == Overlay.BACKUP ||
-            overlay == Overlay.ARCHIVE || overlay == Overlay.SYSTEM_STATUS ||
+            overlay == Overlay.ARCHIVE || overlay == Overlay.NOTES || overlay == Overlay.SYSTEM_STATUS ||
             overlay == Overlay.AGENDA || overlay == Overlay.SETTINGS
         ) {
             BackHandler { overlay = null }
@@ -216,7 +218,9 @@ fun JarvisApp(
                         onBack = { overlay = null },
                         onOpenTasks = { overlay = Overlay.AGENDA },
                         onOpenDocuments = { overlay = Overlay.DOCUMENTS },
+                        onOpenNotes = { overlay = Overlay.NOTES },
                     )
+                    Overlay.NOTES -> NotesScreen(onBack = { overlay = null })
                     Overlay.SYSTEM_STATUS -> SystemStatusScreen(onBack = { overlay = null })
                     Overlay.AGENDA -> AgendaScreen()
                     Overlay.SETTINGS -> SettingsScreen(
@@ -231,6 +235,7 @@ fun JarvisApp(
                         onOpenFavorites = { overlay = Overlay.FAVORITES },
                         onOpenBackup = { overlay = Overlay.BACKUP },
                         onOpenArchive = { overlay = Overlay.ARCHIVE },
+                        onOpenNotes = { overlay = Overlay.NOTES },
                     )
                     else -> Unit
                 }

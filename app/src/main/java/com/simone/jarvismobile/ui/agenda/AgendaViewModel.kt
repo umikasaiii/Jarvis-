@@ -136,7 +136,7 @@ class AgendaViewModel @Inject constructor(
     }
 
     fun setDue(entry: AgendaEntry, due: LocalDate?) = viewModelScope.launch {
-        runCatching { agenda.update(entry.id) { it.copy(date = due) } }
+        runCatching { agenda.update(entry.id) { it.copy(date = due, alerts = com.simone.jarvismobile.core.agenda.DueAlerts.afterDueEdit(it.alerts, due, it.time)) } }
     }
 
     /** Saves the whole editor at once (title, details, due date, time, star). */
@@ -151,7 +151,11 @@ class AgendaViewModel @Inject constructor(
         val clean = title.trim().ifEmpty { entry.text }
         runCatching {
             agenda.update(entry.id) {
-                it.copy(text = clean, notes = notes.trim(), date = date, time = time, starred = starred)
+                it.copy(
+                    text = clean, notes = notes.trim(), date = date, time = time, starred = starred,
+                    // A deadline added by editing must notify too, like one set at creation.
+                    alerts = com.simone.jarvismobile.core.agenda.DueAlerts.afterDueEdit(it.alerts, date, time),
+                )
             }
         }
     }

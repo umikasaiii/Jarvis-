@@ -279,7 +279,17 @@ class AgendaRepository @Inject constructor(
     }
 
     private suspend fun writeLocal(content: String): Boolean = withContext(Dispatchers.IO) {
-        runCatching { localFile.writeText(content); true }.getOrDefault(false)
+        // Atomic: write a sibling temp file, then rename over the real one, so a crash or a
+        // full disk mid-write can never leave a truncated agenda (BETA 3).
+        runCatching {
+            val tmp = File(localFile.parentFile, localFile.name + ".tmp")
+            tmp.writeText(content)
+            if (!tmp.renameTo(localFile)) {
+                localFile.writeText(content)
+                tmp.delete()
+            }
+            true
+        }.getOrDefault(false)
     }
 
     private companion object {

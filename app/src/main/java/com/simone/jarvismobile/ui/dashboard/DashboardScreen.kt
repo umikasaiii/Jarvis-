@@ -55,6 +55,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Home
@@ -227,6 +228,7 @@ fun DashboardScreen(
     onOpenTranslator: () -> Unit = {},
     onOpenSystemStatus: () -> Unit = {},
     onOpenArchive: () -> Unit = {},
+    onOpenNotes: () -> Unit = {},
     viewModel: DashboardViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -516,6 +518,18 @@ fun DashboardScreen(
                     onClick = onOpenAutomations,
                     modifier = Modifier.weight(3f),
                     rougeIcon = R.drawable.rouge_ic_automations,
+                )
+                val notesVm: com.simone.jarvismobile.ui.archive.NotesViewModel = hiltViewModel()
+                val noteCount by notesVm.total.collectAsStateWithLifecycle()
+                StatTile(
+                    icon = Icons.Filled.EditNote,
+                    label = "Note",
+                    value = noteCount.toString(),
+                    unit = if (noteCount == 1) "nota" else "note",
+                    footer = "Apri",
+                    accent = Cyan,
+                    onClick = onOpenNotes,
+                    modifier = Modifier.weight(1f),
                 )
                 StatTile(
                     icon = Icons.Filled.FolderOpen,

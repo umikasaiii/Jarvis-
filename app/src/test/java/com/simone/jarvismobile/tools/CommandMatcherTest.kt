@@ -456,4 +456,41 @@ class CommandMatcherTest {
         val m = CommandMatcher.match("Cerca nella wiki OAuth") as Match.Run
         assertEquals("search_knowledge", m.call.name)
     }
+
+    // --- BETA 3: notes by name ------------------------------------------------
+    @Test
+    fun createNamedNoteRunsCreateArchiveItemWithThatTitle() {
+        val m = CommandMatcher.match("Crea una nota chiamata Idee per Jarvis") as Match.Run
+        assertEquals("create_archive_item", m.call.name)
+        assertEquals("note", m.call.arguments["type"]?.jsonPrimitive?.content)
+        assertEquals("Idee per Jarvis", m.call.arguments["title"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun appendToNamedNoteRunsUpdateWithAppendNotReplace() {
+        val m = CommandMatcher.match("Aggiungi alla nota Idee per Jarvis: integrare Wikipedia offline") as Match.Run
+        assertEquals("update_archive_item", m.call.name)
+        assertEquals("Idee per Jarvis", m.call.arguments["title"]?.jsonPrimitive?.content)
+        assertEquals("integrare Wikipedia offline", m.call.arguments["append"]?.jsonPrimitive?.content)
+        assertNull(m.call.arguments["new_content"])
+    }
+
+    @Test
+    fun showNotesAboutATopicSearchesTheArchive() {
+        val m = CommandMatcher.match("Mostrami le note sulla moto") as Match.Run
+        assertEquals("search_archive", m.call.name)
+        assertEquals("moto", m.call.arguments["query"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun shoppingListPhraseIsStillAListNotANote() {
+        val m = CommandMatcher.match("Aggiungi comprare il latte alla lista Spesa") as Match.Run
+        assertEquals("add_list_item", m.call.name)
+    }
+
+    @Test
+    fun aReminderPhraseIsStillAReminderNotANote() {
+        val m = CommandMatcher.match("Ricordami domani alle 18 di controllare l'assicurazione", LocalDateTime.of(2026, 11, 9, 10, 0)) as Match.Run
+        assertTrue(m.call.name != "create_archive_item" && m.call.name != "update_archive_item")
+    }
 }

@@ -301,17 +301,32 @@ class UpdateArchiveItemTool(private val archive: ArchiveRepository) : Tool {
     override suspend fun execute(arguments: JsonObject): ToolResult {
         val kind = arguments.archiveKind()
         val needle = arguments.text("title") ?: return ToolResult.Failure("missing_title")
-        val match = archive.findByText(needle, kind).singleOrNull()
-            ?: return okJson("found" to "false", "spoken" to "Non trovo un solo elemento chiamato così, quindi non lo modifico.")
+        val found = archive.findByText(needle, kind)
+        // An exact title is unambiguous even if another note's body happens to mention it.
+        val candidates = found.filter { it.title.equals(needle.trim(), ignoreCase = true) }.takeIf { it.size == 1 } ?: found
+        if (candidates.size > 1) {
+            // Never edit an arbitrary one of several: say which, and let the user pick.
+            return okJson(
+                "found" to "false",
+                "ambiguous" to "true",
+                "spoken" to "Ho trovato più elementi: " + candidates.take(5).joinToString(", ") { "«${it.title}»" } +
+                    ". Quale intendi? Ripeti il comando col titolo esatto.",
+            )
+        }
+        val match = candidates.singleOrNull()
+            ?: return okJson("found" to "false", "spoken" to "Non trovo un elemento chiamato così, quindi non lo modifico.")
         val markDone = arguments.text("completed") == "true"
         val status = if (markDone) ArchiveStatus.DONE else null
         val updated = archive.update(
             match.id,
             title = arguments.text("new_title"),
-            content = arguments.text("new_content") ?: arguments.text("content"),
+            content = arguments.text("append")?.let { extra ->
+                // BETA 3: "aggiungi alla nota X: …" — keep the existing text, add on a new line.
+                listOf(match.content, extra).filter { it.isNotBlank() }.joinToString("\n")
+            } ?: arguments.text("new_content") ?: arguments.text("content"),
             status = status,
         ) ?: return ToolResult.Failure("archive_write_failed")
-        val spoken = if (markDone) "Segnato come completato: ${updated.title}." else "«${updated.title}» aggiornato."
+        val spoken = if (markDone) "Segnato come completato: ${updated.title}." else if (arguments.text("append") != null) "Aggiunto alla nota «${updated.title}»." else "«${updated.title}» aggiornato."
         return okJson("id" to updated.id, "spoken" to spoken)
     }
 }

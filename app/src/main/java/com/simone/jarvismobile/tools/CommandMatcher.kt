@@ -2,6 +2,8 @@ package com.simone.jarvismobile.tools
 
 import com.simone.jarvismobile.core.agenda.ItalianDateTimeParser
 import com.simone.jarvismobile.core.agenda.WhenParsed
+import com.simone.jarvismobile.core.notes.NoteCommand
+import com.simone.jarvismobile.core.notes.NoteCommandParser
 import com.simone.jarvismobile.core.protocol.ToolCall
 import com.simone.jarvismobile.core.memory.MemoryKind
 import com.simone.jarvismobile.core.memory.MemoryStructure
@@ -73,6 +75,10 @@ object CommandMatcher {
         // messaggi" would otherwise be swallowed by the generic app-open or
         // notification-read patterns below). ------------------------------
         drivingModeCall(raw)?.let { return it }
+        // Notes by name (BETA 3): strictly anchored phrases ("crea una nota chiamata X",
+        // "aggiungi alla nota X: …", "mostrami le note sulla moto"), checked before the
+        // list/task rules below so they cannot be mistaken for a list or reminder.
+        namedNoteCall(raw)?.let { return it }
         drivingNavigationCall(raw)?.let { return it }
         drivingPanelCall(raw)?.let { return it }
         replyMessageCall(raw)?.let { return it }
@@ -621,6 +627,18 @@ object CommandMatcher {
         val content = match.groupValues.drop(1).firstOrNull(String::isNotBlank).orEmpty().trim()
         if (content.length < 2) return Match.Ask("Cosa scrivo nella nota?", "create_archive_item", "content", mapOf("type" to "note"))
         return call("create_archive_item", "type" to "note", "title" to deriveNoteTitle(content), "content" to content)
+    }
+
+    /** BETA 3: note phrases that name the note; the parser is pure (:core) and fully tested. */
+    fun namedNoteCall(raw: String): Match? = when (val cmd = NoteCommandParser.parse(raw)) {
+        is NoteCommand.CreateNamed -> {
+            val title = cmd.title.replaceFirstChar { it.uppercase() }
+            if (cmd.content.isBlank()) call("create_archive_item", "type" to "note", "title" to title)
+            else call("create_archive_item", "type" to "note", "title" to title, "content" to cmd.content)
+        }
+        is NoteCommand.Append -> call("update_archive_item", "type" to "note", "title" to cmd.title, "append" to cmd.text)
+        is NoteCommand.Show -> call("search_archive", "query" to cmd.topic)
+        null -> null
     }
 
     private fun deriveNoteTitle(content: String): String {

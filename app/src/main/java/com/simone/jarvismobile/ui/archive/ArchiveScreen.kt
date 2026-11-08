@@ -119,12 +119,12 @@ import java.util.Locale
 // Same palette convention as AgendaScreen (§ Impostazioni › Temi) — kept local
 // rather than shared, same pattern already used across the app's plain-Compose
 // screens (Agenda, Automazioni, Comandi…).
-private val Cyan: Color
+internal val Cyan: Color
     @Composable get() = LocalJarvisPalette.current.accent
-private val Ink = Color(0xFFE3EFF5)
-private val Muted = Color(0xFF7C8B95)
-private val Gold = Color(0xFFF3C34C)
-private val CardBg = Color(0x660A1826)
+internal val Ink = Color(0xFFE3EFF5)
+internal val Muted = Color(0xFF7C8B95)
+internal val Gold = Color(0xFFF3C34C)
+internal val CardBg = Color(0x660A1826)
 
 /**
  * The root "folders" Archivio browses — a real file-manager shape (§ richiesta
@@ -160,6 +160,7 @@ fun ArchiveScreen(
     onBack: () -> Unit,
     onOpenTasks: () -> Unit,
     onOpenDocuments: () -> Unit,
+    onOpenNotes: () -> Unit,
     viewModel: ArchiveViewModel = hiltViewModel(),
 ) {
     val items by viewModel.items.collectAsStateWithLifecycle()
@@ -173,18 +174,14 @@ fun ArchiveScreen(
     val query by viewModel.searchQuery.collectAsStateWithLifecycle()
     val folders by viewModel.folders.collectAsStateWithLifecycle()
     val documentFolders by viewModel.documentFolders.collectAsStateWithLifecycle()
-    val customBackgrounds by viewModel.customBackgrounds.collectAsStateWithLifecycle()
 
     var openFolder by remember { mutableStateOf<ArchiveFolder?>(null) }
     var showAdd by remember { mutableStateOf(false) } // TO_WATCH only — notes get the full-screen editor
     var showNewList by remember { mutableStateOf(false) }
     var showNewShoppingItem by remember { mutableStateOf(false) }
     var openList by remember { mutableStateOf<ArchiveList?>(null) }
-    var selectedNoteFolder by remember { mutableStateOf<String?>(null) } // null = "Tutte"
     var selectedDocFolder by remember { mutableStateOf<String?>(null) } // null = "Tutte"
 
-    var showNoteEditor by remember { mutableStateOf(false) }
-    var editingNote by remember { mutableStateOf<ArchiveItem?>(null) }
     var showImportMenu by remember { mutableStateOf(false) }
     var showNewDocFolder by remember { mutableStateOf(false) }
 
@@ -204,12 +201,6 @@ fun ArchiveScreen(
     val photoPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments(),
     ) { uris -> if (uris.isNotEmpty()) viewModel.importFromPhone(uris, selectedDocFolder.orEmpty()) }
-
-    // Sfondo nota personalizzato, stesso picker/store di Memoria (§ richiesta
-    // esplicita: "deve essere tutto personalizzabile: sfondo dietro").
-    val backgroundPicker = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument(),
-    ) { uri -> uri?.let { viewModel.importBackground(it) } }
 
     // Memoria is edited only in its own screen, so this view's copy can go
     // stale while the user is away — refresh whenever the folder is (re)opened.
@@ -277,7 +268,7 @@ fun ArchiveScreen(
                     memoryCount = memoryRecords.size,
                     memoryUpdated = memoryRecords.maxOfOrNull { it.updatedAt },
                     storageUsage = storageUsage,
-                    onOpen = { openFolder = it },
+                    onOpen = { if (it == ArchiveFolder.NOTES) onOpenNotes() else openFolder = it },
                 )
                 ArchiveFolder.DOCUMENTS -> DocumentsFolder(
                     documents = documents,
@@ -299,23 +290,8 @@ fun ArchiveScreen(
                         if (selectedDocFolder == path) selectedDocFolder = null
                     },
                 )
-                ArchiveFolder.NOTES -> NotesTab(
-                    notes = notes,
-                    folders = folders,
-                    selectedFolder = selectedNoteFolder,
-                    onSelectFolder = { selectedNoteFolder = it },
-                    onOpen = { editingNote = it; showNoteEditor = true },
-                    onTogglePin = viewModel::togglePinned,
-                    onDelete = viewModel::delete,
-                    onRenameFolder = { old, new ->
-                        viewModel.renameNoteFolder(old, new)
-                        if (selectedNoteFolder == old) selectedNoteFolder = new
-                    },
-                    onDeleteFolder = { path ->
-                        viewModel.deleteNoteFolder(path)
-                        if (selectedNoteFolder == path) selectedNoteFolder = null
-                    },
-                )
+                // Notes are served by the unified Note screen; the root row below opens it directly.
+                ArchiveFolder.NOTES -> Unit
                 ArchiveFolder.LISTS -> ListsTab(
                     shoppingItems = shoppingItems,
                     customLists = customLists,
@@ -341,7 +317,6 @@ fun ArchiveScreen(
         // Floating "+", only where "add" means one obvious thing.
         val fabAction: (() -> Unit)? = when (openFolder) {
             ArchiveFolder.DOCUMENTS -> { { showImportMenu = true } }
-            ArchiveFolder.NOTES -> { { editingNote = null; showNoteEditor = true } }
             ArchiveFolder.LISTS -> { { showNewList = true } }
             else -> null
         }
@@ -357,28 +332,6 @@ fun ArchiveScreen(
             ) {
                 Icon(Icons.Filled.Add, contentDescription = "Aggiungi", tint = Color(0xFF04121A))
             }
-        }
-
-        if (showNoteEditor) {
-            NoteEditorScreen(
-                note = editingNote,
-                folders = folders,
-                customBackgrounds = customBackgrounds,
-                backgroundStore = viewModel.backgroundStore,
-                onImportBackground = { backgroundPicker.launch(arrayOf("image/*")) },
-                onDeleteBackground = viewModel::deleteBackground,
-                onDismiss = { showNoteEditor = false },
-                onSave = { title, content, folder, pinned, theme, spacing ->
-                    val current = editingNote
-                    if (current == null) {
-                        viewModel.createNote(title, content, folder, pinned, theme, spacing)
-                    } else {
-                        viewModel.updateNote(current, title, content, folder, pinned, theme, spacing)
-                    }
-                    showNoteEditor = false
-                },
-                onDelete = editingNote?.let { note -> { viewModel.delete(note); showNoteEditor = false } },
-            )
         }
     }
 
@@ -892,79 +845,10 @@ private fun MemoryFolder(records: List<MemoryRecord>) {
     }
 }
 
-// --- Appunti: folders, pinned, chronological grouping ----------------------
+// --- Appunti now live in the unified NotesScreen (BETA 3) ---
 
 @Composable
-private fun NotesTab(
-    notes: List<ArchiveItem>,
-    folders: List<String>,
-    selectedFolder: String?,
-    onSelectFolder: (String?) -> Unit,
-    onOpen: (ArchiveItem) -> Unit,
-    onTogglePin: (ArchiveItem) -> Unit,
-    onDelete: (ArchiveItem) -> Unit,
-    onRenameFolder: (String, String) -> Unit,
-    onDeleteFolder: (String) -> Unit,
-) {
-    var showFolderManager by remember { mutableStateOf(false) }
-    val hasUnfiled = notes.any { it.folder == ARCHIVE_UNFILED_FOLDER }
-    Row(
-        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(bottom = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        FolderChip("Tutte", selectedFolder == null) { onSelectFolder(null) }
-        if (hasUnfiled) FolderChip("Senza categoria", selectedFolder == ARCHIVE_UNFILED_FOLDER) { onSelectFolder(ARCHIVE_UNFILED_FOLDER) }
-        folders.forEach { f -> FolderChip(f, selectedFolder == f) { onSelectFolder(f) } }
-    }
-    if (folders.isNotEmpty()) {
-        Text(
-            "Gestisci cartelle",
-            color = Cyan,
-            fontSize = 12.sp,
-            modifier = Modifier
-                .clip(RoundedCornerShape(8.dp))
-                .clickable { showFolderManager = true }
-                .padding(horizontal = 2.dp, vertical = 4.dp),
-        )
-        Spacer(Modifier.size(4.dp))
-    }
-
-    val filtered = if (selectedFolder == null) notes else notes.filter { it.folder == selectedFolder }
-    if (filtered.isEmpty()) {
-        Text("Nessuna nota. Tocca + per crearne una.", color = Muted, modifier = Modifier.padding(24.dp), style = MaterialTheme.typography.bodyMedium)
-    } else {
-        val pinned = filtered.filter { it.pinned }
-        val rest = filtered.filterNot { it.pinned }
-        val groups = rest.groupBy { monthLabel(it.updatedAt) } // insertion order == reverse-chronological, notes already sorted
-
-        LazyColumn(contentPadding = PaddingValues(bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (pinned.isNotEmpty()) {
-                item(key = "pinned-header") { SectionHeader("In primo piano") }
-                items(pinned, key = { "p:" + it.id }) { note ->
-                    NoteCard(note, onClick = { onOpen(note) }, onTogglePin = { onTogglePin(note) }, onDelete = { onDelete(note) })
-                }
-            }
-            groups.forEach { (label, group) ->
-                item(key = "h:$label") { SectionHeader(label) }
-                items(group, key = { it.id }) { note ->
-                    NoteCard(note, onClick = { onOpen(note) }, onTogglePin = { onTogglePin(note) }, onDelete = { onDelete(note) })
-                }
-            }
-        }
-    }
-
-    if (showFolderManager) {
-        FolderManagerDialog(
-            folders = folders,
-            onRename = onRenameFolder,
-            onDelete = onDeleteFolder,
-            onDismiss = { showFolderManager = false },
-        )
-    }
-}
-
-@Composable
-private fun FolderChip(label: String, selected: Boolean, onClick: () -> Unit) {
+internal fun FolderChip(label: String, selected: Boolean, onClick: () -> Unit) {
     Text(
         text = label,
         color = if (selected) Color(0xFF04121A) else Muted,
@@ -979,7 +863,7 @@ private fun FolderChip(label: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun SectionHeader(label: String) {
+internal fun SectionHeader(label: String) {
     Text(
         label.replaceFirstChar { it.uppercase() },
         color = Muted,
@@ -990,226 +874,14 @@ private fun SectionHeader(label: String) {
 }
 
 /** Italian month name, kept plain (no year) for the current year, "mese anno" otherwise. */
-private fun monthLabel(epochMillis: Long): String {
+internal fun monthLabel(epochMillis: Long): String {
     val date = Instant.ofEpochMilli(epochMillis).atZone(ZoneId.systemDefault()).toLocalDate()
     val month = date.month.getDisplayName(TextStyle.FULL, Locale.ITALIAN)
     return if (date.year == LocalDate.now().year) month else "$month ${date.year}"
 }
 
 @Composable
-private fun NoteCard(note: ArchiveItem, onClick: () -> Unit, onTogglePin: () -> Unit, onDelete: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(CardBg)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(note.title, style = MaterialTheme.typography.titleMedium, color = Ink, maxLines = 1)
-            if (note.content.isNotBlank()) {
-                Spacer(Modifier.size(2.dp))
-                // Testo semplice, non la sintassi grezza (§ ora che il
-                // contenuto può portare markup **grassetto**/[color=...]/ecc.,
-                // stesso fix già fatto per NoteTile di Memoria).
-                Text(MemoryMarkup.plainText(note.content), style = MaterialTheme.typography.bodySmall, color = Muted, maxLines = 2)
-            }
-        }
-        IconButton(onClick = onTogglePin) {
-            Icon(
-                Icons.Filled.PushPin,
-                contentDescription = if (note.pinned) "Togli dai preferiti" else "Metti in primo piano",
-                // One glyph, tint-switched — PushPin's filled/outlined variants
-                // share one name across two Compose packages, which Kotlin
-                // cannot import unaliased in the same file.
-                tint = if (note.pinned) Gold else Muted,
-                modifier = Modifier.size(20.dp),
-            )
-        }
-        IconButton(onClick = onDelete) {
-            Icon(Icons.Filled.Delete, contentDescription = "Elimina", tint = Muted, modifier = Modifier.size(20.dp))
-        }
-    }
-}
-
-/**
- * The full-screen note editor: a big borderless "Titolo" like
- * [com.simone.jarvismobile.ui.agenda.AddTaskScreen]'s, a folder chip that
- * opens [FolderPickerDialog], and a content field that fills the rest of the
- * screen instead of a cramped multi-line box in a dialog.
- *
- * Formatting/background are the exact same machinery Memoria's editor already
- * built (§ richiesta esplicita dell'utente: "deve essere tutto personalizzabile:
- * sfondo dietro, colore, carattere, ecc.") — [FormattingToolbar]/
- * [MarkupVisualTransformation]/[ThemeSelector]/[MemoryNoteThemes]/
- * [MemoryLineSpacing], reused verbatim from `ui.memory.MemoryScreen`, not a
- * second rich-text engine: an Archivio note's [ArchiveItem.content] stores
- * the identical inline markup Memoria's `MemoryRecord.text` does.
- */
-@Composable
-private fun NoteEditorScreen(
-    note: ArchiveItem?,
-    folders: List<String>,
-    customBackgrounds: List<String>,
-    backgroundStore: NoteBackgroundStore,
-    onImportBackground: () -> Unit,
-    onDeleteBackground: (String) -> Unit,
-    onDismiss: () -> Unit,
-    onSave: (title: String, content: String, folder: String, pinned: Boolean, theme: String, spacing: String) -> Unit,
-    onDelete: (() -> Unit)?,
-) {
-    var title by remember { mutableStateOf(note?.title ?: "") }
-    var field by remember { mutableStateOf(TextFieldValue(note?.content ?: "")) }
-    var folder by remember { mutableStateOf(note?.folder ?: "") }
-    var pinned by remember { mutableStateOf(note?.pinned ?: false) }
-    var theme by remember { mutableStateOf(MemoryNoteThemes.sanitize(note?.theme ?: "")) }
-    var spacing by remember { mutableStateOf(MemoryLineSpacing.sanitize(note?.spacing ?: "")) }
-    var showFolderPicker by remember { mutableStateOf(false) }
-    var showPreview by remember { mutableStateOf(false) }
-
-    fun save() = onSave(title, field.text, folder, pinned, theme, spacing)
-
-    Box(Modifier.fillMaxSize().imePadding()) {
-        val backgroundRes = customBackgroundRes(theme)
-        val userBitmap = if (MemoryNoteThemes.isUserImage(theme)) rememberUserBackgroundBitmap(backgroundStore, theme) else null
-        if (backgroundRes != null || userBitmap != null) {
-            if (backgroundRes != null) {
-                Image(
-                    painter = painterResource(backgroundRes),
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            } else {
-                Image(
-                    bitmap = userBitmap!!,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            }
-            // A dark scrim over the artwork — Ink is a light tone made for a
-            // dark background, and these images are mostly light "paper".
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .background(Brush.verticalGradient(listOf(Color(0xCC050C16), Color(0xB3081420), Color(0xCC03080E)))),
-            )
-        } else {
-            Box(Modifier.fillMaxSize().background(themeBackgroundBrush(theme)))
-        }
-        Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.statusBars).padding(horizontal = 20.dp)) {
-            Spacer(Modifier.size(16.dp))
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onDismiss) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Annulla", tint = Ink)
-                }
-                Text(
-                    if (note == null) "Nuova nota" else "Modifica nota",
-                    color = Ink,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.weight(1f),
-                )
-                if (onDelete != null) {
-                    IconButton(onClick = onDelete) {
-                        Icon(Icons.Filled.Delete, contentDescription = "Elimina", tint = Muted)
-                    }
-                }
-                IconButton(onClick = { pinned = !pinned }) {
-                    Icon(
-                        Icons.Filled.PushPin, // one glyph, tint-switched — see NoteCard's comment
-                        contentDescription = "In primo piano",
-                        tint = if (pinned) Gold else Muted,
-                    )
-                }
-                TextButton(onClick = ::save, enabled = title.isNotBlank()) {
-                    Text("Salva", color = if (title.isNotBlank()) Cyan else Muted)
-                }
-            }
-            Spacer(Modifier.size(16.dp))
-            OutlinedTextField(
-                value = title,
-                onValueChange = { title = it },
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Titolo", color = Muted, fontSize = 22.sp) },
-                textStyle = MaterialTheme.typography.headlineSmall.copy(color = Ink),
-                colors = borderlessFieldColors(),
-                singleLine = true,
-            )
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                FolderChip(folder.ifBlank { "Senza categoria" }, selected = false) { showFolderPicker = true }
-                Spacer(Modifier.weight(1f))
-                TextButton(onClick = { showPreview = !showPreview }) {
-                    Text(if (showPreview) "Modifica" else "Anteprima", color = Cyan)
-                }
-            }
-            ThemeSelector(
-                current = theme,
-                onSelect = { theme = it },
-                customUserBackgrounds = customBackgrounds,
-                backgroundStore = backgroundStore,
-                onImport = onImportBackground,
-                onDelete = { id -> onDeleteBackground(id); if (theme == id) theme = MemoryNoteThemes.DEFAULT },
-            )
-            Spacer(Modifier.size(8.dp))
-            if (showPreview) {
-                MarkupPreview(
-                    raw = field.text,
-                    accent = Cyan,
-                    spacing = spacing,
-                    onToggleLine = { index -> field = field.copy(text = toggleChecklistLine(field.text, index)) },
-                    modifier = Modifier.fillMaxWidth().weight(1f),
-                )
-            } else {
-                OutlinedTextField(
-                    value = field,
-                    onValueChange = { field = it },
-                    modifier = Modifier.fillMaxWidth().weight(1f),
-                    placeholder = { Text("Nota…", color = Muted) },
-                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = Ink, lineHeight = spacingLineHeight(spacing)),
-                    visualTransformation = MarkupVisualTransformation,
-                    colors = borderlessFieldColors(),
-                )
-                FormattingToolbar(
-                    onTitle = { field = prefixLine(field, "# ") },
-                    onSubtitle = { field = prefixLine(field, "## ") },
-                    onBold = { field = wrapSelection(field, "**") },
-                    onItalic = { field = wrapSelection(field, "*") },
-                    onUnderline = { field = wrapSelectionWith(field, "<u>", "</u>") },
-                    onHighlight = { field = wrapSelection(field, "==") },
-                    onTextColor = { hex -> field = wrapSelectionWith(field, "[color=$hex]", "[/color]") },
-                    onHighlightColor = { hex -> field = wrapSelectionWith(field, "[hl=$hex]", "[/hl]") },
-                    onFontSize = { tag -> field = wrapSelectionWith(field, "[size=$tag]", "[/size]") },
-                    onBullet = { field = prefixLine(field, "- ") },
-                    onNumbered = { field = prefixLine(field, "1. ") },
-                    onChecklist = { field = prefixLine(field, "- [ ] ") },
-                    onDivider = { field = insertDivider(field) },
-                    onAlignStart = { field = setLineAlign(field, "") },
-                    onAlignCenter = { field = setLineAlign(field, "[center]") },
-                    onAlignEnd = { field = setLineAlign(field, "[right]") },
-                    spacing = spacing,
-                    onSpacing = { spacing = it },
-                )
-            }
-            Spacer(Modifier.size(16.dp))
-        }
-    }
-
-    if (showFolderPicker) {
-        FolderPickerDialog(
-            folders = folders,
-            current = folder,
-            onDismiss = { showFolderPicker = false },
-            onPick = { folder = it; showFolderPicker = false },
-        )
-    }
-}
-
-@Composable
-private fun borderlessFieldColors() = OutlinedTextFieldDefaults.colors(
+internal fun borderlessFieldColors() = OutlinedTextFieldDefaults.colors(
     focusedBorderColor = Color.Transparent,
     unfocusedBorderColor = Color.Transparent,
     focusedContainerColor = Color.Transparent,
@@ -1220,7 +892,7 @@ private fun borderlessFieldColors() = OutlinedTextFieldDefaults.colors(
 )
 
 @Composable
-private fun FolderPickerDialog(folders: List<String>, current: String, onDismiss: () -> Unit, onPick: (String) -> Unit) {
+internal fun FolderPickerDialog(folders: List<String>, current: String, onDismiss: () -> Unit, onPick: (String) -> Unit) {
     var newFolder by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1265,7 +937,7 @@ private fun FolderPickerDialog(folders: List<String>, current: String, onDismiss
  * a folder can be cleared in this app.
  */
 @Composable
-private fun FolderManagerDialog(
+internal fun FolderManagerDialog(
     folders: List<String>,
     onRename: (String, String) -> Unit,
     onDelete: (String) -> Unit,
@@ -1450,7 +1122,7 @@ private fun AddWatchDialog(onDismiss: () -> Unit, onCreate: (String, String, Str
 }
 
 @Composable
-private fun NameDialog(title: String, label: String, initial: String = "", onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
+internal fun NameDialog(title: String, label: String, initial: String = "", onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
     var name by remember { mutableStateOf(initial) }
     AlertDialog(
         onDismissRequest = onDismiss,
