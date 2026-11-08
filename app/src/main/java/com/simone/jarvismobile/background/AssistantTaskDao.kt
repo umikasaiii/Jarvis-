@@ -30,6 +30,21 @@ interface AssistantTaskDao {
     )
     suspend fun activeIds(): List<String>
 
+    /** BETA 2/8 — (id, input) of tasks still queued or running; read-only query, no schema change. */
+    @Query(
+        "SELECT id, input FROM assistant_tasks " +
+            "WHERE status IN ('QUEUED','LOADING_MODEL','UNDERSTANDING','RETRIEVING_MEMORY','GENERATING') " +
+            "ORDER BY createdAt",
+    )
+    suspend fun activeTasks(): List<ActiveTaskRow>
+
+    /** BETA 2/8 — how many OLDER tasks are still active: a newer answer waits its turn so the chat keeps arrival order. */
+    @Query(
+        "SELECT COUNT(*) FROM assistant_tasks WHERE id != :id AND createdAt < :createdAt " +
+            "AND status IN ('QUEUED','LOADING_MODEL','UNDERSTANDING','RETRIEVING_MEMORY','GENERATING')",
+    )
+    suspend fun olderActiveCount(id: String, createdAt: Long): Int
+
     @Query(
         "UPDATE assistant_tasks SET status = :status, progress = :progress, " +
             "output = :output, errorCode = :errorCode, updatedAt = :updatedAt WHERE id = :id",
@@ -46,3 +61,6 @@ interface AssistantTaskDao {
     @Query("DELETE FROM assistant_tasks WHERE createdAt < :before AND status IN ('COMPLETED','FAILED','CANCELLED')")
     suspend fun deleteFinishedBefore(before: Long)
 }
+
+/** Query projection (not an entity): the columns the duplicate guard needs. */
+data class ActiveTaskRow(val id: String, val input: String)

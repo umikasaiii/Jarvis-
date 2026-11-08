@@ -30,6 +30,12 @@ import com.simone.jarvismobile.data.StoredMessage
 import com.simone.jarvismobile.llm.LlmEngine
 import com.simone.jarvismobile.llm.LlmGenerationTimeoutException
 import com.simone.jarvismobile.llm.LlmLoadState
+import com.simone.jarvismobile.core.chat.Transcript
+import com.simone.jarvismobile.core.chat.TranscriptLine
+import com.simone.jarvismobile.core.llm.ModelAvailability
+import com.simone.jarvismobile.core.llm.ModelAvailabilityResolver
+import com.simone.jarvismobile.core.llm.ModelRuntimeState
+import com.simone.jarvismobile.core.memory.StoredFactQuestion
 import com.simone.jarvismobile.llm.LlmRouter
 import com.simone.jarvismobile.llm.ModelSlot
 import com.simone.jarvismobile.knowledge.KnowledgeRepository
@@ -309,7 +315,10 @@ class SessionCoordinator @Inject constructor(
     private fun appendMessage(fromUser: Boolean, text: String, taskId: String? = null) {
         if (text.isBlank()) return
         val trimmed = text.trim()
-        if (taskId != null && _messages.value.any { it.fromUser == fromUser && it.taskId == taskId }) return
+        if (taskId != null) {
+            val lines = _messages.value.map { TranscriptLine(it.fromUser, it.text, it.taskId) }
+            if (Transcript.append(lines, fromUser, trimmed, taskId) === lines) return // same task, same side: already there
+        }
         // Remember whether JARVIS just asked something, so the next user message
         // is read as an answer rather than scanned for commands.
         if (!fromUser) {
@@ -1161,7 +1170,7 @@ class SessionCoordinator @Inject constructor(
         }
 
         if (llm.loadState.value != LlmLoadState.LOADED) {
-            return "Ho capito: $transcript. Carica un modello nella schermata Modelli per risposte vere."
+            return modelUnavailableMessage()
         }
         // The fast model already judged whether this deserves the big brain.
         return chatReply(
@@ -1400,7 +1409,15 @@ class SessionCoordinator @Inject constructor(
         // in cited passages rather than improvised.
         val docEvidence = runCancellable { documents.documentEvidence(transcript) }.getOrNull()
 
+        // BETA 2/8 — "qual è la mia targa?"-style questions: tell the model, in the turn itself, to answer only
+        // from the notes/conversation and to admit ignorance otherwise (never invent a personal fact).
+        val groundingNote = if (StoredFactQuestion.matches(transcript)) {
+            StoredFactQuestion.groundingNote(hasRelevantNotes = retrieved.isNotEmpty())
+        } else {
+            null
+        }
         val message = buildString {
+            groundingNote?.let { append(it).append('\n') }
             if (conversationHint.isNotBlank()) {
                 append("[Risultati verificati dal sistema da usare nella risposta: ")
                 append(conversationHint.replace('\n', ' ').takeLast(COMPOUND_CONTEXT_CHARS))
@@ -1470,6 +1487,7 @@ class SessionCoordinator @Inject constructor(
         }
         retryReply?.let(AssistantReplyCleaner::clean)?.ifBlank { null }?.let { return it }
 
+        if (llm.loadState.value != LlmLoadState.LOADED) return modelUnavailableMessage()
         return "Il modello non è riuscito a rispondere. Prova «Nuova conversazione», " +
             "o ricarica il modello dalla schermata Modelli."
     }
@@ -1575,8 +1593,31 @@ class SessionCoordinator @Inject constructor(
      */
     suspend fun processQueuedText(taskId: String, text: String): String? {
         restoreChat()
-        _messages.value.firstOrNull { !it.fromUser && it.taskId == taskId }?.let { return it.text }
+        Transcript.existingReply(_messages.value.map { TranscriptLine(it.fromUser, it.text, it.taskId) }, taskId)?.let { return it }
         return processText(text, taskId)
+    }
+
+    /**
+     * BETA 2/8 — a queued answer failed for good (after the automatic retry): leave a visible, idempotent
+     * assistant line in the chat instead of a silent gap after the user's message.
+     */
+    suspend fun reportQueuedFailure(taskId: String, message: String) {
+        restoreChat()
+        appendMessage(fromUser = false, text = message, taskId = taskId)
+    }
+
+    /** The honest reason the local model cannot answer right now (never an echo of the user's text). */
+    private suspend fun modelUnavailableMessage(): String {
+        val path = runCatching { settings.modelPath.first() }.getOrDefault("")
+        val state = when (llm.loadState.value) {
+            LlmLoadState.LOADED -> ModelRuntimeState.LOADED
+            LlmLoadState.LOADING -> ModelRuntimeState.LOADING
+            LlmLoadState.ERROR -> ModelRuntimeState.ERROR
+            LlmLoadState.UNLOADED -> ModelRuntimeState.UNLOADED
+        }
+        val exists = path.isNotBlank() && runCatching { File(path).isFile }.getOrDefault(false)
+        return (ModelAvailabilityResolver.resolve(state, path, exists, llm.lastLoadDetail.value) as? ModelAvailability.Unavailable)
+            ?.message ?: "Il modello non risponde."
     }
 
     private suspend fun processText(text: String, taskId: String?): String? {
@@ -2131,7 +2172,13 @@ class SessionCoordinator @Inject constructor(
     suspend fun ensureModelReady() {
         restoreChat()
         val current = llm.loadState.value
-        if (current == LlmLoadState.LOADED || current == LlmLoadState.LOADING) return
+        if (current == LlmLoadState.LOADING) {
+            // BETA 2/8: a message sent right after app start must WAIT for the load that is already running
+            // and then be answered by the model, instead of racing it and getting a "still loading" reply.
+            kotlinx.coroutines.withTimeoutOrNull(MODEL_LOAD_WAIT_MS) { llm.loadState.first { it != LlmLoadState.LOADING } }
+            return
+        }
+        if (current == LlmLoadState.LOADED) return
         val path = settings.modelPath.first()
         if (path.isBlank()) return
         val file = File(path)
@@ -2522,6 +2569,9 @@ class SessionCoordinator @Inject constructor(
 
         /** Bound context shared among independently routed parts of one message. */
         const val COMPOUND_CONTEXT_CHARS = 1_200
+
+        /** BETA 2/8: how long a queued answer waits for a model load already in progress. */
+        const val MODEL_LOAD_WAIT_MS = 180_000L
 
         const val TIMEOUT_REPLY =
             "La risposta si è bloccata e l'ho fermata automaticamente. Prova a riformulare la richiesta."

@@ -3,7 +3,10 @@ package com.simone.jarvismobile.llm
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.os.StatFs
 import androidx.documentfile.provider.DocumentFile
+import com.simone.jarvismobile.core.llm.ImportVerdict
+import com.simone.jarvismobile.core.llm.ModelImportPolicy
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -20,6 +23,9 @@ sealed interface ImportResult {
     /** The copy did not match the source size (truncated) — file was removed. */
     data class Incomplete(val expectedBytes: Long, val copiedBytes: Long) : ImportResult
     data class Failed(val reason: String) : ImportResult
+
+    /** BETA 2/8 — refused BEFORE copying (wrong format, too small, no space, model in use); nothing was touched. */
+    data class Rejected(val message: String) : ImportResult
 }
 
 /**
@@ -34,7 +40,7 @@ class ModelManager @Inject constructor(
     private fun modelsDir(): File = File(context.filesDir, "models").apply { mkdirs() }
 
     fun listModels(): List<LocalModel> =
-        modelsDir().listFiles()?.filter { it.isFile }
+        modelsDir().listFiles()?.filter { it.isFile && !it.name.endsWith(".importing") }
             ?.map { LocalModel(it.name, it.absolutePath, it.length()) }
             ?.sortedBy { it.name }
             .orEmpty()
@@ -44,27 +50,48 @@ class ModelManager @Inject constructor(
      * memory), and verifies the copied size against the source size to catch a
      * truncated/incomplete copy before the user tries to load a broken model.
      */
-    suspend fun importModel(uri: Uri): ImportResult = withContext(Dispatchers.IO) {
-        val name = displayName(uri) ?: "model-${System.currentTimeMillis()}.litertlm"
+    suspend fun importModel(uri: Uri, inUsePaths: Set<String> = emptySet()): ImportResult = withContext(Dispatchers.IO) {
         val expected = sourceSize(uri)
-        val target = File(modelsDir(), name)
+        val dir = modelsDir()
+        val fallback = "model-${System.currentTimeMillis()}.litertlm"
+        val shownName = displayName(uri)
+        val free = runCatching { StatFs(dir.path).availableBytes }.getOrDefault(-1L)
+        val targetCandidate = File(dir, ModelImportPolicy.safeFileName(shownName, fallback))
+        val verdict = ModelImportPolicy.validate(
+            displayName = shownName,
+            sizeBytes = expected,
+            freeBytes = free,
+            inUse = targetCandidate.absolutePath in inUsePaths,
+            fallbackName = fallback,
+        )
+        val name = when (verdict) {
+            is ImportVerdict.Reject -> return@withContext ImportResult.Rejected(verdict.message)
+            is ImportVerdict.Accept -> verdict.safeName
+        }
+        val target = File(dir, name)
+        // Copy to a temporary file and only then swap it in: a failed or interrupted import must never
+        // destroy an existing, working model with the same name.
+        val temp = File(dir, "$name.importing")
         try {
             context.contentResolver.openInputStream(uri).use { input ->
                 if (input == null) return@withContext ImportResult.Failed("stream_null")
-                target.outputStream().use { output ->
+                temp.outputStream().use { output ->
                     input.copyTo(output, bufferSize = 1 shl 20)
                     output.flush()
                 }
             }
-            val copied = target.length()
+            val copied = temp.length()
             if (expected > 0 && copied != expected) {
-                runCatching { target.delete() }
+                runCatching { temp.delete() }
                 ImportResult.Incomplete(expected, copied)
+            } else if (!temp.renameTo(target)) {
+                runCatching { temp.delete() }
+                ImportResult.Failed("rename_failed")
             } else {
                 ImportResult.Ok(LocalModel(target.name, target.absolutePath, copied))
             }
         } catch (e: Exception) {
-            runCatching { if (target.exists()) target.delete() }
+            runCatching { if (temp.exists()) temp.delete() }
             ImportResult.Failed(e.javaClass.simpleName)
         }
     }

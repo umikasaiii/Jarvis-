@@ -15,6 +15,7 @@ import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 import com.simone.jarvismobile.R
+import com.simone.jarvismobile.core.chat.EnqueueGuard
 import com.simone.jarvismobile.audio.SessionCoordinator
 import com.simone.jarvismobile.data.SettingsRepository
 import com.simone.jarvismobile.ui.MainActivity
@@ -46,6 +47,12 @@ class AssistantTaskWorker(
 
         setForeground(processingForeground(id, 5, "Preparazione"))
         return runCatching {
+            // BETA 2/8: answer in arrival order. A newer message waits (bounded) for older queued ones, so two
+            // quick sends can never produce "answer 2, answer 1" in the chat.
+            val waitUntil = System.currentTimeMillis() + ORDER_WAIT_MS
+            while (dao.olderActiveCount(id, task.createdAt) > 0 && System.currentTimeMillis() < waitUntil) {
+                kotlinx.coroutines.delay(ORDER_POLL_MS)
+            }
             update(dao, id, AssistantTaskStatus.LOADING_MODEL, 10)
             dependencies.coordinator().ensureModelReady()
 
@@ -92,7 +99,15 @@ class AssistantTaskWorker(
             } else {
                 val code = error.message?.take(80) ?: error.javaClass.simpleName
                 dao.update(id, AssistantTaskStatus.FAILED.name, 0, errorCode = code)
-                if (runAttemptCount < 1) Result.retry() else Result.failure()
+                if (runAttemptCount < 1) {
+                    Result.retry()
+                } else {
+                    // Final failure: leave a visible line in the chat instead of a silent gap.
+                    runCatching {
+                        dependencies.coordinator().reportQueuedFailure(id, EnqueueGuard.failureMessage(code))
+                    }
+                    Result.failure()
+                }
             }
         }
     }
@@ -193,6 +208,8 @@ class AssistantTaskWorker(
     companion object {
         const val KEY_TASK_ID = "task_id"
         private const val PROCESSING_NOTIFICATION_BASE = 2_000
+        private const val ORDER_WAIT_MS = 120_000L
+        private const val ORDER_POLL_MS = 500L
         private const val RESPONSE_NOTIFICATION_BASE = 3_000
     }
 }

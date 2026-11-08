@@ -7,7 +7,10 @@ import androidx.work.WorkManager
 import androidx.work.workDataOf
 import com.simone.jarvismobile.audio.SessionCoordinator
 import dagger.hilt.android.qualifiers.ApplicationContext
+import com.simone.jarvismobile.core.chat.EnqueueGuard
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -24,11 +27,19 @@ class AssistantTaskQueue @Inject constructor(
     val recent: Flow<List<AssistantTask>> = dao.observeRecent()
     val activeCount: Flow<Int> = dao.observeActiveCount()
 
-    suspend fun enqueueResponse(text: String): String {
+    // BETA 2/8: check-then-insert must be atomic, or a double tap enqueues the same message twice.
+    private val enqueueMutex = Mutex()
+
+    suspend fun enqueueResponse(text: String): String = enqueueMutex.withLock {
+        when (val decision = EnqueueGuard.decide(dao.activeTasks().map { it.id to it.input }, text)) {
+            is EnqueueGuard.Decision.Duplicate -> return@withLock decision.existingTaskId
+            EnqueueGuard.Decision.Empty -> return@withLock ""
+            EnqueueGuard.Decision.Accept -> Unit
+        }
         val id = UUID.randomUUID().toString()
         dao.insert(AssistantTask(id = id, input = text.trim()))
         enqueue(id, ExistingWorkPolicy.KEEP)
-        return id
+        id
     }
 
     suspend fun retry(id: String) {

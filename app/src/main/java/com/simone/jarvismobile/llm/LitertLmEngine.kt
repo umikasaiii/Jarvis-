@@ -1,5 +1,6 @@
 package com.simone.jarvismobile.llm
 
+import android.app.ActivityManager
 import android.content.Context
 import android.util.Log
 import com.google.ai.edge.litertlm.Backend
@@ -8,11 +9,23 @@ import com.google.ai.edge.litertlm.Conversation
 import com.google.ai.edge.litertlm.ConversationConfig
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
+import com.simone.jarvismobile.core.llm.GenerationCancelled
+import com.simone.jarvismobile.core.llm.GenerationStopController
+import com.simone.jarvismobile.core.llm.GenerationTimedOut
+import com.simone.jarvismobile.core.llm.LoadAdviceLevel
+import com.simone.jarvismobile.core.llm.ModelLoadAdvisor
+import com.simone.jarvismobile.core.llm.StopReason
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import java.io.File
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.CancellationException
@@ -66,6 +79,14 @@ class LitertLmEngine @Inject constructor(
     // safe to drive from two coroutines at once.
     private val chatMutex = Mutex()
 
+    // BETA 2/8 — load/unload are serialized with each other and with generation. Before this, two
+    // callers (app start, the first queued answer, the Models screen) could run `load()` at the same
+    // time, and a load/unload/delete could close the native engine under a running generation.
+    private val loadMutex = Mutex()
+    @Volatile private var loadedPath: String? = null
+    private val opCounter = AtomicLong(0)
+    private val engineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
     /**
      * LiteRT-LM 0.14 exposes a native [Conversation.cancelProcess] operation.
      * Keep the precise in-flight conversation so UI/WorkManager cancellation
@@ -78,47 +99,108 @@ class LitertLmEngine @Inject constructor(
 
     override suspend fun load(modelPath: String, modelName: String): Boolean =
         withContext(Dispatchers.Default) {
-            _loadState.value = LlmLoadState.LOADING
-            resetConversation()
-            runCatching { engine?.close() }
-            engine = null
-            try {
-                val config = EngineConfig(
-                    modelPath = modelPath,
-                    backend = Backend.CPU(),
-                    // Context window (sum of input+output tokens). Larger = the
-                    // model can remember a much longer conversation before it must
-                    // drop the oldest turns. 4096 is a good balance on ~8 GB RAM.
-                    maxNumTokens = MAX_CONTEXT_TOKENS,
-                    // Writable dir for compiled artifacts → faster subsequent loads.
-                    cacheDir = context.cacheDir.absolutePath,
-                )
-                val e = Engine(config)
-                // Can take several seconds; we are already off the main thread.
-                e.initialize()
-                engine = e
-                _loadedModelName.value = modelName
-                _lastLoadDetail.value = ""
-                _loadState.value = LlmLoadState.LOADED
-                Log.i(TAG, "llm_loaded")
-                true
-            } catch (e: Throwable) {
-                Log.w(TAG, "llm_load_failed ${e.javaClass.simpleName}")
-                _lastLoadDetail.value = "${e.javaClass.simpleName}: ${e.message?.take(220) ?: ""}"
-                _loadState.value = LlmLoadState.ERROR
-                _loadedModelName.value = null
-                runCatching { engine?.close() }
-                engine = null
-                false
+            opCounter.incrementAndGet() // supersedes any unload() still waiting for the lock
+            loadMutex.withLock {
+                // Already serving exactly this file: a second caller must not reload it (double RAM, lost chat).
+                if (_loadState.value == LlmLoadState.LOADED && loadedPath == modelPath && engine != null) {
+                    _loadedModelName.value = modelName
+                    return@withLock true
+                }
+                // Stop any in-flight generation and wait (bounded) for native code to let go of the engine
+                // BEFORE closing it. Closing under a running generation crashes the process.
+                cancel()
+                if (withTimeoutOrNull(UNWIND_TIMEOUT_MS) { chatMutex.lock() } == null) {
+                    _lastLoadDetail.value = "il motore sta ancora terminando una risposta: riprova tra qualche secondo"
+                    Log.w(TAG, "llm_load_busy")
+                    return@withLock false
+                }
+                try {
+                    loadLocked(modelPath, modelName)
+                } finally {
+                    chatMutex.unlock()
+                }
             }
         }
 
-    override fun unload() {
+    /** Body of [load]; runs with [loadMutex] and [chatMutex] held. */
+    private fun loadLocked(modelPath: String, modelName: String): Boolean {
+        _loadState.value = LlmLoadState.LOADING
         resetConversation()
         runCatching { engine?.close() }
         engine = null
+        loadedPath = null
+        return try {
+            val file = File(modelPath)
+            if (!file.isFile) error("model_file_missing")
+            // A native out-of-memory while initialising kills the whole process and cannot be caught:
+            // refuse only the cases that cannot realistically succeed, warn on the tight ones.
+            val mi = ActivityManager.MemoryInfo()
+            (context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager)?.getMemoryInfo(mi)
+            val advice = ModelLoadAdvisor.assess(file.length(), mi.availMem, mi.lowMemory)
+            if (advice.level == LoadAdviceLevel.INSUFFICIENT) throw InsufficientMemoryException(advice.message.orEmpty())
+            if (advice.level == LoadAdviceLevel.TIGHT) Log.w(TAG, "llm_load_tight_memory")
+            val config = EngineConfig(
+                modelPath = modelPath,
+                backend = Backend.CPU(),
+                // Context window (sum of input+output tokens). Larger = the
+                // model can remember a much longer conversation before it must
+                // drop the oldest turns. 4096 is a good balance on ~8 GB RAM.
+                maxNumTokens = MAX_CONTEXT_TOKENS,
+                // Writable dir for compiled artifacts → faster subsequent loads.
+                cacheDir = context.cacheDir.absolutePath,
+            )
+            val e = Engine(config)
+            // Can take several seconds; we are already off the main thread.
+            e.initialize()
+            engine = e
+            loadedPath = modelPath
+            _loadedModelName.value = modelName
+            _lastLoadDetail.value = advice.message.orEmpty()
+            _loadState.value = LlmLoadState.LOADED
+            Log.i(TAG, "llm_loaded")
+            true
+        } catch (e: Throwable) {
+            Log.w(TAG, "llm_load_failed ${e.javaClass.simpleName}")
+            _lastLoadDetail.value = if (e is InsufficientMemoryException) {
+                e.message.orEmpty()
+            } else {
+                "${e.javaClass.simpleName}: ${e.message?.take(220) ?: ""}"
+            }
+            _loadState.value = LlmLoadState.ERROR
+            _loadedModelName.value = null
+            runCatching { engine?.close() }
+            engine = null
+            loadedPath = null
+            false
+        }
+    }
+
+    private class InsufficientMemoryException(message: String) : RuntimeException(message)
+
+    override fun unload() {
+        val token = opCounter.incrementAndGet()
+        // The UI sees "unloaded" at once; the native engine is released as soon as no generation is using it.
         _loadState.value = LlmLoadState.UNLOADED
         _loadedModelName.value = null
+        cancel()
+        engineScope.launch {
+            loadMutex.withLock {
+                // A load() issued after this unload() wins: do not tear down what it just built.
+                if (opCounter.get() != token) return@withLock
+                if (withTimeoutOrNull(UNWIND_TIMEOUT_MS) { chatMutex.lock() } == null) {
+                    Log.w(TAG, "llm_unload_busy")
+                    return@withLock
+                }
+                try {
+                    resetConversation()
+                    runCatching { engine?.close() }
+                    engine = null
+                    loadedPath = null
+                } finally {
+                    chatMutex.unlock()
+                }
+            }
+        }
     }
 
     override suspend fun generate(
@@ -288,22 +370,21 @@ class LitertLmEngine @Inject constructor(
         runCatching { expected.close() }
     }
 
-    private enum class StopReason { USER, TIMEOUT }
-
-    private class ActiveGeneration(private val conversation: Conversation) {
-        private val reason = AtomicReference<StopReason?>(null)
+    /** One in-flight native call; the stop decision lives in the tested core [GenerationStopController]. */
+    private class ActiveGeneration(conversation: Conversation) {
+        private val controller = GenerationStopController { conversation.cancelProcess() }
 
         fun request(stopReason: StopReason) {
-            if (reason.compareAndSet(null, stopReason)) {
-                runCatching { conversation.cancelProcess() }
-            }
+            controller.request(stopReason)
         }
 
         fun throwIfStopped() {
-            when (reason.get()) {
-                StopReason.USER -> throw CancellationException("generation_cancelled")
-                StopReason.TIMEOUT -> throw LlmGenerationTimeoutException()
-                null -> Unit
+            try {
+                controller.throwIfStopped()
+            } catch (_: GenerationCancelled) {
+                throw CancellationException("generation_cancelled")
+            } catch (_: GenerationTimedOut) {
+                throw LlmGenerationTimeoutException()
             }
         }
     }
@@ -325,5 +406,8 @@ class LitertLmEngine @Inject constructor(
          * however long that takes — see [chat]'s own doc comment at the call site.
          */
         const val LOCK_WAIT_TIMEOUT_MS = 4_000L
+
+        /** How long load()/unload() wait for a cancelled generation to release the engine. */
+        const val UNWIND_TIMEOUT_MS = 15_000L
     }
 }

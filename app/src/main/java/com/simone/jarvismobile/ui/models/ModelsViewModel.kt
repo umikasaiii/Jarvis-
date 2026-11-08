@@ -106,7 +106,13 @@ class ModelsViewModel @Inject constructor(
         _busy.value = true
         _status.value = "Importazione in corso… (i modelli sono grandi, può richiedere qualche minuto)"
         viewModelScope.launch {
-            _status.value = when (val r = modelManager.importModel(uri)) {
+            val inUse = buildSet {
+                if (llm.loadState.value != LlmLoadState.UNLOADED) settings.modelPath.first().takeIf { it.isNotBlank() }?.let { add(it) }
+                if (router.advancedLoadState.value != LlmLoadState.UNLOADED) settings.advancedModelPath.first().takeIf { it.isNotBlank() }?.let { add(it) }
+                if (router.classifierLoadState.value != LlmLoadState.UNLOADED) settings.classifierModelPath.first().takeIf { it.isNotBlank() }?.let { add(it) }
+            }
+            _status.value = when (val r = modelManager.importModel(uri, inUse)) {
+                is ImportResult.Rejected -> r.message
                 is ImportResult.Ok -> "Importato: ${r.model.name} (${r.model.sizeBytes / (1024 * 1024)} MiB, completo)"
                 is ImportResult.Incomplete ->
                     "Copia incompleta: attesi ${r.expectedBytes / (1024 * 1024)} MiB, " +
@@ -247,7 +253,20 @@ class ModelsViewModel @Inject constructor(
     }
 
     fun delete(model: LocalModel) {
-        modelManager.deleteModel(model.path)
-        refresh()
+        viewModelScope.launch {
+            // BETA 2/8: never delete a file an engine still has mapped — release that slot first, so the
+            // chat reports "model missing" cleanly instead of failing on a dangling path.
+            if (model.path == settings.modelPath.first()) {
+                llm.unload(); settings.clearActiveModel()
+            }
+            if (model.path == settings.advancedModelPath.first()) {
+                router.advanced.unload(); settings.clearAdvancedModel()
+            }
+            if (model.path == settings.classifierModelPath.first()) {
+                router.classifier.unload(); settings.clearClassifierModel()
+            }
+            modelManager.deleteModel(model.path)
+            refresh()
+        }
     }
 }
