@@ -45,6 +45,10 @@ class AgendaRepository @Inject constructor(
     private val mutex = Mutex()
 
     private val _entries = MutableStateFlow<List<AgendaEntry>>(emptyList())
+    private val _syncWarning = MutableStateFlow("")
+
+    /** Non-empty when the last save was blocked or only partly mirrored; shown to the user. */
+    val syncWarning: StateFlow<String> = _syncWarning.asStateFlow()
 
     /** The whole agenda, chronologically. Observed by the dashboard. */
     val entries: StateFlow<List<AgendaEntry>> = _entries.asStateFlow()
@@ -79,7 +83,7 @@ class AgendaRepository @Inject constructor(
     suspend fun add(entry: AgendaEntry): Boolean = mutex.withLock {
         val current = loadLocked()
         val updated = Agenda.sorted(current + entry)
-        val ok = writeRaw(Agenda.renderFile(updated))
+        val ok = writeRaw(updated)
         if (ok) {
             _entries.value = updated
             reminderScheduler.sync(updated)
@@ -104,7 +108,7 @@ class AgendaRepository @Inject constructor(
             completedAt = if (done) LocalDate.now() else null,
         )
         val updated = Agenda.sorted(current.map { if (it.id == id) updatedEntry else it })
-        if (!writeRaw(Agenda.renderFile(updated))) return@withLock null
+        if (!writeRaw(updated)) return@withLock null
         _entries.value = updated
         reminderScheduler.cancelEntry(id)
         // A re-opened item gets its alerts scheduled again; a completed one does not.
@@ -122,7 +126,7 @@ class AgendaRepository @Inject constructor(
         val target = current.firstOrNull { it.id == id } ?: return@withLock null
         val updatedEntry = transform(target).copy(id = id)
         val updated = Agenda.sorted(current.map { if (it.id == id) updatedEntry else it })
-        if (!writeRaw(Agenda.renderFile(updated))) return@withLock null
+        if (!writeRaw(updated)) return@withLock null
         _entries.value = updated
         reminderScheduler.cancelEntry(id)
         reminderScheduler.sync(updated)
@@ -134,7 +138,7 @@ class AgendaRepository @Inject constructor(
         val current = loadLocked()
         if (current.none { it.id == id }) return@withLock false
         val updated = current.filterNot { it.id == id || it.parentId == id }
-        if (!writeRaw(Agenda.renderFile(updated))) return@withLock false
+        if (!writeRaw(updated)) return@withLock false
         _entries.value = updated
         reminderScheduler.cancelEntry(id)
         reminderScheduler.sync(updated)
@@ -155,7 +159,7 @@ class AgendaRepository @Inject constructor(
             order = (current.filter { it.parentId == parentId }.maxOfOrNull { it.order } ?: 0) + 1,
         )
         val updated = Agenda.sorted(current + child)
-        if (!writeRaw(Agenda.renderFile(updated))) return@withLock null
+        if (!writeRaw(updated)) return@withLock null
         _entries.value = updated
         child
     }
@@ -167,7 +171,7 @@ class AgendaRepository @Inject constructor(
             it.text.contains(needle.trim(), ignoreCase = true)
         } ?: return@withLock null
         val updated = current - target
-        if (!writeRaw(Agenda.renderFile(updated))) return@withLock null
+        if (!writeRaw(updated)) return@withLock null
         _entries.value = updated
         reminderScheduler.cancelEntry(target.id)
         reminderScheduler.sync(updated)
@@ -180,7 +184,7 @@ class AgendaRepository @Inject constructor(
         val target = current.firstOrNull { it.id == id } ?: return@withLock null
         val updatedEntry = target.copy(alerts = alerts.distinctBy { it.key })
         val updated = Agenda.sorted(current.map { if (it.id == id) updatedEntry else it })
-        if (!writeRaw(Agenda.renderFile(updated))) return@withLock null
+        if (!writeRaw(updated)) return@withLock null
         _entries.value = updated
         reminderScheduler.cancelEntry(id)
         reminderScheduler.sync(updated)
@@ -265,12 +269,32 @@ class AgendaRepository @Inject constructor(
         return Result.success(Agenda.renderFile(byId.values.toList()))
     }
 
-    private suspend fun writeRaw(content: String): Boolean {
+    /**
+     * Writes the agenda WITHOUT discarding anything else in the file (BETA 4): the text
+     * already on disk (title, headings, free notes, Obsidian edits) is read first and only
+     * the task lines are replaced ([Agenda.renderPreserving]). If the existing file cannot
+     * be read, nothing is written — a failed read must never turn into an overwrite.
+     */
+    private suspend fun writeRaw(entries: List<AgendaEntry>): Boolean {
         // Local first and always — it is the source that cannot silently fail.
-        val localOk = writeLocal(content)
-        // Mirror into the vault so Obsidian still sees the file; best-effort, and
-        // never the sole copy, so its flakiness can't lose data.
-        if (vault.isConfigured()) vault.writeJarvisFile(AGENDA_FILE, content)
+        val localText = readLocal().getOrElse {
+            Log.w(TAG, "agenda_write_blocked local_read_failed")
+            _syncWarning.value = "Agenda non salvata: non riesco a leggere il file esistente, quindi non lo sovrascrivo."
+            return false
+        }
+        val localOk = writeLocal(Agenda.renderPreserving(localText, entries))
+        // Mirror into the vault so Obsidian still sees the file; best-effort, and never the
+        // sole copy. If the vault copy cannot be READ it is left untouched.
+        if (vault.isConfigured()) {
+            val vaultText = vault.readJarvisFileResult(AGENDA_FILE)
+            if (vaultText.isSuccess) {
+                vault.writeJarvisFile(AGENDA_FILE, Agenda.renderPreserving(vaultText.getOrNull().orEmpty(), entries))
+                _syncWarning.value = ""
+            } else {
+                Log.w(TAG, "agenda_vault_mirror_skipped read_failed")
+                _syncWarning.value = "Agenda salvata sul telefono, ma la copia nel vault non è stata aggiornata (file non leggibile)."
+            }
+        }
         return localOk
     }
 

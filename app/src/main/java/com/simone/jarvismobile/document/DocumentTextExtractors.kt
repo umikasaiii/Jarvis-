@@ -23,6 +23,11 @@ object DocumentTextExtractors {
     private const val TAG = "JarvisDocExtract"
     const val PARSER_VERSION = 1
 
+    /** [ParsedMetadata.extra] key an extractor sets when it can say WHY there is no text. */
+    const val EXTRA_KEY = "extraction"
+    const val SCANNED_PDF = "scanned_pdf"
+    const val CORRUPT = "corrupt"
+
     /** Recognised binary formats. Text formats are handled by the core registry. */
     fun isBinary(mimeType: String, fileName: String): Boolean =
         isPdf(mimeType, fileName) || isDocx(mimeType, fileName)
@@ -68,12 +73,14 @@ object DocumentTextExtractors {
                         title = info?.title?.takeIf { it.isNotBlank() } ?: fileName.substringBeforeLast('.'),
                         author = info?.author?.takeIf { it.isNotBlank() },
                         pageCount = pages,
+                        // Pages exist but not one character came out: it is a scan (images only).
+                        extra = if (pages > 0 && sections.isEmpty()) mapOf(EXTRA_KEY to SCANNED_PDF) else emptyMap(),
                     ),
                 )
             }
         }.getOrElse {
             Log.w(TAG, "pdf_extract_failed ${it.javaClass.simpleName}")
-            ParsedDocument(documentId, "", listOf(DocumentSection("", null, "")))
+            ParsedDocument(documentId, "", listOf(DocumentSection("", null, "")), ParsedMetadata(extra = mapOf(EXTRA_KEY to CORRUPT)))
         }
     }
 
@@ -95,6 +102,10 @@ object DocumentTextExtractors {
                 }
             }
             val body = xml?.let { docxXmlToText(it) }.orEmpty().trim()
+            // No word/document.xml at all: a zip that is not a Word file.
+            if (xml == null) {
+                return@runCatching ParsedDocument(documentId, "", listOf(DocumentSection("", null, "")), ParsedMetadata(extra = mapOf(EXTRA_KEY to CORRUPT)))
+            }
             ParsedDocument(
                 documentId = documentId,
                 text = body,
@@ -103,7 +114,7 @@ object DocumentTextExtractors {
             )
         }.getOrElse {
             Log.w(TAG, "docx_extract_failed ${it.javaClass.simpleName}")
-            ParsedDocument(documentId, "", listOf(DocumentSection("", null, "")))
+            ParsedDocument(documentId, "", listOf(DocumentSection("", null, "")), ParsedMetadata(extra = mapOf(EXTRA_KEY to CORRUPT)))
         }
     }
 

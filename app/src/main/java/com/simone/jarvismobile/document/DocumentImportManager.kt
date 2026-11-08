@@ -5,7 +5,15 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import android.util.Log
 import com.simone.jarvismobile.core.document.Checksums
+import com.simone.jarvismobile.core.document.BlockKind
 import com.simone.jarvismobile.core.document.DocumentChunker
+import com.simone.jarvismobile.core.document.DocumentFormatPolicy
+import com.simone.jarvismobile.core.document.DocumentKind
+import com.simone.jarvismobile.core.document.DocumentSampler
+import com.simone.jarvismobile.core.document.EvidenceBlock
+import com.simone.jarvismobile.core.document.ImportFailure
+import com.simone.jarvismobile.core.document.ImportRecovery
+import com.simone.jarvismobile.core.document.PassageSanitizer
 import com.simone.jarvismobile.core.document.DocumentRecord
 import com.simone.jarvismobile.core.document.DocumentRetrieval
 import com.simone.jarvismobile.core.document.DocumentSource
@@ -84,7 +92,12 @@ class DocumentImportManager @Inject constructor(
 
     /** Loads the persisted documents into the UI state at startup. */
     suspend fun refresh() {
-        _documents.value = runCatching { dao.allDocuments().map { it.toRecord() } }.getOrDefault(emptyList())
+        val loaded = runCatching { dao.allDocuments().map { it.toRecord() } }.getOrDefault(emptyList())
+        // An import killed half-way (process death, crash) must not stay "in progress" forever.
+        val stuck = ImportRecovery.interrupted(loaded, jobs.keys.toSet())
+        stuck.forEach { runCatching { dao.upsertDocument(it.toEntity()) } }
+        val byId = stuck.associateBy { it.id }
+        _documents.value = loaded.map { byId[it.id] ?: it }
     }
 
     fun dismissDuplicate() { _duplicate.value = null }
@@ -130,6 +143,14 @@ class DocumentImportManager @Inject constructor(
     fun remove(id: String) {
         jobs.remove(id)?.cancel()
         scope.launch {
+            // Delete the app-private copy too (never the user's original), unless another record
+            // still points at the very same file (a forced duplicate import shares it).
+            runCatching {
+                val rec = dao.findById(id)?.toRecord()
+                if (rec != null && _documents.value.none { it.id != id && it.fileName == rec.fileName }) {
+                    localFile(rec).delete()
+                }
+            }
             runCatching {
                 dao.deleteChunks(id)
                 dao.deleteDocument(id)
@@ -206,13 +227,16 @@ class DocumentImportManager @Inject constructor(
         persist(record)
 
         try {
+            // Reject what can never work BEFORE reading a single byte: unsupported format, or a
+            // declared size over the limit.
+            val kind = DocumentFormatPolicy.kindOf(displayName, mime)
+            DocumentFormatPolicy.checkMetadata(displayName, mime, declaredSize)?.let { fail(record, it); return }
+
             // COPYING: read the bytes once (bounded) and copy to app-private store.
             record = record.copy(status = DocumentStatus.COPYING); persist(record)
             val bytes = readBytes(uri)
-            if (bytes == null || bytes.size > MAX_FILE_BYTES) {
-                fail(record, if (bytes == null) "lettura non riuscita" else "file troppo grande")
-                return
-            }
+            if (bytes == null) { fail(record, ImportFailure.UNREADABLE); return }
+            DocumentFormatPolicy.checkBytes(kind ?: DocumentKind.TEXT, bytes)?.let { fail(record, it); return }
             coroutineContext.ensureActive()
             val checksum = Checksums.sha256(bytes)
 
@@ -298,7 +322,13 @@ class DocumentImportManager @Inject constructor(
                 }
             }
             if (parsed.text.isBlank()) {
-                fail(record, "nessun testo estraibile")
+                // Say WHY: a scan needs OCR (not available for PDFs), a broken file is broken.
+                val why = when (parsed.metadata.extra[DocumentTextExtractors.EXTRA_KEY]) {
+                    DocumentTextExtractors.SCANNED_PDF -> ImportFailure.SCANNED_PDF
+                    DocumentTextExtractors.CORRUPT -> ImportFailure.CORRUPT
+                    else -> ImportFailure.NO_TEXT
+                }
+                fail(record.copy(pageCount = parsed.metadata.pageCount), why)
                 return
             }
             record = record.copy(
@@ -342,7 +372,7 @@ class DocumentImportManager @Inject constructor(
                 throw t
             }
             Log.w(TAG, "import_failed id=$id ${t.javaClass.simpleName}")
-            fail(record, t.javaClass.simpleName)
+            fail(record, if (t is OutOfMemoryError) ImportFailure.OUT_OF_MEMORY else ImportFailure.UNREADABLE)
         }
     }
 
@@ -352,12 +382,59 @@ class DocumentImportManager @Inject constructor(
      * library's contract so the coordinator can merge both grounding sources.
      */
     suspend fun documentEvidence(question: String, maxContext: Int = DocumentRetrieval.MAX_CONTEXT): String? {
-        val r = retriever ?: rebuildRetriever().let { retriever } ?: return null
-        val hits = DocumentRetrieval.select(question, r, maxContext = maxContext)
-        if (hits.isEmpty()) return null
-        return hits.joinToString("\n") { p ->
-            "- [" + p.citation + "] " + p.chunk.text.replace('\n', ' ').trim().take(EVIDENCE_CHARS)
+        val blocks = evidenceBlocks(question, null, maxContext)
+        if (blocks.isEmpty()) return null
+        return blocks.joinToString("\n") { b ->
+            "- [" + b.citation + "] " + PassageSanitizer.clean(b.text, EVIDENCE_CHARS).replace('\n', ' ')
         }
+    }
+
+    /**
+     * Retrieval as structured blocks whose citation is built from the document's REAL metadata
+     * (visible name + page/section). [onlyDocs] restricts the search to those documents; null
+     * searches every READY one with the warm index (never rebuilt per message).
+     */
+    suspend fun evidenceBlocks(
+        question: String,
+        onlyDocs: Set<String>?,
+        maxContext: Int = DocumentRetrieval.MAX_CONTEXT,
+    ): List<EvidenceBlock> {
+        val hits = if (onlyDocs == null) {
+            val r = retriever ?: rebuildRetriever().let { retriever } ?: return emptyList()
+            DocumentRetrieval.select(question, r, maxContext = maxContext)
+        } else {
+            val ready = _documents.value.filter { it.id in onlyDocs && it.status == DocumentStatus.READY }.map { it.id }
+            if (ready.isEmpty()) return emptyList()
+            val chunks = withContext(Dispatchers.IO) { runCatching { dao.chunksFor(ready).map { it.toChunk() } }.getOrDefault(emptyList()) }
+            if (chunks.isEmpty()) return emptyList()
+            DocumentRetrieval.select(question, HybridDocumentRetriever(chunks), maxContext = maxContext)
+        }
+        return hits.map { toBlock(it.chunk) }
+    }
+
+    /** Evenly spaced passages of one document for a summary, plus whether they cover all of it. */
+    suspend fun sampleBlocks(documentId: String, tokenBudget: Int): Pair<List<EvidenceBlock>, DocumentSampler.Sample>? {
+        val chunks = withContext(Dispatchers.IO) { runCatching { dao.chunksFor(listOf(documentId)).map { it.toChunk() } }.getOrDefault(emptyList()) }
+        if (chunks.isEmpty()) return null
+        val sample = DocumentSampler.sample(chunks, tokenBudget)
+        return sample.chunks.map { toBlock(it) } to sample
+    }
+
+    /** READY documents, newest first. */
+    suspend fun readyDocuments(): List<DocumentRecord> {
+        if (_documents.value.isEmpty()) refresh()
+        return _documents.value.filter { it.status == DocumentStatus.READY }
+    }
+
+    private fun toBlock(chunk: com.simone.jarvismobile.core.document.DocumentChunk): EvidenceBlock {
+        val record = _documents.value.firstOrNull { it.id == chunk.documentId }
+        val name = record?.displayName?.ifBlank { null } ?: chunk.documentTitle.ifBlank { chunk.fileName }
+        val citation = when {
+            chunk.page != null -> "$name — pagina ${chunk.page}"
+            chunk.section.isNotBlank() -> "$name — sezione ${chunk.section}"
+            else -> name
+        }
+        return EvidenceBlock(BlockKind.DOCUMENT, citation, chunk.text, fileName = name, page = chunk.page, groupLabel = name)
     }
 
     /** True if at least one document is ready to be queried. */
@@ -457,9 +534,16 @@ class DocumentImportManager @Inject constructor(
         }.sortedByDescending { it.importedAt } // same order as the DAO's "ORDER BY importedAt DESC"
     }
 
-    private suspend fun fail(record: DocumentRecord, reason: String) {
-        Log.w(TAG, "import_failed_reason ${record.id} $reason")
-        persist(record.copy(status = DocumentStatus.FAILED, modifiedAt = System.currentTimeMillis()))
+    private suspend fun fail(record: DocumentRecord, reason: ImportFailure) {
+        // Only the code is logged — never a file name or any content.
+        Log.w(TAG, "import_failed_reason ${record.id} ${reason.name}")
+        persist(
+            record.copy(
+                status = DocumentStatus.FAILED,
+                modifiedAt = System.currentTimeMillis(),
+                tags = ImportFailure.withReason(record.tags, reason),
+            ),
+        )
     }
 
     private fun copyToPrivate(safeName: String, bytes: ByteArray) {
@@ -469,8 +553,20 @@ class DocumentImportManager @Inject constructor(
         }.onFailure { Log.w(TAG, "private_copy_failed ${it.javaClass.simpleName}") }
     }
 
+    /** Reads at most the size limit + 1 byte, so a huge file is detected without ever being held in memory. */
     private fun readBytes(uri: Uri): ByteArray? = runCatching {
-        context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            val out = java.io.ByteArrayOutputStream()
+            val buf = ByteArray(64 * 1024)
+            var total = 0L
+            while (total <= DocumentFormatPolicy.MAX_FILE_BYTES) {
+                val n = input.read(buf)
+                if (n < 0) break
+                out.write(buf, 0, n)
+                total += n
+            }
+            out.toByteArray()
+        }
     }.getOrNull()
 
     private fun queryMeta(uri: Uri): Pair<String, Long> {
@@ -495,7 +591,12 @@ class DocumentImportManager @Inject constructor(
         "md", "markdown" -> "text/markdown"
         "json" -> "application/json"
         "csv" -> "text/csv"
-        else -> "text/plain"
+        "html", "htm" -> "text/html"
+        "epub" -> "application/epub+zip"
+        "xlsx" -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        "jpg", "jpeg" -> "image/jpeg"
+        "png" -> "image/png"
+        else -> "application/octet-stream"
     }
 
     private companion object {
@@ -503,7 +604,6 @@ class DocumentImportManager @Inject constructor(
         const val INDEX_VERSION = 1
         const val PRIVATE_DIR = "documents"
         const val EVIDENCE_CHARS = 600
-        const val MAX_FILE_BYTES = 25L * 1024 * 1024
         val VAULT_IMPORT_DIRS = listOf("20_KNOWLEDGE", "Documents")
     }
 }

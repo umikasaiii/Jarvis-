@@ -108,6 +108,11 @@ class ArchiveViewModel @Inject constructor(
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /** Imports that failed (BETA 4): shown with their reason so a rejected file is never silent. */
+    val failedDocuments: StateFlow<List<DocumentRecord>> = documentManager.documents
+        .map { docs -> docs.filter { it.status == DocumentStatus.FAILED }.sortedByDescending { it.importedAt } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     /**
      * Memoria's records, read-only here (§ "una cartella dedicata con le
      * note presenti nella sezione memoria divise per categorie") — editing

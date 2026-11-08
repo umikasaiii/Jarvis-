@@ -86,7 +86,9 @@ import com.simone.jarvismobile.core.archive.ArchiveList
 import com.simone.jarvismobile.core.archive.ArchiveListItem
 import com.simone.jarvismobile.core.archive.ArchiveStatus
 import com.simone.jarvismobile.core.archive.ListItemStatus
+import com.simone.jarvismobile.core.document.DocumentFormatPolicy
 import com.simone.jarvismobile.core.document.DocumentRecord
+import com.simone.jarvismobile.core.document.ImportFailure
 import com.simone.jarvismobile.core.document.DocumentStatus
 import com.simone.jarvismobile.core.memory.MemoryCategories
 import com.simone.jarvismobile.core.memory.MemoryLineSpacing
@@ -166,6 +168,7 @@ fun ArchiveScreen(
     val items by viewModel.items.collectAsStateWithLifecycle()
     val documents by viewModel.filteredDocuments.collectAsStateWithLifecycle()
     val importingDocuments by viewModel.importingDocuments.collectAsStateWithLifecycle()
+    val failedDocuments by viewModel.failedDocuments.collectAsStateWithLifecycle()
     val storageUsage by viewModel.storageUsage.collectAsStateWithLifecycle()
     val memoryRecords by viewModel.filteredMemory.collectAsStateWithLifecycle()
     val customLists by viewModel.customLists.collectAsStateWithLifecycle()
@@ -272,6 +275,7 @@ fun ArchiveScreen(
                 )
                 ArchiveFolder.DOCUMENTS -> DocumentsFolder(
                     documents = documents,
+                    failed = failedDocuments,
                     importing = importingDocuments,
                     folders = documentFolders,
                     selectedFolder = selectedDocFolder,
@@ -342,7 +346,7 @@ fun ArchiveScreen(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(
-                        "Importa dal telefono, resta sul dispositivo come ogni file allegato in chat" +
+                        "Importa dal telefono (PDF, DOCX, EPUB, XLSX, testo, HTML, CSV, JSON, immagini). Limite ${DocumentFormatPolicy.LIMIT_LABEL} per file. Resta sul dispositivo come ogni file allegato in chat" +
                             (selectedDocFolder?.let { " — in «$it»." } ?: "."),
                         style = MaterialTheme.typography.bodySmall,
                         color = Muted,
@@ -569,6 +573,7 @@ private fun monthDayLabel(epochMillis: Long): String {
 private fun DocumentsFolder(
     documents: List<DocumentRecord>,
     importing: List<DocumentRecord>,
+    failed: List<DocumentRecord>,
     folders: List<String>,
     selectedFolder: String?,
     onSelectFolder: (String?) -> Unit,
@@ -586,7 +591,7 @@ private fun DocumentsFolder(
     var moveTarget by remember { mutableStateOf<DocumentRecord?>(null) }
     var showFolderManager by remember { mutableStateOf(false) }
 
-    if (documents.isEmpty() && importing.isEmpty()) {
+    if (documents.isEmpty() && importing.isEmpty() && failed.isEmpty()) {
         Text(
             "Ancora vuoto. I file allegati o importati in chat compaiono qui, oppure tocca «+» per importarli dal telefono.",
             color = Muted,
@@ -637,7 +642,7 @@ private fun DocumentsFolder(
         ARCHIVE_UNFILED_FOLDER -> documents.filter { it.folder().isBlank() }
         else -> documents.filter { it.folder() == selectedFolder }
     }
-    if (filtered.isEmpty() && filteredImporting.isEmpty()) {
+    if (filtered.isEmpty() && filteredImporting.isEmpty() && (failed.isEmpty() || selectedFolder != null)) {
         Text("Nessun file in questa cartella.", color = Muted, modifier = Modifier.padding(24.dp), style = MaterialTheme.typography.bodyMedium)
         return
     }
@@ -645,6 +650,9 @@ private fun DocumentsFolder(
     LazyColumn(contentPadding = PaddingValues(bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (filteredImporting.isNotEmpty()) {
             items(filteredImporting, key = { "importing-${it.id}" }) { doc -> ImportingRow(doc) }
+        }
+        if (selectedFolder == null && failed.isNotEmpty()) {
+            items(failed, key = { "failed-${it.id}" }) { doc -> FailedRow(doc, onDelete = { onDelete(doc) }) }
         }
         items(sorted, key = { it.id }) { doc ->
             Row(
@@ -715,6 +723,10 @@ private val ARCHIVE_DOCUMENT_MIME_TYPES = arrayOf(
     "text/markdown",
     "application/json",
     "text/csv",
+    "text/html",
+    "application/epub+zip",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "image/*",
     "text/*",
 )
 
@@ -760,6 +772,30 @@ private fun ImportingRow(doc: DocumentRecord) {
             )
             Spacer(Modifier.size(4.dp))
             Text(doc.status.importLabel(), color = Muted, fontSize = 11.sp)
+        }
+    }
+}
+
+/** A rejected import: the file name, the real reason, and a way to clear it (BETA 4). */
+@Composable
+private fun FailedRow(doc: DocumentRecord, onDelete: () -> Unit) {
+    val reason = ImportFailure.fromTags(doc.tags)?.message ?: "Importazione non riuscita."
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(CardBg)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(glyph(doc), fontSize = 20.sp)
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text(doc.displayName, color = Ink, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
+            Text("Non utilizzabile — $reason", color = MaterialTheme.colorScheme.error, fontSize = 11.sp)
+        }
+        IconButton(onClick = onDelete) {
+            Icon(Icons.Filled.Delete, contentDescription = "Rimuovi dall'elenco", tint = Muted, modifier = Modifier.size(20.dp))
         }
     }
 }

@@ -35,6 +35,42 @@ object Agenda {
     }
 
     /**
+     * Like [renderFile], but never throws away what the user (or Obsidian) wrote
+     * around the tasks (BETA 4). [original] is the file as it is on disk right now:
+     * every line that is not a task line (title, headings, free text, blank lines,
+     * even a half-typed `- [ ]` the parser does not understand) is kept exactly,
+     * in its original order; the task lines are replaced by [entries] at the place
+     * of the first old task line (or at the end when there was none).
+     * An empty/blank [original] gives the plain [renderFile] output.
+     */
+    fun renderPreserving(original: String, entries: List<AgendaEntry>): String {
+        if (original.isBlank()) return renderFile(entries)
+        val lines = original.split("\n")
+        val out = ArrayList<String>(lines.size + entries.size)
+        var inserted = false
+        val rendered = sorted(entries).map { it.toMarkdown() }
+        for (line in lines) {
+            if (AgendaEntry.parse(line) != null) {
+                if (!inserted) { out.addAll(rendered); inserted = true }
+                continue
+            }
+            out.add(line)
+        }
+        if (!inserted) {
+            // No task line yet: append after the existing text, separated by a blank line.
+            while (out.isNotEmpty() && out.last().isBlank()) out.removeAt(out.size - 1)
+            if (out.isNotEmpty()) out.add("")
+            out.addAll(rendered)
+        }
+        val text = out.joinToString("\n")
+        return if (text.endsWith("\n")) text else text + "\n"
+    }
+
+    /** The non-task lines of [text] — what [renderFile] would silently drop. Used by tests and diagnostics. */
+    fun foreignLines(text: String): List<String> =
+        text.lineSequence().filter { it.isNotBlank() && AgendaEntry.parse(it) == null }.toList()
+
+    /**
      * Chronological order; entries without a time come first within their day,
      * and undated tasks sort last (they have no place on the timeline). Within
      * the same slot the manual [AgendaEntry.order] wins, then the text.

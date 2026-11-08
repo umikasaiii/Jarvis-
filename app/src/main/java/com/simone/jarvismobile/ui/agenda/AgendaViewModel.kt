@@ -68,6 +68,8 @@ class AgendaViewModel @Inject constructor(
 
     init {
         viewModelScope.launch { runCatching { agenda.reload() } }
+        // A blocked or partly mirrored save is never silent (BETA 4).
+        viewModelScope.launch { agenda.syncWarning.collect { if (it.isNotBlank()) _message.value = it } }
     }
 
     fun selectList(list: String) { _selectedList.value = list }

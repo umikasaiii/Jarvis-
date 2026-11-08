@@ -13,6 +13,7 @@ on:
       - 'app/src/main/java/com/simone/jarvismobile/di/DatabaseModule.kt'
       - 'app/src/androidTest/**'
       - 'app/src/main/java/com/simone/jarvismobile/archive/**'
+      - 'app/src/main/java/com/simone/jarvismobile/document/**'
       - 'app/schemas/**'
       - '.github/workflows/db-migration-tests.yml'
 
@@ -46,7 +47,7 @@ jobs:
           api-level: 34
           arch: x86_64
           target: google_apis
-          script: ./gradlew --no-daemon :app:connectedDebugAndroidTest -Pjarvis.emulatorAbi=x86_64 -Pandroid.testInstrumentationRunnerArguments.class=com.simone.jarvismobile.background.JarvisMigrationInstrumentedTest,com.simone.jarvismobile.archive.NotesStoreInstrumentedTest
+          script: ./gradlew --no-daemon :app:connectedDebugAndroidTest -Pjarvis.emulatorAbi=x86_64 -Pandroid.testInstrumentationRunnerArguments.class=com.simone.jarvismobile.background.JarvisMigrationInstrumentedTest,com.simone.jarvismobile.archive.NotesStoreInstrumentedTest,com.simone.jarvismobile.document.DocumentPipelineInstrumentedTest
       - name: Test results summary (failures with their messages)
         if: always()
         run: |

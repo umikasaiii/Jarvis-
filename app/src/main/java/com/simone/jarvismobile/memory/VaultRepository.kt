@@ -258,6 +258,21 @@ class VaultRepository @Inject constructor(
     }
 
     /**
+     * Like [readJarvisFile] but tells "the file does not exist" (success(null)) apart from
+     * "it exists / the vault is reachable but reading failed" (failure), so a caller that is
+     * about to REWRITE the file can refuse instead of overwriting text it could not read.
+     */
+    suspend fun readJarvisFileResult(fileName: String): Result<String?> = withContext(Dispatchers.IO) {
+        val tree = tree() ?: return@withContext Result.success(null)
+        runCatching {
+            val folder = tree.findFile(MEMORY_DIR)?.takeIf { it.isDirectory } ?: return@runCatching null
+            val file = folder.childByName(fileName) ?: return@runCatching null
+            val input = context.contentResolver.openInputStream(file.uri) ?: error("cannot open")
+            input.bufferedReader().use { it.readText() }
+        }
+    }
+
+    /**
      * Finds a child by name, tolerating case differences some SAF providers
      * introduce, so a write and the following read resolve to the SAME file
      * instead of the write landing in one node and the read seeing an empty other.

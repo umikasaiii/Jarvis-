@@ -61,7 +61,15 @@ class LexicalDocumentRetriever(
             RetrievedChunk(chunk, score)
         }
 
-        return scored.filter { it.score >= minScore }
+        // BETA 4: the absolute floor alone threw away EVERY hit whenever the query words occur in
+        // (nearly) all passages — normal for a small library (e.g. three documents all about the
+        // same motorbike): BM25's idf of a word present everywhere is ~0.09, far below the floor.
+        // A passage that contains at least half of the query's distinct words is kept regardless.
+        val coverage = chunks.indices.map { i ->
+            val present = docs[i].toHashSet()
+            q.count { it in present }.toDouble() / q.size
+        }
+        return scored.filterIndexed { i, r -> r.score > 0.0 && (r.score >= minScore || coverage[i] >= 0.5) }
             .sortedByDescending { it.score }
             .take(topK.coerceAtLeast(1))
     }
