@@ -4,6 +4,11 @@
 non distruttive per i tuoi dati reali; dove serve un test distruttivo usa una **installazione isolata** (secondo profilo
 utente Android, o un secondo telefono, o una build con applicationId diverso). Non cancellare mai i dati reali.
 
+> **BETA 1/8 — aggiornamenti a questa checklist** (vedi `docs/BETA_STEP01_DEVICE_READINESS.md`)
+> * L'applicationId della build di debug è `com.simone.jarvismobile.debug` (APK isolato: `com.simone.jarvismobile.debug.beta`): usa questo nei comandi `adb`/`run-as`.
+> * Il backup in-app dell'app **già installata** non copre `memoria.md`, `agenda.md`, `automazioni.md`, `chat.json`, note background: prima di aggiornare esegui la **copia grezza** `tools/beta/raw_backup.*` e `verify_raw_backup.py` (punto 0 del documento BETA).
+> * Stato di ogni prova: **PENDING** finché non la esegui tu. Nessuna è stata eseguita.
+
 ## 0. Prima di iniziare
 1. Fai un **backup locale cifrato** dall'app (Impostazioni › Backup › «Esegui backup ora») e copia anche la cartella SAF se l'hai configurata. Annota la **Recovery Key**.
 2. Conserva l'APK **attualmente installato** (per poterlo reinstallare): `adb shell pm path com.simone.jarvismobile` poi `adb pull <path> vecchia.apk`.
