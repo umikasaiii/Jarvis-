@@ -93,7 +93,7 @@ class OfflineChatPipelineGuardTest {
     }
 
     @Test fun noModelBinaryIsTrackedInTheRepository() {
-        val repo = generateSequence(root) { it.parentFile }.first { File(it, ".git").exists() || File(it, "gradlew").exists() }
+        val repo = generateSequence(root.absoluteFile) { it.parentFile }.first { File(it, ".git").exists() || File(it, "gradlew").exists() }
         val bad = repo.walkTopDown().onEnter { it.name != ".git" && it.name != "build" && it.name != ".gradle" }
             .filter { it.isFile && (it.extension == "litertlm" || it.extension == "gguf" || it.extension == "tflite") }
             .map { it.path }.toList()
