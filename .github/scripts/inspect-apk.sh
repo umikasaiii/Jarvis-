@@ -10,7 +10,7 @@ BT="$(ls -d "$SDK"/build-tools/*/ 2>/dev/null | sort -V | tail -1)"
 AAPT2="${BT}aapt2"; APKSIGNER="${BT}apksigner"
 [ -x "$AAPT2" ] && [ -x "$APKSIGNER" ] || { echo "build-tools not found under $SDK"; exit 2; }
 
-field() { sed -n "s/.*$2='\([^']*\)'.*/\1/p" <<<"$1" | head -1; }
+field() { sed -n "s/.* $2='\([^']*\)'.*/\1/p" <<<"$1" | head -1; }
 facts() { # apk -> key=value lines
   local apk="$1" b; b="$("$AAPT2" dump badging "$apk" 2>/dev/null)"
   echo "file=$(basename "$apk")"
