@@ -12,8 +12,8 @@ import java.io.File
 class DailyReliabilityGuardTest {
     private val root: File = listOf(File("src/main/java/com/simone/jarvismobile"), File("app/src/main/java/com/simone/jarvismobile"))
         .firstOrNull { it.isDirectory } ?: error("app sources not found")
-    private val manifest: File = File(root.absoluteFile.parentFile.parentFile.parentFile.parentFile.parentFile, "src/main/AndroidManifest.xml")
-        .takeIf { it.isFile } ?: File("app/src/main/AndroidManifest.xml")
+    private val manifest: File = listOf(File("src/main/AndroidManifest.xml"), File("app/src/main/AndroidManifest.xml"))
+        .firstOrNull { it.isFile } ?: error("manifest not found")
 
     private fun src(rel: String) = File(root, rel).also { check(it.isFile) { "missing $rel" } }.readText()
 
