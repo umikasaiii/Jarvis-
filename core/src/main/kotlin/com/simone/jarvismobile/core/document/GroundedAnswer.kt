@@ -1,5 +1,7 @@
 package com.simone.jarvismobile.core.document
 
+import com.simone.jarvismobile.core.regex.PortableRegex
+
 enum class BlockKind { DOCUMENT, NOTE, MEMORY }
 
 /**
@@ -20,8 +22,8 @@ enum class AnswerMode { ANSWER, SUMMARY, COMPARE }
 
 /** Retrieved text is DATA from the user's files, not instructions. This neutralises it. */
 object PassageSanitizer {
-    private val roleLine = Regex("""(?imU)^\s*(?:utente|user|assistente|assistant|system|sistema|jarvis|human|ai)\s*:""")
-    private val template = Regex("""(?U)<\|[^>]*\|>|\[/?INST]|<</?SYS>>|<start_of_turn>|<end_of_turn>|```""")
+    private val roleLine = PortableRegex.of("""(?imU)^\s*(?:utente|user|assistente|assistant|system|sistema|jarvis|human|ai)\s*:""")
+    private val template = PortableRegex.of("""(?U)<\|[^>]*\|>|\[/?INST]|<</?SYS>>|<start_of_turn>|<end_of_turn>|```""")
     private val fence = Regex("""<<<|>>>""")
     private val controls = Regex("""[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]""")
 
@@ -80,8 +82,8 @@ object SourceCitations {
         return "Fonti consultate:\n" + blocks.mapIndexed { i, b -> "[${i + 1}] ${b.citation}" }.joinToString("\n")
     }
 
-    private val fileRef = Regex("""(?iU)[\p{L}\p{Nd}_\-.()]+\.(?:pdf|docx|epub|xlsx|txt|md|markdown|html?|csv|json)\b""")
-    private val pageRef = Regex("""(?iU)\b(?:pagina|pag\.|p\.)\s*(\d{1,5})\b""")
+    private val fileRef = PortableRegex.of("""(?iU)[\p{L}\p{Nd}_\-.()]+\.(?:pdf|docx|epub|xlsx|txt|md|markdown|html?|csv|json)\b""")
+    private val pageRef = PortableRegex.of("""(?iU)\b(?:pagina|pag\.|p\.)\s*(\d{1,5})\b""")
     private val marker = Regex("""\[(\d{1,3})]""")
 
     /** References in [reply] that do not correspond to any of the [blocks] actually supplied. */

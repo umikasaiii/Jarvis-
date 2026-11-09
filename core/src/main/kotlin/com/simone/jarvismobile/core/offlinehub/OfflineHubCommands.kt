@@ -1,5 +1,7 @@
 package com.simone.jarvismobile.core.offlinehub
 
+import com.simone.jarvismobile.core.regex.PortableRegex
+
 /** A request for Kiwix / Organic Maps / the offline library, recognised deterministically (no LLM). */
 sealed interface HubCommand {
     data object OpenKiwix : HubCommand
@@ -19,18 +21,18 @@ sealed interface HubCommand {
 object OfflineHubParser {
     private const val OM = """organic\s*maps?|omaps|organicmaps"""
     private const val KW = """kiwix|wikipedia\s+offline|wiki\s+offline"""
-    private val openOm = Regex("""(?iU)^\s*(?:apri|avvia|lancia)\s+(?:l'app\s+)?(?:$OM)\s*[.!?]*$""")
-    private val openKiwix = Regex("""(?iU)^\s*(?:apri|avvia|lancia)\s+(?:l'app\s+)?(?:kiwix|wikipedia\s+offline|wiki\s+offline)\s*[.!?]*$""")
-    private val openLibrary = Regex("""(?iU)^\s*(?:apri|mostra|vai\s+(?:alla|a))\s+(?:la\s+)?(?:biblioteca(?:\s+offline)?|libreria\s+offline)\s*[.!?]*$""")
-    private val openNavigator = Regex("""(?iU)^\s*(?:apri|avvia)\s+(?:il\s+)?navigatore\s+offline\s*[.!?]*$""")
+    private val openOm = PortableRegex.of("""(?iU)^\s*(?:apri|avvia|lancia)\s+(?:l'app\s+)?(?:$OM)\s*[.!?]*$""")
+    private val openKiwix = PortableRegex.of("""(?iU)^\s*(?:apri|avvia|lancia)\s+(?:l'app\s+)?(?:kiwix|wikipedia\s+offline|wiki\s+offline)\s*[.!?]*$""")
+    private val openLibrary = PortableRegex.of("""(?iU)^\s*(?:apri|mostra|vai\s+(?:alla|a))\s+(?:la\s+)?(?:biblioteca(?:\s+offline)?|libreria\s+offline)\s*[.!?]*$""")
+    private val openNavigator = PortableRegex.of("""(?iU)^\s*(?:apri|avvia)\s+(?:il\s+)?navigatore\s+offline\s*[.!?]*$""")
 
-    private val omSearch = Regex("""(?iU)^\s*(?:cerca|trova|mostrami|cercami)\s+(.+?)\s+(?:su|in|con|usando)\s+(?:$OM)\s*[.!?]*$""")
-    private val omShow = Regex("""(?iU)^\s*(?:mostra|visualizza|apri|vai\s+a)\s+(?:le\s+coordinate\s+|la\s+posizione\s+)?([-+0-9.,;\s]+?)\s+(?:su|in|con)\s+(?:$OM)\s*[.!?]*$""")
-    private val omRoute = Regex("""(?iU)^\s*(?:portami|accompagnami|naviga|navigami|indicami\s+la\s+strada|imposta\s+(?:la\s+)?(?:navigazione|percorso))\s+(?:a|verso|fino\s+a|per)\s+(.+?)\s+(?:con|su|usando|in)\s+(?:$OM)\s*(.*?)\s*[.!?]*$""")
+    private val omSearch = PortableRegex.of("""(?iU)^\s*(?:cerca|trova|mostrami|cercami)\s+(.+?)\s+(?:su|in|con|usando)\s+(?:$OM)\s*[.!?]*$""")
+    private val omShow = PortableRegex.of("""(?iU)^\s*(?:mostra|visualizza|apri|vai\s+a)\s+(?:le\s+coordinate\s+|la\s+posizione\s+)?([-+0-9.,;\s]+?)\s+(?:su|in|con)\s+(?:$OM)\s*[.!?]*$""")
+    private val omRoute = PortableRegex.of("""(?iU)^\s*(?:portami|accompagnami|naviga|navigami|indicami\s+la\s+strada|imposta\s+(?:la\s+)?(?:navigazione|percorso))\s+(?:a|verso|fino\s+a|per)\s+(.+?)\s+(?:con|su|usando|in)\s+(?:$OM)\s*(.*?)\s*[.!?]*$""")
 
-    private val kwSearch = Regex("""(?iU)^\s*(?:cerca|trova|cercami)\s+(.+?)\s+(?:su|in|con|usando|nel(?:la)?)\s+(?:$KW)\s*[.!?]*$""")
-    private val zimQuestion = Regex("""(?iU)\b(?:archivio|archivi|file)\s+zim\b|\bzim\b.*\b(?:cosa|quando|chi|dove|come|perch[eé])\b|\b(?:cosa|quando|chi|dove|come|perch[eé])\b.*\b(?:nel(?:lo)?|dal(?:lo)?|dall')\s+(?:archivio\s+)?zim\b""")
-    private val wikiOffline = Regex("""(?iU)^\s*(?:cosa|che\s+cosa|chi|quando|dove|come)\s+.*\b(?:su|di|del(?:la)?|riguardo)\s+(.+?)\s+(?:su|in|nella|dalla|da)\s+(?:$KW)\s*[?.!]*$""")
+    private val kwSearch = PortableRegex.of("""(?iU)^\s*(?:cerca|trova|cercami)\s+(.+?)\s+(?:su|in|con|usando|nel(?:la)?)\s+(?:$KW)\s*[.!?]*$""")
+    private val zimQuestion = PortableRegex.of("""(?iU)\b(?:archivio|archivi|file)\s+zim\b|\bzim\b.*\b(?:cosa|quando|chi|dove|come|perch[eé])\b|\b(?:cosa|quando|chi|dove|come|perch[eé])\b.*\b(?:nel(?:lo)?|dal(?:lo)?|dall')\s+(?:archivio\s+)?zim\b""")
+    private val wikiOffline = PortableRegex.of("""(?iU)^\s*(?:cosa|che\s+cosa|chi|quando|dove|come)\s+.*\b(?:su|di|del(?:la)?|riguardo)\s+(.+?)\s+(?:su|in|nella|dalla|da)\s+(?:$KW)\s*[?.!]*$""")
 
     fun parse(raw: String): HubCommand? {
         val t = raw.trim()
@@ -74,8 +76,8 @@ object OfflineHubParser {
 
     /** "una farmacia vicino a me" → "farmacia": Organic Maps already searches around the shown/current area. */
     private fun cleanQuery(s: String): String =
-        clean(s.replace(Regex("""(?iU)\b(?:vicino\s+a\s+me|qui\s+vicino|nei\s+dintorni|nelle\s+vicinanze)\b"""), " ")
-            .replace(Regex("""(?iU)^\s*(?:una|un|uno|la|il|lo|l'|le|i|gli|dei|delle)\s+"""), ""))
+        clean(s.replace(PortableRegex.of("""(?iU)\b(?:vicino\s+a\s+me|qui\s+vicino|nei\s+dintorni|nelle\s+vicinanze)\b"""), " ")
+            .replace(PortableRegex.of("""(?iU)^\s*(?:una|un|uno|la|il|lo|l'|le|i|gli|dei|delle)\s+"""), ""))
 
     private fun clean(s: String) = s.trim().trim('«', '»', '"', '\'', ' ', ',', '.').replace(Regex("""\s+"""), " ")
 }

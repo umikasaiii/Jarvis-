@@ -1,5 +1,7 @@
 package com.simone.jarvismobile.core.memory
 
+import com.simone.jarvismobile.core.regex.PortableRegex
+
 /**
  * BETA 2/8 — recognises the questions that ask for something the user told JARVIS ("qual è la mia targa",
  * "ti avevo detto dove ho parcheggiato"). It is deliberately narrower than [MemoryRouter]'s PERSONAL hints
@@ -9,15 +11,15 @@ package com.simone.jarvismobile.core.memory
 object StoredFactQuestion {
 
     private val PATTERNS = listOf(
-        Regex("""(?U)\b(ti|te)\s+(avevo|ho)\s+(detto|dato|scritto|raccontato)\b"""),
-        Regex("""(?U)\bti\s+ricordi\b"""),
-        Regex("""(?U)\bricordi\s+(che|dove|quando|come|cosa|il|la|i|le|lo)\b"""),
-        Regex("""(?U)\bcosa\s+(avevo|ho)\s+(detto|scelto|deciso|salvato|segnato|scritto)\b"""),
-        Regex("""(?U)\b(avevamo|abbiamo)\s+deciso\b|\bavevo\s+scelto\b"""),
-        Regex("""(?U)\bqual(e|\s*è|\s*e'|\s*era)\b.*\b(mio|mia|miei|mie)\b"""),
-        Regex("""(?U)\bcome\s+si\s+chiama\b.*\b(mio|mia|miei|mie)\b"""),
-        Regex("""(?U)\bdove\s+(ho|avevo)\s+(messo|lasciato|parcheggiato|salvato|appoggiato)\b"""),
-        Regex("""(?U)\bquando\s+(è|e'|era|sono)\b.*\b(mio|mia|miei|mie)\b"""),
+        PortableRegex.of("""(?U)\b(ti|te)\s+(avevo|ho)\s+(detto|dato|scritto|raccontato)\b"""),
+        PortableRegex.of("""(?U)\bti\s+ricordi\b"""),
+        PortableRegex.of("""(?U)\bricordi\s+(che|dove|quando|come|cosa|il|la|i|le|lo)\b"""),
+        PortableRegex.of("""(?U)\bcosa\s+(avevo|ho)\s+(detto|scelto|deciso|salvato|segnato|scritto)\b"""),
+        PortableRegex.of("""(?U)\b(avevamo|abbiamo)\s+deciso\b|\bavevo\s+scelto\b"""),
+        PortableRegex.of("""(?U)\bqual(e|\s*è|\s*e'|\s*era)\b.*\b(mio|mia|miei|mie)\b"""),
+        PortableRegex.of("""(?U)\bcome\s+si\s+chiama\b.*\b(mio|mia|miei|mie)\b"""),
+        PortableRegex.of("""(?U)\bdove\s+(ho|avevo)\s+(messo|lasciato|parcheggiato|salvato|appoggiato)\b"""),
+        PortableRegex.of("""(?U)\bquando\s+(è|e'|era|sono)\b.*\b(mio|mia|miei|mie)\b"""),
     )
 
     fun matches(question: String): Boolean {

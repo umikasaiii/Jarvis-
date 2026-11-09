@@ -1,5 +1,7 @@
 package com.simone.jarvismobile.core.document
 
+import com.simone.jarvismobile.core.regex.PortableRegex
+
 /** A document the user referred to in words. */
 sealed interface DocRef {
     /** "questo PDF", "il documento appena importato". */
@@ -24,24 +26,24 @@ sealed interface DocumentQueryIntent {
  */
 object DocumentQueryParser {
     private const val DOC_NOUN = """(?:documento|documenti|pdf|file|manuale|libretto|contratto)"""
-    private val latestWords = Regex("""(?iU)\b(?:appena\s+importat\w+|ultim\w+|quest[oa'])""")
+    private val latestWords = PortableRegex.of("""(?iU)\b(?:appena\s+importat\w+|ultim\w+|quest[oa'])""")
 
     private val compare = listOf(
-        Regex("""(?iU)^\s*confronta\s+(?:il\s+|i\s+|lo\s+|la\s+)?(?:documento\s+|file\s+|pdf\s+)?(.+?)\s+(?:con|e)\s+(?:il\s+|lo\s+|la\s+)?(?:documento\s+|file\s+|pdf\s+)?(.+?)\s*$"""),
-        Regex("""(?iU)^\s*(?:quali\s+)?differenze\s+(?:ci\s+sono\s+)?tra\s+(?:i\s+documenti\s+|i\s+file\s+)?(.+?)\s+e\s+(?:il\s+)?(.+?)\s*$"""),
+        PortableRegex.of("""(?iU)^\s*confronta\s+(?:il\s+|i\s+|lo\s+|la\s+)?(?:documento\s+|file\s+|pdf\s+)?(.+?)\s+(?:con|e)\s+(?:il\s+|lo\s+|la\s+)?(?:documento\s+|file\s+|pdf\s+)?(.+?)\s*$"""),
+        PortableRegex.of("""(?iU)^\s*(?:quali\s+)?differenze\s+(?:ci\s+sono\s+)?tra\s+(?:i\s+documenti\s+|i\s+file\s+)?(.+?)\s+e\s+(?:il\s+)?(.+?)\s*$"""),
     )
-    private val summarize = Regex("""(?iU)^\s*(?:riassumi|riassumimi|sintetizza|fammi\s+un\s+riassunto\s+d(?:i|el|ello|ella))\s+(?:il\s+|lo\s+|la\s+|l'|quest[oa]\s+)?(${DOC_NOUN})\s*(.*)$""")
-    private val pageLookup = Regex(
+    private val summarize = PortableRegex.of("""(?iU)^\s*(?:riassumi|riassumimi|sintetizza|fammi\s+un\s+riassunto\s+d(?:i|el|ello|ella))\s+(?:il\s+|lo\s+|la\s+|l'|quest[oa]\s+)?(${DOC_NOUN})\s*(.*)$""")
+    private val pageLookup = PortableRegex.of(
         """(?iU)^\s*in\s+quale\s+pagina\s+(?:si\s+parla|trovo|è\s+indicat\w+|è\s+scritt\w+)\s+(?:del(?:l'|lo|la)?|di|dei|delle|degli|sul(?:la|lo|l')?)?\s*(.+?)(?:\s+(?:nel|nello|nella)\s+${DOC_NOUN}\s+(.+?))?\s*[?.!]*\s*$""",
     )
-    private val docTopic = Regex(
+    private val docTopic = PortableRegex.of(
         """(?iU)^\s*cosa\s+dice\s+(?:il\s+|lo\s+|la\s+|l')?(${DOC_NOUN}\s+.+?|${DOC_NOUN})\s+(?:su|sul|sulla|sullo|sui|sulle|riguardo|in\s+merito\s+a|a\s+proposito\s+di)\s+(.+?)\s*[?.!]*\s*$""",
     )
-    private val docOnly = Regex("""(?iU)^\s*(?:cerca|consulta|guarda)\s+(?:nel|nello|nella|sul)\s+(?:mio\s+|miei\s+)?(${DOC_NOUN}\s*.*?)\s*[?.!]*\s*$""")
-    private val docsSearch = Regex("""(?iU)^\s*(?:cerca|consulta|controlla|guarda|trova)\s+(?:nei|tra\s+i|in|i)\s+(?:miei\s+)?documenti\s*(?:quando|cosa|dove|se|che|come|per)?\s*(.*?)\s*[?.!]*\s*$""")
-    private val docsSearchFull = Regex("""(?iU)^\s*(?:cerca|consulta|controlla|guarda|trova)\s+(?:nei|tra\s+i)\s+(?:miei\s+)?documenti\s+(.+?)\s*[?.!]*\s*$""")
-    private val notesSearch = Regex("""(?iU)^\s*(?:cerca|consulta|trova)\s+(?:nei|tra\s+i)\s+(?:miei\s+)?(?:appunti|note)\s+(?:tutte\s+le\s+informazioni\s+(?:sull'argomento|su|sul|sulla)\s+|le\s+informazioni\s+(?:su|sul|sulla)\s+|su\s+)?(.+?)\s*[?.!]*\s*$""")
-    private val infoAbout = Regex("""(?iU)^\s*che\s+informazioni\s+(?:hai|ho)\s+(?:su|sul|sulla|sulle|sui|riguardo\s+a?)\s+(.+?)\s*[?.!]*\s*$""")
+    private val docOnly = PortableRegex.of("""(?iU)^\s*(?:cerca|consulta|guarda)\s+(?:nel|nello|nella|sul)\s+(?:mio\s+|miei\s+)?(${DOC_NOUN}\s*.*?)\s*[?.!]*\s*$""")
+    private val docsSearch = PortableRegex.of("""(?iU)^\s*(?:cerca|consulta|controlla|guarda|trova)\s+(?:nei|tra\s+i|in|i)\s+(?:miei\s+)?documenti\s*(?:quando|cosa|dove|se|che|come|per)?\s*(.*?)\s*[?.!]*\s*$""")
+    private val docsSearchFull = PortableRegex.of("""(?iU)^\s*(?:cerca|consulta|controlla|guarda|trova)\s+(?:nei|tra\s+i)\s+(?:miei\s+)?documenti\s+(.+?)\s*[?.!]*\s*$""")
+    private val notesSearch = PortableRegex.of("""(?iU)^\s*(?:cerca|consulta|trova)\s+(?:nei|tra\s+i)\s+(?:miei\s+)?(?:appunti|note)\s+(?:tutte\s+le\s+informazioni\s+(?:sull'argomento|su|sul|sulla)\s+|le\s+informazioni\s+(?:su|sul|sulla)\s+|su\s+)?(.+?)\s*[?.!]*\s*$""")
+    private val infoAbout = PortableRegex.of("""(?iU)^\s*che\s+informazioni\s+(?:hai|ho)\s+(?:su|sul|sulla|sulle|sui|riguardo\s+a?)\s+(.+?)\s*[?.!]*\s*$""")
 
     fun parse(raw: String): DocumentQueryIntent? {
         val text = raw.trim()

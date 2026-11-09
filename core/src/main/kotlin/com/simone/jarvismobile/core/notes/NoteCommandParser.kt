@@ -1,5 +1,7 @@
 package com.simone.jarvismobile.core.notes
 
+import com.simone.jarvismobile.core.regex.PortableRegex
+
 /** A note phrase understood without the LLM. Arguments always come from the user's own words. */
 sealed interface NoteCommand {
     /** "crea una nota chiamata X" (optionally "…: contenuto"). */
@@ -13,16 +15,16 @@ sealed interface NoteCommand {
 }
 
 object NoteCommandParser {
-    private val create = Regex(
+    private val create = PortableRegex.of(
         """(?iU)^\s*(?:crea|scrivi|fai|salva)\s+(?:una\s+)?(?:nuova\s+)?nota\s+(?:chiamata|intitolata|di\s+nome|col\s+titolo|con\s+titolo|dal\s+titolo)\s+(.+?)\s*(?::\s*(.+))?\s*$""",
     )
-    private val appendColon = Regex(
+    private val appendColon = PortableRegex.of(
         """(?iU)^\s*(?:aggiungi|scrivi|appendi|accoda)\s+(?:alla|nella|sulla|a)\s+nota\s+(?:chiamata\s+|intitolata\s+)?(.+?)\s*:\s*(.+)$""",
     )
-    private val appendInline = Regex(
+    private val appendInline = PortableRegex.of(
         """(?iU)^\s*(?:aggiungi|appendi|accoda)\s+(.+?)\s+(?:alla|nella)\s+nota\s+(?:chiamata\s+|intitolata\s+)?(.+?)\s*$""",
     )
-    private val show = Regex(
+    private val show = PortableRegex.of(
         """(?iU)^\s*(?:mostrami|mostra|fammi\s+vedere|cerca|trova)\s+(?:tutte\s+)?le\s+(?:mie\s+)?note\s+(?:sul(?:la|lo|l')?|sui|sugli|sulle|su|riguardanti|relative\s+a|che\s+parlano\s+di|di|del(?:la|lo|l')?)\s*(.+)$""",
     )
 
