@@ -116,7 +116,7 @@ class OfflineHubService @Inject constructor(
         val firstPlan = OrganicMapsPlanner.plan(request, null)
         if (firstPlan is OrganicPlan.Refused) return LaunchOutcome.Invalid(firstPlan.reason)
         if (firstPlan !is OrganicPlan.Launch) return LaunchOutcome.Invalid("Richiesta non valida.")
-        var message = firstPlan.message
+        val message = firstPlan.message
         val outcome = launcher.launchFirstHandled(
             ExternalApp.ORGANIC_MAPS, preferred, firstPlan.what,
             build = { pkg -> (OrganicMapsPlanner.plan(request, pkg) as OrganicPlan.Launch).candidates },
@@ -126,11 +126,11 @@ class OfflineHubService @Inject constructor(
     }
 
     /** "Portami a X con Organic Maps": coordinates only from a saved place / typed pair, origin only if already known. */
-    suspend fun organicRoute(destination: String, mode: RouteMode): LaunchOutcome {
+    suspend fun organicRoute(destination: String, mode: RouteMode, label: String? = null): LaunchOutcome {
         val fix = DestinationFix.of(destination, savedPlace(destination))
         val from = lastKnownLocation()
         val req = when (fix) {
-            is DestinationFix.Verified -> OrganicRequest.Route(fix.point, fix.label, mode, from)
+            is DestinationFix.Verified -> OrganicRequest.Route(fix.point, label?.takeIf { it.isNotBlank() } ?: fix.label, mode, from)
             is DestinationFix.TextOnly -> OrganicRequest.Route(null, fix.text, mode, from)
         }
         return organic(req)
@@ -161,7 +161,7 @@ class OfflineHubService @Inject constructor(
     suspend fun drivingStart(query: String, label: String): LaunchOutcome = when (settings.hubMapsProvider.first()) {
         MapsProvider.GOOGLE_MAPS ->
             if (com.simone.jarvismobile.driving.DrivingMapsLauncher.startNavigation(context, query)) LaunchOutcome.Launched(null) else LaunchOutcome.Failed("maps")
-        MapsProvider.ORGANIC_MAPS -> organicRoute(query, RouteMode.CAR).let { it }
+        MapsProvider.ORGANIC_MAPS -> organicRoute(query, RouteMode.CAR, label)
         MapsProvider.JARVIS_INTERNAL -> { _openNavigatorRequest.value += 1; LaunchOutcome.Launched(null, "Apro il navigatore interno: di' «portami a $label» per avviare il percorso.") }
     }
 
@@ -178,9 +178,12 @@ class OfflineHubService @Inject constructor(
         is HubCommand.ZimQuestion -> ZimPolicy.NOT_QUERYABLE
         HubCommand.OpenOrganicMaps -> LaunchMessages.text(organic(OrganicRequest.Open))
         is HubCommand.OrganicSearch -> LaunchMessages.text(organic(OrganicRequest.Search(cmd.query)))
-        is HubCommand.OrganicShow ->
-            if (cmd.point == null) "Coordinate non valide («${cmd.rawCoordinates}»): la latitudine va da -90 a 90, la longitudine da -180 a 180."
-            else LaunchMessages.text(organic(OrganicRequest.Show(cmd.point, null)))
+        is HubCommand.OrganicShow -> {
+            // local copy: `point` comes from another module, so it cannot be smart-cast
+            val point = cmd.point
+            if (point == null) "Coordinate non valide («${cmd.rawCoordinates}»): la latitudine va da -90 a 90, la longitudine da -180 a 180."
+            else LaunchMessages.text(organic(OrganicRequest.Show(point, null)))
+        }
         is HubCommand.OrganicRoute -> LaunchMessages.text(organicRoute(cmd.destination, cmd.mode))
         HubCommand.OpenOfflineNavigator -> when (settings.hubMapsProvider.first()) {
             MapsProvider.ORGANIC_MAPS -> LaunchMessages.text(openOrganicMaps())
