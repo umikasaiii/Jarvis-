@@ -191,7 +191,7 @@ class AssistantTaskWorker(
         val notification: Notification = builder.build()
         try {
             NotificationManagerCompat.from(applicationContext)
-                .notify(RESPONSE_NOTIFICATION_BASE + taskId.hashCode().and(0x0fff), notification)
+                .notify(RESPONSE_NOTIFICATION_TAG, RESPONSE_NOTIFICATION_BASE + taskId.hashCode().and(0x0fff), notification)
         } catch (_: SecurityException) {
             // The permission can be revoked between the check and notify().
         }
@@ -211,5 +211,8 @@ class AssistantTaskWorker(
         private const val ORDER_WAIT_MS = 120_000L
         private const val ORDER_POLL_MS = 500L
         private const val RESPONSE_NOTIFICATION_BASE = 3_000
+
+        /** BETA 8: own notification namespace, so other modules' ids can never collide with or be cancelled as responses. */
+        const val RESPONSE_NOTIFICATION_TAG = "jarvis.response"
     }
 }

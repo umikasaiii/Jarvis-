@@ -119,7 +119,7 @@ class AutomationRunner @Inject constructor(
             .build()
         return try {
             NotificationManagerCompat.from(context)
-                .notify(NOTIFICATION_BASE + automation.id.hashCode().and(0x0fff), notification)
+                .notify(NOTIFICATION_TAG, NOTIFICATION_BASE + automation.id.hashCode().and(0x0fff), notification)
             true
         } catch (_: SecurityException) {
             // The permission can be revoked between the check and notify().
@@ -130,5 +130,8 @@ class AutomationRunner @Inject constructor(
     private companion object {
         const val TAG = "JarvisAutomation"
         const val NOTIFICATION_BASE = 5000
+
+        /** BETA 8: automation results live in their own namespace (the 5000..9095 range overlapped the navigation service's 7100). */
+        const val NOTIFICATION_TAG = "jarvis.automation"
     }
 }

@@ -61,6 +61,7 @@ import com.simone.jarvismobile.tools.ToolOutcome
 import com.simone.jarvismobile.util.runCancellable
 import com.simone.jarvismobile.tools.ToolRunner
 import dagger.hilt.android.qualifiers.ApplicationContext
+import com.simone.jarvismobile.core.reliability.MicrophonePolicy
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
@@ -155,6 +156,17 @@ class SessionCoordinator @Inject constructor(
     val state: StateFlow<ConversationState> = machine.state
 
     init {
+        // BETA 8: the reverse direction — the translator taking the microphone while an assistant turn is still capturing
+        // speech cancels that turn instead of fighting it for the recognizer.
+        scope.launch {
+            liveTranslator.session.collect { session ->
+                if (session != null && MicrophonePolicy.cancelAssistantForTranslator(machine.state.value)) {
+                    Log.i(TAG, "assistant_turn_cancelled_for_translator")
+                    cancel()
+                }
+            }
+        }
+
         // Auto-recover from a transient error/resting state back to Idle. Without
         // this the orb stayed red on ERRORE after, say, a wake-triggered session
         // that heard no further speech, and the foreground wake word (which only
@@ -481,6 +493,12 @@ class SessionCoordinator @Inject constructor(
      * mutex genuinely still isn't free.
      */
     fun startSession() {
+        // BETA 8: the assistant and the translator share ONE speech recognizer; a newer request supersedes the older, so
+        // both running would cancel each other forever. The explicit press wins and the translator is paused (visibly,
+        // resumable from its own screen). See MicrophonePolicy.
+        if (MicrophonePolicy.pauseTranslatorForAssistant(liveTranslator.isRunning)) {
+            runCatching { liveTranslator.pause() }
+        }
         val previous = sessionJob
         sessionJob = scope.launch {
             if (previous != null) {
@@ -2204,10 +2222,11 @@ class SessionCoordinator @Inject constructor(
     fun clearResponseNotifications() {
         runCatching {
             val nm = context.getSystemService(android.app.NotificationManager::class.java) ?: return
+            // BETA 8: by TAG, not by id range. The old range (3000..7095) also swallowed other modules' untagged
+            // notifications (automation results, reminders) whenever the chat was opened.
             nm.activeNotifications
-                .map { it.id }
-                .filter { it in RESPONSE_NOTIFICATION_MIN..RESPONSE_NOTIFICATION_MAX }
-                .forEach { nm.cancel(it) }
+                .filter { it.tag == com.simone.jarvismobile.background.AssistantTaskWorker.RESPONSE_NOTIFICATION_TAG }
+                .forEach { nm.cancel(it.tag, it.id) }
         }
     }
 
@@ -2583,10 +2602,6 @@ class SessionCoordinator @Inject constructor(
          * enough that the wake word resumes quickly.
          */
         private const val ERROR_AUTO_RESET_MS = 4_000L
-
-        /** Id range used by AssistantTaskWorker for "response ready" notifications. */
-        private const val RESPONSE_NOTIFICATION_MIN = 3_000
-        private const val RESPONSE_NOTIFICATION_MAX = 3_000 + 0x0fff
 
         /** Tail of the reminder reply that offers to set an alert. */
         const val ALERT_OFFER = "Vuoi che ti avvisi?"

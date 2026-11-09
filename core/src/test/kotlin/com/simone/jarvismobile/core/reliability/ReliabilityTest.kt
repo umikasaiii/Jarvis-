@@ -255,3 +255,29 @@ class CloudUploadGateTest {
     @Test fun mobileDataAllowedWhenTheUserDidNotRestrictIt() =
         assertEquals(CloudUploadDecision.UPLOAD, CloudUploadGate.decide(true, false, NetworkKind.METERED))
 }
+
+class MicrophonePolicyTest {
+    @Test fun anAssistantPressWhileTranslatingPausesTheTranslator() {
+        assertTrue(MicrophonePolicy.pauseTranslatorForAssistant(true))
+        assertFalse(MicrophonePolicy.pauseTranslatorForAssistant(false))
+    }
+
+    @Test fun startingTheTranslatorWhileTheAssistantListensCancelsThatTurn() {
+        listOf(
+            com.simone.jarvismobile.core.state.ConversationState.PreparingAudio,
+            com.simone.jarvismobile.core.state.ConversationState.Listening,
+            com.simone.jarvismobile.core.state.ConversationState.FinalizingSpeech,
+            com.simone.jarvismobile.core.state.ConversationState.Transcribing,
+            com.simone.jarvismobile.core.state.ConversationState.FollowUpWindow,
+        ).forEach { assertTrue(MicrophonePolicy.cancelAssistantForTranslator(it), it.toString()) }
+    }
+
+    @Test fun aTranslatorStartedByTheAssistantsOwnVoiceCommandDoesNotCutItsReply() {
+        listOf(
+            com.simone.jarvismobile.core.state.ConversationState.Idle,
+            com.simone.jarvismobile.core.state.ConversationState.ThinkingLocal,
+            com.simone.jarvismobile.core.state.ConversationState.ExecutingTool,
+            com.simone.jarvismobile.core.state.ConversationState.Speaking,
+        ).forEach { assertFalse(MicrophonePolicy.cancelAssistantForTranslator(it), it.toString()) }
+    }
+}

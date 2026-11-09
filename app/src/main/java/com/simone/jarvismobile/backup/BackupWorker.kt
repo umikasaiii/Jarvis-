@@ -147,7 +147,9 @@ class BackupWorker(
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
         runCatching {
-            NotificationManagerCompat.from(applicationContext).notify(NOTIFICATION_ID, notification)
+            // BETA 8: tagged — id 7100 is also the navigation foreground-service notification (untagged), which a
+            // failed-backup notice used to replace.
+            NotificationManagerCompat.from(applicationContext).notify(NOTIFICATION_TAG, NOTIFICATION_ID, notification)
         }
     }
 
@@ -163,6 +165,7 @@ class BackupWorker(
     companion object {
         const val MAX_ATTEMPTS = 3
         private const val NOTIFICATION_ID = 7_100
+        private const val NOTIFICATION_TAG = "jarvis.backup"
         private const val TAG = "JarvisBackup"
     }
 }
