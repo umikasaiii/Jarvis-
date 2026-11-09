@@ -88,10 +88,11 @@ class SetDrivingNavigationTool(
         val destination = arguments.drivingText("destination") ?: return ToolResult.Failure("missing_destination")
         val nav = manager.prepareNavigation(destination)
         val query = manager.lastPreparedQuery() ?: destination
+        val label = nav.destinationLabel ?: destination
         // BETA 6: the app that shows the destination is the one the user chose (Google Maps by default).
-        return when (val o = hub.drivingPreview(query, nav.destinationLabel)) {
+        return when (val o = hub.drivingPreview(query, label)) {
             is com.simone.jarvismobile.core.offlinehub.LaunchOutcome.Launched ->
-                drivingOk("spoken" to (o.note.ifBlank { "Percorso pronto verso ${nav.destinationLabel}. Di' \"avvia percorso\" per partire." }))
+                drivingOk("spoken" to (o.note.ifBlank { "Percorso pronto verso $label. Di' \"avvia percorso\" per partire." }))
             else -> drivingFailure(o)
         }
     }
