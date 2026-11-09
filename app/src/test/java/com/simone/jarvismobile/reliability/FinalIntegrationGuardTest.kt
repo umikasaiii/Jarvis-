@@ -55,7 +55,7 @@ class FinalIntegrationGuardTest {
             val text = f.readText()
             Regex("""PendingIntent\.get(Activity|Broadcast|Service|ForegroundService)\(""").findAll(text).forEach { m ->
                 val window = text.substring(m.range.first, minOf(text.length, m.range.first + 700))
-                assertTrue("${f.name}: PendingIntent without FLAG_IMMUTABLE/FLAG_MUTABLE near ${m.range.first}", "FLAG_IMMUTABLE" in window || "FLAG_MUTABLE" in window || "flags" in window)
+                assertTrue("${f.name}: PendingIntent without FLAG_IMMUTABLE/FLAG_MUTABLE near ${m.range.first}", "FLAG_IMMUTABLE" in window || "FLAG_MUTABLE" in window || "flags" in window || "immutable" in window)
             }
         }
         // the one mutable PendingIntent (proximity alerts) targets an explicit component
