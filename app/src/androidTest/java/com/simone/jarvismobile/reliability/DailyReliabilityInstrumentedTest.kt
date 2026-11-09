@@ -53,6 +53,13 @@ class DailyReliabilityInstrumentedTest {
         return PendingIntent.getBroadcast(context, key.hashCode(), intent, PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE)
     }
 
+    /** Polls up to 5 s for [block] to return non-null (the notification service is asynchronous). */
+    private fun <T : Any> eventually(block: () -> T?): T? {
+        val end = System.currentTimeMillis() + 5_000
+        while (System.currentTimeMillis() < end) { block()?.let { return it }; Thread.sleep(100) }
+        return block()
+    }
+
     private fun extras(id: String) = mapOf(ExactAlarms.EXTRA_KIND to ExactAlarms.KIND_REMINDER, ExactAlarms.EXTRA_ID to id)
 
     @Test fun aBookedAlarmExistsAndACancelledOneIsGone() {
@@ -95,8 +102,9 @@ class DailyReliabilityInstrumentedTest {
         val b = ReminderNotifier.post(context, second, "e2", "Secondo promemoria", "")
         assertEquals(ReminderPostOutcome.POSTED, a)
         assertEquals(ReminderPostOutcome.POSTED, b)
-        val tags = nm.activeNotifications.mapNotNull { it.tag }
-        assertTrue(tags.toString(), "jarvis.reminder.$first" in tags && "jarvis.reminder.$second" in tags)
+        // notify() is asynchronous (binder to system_server): wait for the shade instead of reading it immediately
+        val tags = eventually { nm.activeNotifications.mapNotNull { it.tag }.takeIf { "jarvis.reminder.$first" in it && "jarvis.reminder.$second" in it } }
+        assertTrue(nm.activeNotifications.mapNotNull { it.tag }.toString(), tags != null)
         ReminderNotifier.cancel(context, first); ReminderNotifier.cancel(context, second)
     }
 
@@ -105,10 +113,10 @@ class DailyReliabilityInstrumentedTest {
         val nm = context.getSystemService(NotificationManager::class.java)
         ReminderNotifier.post(context, "keep", "e1", "Resta", "")
         ReminderNotifier.post(context, "drop", "e2", "Va via", "")
+        eventually { nm.activeNotifications.mapNotNull { it.tag }.takeIf { "jarvis.reminder.keep" in it && "jarvis.reminder.drop" in it } }
         ReminderNotifier.cancel(context, "drop")
-        val tags = nm.activeNotifications.mapNotNull { it.tag }
-        assertTrue("jarvis.reminder.keep" in tags)
-        assertFalse("jarvis.reminder.drop" in tags)
+        val tags = eventually { nm.activeNotifications.mapNotNull { it.tag }.takeIf { "jarvis.reminder.drop" !in it } }
+        assertTrue(tags.toString(), tags != null && "jarvis.reminder.keep" in tags)
         ReminderNotifier.cancel(context, "keep")
     }
 

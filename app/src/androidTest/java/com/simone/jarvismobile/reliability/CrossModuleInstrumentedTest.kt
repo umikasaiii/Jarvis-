@@ -36,6 +36,12 @@ class CrossModuleInstrumentedTest {
         JarvisNotifications.createChannels(context)
     }
 
+    private fun <T : Any> eventually(block: () -> T?): T? {
+        val end = System.currentTimeMillis() + 5_000
+        while (System.currentTimeMillis() < end) { block()?.let { return it }; Thread.sleep(100) }
+        return block()
+    }
+
     @Test fun theRealRearmPassRunsEveryStepOnTheRealGraphWithoutFailureOrTimeout() = runBlocking {
         val rearmer = EntryPointAccessors.fromApplication(context.applicationContext, BootReceiver.BootEntryPoint::class.java).rearmer()
         val report = rearmer.rearm(RearmTrigger.APP_START)
@@ -62,12 +68,16 @@ class CrossModuleInstrumentedTest {
         post(null, 7100, "nav"); post("jarvis.backup", 7100, "backup")
         post("jarvis.automation", 5000, "auto"); post("jarvis.response", 5000, "resp")
         ReminderNotifier.post(context, "xmod", "e", "Promemoria", "")
-        val keys = nm.activeNotifications.map { it.tag to it.id }
+        val wanted = listOf(null to 7100, "jarvis.backup" to 7100, "jarvis.automation" to 5000, "jarvis.response" to 5000, "jarvis.reminder.xmod" to 6000)
+        // notify() is asynchronous: wait for all five to reach the shade
+        val keys = eventually { nm.activeNotifications.map { it.tag to it.id }.takeIf { k -> wanted.all { it in k } } }
+            ?: nm.activeNotifications.map { it.tag to it.id }
         listOf(null to 7100, "jarvis.backup" to 7100, "jarvis.automation" to 5000, "jarvis.response" to 5000, "jarvis.reminder.xmod" to 6000)
             .forEach { assertTrue("$it in $keys", it in keys) }
         // clearing "response ready" notices by tag leaves everyone else alone
         nm.activeNotifications.filter { it.tag == "jarvis.response" }.forEach { nm.cancel(it.tag, it.id) }
-        val after = nm.activeNotifications.map { it.tag to it.id }
+        val after = eventually { nm.activeNotifications.map { it.tag to it.id }.takeIf { ("jarvis.response" to 5000) !in it } }
+            ?: nm.activeNotifications.map { it.tag to it.id }
         assertFalse(("jarvis.response" to 5000) in after)
         assertTrue((null to 7100) in after && ("jarvis.reminder.xmod" to 6000) in after && ("jarvis.automation" to 5000) in after)
         nm.cancelAll()
