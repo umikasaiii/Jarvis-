@@ -20,7 +20,7 @@ class DailyReliabilityGuardTest {
     @Test fun bootReceiverUsesTheSingleIsolatedRearmPathAndAPersistentSafetyNet() {
         val b = src("alarms/BootReceiver.kt")
         assertTrue("RearmWorker.enqueue" in b)
-        assertTrue(b.indexOf("RearmWorker.enqueue") < b.indexOf("goAsync()"))
+        assertTrue(b.indexOf("RearmWorker.enqueue(") < b.indexOf("val pending = goAsync()"))
         assertTrue("withTimeoutOrNull" in b && "pending.finish()" in b && "finally" in b)
         // the old fragile sequence of reloads in one try must be gone from the receiver
         assertFalse("deps.agenda().reload()" in b)
@@ -119,7 +119,8 @@ class DailyReliabilityGuardTest {
     @Test fun restoreStillRefusesBeforeTouchingAnythingAndKeepsASafetyBackup() {
         val r = src("backup/BackupRepository.kt")
         listOf("archive_checksum", "safety_backup", "manifest_tampered", "compatibility").forEach { assertTrue(it, it in r) }
-        assertTrue(r.indexOf("val safetyBackup = runBackup()") < r.indexOf("RestoreStaging.cleanup(stagingRoot)"))
+        val safety = r.indexOf("val safetyBackup = runBackup()")
+        assertTrue(safety > 0 && r.indexOf("RestoreStaging.cleanup(stagingRoot)", safety) > safety) // staging/cutover only after the safety backup
     }
 
     @Test fun thereIsNoCloudNoCorePcAndNoNewAndroidPrivilegeInTheNewReliabilityCode() {
