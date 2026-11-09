@@ -18,6 +18,7 @@ import com.simone.jarvismobile.core.mode.JarvisModes
 import com.simone.jarvismobile.mode.JarvisModeManager
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update

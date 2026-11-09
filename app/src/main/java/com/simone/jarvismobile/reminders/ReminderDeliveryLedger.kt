@@ -21,7 +21,7 @@ class ReminderDeliveryLedger(context: Context) {
         if (outcome == ReminderPostOutcome.POSTED) delivered += alertKey
         val log = (prefs.getString(KEY_LOG, "").orEmpty().lines().filter { it.isNotBlank() } + "$atMs|${outcome.name}")
             .takeLast(MAX_LOG)
-        prefs.edit().putStringSet(KEY_DELIVERED, delivered.takeLast(MAX_DELIVERED).toSet()).putString(KEY_LOG, log.joinToString("\n")).apply()
+        prefs.edit().putStringSet(KEY_DELIVERED, delivered.toList().takeLast(MAX_DELIVERED).toSet()).putString(KEY_LOG, log.joinToString("\n")).apply()
     }
 
     /** Drops keys that no longer correspond to any known alert, keeping the set bounded. */
