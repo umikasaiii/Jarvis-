@@ -67,7 +67,7 @@ class FinalIntegrationGuardTest {
     @Test fun geofencesAreInertWithoutTheBackgroundLocationGrantAndAreRemovedFirst() {
         val g = src("automation/rule/PlaceGeofenceSource.kt")
         assertTrue("if (hasBackgroundLocation()) places.filter { it.enabled } else emptyList()" in g)
-        assertTrue(g.indexOf("removeProximityAlert") < g.indexOf("addProximityAlert"))
+        assertTrue(g.indexOf("locationManager.removeProximityAlert(") in 1 until g.indexOf("locationManager.addProximityAlert("))
     }
 
     @Test fun noDangerousPrivilegeAndNoHiddenNetworkWasAddedToTheManifest() {
