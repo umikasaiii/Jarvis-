@@ -143,6 +143,12 @@
              standalone — dichiarato anche in via precauzionale, un
              <queries><package> in più che non esiste sul device è
              innocuo, non un'altra modifica di logica alla cieca. -->
+        <!-- BETA 6: Kiwix and Organic Maps (package visibility on Android 11+, so JARVIS can see whether they are
+             installed and ask the system whether they handle our intents). Ids from the projects' own build files. -->
+        <package android:name="org.kiwix.kiwixmobile" />
+        <package android:name="org.kiwix.kiwixmobile.standalone" />
+        <package android:name="app.organicmaps" />
+        <package android:name="app.organicmaps.web" />
         <package android:name="com.google.android.apps.healthdata" />
         <package android:name="com.google.android.healthconnect.controller" />
     </queries>

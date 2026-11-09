@@ -55,6 +55,12 @@ class SettingsRepository @Inject constructor(
         val CLASSIFIER_MODEL_NAME = stringPreferencesKey("llm_classifier_model_name")
         val VAULT_URI = stringPreferencesKey("vault_tree_uri")
         val KNOWLEDGE_URI = stringPreferencesKey("knowledge_tree_uri")
+        // BETA 6: offline hub (Kiwix / Organic Maps). References only — archives are never copied.
+        val MAPS_PROVIDER = stringPreferencesKey("hub_maps_provider")
+        val ZIM_TREE_URI = stringPreferencesKey("hub_zim_tree_uri")
+        val ZIM_DOC_URIS = stringPreferencesKey("hub_zim_doc_uris")
+        val KIWIX_PREFERRED = stringPreferencesKey("hub_kiwix_preferred_pkg")
+        val OM_PREFERRED = stringPreferencesKey("hub_organic_preferred_pkg")
         val EMBEDDING_MODEL_PATH = stringPreferencesKey("embedding_model_path")
         val EMBEDDING_VOCAB_PATH = stringPreferencesKey("embedding_vocab_path")
         // § FASE 2A.11 — deliberately DISTINCT keys/names from the pair right
@@ -219,6 +225,38 @@ class SettingsRepository @Inject constructor(
      */
     val knowledgeUri: Flow<String> =
         context.settingsDataStore.data.map { it[Keys.KNOWLEDGE_URI] ?: "" }
+
+    /** Which external maps app the driving commands use. Defaults to the previous behaviour (Google Maps); never switched silently. */
+    val hubMapsProvider: Flow<com.simone.jarvismobile.core.offlinehub.MapsProvider> =
+        context.settingsDataStore.data.map { com.simone.jarvismobile.core.offlinehub.MapsProvider.fromStored(it[Keys.MAPS_PROVIDER]) }
+
+    suspend fun setHubMapsProvider(value: com.simone.jarvismobile.core.offlinehub.MapsProvider) {
+        context.settingsDataStore.edit { it[Keys.MAPS_PROVIDER] = value.name }
+    }
+
+    /** SAF tree URI of a folder holding ZIM archives ("" = none). Read-only grant, nothing copied. */
+    val hubZimTreeUri: Flow<String> = context.settingsDataStore.data.map { it[Keys.ZIM_TREE_URI] ?: "" }
+    suspend fun setHubZimTreeUri(value: String) {
+        context.settingsDataStore.edit { if (value.isBlank()) it.remove(Keys.ZIM_TREE_URI) else it[Keys.ZIM_TREE_URI] = value }
+    }
+
+    /** SAF document URIs of individually selected ZIM files. */
+    val hubZimDocUris: Flow<List<String>> =
+        context.settingsDataStore.data.map { (it[Keys.ZIM_DOC_URIS] ?: "").split('\u001F').filter { u -> u.isNotBlank() } }
+    suspend fun setHubZimDocUris(value: List<String>) {
+        context.settingsDataStore.edit {
+            if (value.isEmpty()) it.remove(Keys.ZIM_DOC_URIS) else it[Keys.ZIM_DOC_URIS] = value.distinct().joinToString("\u001F")
+        }
+    }
+
+    val hubKiwixPreferred: Flow<String> = context.settingsDataStore.data.map { it[Keys.KIWIX_PREFERRED] ?: "" }
+    suspend fun setHubKiwixPreferred(value: String) {
+        context.settingsDataStore.edit { if (value.isBlank()) it.remove(Keys.KIWIX_PREFERRED) else it[Keys.KIWIX_PREFERRED] = value }
+    }
+    val hubOrganicPreferred: Flow<String> = context.settingsDataStore.data.map { it[Keys.OM_PREFERRED] ?: "" }
+    suspend fun setHubOrganicPreferred(value: String) {
+        context.settingsDataStore.edit { if (value.isBlank()) it.remove(Keys.OM_PREFERRED) else it[Keys.OM_PREFERRED] = value }
+    }
 
     suspend fun setKnowledgeUri(value: String) {
         context.settingsDataStore.edit {

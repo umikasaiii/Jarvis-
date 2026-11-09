@@ -329,6 +329,11 @@ fun DrivingModeScreen(
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text("Usa Google Maps") }
                     Spacer(Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = { viewModel.openOrganicMaps(); onClose() },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Usa Organic Maps (offline)") }
+                    Spacer(Modifier.height(8.dp))
                     OutlinedButton(onClick = onClose, modifier = Modifier.fillMaxWidth()) { Text("Torna indietro") }
                 }
             }

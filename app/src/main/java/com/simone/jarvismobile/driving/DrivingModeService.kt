@@ -52,6 +52,7 @@ class DrivingModeService : LifecycleService() {
     @Inject lateinit var notifications: DrivingNotificationController
     @Inject lateinit var media: DrivingMediaController
     @Inject lateinit var parkingGate: DrivingParkingGate
+    @Inject lateinit var offlineHub: com.simone.jarvismobile.offlinehub.OfflineHubService
 
     private var topWindow: DrivingOverlayWindow? = null
     private var navWindow: DrivingOverlayWindow? = null
@@ -62,7 +63,8 @@ class DrivingModeService : LifecycleService() {
         super.onCreate()
         goForeground()
         showOverlays()
-        DrivingMapsLauncher.openMaps(this)
+        // BETA 6: opens the maps app the user chose for driving (Google Maps unless they changed it).
+        lifecycleScope.launch { runCatching { offlineHub.openPreferredMaps() } }
         openConnectivitySettingsIfNeeded()
         media.start()
         drivingModeManager.onServiceStarted()

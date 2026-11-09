@@ -82,6 +82,7 @@ fun SettingsScreen(
     onOpenBackup: () -> Unit = {},
     onOpenArchive: () -> Unit = {},
     onOpenNotes: () -> Unit = {},
+    onOpenLibrary: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val name by viewModel.assistantName.collectAsStateWithLifecycle()
@@ -821,6 +822,9 @@ fun SettingsScreen(
         }
         OutlinedButton(onClick = onOpenNotes, modifier = Modifier.fillMaxWidth()) {
             Text("Note")
+        }
+        OutlinedButton(onClick = onOpenLibrary, modifier = Modifier.fillMaxWidth()) {
+            Text("Biblioteca offline (Kiwix)")
         }
         OutlinedButton(onClick = onOpenArchive, modifier = Modifier.fillMaxWidth()) {
             Text("Archivio (documenti, liste e ricordi)")

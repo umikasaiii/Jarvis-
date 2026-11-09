@@ -72,6 +72,7 @@ class StopDrivingModeTool(private val manager: DrivingModeManager) : Tool {
 class SetDrivingNavigationTool(
     private val context: Context,
     private val manager: DrivingModeManager,
+    private val hub: com.simone.jarvismobile.offlinehub.OfflineHubService,
 ) : Tool {
     override val name = "set_driving_navigation"
     override val description = "Prepara una destinazione in Google Maps senza avviare il percorso."
@@ -87,10 +88,11 @@ class SetDrivingNavigationTool(
         val destination = arguments.drivingText("destination") ?: return ToolResult.Failure("missing_destination")
         val nav = manager.prepareNavigation(destination)
         val query = manager.lastPreparedQuery() ?: destination
-        return if (DrivingMapsLauncher.previewDestination(context, query)) {
-            drivingOk("spoken" to "Percorso pronto verso ${nav.destinationLabel}. Di' \"avvia percorso\" per partire.")
-        } else {
-            ToolResult.Failure("maps_unavailable")
+        // BETA 6: the app that shows the destination is the one the user chose (Google Maps by default).
+        return when (val o = hub.drivingPreview(query, nav.destinationLabel)) {
+            is com.simone.jarvismobile.core.offlinehub.LaunchOutcome.Launched ->
+                drivingOk("spoken" to (o.note.ifBlank { "Percorso pronto verso ${nav.destinationLabel}. Di' \"avvia percorso\" per partire." }))
+            else -> drivingFailure(o)
         }
     }
 }
@@ -102,6 +104,7 @@ class SetDrivingNavigationTool(
 class StartDrivingRouteTool(
     private val context: Context,
     private val manager: DrivingModeManager,
+    private val hub: com.simone.jarvismobile.offlinehub.OfflineHubService,
 ) : Tool {
     override val name = "start_driving_route"
     override val description = "Avvia la navigazione turn-by-turn in Google Maps verso la destinazione preparata."
@@ -115,11 +118,12 @@ class StartDrivingRouteTool(
     override suspend fun execute(arguments: JsonObject): ToolResult {
         val query = manager.pendingDestination()
             ?: return ToolResult.Failure("no_destination_prepared", "nessuna destinazione preparata")
-        return if (DrivingMapsLauncher.startNavigation(context, query)) {
-            manager.markRouteStarted()
-            drivingOk("spoken" to "Percorso avviato.")
-        } else {
-            ToolResult.Failure("maps_unavailable")
+        return when (val o = hub.drivingStart(query, manager.state.value.navigation?.destinationLabel ?: query)) {
+            is com.simone.jarvismobile.core.offlinehub.LaunchOutcome.Launched -> {
+                manager.markRouteStarted()
+                drivingOk("spoken" to (o.note.ifBlank { "Percorso avviato." }))
+            }
+            else -> drivingFailure(o)
         }
     }
 }
@@ -207,3 +211,8 @@ class ReplyMessageTool(private val notifications: DrivingNotificationController)
         }
     }
 }
+
+
+/** A failed hand-over to the chosen maps app, with the reason spoken honestly (not installed, unsupported…). */
+private fun drivingFailure(o: com.simone.jarvismobile.core.offlinehub.LaunchOutcome): ToolResult =
+    ToolResult.Failure("maps_unavailable", com.simone.jarvismobile.core.offlinehub.LaunchMessages.text(o))

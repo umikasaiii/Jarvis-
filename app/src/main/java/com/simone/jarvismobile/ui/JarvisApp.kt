@@ -60,7 +60,7 @@ import com.simone.jarvismobile.ui.status.SystemStatusScreen
  */
 private enum class Overlay {
     CHAT, MODELS, MEMORY, DIAGNOSTICS, AUTOMATIONS, RULES, TRANSLATOR, DOCUMENTS,
-    NAVIGATION, MAPS, FAVORITES, BACKUP, ARCHIVE, NOTES, SYSTEM_STATUS, AGENDA, SETTINGS,
+    NAVIGATION, MAPS, FAVORITES, BACKUP, ARCHIVE, NOTES, LIBRARY, SYSTEM_STATUS, AGENDA, SETTINGS,
 }
 
 /**
@@ -118,6 +118,13 @@ fun JarvisApp(
     LaunchedEffect(openMaps) {
         if (openMaps > 0) overlay = Overlay.MAPS
     }
+
+    // "Apri la biblioteca" / "apri il navigatore offline" from chat or voice (BETA 6).
+    val hubViewModel: com.simone.jarvismobile.ui.offlinehub.OfflineHubViewModel = hiltViewModel()
+    val openLibrary by hubViewModel.openLibraryRequest.collectAsStateWithLifecycle()
+    LaunchedEffect(openLibrary) { if (openLibrary > 0) overlay = Overlay.LIBRARY }
+    val openNavigator by hubViewModel.openNavigatorRequest.collectAsStateWithLifecycle()
+    LaunchedEffect(openNavigator) { if (openNavigator > 0) overlay = Overlay.NAVIGATION }
 
     Box(Modifier.fillMaxSize()) {
         // Base: Home alone, no bottom bar — always present underneath every overlay.
@@ -191,7 +198,7 @@ fun JarvisApp(
             overlay == Overlay.TRANSLATOR || overlay == Overlay.DOCUMENTS ||
             overlay == Overlay.NAVIGATION || overlay == Overlay.MAPS ||
             overlay == Overlay.FAVORITES || overlay == Overlay.BACKUP ||
-            overlay == Overlay.ARCHIVE || overlay == Overlay.NOTES || overlay == Overlay.SYSTEM_STATUS ||
+            overlay == Overlay.ARCHIVE || overlay == Overlay.NOTES || overlay == Overlay.LIBRARY || overlay == Overlay.SYSTEM_STATUS ||
             overlay == Overlay.AGENDA || overlay == Overlay.SETTINGS
         ) {
             BackHandler { overlay = null }
@@ -221,6 +228,10 @@ fun JarvisApp(
                         onOpenNotes = { overlay = Overlay.NOTES },
                     )
                     Overlay.NOTES -> NotesScreen(onBack = { overlay = null })
+                    Overlay.LIBRARY -> com.simone.jarvismobile.ui.offlinehub.OfflineLibraryScreen(
+                        onBack = { overlay = null },
+                        onOpenDocuments = { overlay = Overlay.DOCUMENTS },
+                    )
                     Overlay.SYSTEM_STATUS -> SystemStatusScreen(onBack = { overlay = null })
                     Overlay.AGENDA -> AgendaScreen()
                     Overlay.SETTINGS -> SettingsScreen(
@@ -236,6 +247,7 @@ fun JarvisApp(
                         onOpenBackup = { overlay = Overlay.BACKUP },
                         onOpenArchive = { overlay = Overlay.ARCHIVE },
                         onOpenNotes = { overlay = Overlay.NOTES },
+                        onOpenLibrary = { overlay = Overlay.LIBRARY },
                     )
                     else -> Unit
                 }

@@ -51,7 +51,13 @@ class DrivingModeViewModel @Inject constructor(
     private val onlineMapStyleFetcher: OnlineMapStyleFetcher,
     private val trafficFetcher: TomTomTrafficFetcher,
     private val searchFetcher: TomTomSearchFetcher,
+    private val offlineHub: com.simone.jarvismobile.offlinehub.OfflineHubService,
 ) : ViewModel() {
+
+    /** BETA 6: the offline-maps fallback can hand over to Organic Maps instead of only Google Maps. */
+    fun openOrganicMaps() {
+        viewModelScope.launch { runCatching { offlineHub.openOrganicMaps() } }
+    }
 
     private val _uiState = MutableStateFlow(DrivingUiState(navigationMode = DrivingNavigationMode.INTERNAL_JARVIS_NAVIGATION))
     val uiState: StateFlow<DrivingUiState> = _uiState.asStateFlow()

@@ -91,6 +91,9 @@ fun MapsScreen(
                 modifier = Modifier.padding(vertical = 12.dp),
             )
 
+            // BETA 6: Organic Maps hand-over (offline maps app) + provider choice for driving commands.
+            com.simone.jarvismobile.ui.offlinehub.OrganicMapsCard()
+
             val onlineFallbackEnabled by viewModel.onlineMapFallbackEnabled.collectAsStateWithLifecycle()
             Card(Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {

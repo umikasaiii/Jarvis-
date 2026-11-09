@@ -133,6 +133,7 @@ class SessionCoordinator @Inject constructor(
     private val liveTranslatorRepo: LiveTranslatorRepository,
     private val documents: com.simone.jarvismobile.document.DocumentImportManager,
     private val documentQueries: com.simone.jarvismobile.document.DocumentQueryService,
+    private val offlineHub: com.simone.jarvismobile.offlinehub.OfflineHubService,
     private val navigation: com.simone.jarvismobile.navigation.NavigationRepository,
     private val placeSearch: com.simone.jarvismobile.navigation.PlaceSearchRepository,
     private val drivingMode: com.simone.jarvismobile.driving.DrivingModeManager,
@@ -753,12 +754,26 @@ class SessionCoordinator @Inject constructor(
         // BETA 4/8 — questions about the user's own documents ("riassumi questo PDF", "cosa dice il
         // manuale su…", "confronta A con B") are answered from retrieved passages with real sources,
         // whichever engine is selected. Pro Mode keeps its own tool path.
-        if (!proModeManager.currentlyActive()) documentAnswer(transcript)?.let { return it }
+        if (!proModeManager.currentlyActive()) {
+            // BETA 6: Kiwix / Organic Maps / offline library commands (strictly phrased, no LLM, no network).
+            offlineHubAnswer(transcript)?.let { return it }
+            documentAnswer(transcript)?.let { return it }
+        }
         return engineRouter.route(
             transcript,
             classic = com.simone.jarvismobile.engine.ClassicJarvisEngine { classicAnswer(it) },
             conversational = conversationalEngine,
         )
+    }
+
+    /**
+     * "Apri Kiwix", "cerca una farmacia su Organic Maps", "portami a casa con Organic Maps"… Returns null when
+     * [transcript] is not such a command. The command opens an installed app through a documented Intent; what it
+     * says afterwards is what really happened (not installed, intent not handled, preview only…).
+     */
+    private suspend fun offlineHubAnswer(transcript: String): String? {
+        val cmd = com.simone.jarvismobile.core.offlinehub.OfflineHubParser.parse(transcript) ?: return null
+        return runCancellable { offlineHub.handle(cmd) }.getOrNull() ?: "Non sono riuscito a completare l'operazione."
     }
 
     /**
