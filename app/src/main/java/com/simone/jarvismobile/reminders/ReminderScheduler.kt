@@ -4,6 +4,8 @@ import android.content.Context
 import com.simone.jarvismobile.alarms.ExactAlarms
 import com.simone.jarvismobile.core.agenda.AgendaEntry
 import com.simone.jarvismobile.core.agenda.ReminderSchedule
+import com.simone.jarvismobile.core.reliability.MissedReminderPolicy
+import com.simone.jarvismobile.core.reliability.ReminderCandidate
 import com.simone.jarvismobile.data.SettingsRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.first
@@ -23,6 +25,7 @@ class ReminderScheduler @Inject constructor(
     private val alarms: ExactAlarms,
 ) {
     private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    private val ledger = ReminderDeliveryLedger(context)
 
     suspend fun sync(entries: List<AgendaEntry>) {
         if (!settings.reminderNotifications.first()) {
@@ -44,8 +47,43 @@ class ReminderScheduler @Inject constructor(
 
         val old = prefs.getStringSet(KEY_SCHEDULED, emptySet()).orEmpty()
         (old - desired.keys).forEach(alarms::cancel)
-        desired.forEach { (name, reminder) -> enqueue(name, reminder) }
-        prefs.edit().putStringSet(KEY_SCHEDULED, desired.keys.toSet()).apply()
+        // BETA 7: the result of booking used to be ignored, so an alarm the platform refused was still remembered as
+        // scheduled. Only accepted bookings are recorded; refused ones are retried on the next sync/re-arm.
+        val accepted = desired.filter { (name, reminder) -> enqueue(name, reminder) }.keys
+        prefs.edit().putStringSet(KEY_SCHEDULED, accepted.toSet()).apply()
+    }
+
+    /**
+     * Reminders whose moment passed while the phone was off or the app was force-stopped, not yet delivered, within
+     * the last hours: posted once, marked as missed. Called only from a restart/re-arm pass — never on an ordinary
+     * edit, so moving a reminder into the past does not make it fire.
+     * @return how many were posted
+     */
+    suspend fun deliverMissed(entries: List<AgendaEntry>, now: LocalDateTime = LocalDateTime.now()): Int {
+        if (!settings.reminderNotifications.first()) return 0
+        val morning = LocalTime.of(settings.reminderMorningHour.first(), 0)
+        val byKey = LinkedHashMap<String, Pair<AgendaEntry, LocalDateTime>>()
+        entries.filterNot { it.done }.forEach { entry ->
+            entry.alerts.distinctBy { it.key }.forEach alerts@{ alert ->
+                val trigger = ReminderSchedule.triggerAt(entry, alert, morning) ?: return@alerts
+                byKey["${entry.id}_${alert.key}"] = entry to trigger
+            }
+        }
+        ledger.retainOnly(byKey.keys)
+        val missed = MissedReminderPolicy.select(
+            byKey.map { (k, v) -> ReminderCandidate(k, v.second) },
+            ledger.delivered(),
+            now,
+        )
+        var posted = 0
+        missed.forEach { candidate ->
+            val (entry, _) = byKey.getValue(candidate.key)
+            val whenText = listOfNotNull(entry.date?.toString(), entry.time?.toString()).joinToString(" · ")
+            val outcome = ReminderNotifier.post(context, candidate.key, entry.id, entry.text, whenText, missed = true)
+            ledger.record(candidate.key, outcome)
+            if (outcome == ReminderPostOutcome.POSTED) posted++
+        }
+        return posted
     }
 
     suspend fun cancelEntry(entryId: String) {
@@ -61,13 +99,13 @@ class ReminderScheduler @Inject constructor(
      * minute; WorkManager only ever promised "eventually", and on a sleeping
      * phone that meant the notification turned up when the app was next opened.
      */
-    private fun enqueue(name: String, reminder: ScheduledReminder) {
+    private fun enqueue(name: String, reminder: ScheduledReminder): Boolean {
         val entry = reminder.entry
         val whenText = listOfNotNull(
             entry.date?.toString(),
             entry.time?.toString(),
         ).joinToString(" · ")
-        alarms.schedule(
+        return alarms.schedule(
             key = name,
             at = reminder.trigger,
             extras = mapOf(

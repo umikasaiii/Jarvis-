@@ -1,22 +1,14 @@
 package com.simone.jarvismobile.alarms
 
-import android.Manifest
-import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
-import android.os.Build
 import android.util.Log
-import androidx.core.app.NotificationCompat
-import androidx.core.app.NotificationManagerCompat
-import androidx.core.content.ContextCompat
 import com.simone.jarvismobile.agenda.AgendaRepository
 import com.simone.jarvismobile.automation.AutomationRepository
 import com.simone.jarvismobile.automation.AutomationRunner
 import com.simone.jarvismobile.automation.rule.AutomationExecutor
 import com.simone.jarvismobile.automation.rule.RuleScheduler
-import com.simone.jarvismobile.background.JarvisNotifications
 import com.simone.jarvismobile.context.ContextEngine
 import com.simone.jarvismobile.core.automation.rule.TriggerEvent
 import com.simone.jarvismobile.core.proactive.ProactiveTriggerSource
@@ -25,8 +17,6 @@ import com.simone.jarvismobile.core.proactive.TriggerEvidenceSource
 import com.simone.jarvismobile.core.proactive.TriggerEvidenceStage
 import com.simone.jarvismobile.proactive.ProactiveScheduler
 import com.simone.jarvismobile.proactive.TriggerEvidenceStore
-import com.simone.jarvismobile.reminders.ReminderActionReceiver
-import com.simone.jarvismobile.ui.MainActivity
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
@@ -34,6 +24,12 @@ import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+import com.simone.jarvismobile.core.reliability.AutomationFireGuard
+import com.simone.jarvismobile.core.reliability.BoundedWork
+import com.simone.jarvismobile.core.reliability.WorkOutcome
+import com.simone.jarvismobile.reminders.ReminderDeliveryLedger
+import com.simone.jarvismobile.reminders.ReminderNotifier
 
 /**
  * Where an exact alarm lands.
@@ -56,14 +52,17 @@ class AlarmReceiver : BroadcastReceiver() {
 
         when (kind) {
             ExactAlarms.KIND_REMINDER -> {
-                notifyReminder(
+                // BETA 7: the outcome is recorded (permission denied / notifications off / channel muted are no longer
+                // silent returns) and a blocked reminder is NOT marked delivered, so it can still be offered late.
+                val outcome = ReminderNotifier.post(
                     context = context,
                     id = id,
                     entryId = intent.getStringExtra(ExactAlarms.EXTRA_ENTRY_ID).orEmpty(),
-                    title = "Promemoria JARVIS",
                     text = intent.getStringExtra(ExactAlarms.EXTRA_TITLE).orEmpty(),
                     subText = intent.getStringExtra(ExactAlarms.EXTRA_SUBTEXT).orEmpty(),
                 )
+                runCatching { ReminderDeliveryLedger(context).record(id, outcome) }
+                Log.i(TAG, "reminder_fired outcome=${outcome.name}")
             }
             ExactAlarms.KIND_AUTOMATION -> {
                 val deps = EntryPointAccessors.fromApplication(
@@ -76,13 +75,21 @@ class AlarmReceiver : BroadcastReceiver() {
                         val repository = deps.automations()
                         repository.reload()
                         val rule = repository.find(id) ?: return@launch
-                        if (!rule.enabled) return@launch
-                        if (deps.runner().run(rule)) repository.markFired(id)
+                        // BETA 7: a duplicated delivery of the same alarm must not run the rule twice.
+                        if (!AutomationFireGuard.shouldRun(rule.enabled, rule.lastFired, java.time.LocalDateTime.now())) {
+                            Log.i(TAG, "alarm_automation_duplicate_or_disabled_skipped")
+                            repository.reload()
+                            return@launch
+                        }
+                        val ran = withTimeoutOrNull(ALARM_WORK_BUDGET_MS) { deps.runner().run(rule) }
+                        if (ran == true) repository.markFired(id)
                         // reload() re-arms the schedule, which is what makes a
                         // daily rule recur: only the next occurrence is ever booked.
                         repository.reload()
                     } catch (e: Throwable) {
                         Log.w(TAG, "alarm_automation_failed ${e.javaClass.simpleName}")
+                        // The successor must be booked even if the action failed.
+                        runCatching { deps.automations().reload() }
                     } finally {
                         pending.finish()
                     }
@@ -109,14 +116,21 @@ class AlarmReceiver : BroadcastReceiver() {
                         // è già un no-op economico quando il meteo è spento
                         // (controllato al suo interno), quindi chiamarlo qui prima
                         // di ogni scatto non costa nulla quando l'utente non lo usa.
-                        runCatching { deps.weather().refresh() }
+                        // BETA 7: bounded — offline, a stuck refresh must not eat the receiver's whole budget.
+                        withTimeoutOrNull(WEATHER_BUDGET_MS) { runCatching { deps.weather().refresh() } }
                         // The occurrence is the dedup key, so a duplicated delivery
                         // of the same firing is collapsed by the gate.
                         val event = TriggerEvent(type = triggerType, at = now, dedupKey = occurrence)
-                        val evalContext = deps.contextEngine().evaluationContext(now = now)
-                        deps.ruleExecutor().onTrigger(event, evalContext)
-                        // Re-arm the successor: only the next occurrence is ever booked.
-                        deps.ruleScheduler().sync(now)
+                        // BETA 7: bounded, and the successor is re-armed even if the rule action hangs or fails.
+                        val outcome = BoundedWork.runThenAlways(
+                            timeoutMs = ALARM_WORK_BUDGET_MS,
+                            work = {
+                                val evalContext = deps.contextEngine().evaluationContext(now = now)
+                                deps.ruleExecutor().onTrigger(event, evalContext)
+                            },
+                            afterwards = { deps.ruleScheduler().sync(now) },
+                        )
+                        if (outcome != WorkOutcome.COMPLETED) Log.w(TAG, "alarm_rule_outcome=${outcome.name}")
                     } catch (e: Throwable) {
                         Log.w(TAG, "alarm_rule_failed ${e.javaClass.simpleName}")
                     } finally {
@@ -184,12 +198,35 @@ class AlarmReceiver : BroadcastReceiver() {
                             // occurrence — a real systemic-reliability gap
                             // found during that audit, not just a
                             // diagnostics gap.
-                            runCatching { deps.proactiveManager().evaluateOnUnlock(trigger = trigger) }
-                                .onSuccess { evidence.record(evidenceSource, TriggerEvidenceStage.PROACTIVE_CALL_SUCCEEDED) }
-                                .onFailure {
-                                    evidence.record(evidenceSource, TriggerEvidenceStage.PROACTIVE_CALL_FAILED, detail = "error=${it.javaClass.simpleName}")
-                                    Log.w(TAG, "alarm_morning_briefing_evaluate_failed ${it.javaClass.simpleName}")
+                            // BETA 7: bounded by the receiver's time budget. A hung evaluation used to block the
+                            // re-arm below and keep goAsync() open until the process was killed — losing every
+                            // later briefing. Now a hang is its own evidence stage and the successor is still booked.
+                            var failure: Throwable? = null
+                            val outcome = BoundedWork.runThenAlways(
+                                timeoutMs = MORNING_WORK_BUDGET_MS,
+                                work = {
+                                    try {
+                                        deps.proactiveManager().evaluateOnUnlock(trigger = trigger)
+                                    } catch (e: kotlinx.coroutines.CancellationException) {
+                                        throw e
+                                    } catch (e: Throwable) {
+                                        failure = e
+                                        throw e
+                                    }
+                                },
+                                afterwards = { },
+                            )
+                            when (outcome) {
+                                WorkOutcome.COMPLETED -> evidence.record(evidenceSource, TriggerEvidenceStage.PROACTIVE_CALL_SUCCEEDED)
+                                WorkOutcome.TIMED_OUT -> {
+                                    evidence.record(evidenceSource, TriggerEvidenceStage.PROACTIVE_CALL_TIMED_OUT, detail = "budgetMs=$MORNING_WORK_BUDGET_MS")
+                                    Log.w(TAG, "alarm_morning_briefing_evaluate_timed_out")
                                 }
+                                WorkOutcome.FAILED -> {
+                                    evidence.record(evidenceSource, TriggerEvidenceStage.PROACTIVE_CALL_FAILED, detail = "error=${failure?.javaClass?.simpleName}")
+                                    Log.w(TAG, "alarm_morning_briefing_evaluate_failed ${failure?.javaClass?.simpleName}")
+                                }
+                            }
                         }
                         // Both signals are one-shot exact alarms — re-arm the
                         // NEXT occurrence for whichever one just fired,
@@ -210,76 +247,6 @@ class AlarmReceiver : BroadcastReceiver() {
         }
     }
 
-    /**
-     * The reminder that actually reaches the user. Tapping the body opens the
-     * Attività (agenda) screen for this entry; the single shade action ticks it
-     * off without opening the app. No "Apri chat" — a reminder is about the task,
-     * not the assistant.
-     */
-    private fun notifyReminder(
-        context: Context,
-        id: String,
-        entryId: String,
-        title: String,
-        text: String,
-        subText: String,
-    ) {
-        if (text.isBlank()) return
-        if (
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.POST_NOTIFICATIONS,
-            ) != PackageManager.PERMISSION_GRANTED
-        ) {
-            return
-        }
-        val notificationId = NOTIFICATION_BASE + id.hashCode().and(0x0fff)
-        // Tap → the Attività screen this reminder refers to.
-        val open = PendingIntent.getActivity(
-            context,
-            id.hashCode(),
-            Intent(context, MainActivity::class.java)
-                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                .putExtra(MainActivity.EXTRA_OPEN_AGENDA, true)
-                .putExtra(MainActivity.EXTRA_AGENDA_ENTRY_ID, entryId),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-        )
-        // Route through the shared JARVIS styling so the monochrome status-bar
-        // icon and accent are identical everywhere. No chat action here.
-        val builder = JarvisNotifications.styled(
-            context = context,
-            channelId = JarvisNotifications.CHANNEL_REMINDERS,
-            title = title,
-            text = text,
-            contentIntent = open,
-            expandableText = text,
-            withChatAction = false,
-        )
-            .setSubText(subText.takeIf { it.isNotBlank() })
-            .setCategory(NotificationCompat.CATEGORY_REMINDER)
-            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-        // "Segna come completato" — mark it done straight from the shade. Only
-        // when we know which entry to tick (older alarms carried no entry id).
-        if (entryId.isNotBlank()) {
-            val done = Intent(context, ReminderActionReceiver::class.java)
-                .setAction(ReminderActionReceiver.ACTION_DONE)
-                .putExtra(ReminderActionReceiver.EXTRA_ENTRY_ID, entryId)
-                .putExtra(ReminderActionReceiver.EXTRA_NOTIF_ID, notificationId)
-            val donePending = PendingIntent.getBroadcast(
-                context,
-                id.hashCode() + 1,
-                done,
-                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-            )
-            builder.addAction(0, "Segna come completato", donePending)
-        }
-        runCatching {
-            NotificationManagerCompat.from(context).notify(notificationId, builder.build())
-        }
-    }
-
     @EntryPoint
     @InstallIn(SingletonComponent::class)
     interface AlarmEntryPoint {
@@ -297,6 +264,10 @@ class AlarmReceiver : BroadcastReceiver() {
 
     private companion object {
         const val TAG = "JarvisAlarms"
-        const val NOTIFICATION_BASE = 6000
+        /** goAsync() gives a few seconds; stay well inside it so the PendingResult is always finished. */
+        const val ALARM_WORK_BUDGET_MS = 8_000L
+        const val WEATHER_BUDGET_MS = 4_000L
+        /** Composing a briefing may refresh weather/agenda; still bounded so the next briefing is always booked. */
+        const val MORNING_WORK_BUDGET_MS = 9_000L
     }
 }

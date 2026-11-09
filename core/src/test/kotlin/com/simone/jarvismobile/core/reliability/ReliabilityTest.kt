@@ -88,6 +88,10 @@ class RearmRunnerTest {
         assertEquals(StepStatus.OK, report.results.first { it.step == RearmStep.PROACTIVE }.status)
     }
 
+    @Test fun backupScheduleIsResyncedByEveryTrigger() {
+        RearmTrigger.values().forEach { assertTrue(RearmStep.BACKUP_SCHEDULE in RearmPlan.stepsFor(it), it.name) }
+    }
+
     @Test fun timeZoneChangeSkipsGeofencesButRearmsClockAlarms() = runTest {
         val report = RearmRunner().run(RearmTrigger.TIMEZONE_CHANGED, all)
         assertFalse(report.results.any { it.step == RearmStep.PLACES })
@@ -237,4 +241,17 @@ class DrivingLifecycleTest {
         val l = lc(); l.requestStart("DRIVING"); l.serviceUp()
         assertNull(l.serviceDown())
     }
+}
+
+class CloudUploadGateTest {
+    @Test fun localBackupIsNotTheGateCloudOffMeansNothingToUpload() =
+        assertEquals(CloudUploadDecision.CLOUD_NOT_ENABLED, CloudUploadGate.decide(false, true, NetworkKind.NONE))
+    @Test fun airplaneModeDefersTheUploadInsteadOfFailing() =
+        assertEquals(CloudUploadDecision.DEFER_OFFLINE, CloudUploadGate.decide(true, true, NetworkKind.NONE))
+    @Test fun wifiOnlyDefersOnMobileData() =
+        assertEquals(CloudUploadDecision.DEFER_WIFI_ONLY, CloudUploadGate.decide(true, true, NetworkKind.METERED))
+    @Test fun wifiOnlyUploadsOnWifi() =
+        assertEquals(CloudUploadDecision.UPLOAD, CloudUploadGate.decide(true, true, NetworkKind.UNMETERED))
+    @Test fun mobileDataAllowedWhenTheUserDidNotRestrictIt() =
+        assertEquals(CloudUploadDecision.UPLOAD, CloudUploadGate.decide(true, false, NetworkKind.METERED))
 }

@@ -2,6 +2,11 @@ package com.simone.jarvismobile.backup
 
 import android.Manifest
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import com.simone.jarvismobile.core.reliability.CloudUploadDecision
+import com.simone.jarvismobile.core.reliability.CloudUploadGate
+import com.simone.jarvismobile.core.reliability.NetworkKind
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.app.NotificationCompat
@@ -73,8 +78,19 @@ class BackupWorker(
         // Cloud is optional and best-effort: queue, then try. Never fails the job.
         runCatching {
             deps.cloud().enqueue(manifest.id)
-            deps.cloud().processQueue()
-            deps.cloud().pruneRemote()
+            // BETA 7: "Solo Wi-Fi" and being offline only DEFER the upload — the encrypted copy stays in the persistent
+            // queue and is retried at the next run. They never stop the local backup above.
+            val decision = CloudUploadGate.decide(
+                cloudEnabled = deps.settings().backupCloudEnabled.first(),
+                wifiOnly = deps.settings().backupWifiOnly.first(),
+                network = currentNetwork(),
+            )
+            if (decision == CloudUploadDecision.UPLOAD) {
+                deps.cloud().processQueue()
+                deps.cloud().pruneRemote()
+            } else {
+                Log.i(TAG, "cloud_upload_deferred decision=${decision.name}")
+            }
         }
         return Result.success()
     }
@@ -91,6 +107,13 @@ class BackupWorker(
         if (required.isEmpty()) return true
         val current = deps.contextEngine().state.value.placeId
         return current != null && current in required
+    }
+
+    private fun currentNetwork(): NetworkKind {
+        val cm = applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return NetworkKind.NONE
+        val caps = runCatching { cm.getNetworkCapabilities(cm.activeNetwork) }.getOrNull() ?: return NetworkKind.NONE
+        if (!caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) return NetworkKind.NONE
+        return if (caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)) NetworkKind.UNMETERED else NetworkKind.METERED
     }
 
     private fun notifyFailure(text: String) {

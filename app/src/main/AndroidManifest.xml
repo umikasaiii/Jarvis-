@@ -348,6 +348,18 @@
             </intent-filter>
         </receiver>
 
+        <!-- BETA 7: zone / clock / exact-alarm-permission changes invalidate booked wall-clock alarms. All three are
+             system broadcasts; the receiver is not exported. -->
+        <receiver
+            android:name=".alarms.TimeChangeReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
+            </intent-filter>
+        </receiver>
+
         <!-- § FASE 2A.8 §F — Multi-Signal Morning Coordinator's NEXT_ALARM
              signal: reschedules its exact alarm promptly when the device's
              next alarm changes (see NextAlarmChangedReceiver's own honesty

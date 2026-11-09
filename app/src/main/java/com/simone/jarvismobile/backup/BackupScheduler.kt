@@ -43,11 +43,12 @@ class BackupScheduler @Inject constructor(
         val target = LocalTime.of(settings.backupHour.first(), settings.backupMinute.first())
         val delay = initialDelay(now, target)
 
-        val wifiOnly = settings.backupWifiOnly.first()
         val chargingOnly = settings.backupChargingOnly.first()
         val minBattery = settings.backupMinBattery.first()
         val constraints = Constraints.Builder()
-            .setRequiredNetworkType(if (wifiOnly) NetworkType.UNMETERED else NetworkType.NOT_REQUIRED)
+            // BETA 7: no network constraint. "Solo Wi-Fi" restricts the cloud UPLOAD (decided in BackupWorker by
+            // CloudUploadGate), not the local encrypted backup, which needs no network and must run in airplane mode.
+            .setRequiredNetworkType(NetworkType.NOT_REQUIRED)
             .setRequiresCharging(chargingOnly)
             .setRequiresBatteryNotLow(minBattery > 0)
             .build()

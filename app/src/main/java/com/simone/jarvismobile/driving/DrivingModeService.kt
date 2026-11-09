@@ -61,7 +61,14 @@ class DrivingModeService : LifecycleService() {
 
     override fun onCreate() {
         super.onCreate()
-        goForeground()
+        try {
+            goForeground()
+        } catch (e: Throwable) {
+            // The foreground promotion was refused: do not keep a half-started service (and a DRIVING mode) around.
+            stopping = true
+            stopSelf()
+            return
+        }
         showOverlays()
         // BETA 6: opens the maps app the user chose for driving (Google Maps unless they changed it).
         lifecycleScope.launch { runCatching { offlineHub.openPreferredMaps() } }
@@ -101,16 +108,19 @@ class DrivingModeService : LifecycleService() {
         if (stopping) return
         stopping = true
         lifecycleScope.launch {
-            runCatching { parkingGate.saveIfAway() }
-            runCatching { drivingModeManager.restorePreviousMode() }
+            // BETA 7: bounded. A location read that never returns used to keep the service (and its microphone
+            // notification and overlay) alive forever; stopSelf() is now always reached.
+            runCatching { kotlinx.coroutines.withTimeoutOrNull(SHUTDOWN_BUDGET_MS) { parkingGate.saveIfAway() } }
+            runCatching { kotlinx.coroutines.withTimeoutOrNull(SHUTDOWN_BUDGET_MS) { drivingModeManager.restorePreviousMode() } }
             stopSelf()
         }
     }
 
     override fun onDestroy() {
-        hideOverlays()
-        media.stop()
-        drivingModeManager.onServiceStopped()
+        // BETA 7: every resource is released independently; a failure in one never skips the rest or the mode restore.
+        runCatching { hideOverlays() }
+        runCatching { media.stop() }
+        runCatching { drivingModeManager.onServiceStopped() }
         super.onDestroy()
     }
 
@@ -229,12 +239,19 @@ class DrivingModeService : LifecycleService() {
         // foreground — see the manifest comment). minSdk 31 already clears the
         // 3-arg startForeground floor (API 29), so this needs only one branch
         // for whether FOREGROUND_SERVICE_TYPE_SPECIAL_USE itself exists (API 34+).
+        // BETA 7: the microphone type is declared only if RECORD_AUDIO is granted — Android 14+ throws a
+        // SecurityException otherwise, which crashed the service on start. Without the microphone the overlay still
+        // works (the wake word simply cannot listen) and nothing pretends otherwise.
+        val micAllowed = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-        } else {
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE or
+                (if (micAllowed) ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE else 0)
+        } else if (micAllowed) {
             ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+        } else {
+            0
         }
-        startForeground(NOTIFICATION_ID, notification, type)
+        if (type == 0) startForeground(NOTIFICATION_ID, notification) else startForeground(NOTIFICATION_ID, notification, type)
     }
 
     private fun createChannel() {
@@ -254,5 +271,6 @@ class DrivingModeService : LifecycleService() {
         const val CHANNEL_ID = "jarvis_driving_mode"
         const val NOTIFICATION_ID = 1002
         const val ACTION_STOP = "com.simone.jarvismobile.action.DRIVING_STOP"
+        private const val SHUTDOWN_BUDGET_MS = 6_000L
     }
 }

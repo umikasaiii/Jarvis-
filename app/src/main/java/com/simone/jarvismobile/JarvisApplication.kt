@@ -128,7 +128,7 @@ class JarvisApplication : Application() {
             // own. ProactiveScheduler is now the sole owner of this plan.
             // Shares the PROACTIVE_SYNC checkpoints above: both calls belong
             // to the same subsystem, and a failure here is equally optional.
-            launch { checkpointed(Checkpoint.PROACTIVE_SYNC_STARTED, Checkpoint.PROACTIVE_SYNC_OK, Checkpoint.PROACTIVE_SYNC_FAILED) { proactiveScheduler.scheduleAll() } }
+            launch { checkpointed(Checkpoint.PROACTIVE_SYNC_STARTED, Checkpoint.PROACTIVE_SYNC_OK, Checkpoint.PROACTIVE_SYNC_FAILED) { proactiveScheduler.scheduleAll(rebook = true) } }
             // Arm the generic engine's clock triggers (phase 5). Time rules re-arm on
             // every cold start, so an OEM force-stop cannot leave the engine dead.
             launch { checkpointed(Checkpoint.RULE_SYNC_STARTED, Checkpoint.RULE_SYNC_OK, Checkpoint.RULE_SYNC_FAILED) { ruleScheduler.sync() } }

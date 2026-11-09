@@ -25,7 +25,10 @@ class ReminderActionReceiver : BroadcastReceiver() {
         if (intent.action != ACTION_DONE) return
         val entryId = intent.getStringExtra(EXTRA_ENTRY_ID) ?: return
         val notifId = intent.getIntExtra(EXTRA_NOTIF_ID, -1)
-        if (notifId != -1) NotificationManagerCompat.from(context).cancel(notifId)
+        val notifTag = intent.getStringExtra(EXTRA_NOTIF_TAG)
+        // Reminders are posted under a per-reminder tag (BETA 7); older notifications used a bare id.
+        if (notifTag != null) NotificationManagerCompat.from(context).cancel(notifTag, ReminderNotifier.NOTIFICATION_ID)
+        else if (notifId != -1) NotificationManagerCompat.from(context).cancel(notifId)
 
         val deps = EntryPointAccessors.fromApplication(
             context.applicationContext,
@@ -34,7 +37,7 @@ class ReminderActionReceiver : BroadcastReceiver() {
         val pending = goAsync()
         CoroutineScope(Dispatchers.Default).launch {
             try {
-                deps.agenda().setDone(entryId, true)
+                kotlinx.coroutines.withTimeoutOrNull(8_000) { deps.agenda().setDone(entryId, true) }
             } finally {
                 pending.finish()
             }
@@ -51,5 +54,6 @@ class ReminderActionReceiver : BroadcastReceiver() {
         const val ACTION_DONE = "com.simone.jarvismobile.action.REMINDER_DONE"
         const val EXTRA_ENTRY_ID = "entry_id"
         const val EXTRA_NOTIF_ID = "notif_id"
+        const val EXTRA_NOTIF_TAG = "notif_tag"
     }
 }

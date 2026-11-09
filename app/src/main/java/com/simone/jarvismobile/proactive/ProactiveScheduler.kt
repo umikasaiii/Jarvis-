@@ -76,10 +76,17 @@ class ProactiveScheduler @Inject constructor(
 
     // --- canonical NEXT_ALARM / CONFIGURED_TIME temporal ownership ---------
 
-    /** Re-arms both exact-alarm signals — called at app start/boot and after either fires. */
-    suspend fun scheduleAll() {
-        reconcileNextAlarm()
-        reconcileConfiguredTime()
+    /**
+     * Re-arms both exact-alarm signals — called at app start/boot and after either fires.
+     *
+     * [rebook] (BETA 7): after a reboot, an app update or a zone/clock change the system has FORGOTTEN every exact
+     * alarm, but the stored plan still says "already scheduled". Both reconcilers used to treat an unchanged plan as
+     * "nothing to do", so after a reboot the briefing alarm was never booked again. With [rebook] an unchanged plan is
+     * re-booked as-is (same revision, same fire time, so an in-flight intent stays valid) instead of being skipped.
+     */
+    suspend fun scheduleAll(rebook: Boolean = false) {
+        reconcileNextAlarm(rebook)
+        reconcileConfiguredTime(rebook)
     }
 
     /**
@@ -92,7 +99,7 @@ class ProactiveScheduler @Inject constructor(
      * pure decision this wraps: a post-maturity `null`/changed reading can
      * never cancel an already-valid, not-yet-fired occurrence (§9).
      */
-    suspend fun reconcileNextAlarm() {
+    suspend fun reconcileNextAlarm(rebook: Boolean = false) {
         val am = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
         val nowMs = System.currentTimeMillis()
         val today = LocalDate.now().toString()
@@ -132,6 +139,24 @@ class ProactiveScheduler @Inject constructor(
             is SourceAlarmReconciler.Decision.NoOp, is SourceAlarmReconciler.Decision.KeepExisting -> {
                 // Nothing to schedule or cancel — including the critical §9
                 // freeze: a matured, already-valid occurrence is untouched.
+                // BETA 7: unless the platform lost the alarm (reboot/update/clock change) and the plan is still in
+                // the future — then the SAME intent is booked again (same revision), never a recomputation.
+                val plan = relevantExisting
+                if (rebook && plan != null && plan.enabled && plan.intendedFireAtMs > nowMs) {
+                    val fireAtLdt = Instant.ofEpochMilli(plan.intendedFireAtMs).atZone(ZoneId.systemDefault()).toLocalDateTime()
+                    val outcome = exactAlarms.scheduleWithOutcome(
+                        key = KEY_NEXT_ALARM,
+                        at = fireAtLdt,
+                        extras = mapOf(
+                            ExactAlarms.EXTRA_KIND to ExactAlarms.KIND_MORNING_BRIEFING,
+                            ExactAlarms.EXTRA_ID to KEY_NEXT_ALARM,
+                            ExactAlarms.EXTRA_TRIGGER_SOURCE to ProactiveTriggerSource.NEXT_ALARM.name,
+                            ExactAlarms.EXTRA_PLAN_REVISION to plan.planRevision.toString(),
+                            ExactAlarms.EXTRA_LOGICAL_DATE to today,
+                        ),
+                    )
+                    recordScheduleOutcome(TriggerEvidenceSource.NEXT_ALARM, outcome, TriggerEvidenceStage.NEXT_ALARM_SCHEDULED, TriggerEvidenceStage.NEXT_ALARM_SCHEDULE_FAILED, "rebook fireAt=$fireAtLdt")
+                }
             }
             is SourceAlarmReconciler.Decision.Schedule -> {
                 val revision = nextRevision(existing)
@@ -170,7 +195,7 @@ class ProactiveScheduler @Inject constructor(
      * rejected by [com.simone.jarvismobile.alarms.AlarmReceiver] at fire
      * time rather than silently recomputed against the new settings.
      */
-    suspend fun reconcileConfiguredTime() {
+    suspend fun reconcileConfiguredTime(rebook: Boolean = false) {
         val snapshot = settings.morningScheduleSettings.first()
         val now = LocalDateTime.now()
         var fireAt = now.toLocalDate().atTime(snapshot.hour, snapshot.minute)
@@ -185,14 +210,16 @@ class ProactiveScheduler @Inject constructor(
             existing.settingsSnapshotHour != snapshot.hour ||
             existing.settingsSnapshotMinute != snapshot.minute
 
-        if (!coherentSnapshotChanged) {
+        if (!coherentSnapshotChanged && !rebook) {
             // Already reconciled to this exact coherent snapshot — no need
             // to rebook the same exact alarm under a new, needlessly higher
             // revision.
             return
         }
 
-        val revision = nextRevision(existing)
+        // Unchanged snapshot + rebook (BETA 7): the alarm was lost by the platform, the plan was not — book the same
+        // intent again under the same revision.
+        val revision = if (coherentSnapshotChanged) nextRevision(existing) else existing!!.planRevision
         evidence.record(TriggerEvidenceSource.CONFIGURED_TIME, TriggerEvidenceStage.CONFIGURED_TIME_RECONCILED, detail = "hour=${snapshot.hour} minute=${snapshot.minute} revision=$revision")
         evidence.record(TriggerEvidenceSource.CONFIGURED_TIME, TriggerEvidenceStage.CONFIGURED_TIME_SCHEDULE_ATTEMPTED, detail = "fireAt=$fireAt")
         val outcome = exactAlarms.scheduleWithOutcome(

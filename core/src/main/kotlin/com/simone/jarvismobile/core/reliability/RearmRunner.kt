@@ -16,7 +16,7 @@ enum class RearmTrigger {
 }
 
 /** The independent things that can be re-armed. Each one is isolated from the others. */
-enum class RearmStep { AGENDA_REMINDERS, AUTOMATIONS, RULES, PLACES, PROACTIVE }
+enum class RearmStep { AGENDA_REMINDERS, AUTOMATIONS, RULES, PLACES, PROACTIVE, BACKUP_SCHEDULE }
 
 enum class StepStatus { OK, FAILED, TIMED_OUT, SKIPPED }
 
@@ -46,11 +46,11 @@ object RearmPlan {
      */
     fun stepsFor(trigger: RearmTrigger): List<RearmStep> = when (trigger) {
         RearmTrigger.BOOT, RearmTrigger.PACKAGE_REPLACED, RearmTrigger.APP_START, RearmTrigger.WORKER_SAFETY_NET ->
-            listOf(RearmStep.AGENDA_REMINDERS, RearmStep.AUTOMATIONS, RearmStep.RULES, RearmStep.PLACES, RearmStep.PROACTIVE)
+            listOf(RearmStep.AGENDA_REMINDERS, RearmStep.AUTOMATIONS, RearmStep.RULES, RearmStep.PLACES, RearmStep.PROACTIVE, RearmStep.BACKUP_SCHEDULE)
         RearmTrigger.TIMEZONE_CHANGED, RearmTrigger.TIME_CHANGED ->
-            listOf(RearmStep.AGENDA_REMINDERS, RearmStep.AUTOMATIONS, RearmStep.RULES, RearmStep.PROACTIVE)
+            listOf(RearmStep.AGENDA_REMINDERS, RearmStep.AUTOMATIONS, RearmStep.RULES, RearmStep.PROACTIVE, RearmStep.BACKUP_SCHEDULE)
         RearmTrigger.EXACT_ALARM_PERMISSION_CHANGED ->
-            listOf(RearmStep.AGENDA_REMINDERS, RearmStep.AUTOMATIONS, RearmStep.RULES, RearmStep.PROACTIVE)
+            listOf(RearmStep.AGENDA_REMINDERS, RearmStep.AUTOMATIONS, RearmStep.RULES, RearmStep.PROACTIVE, RearmStep.BACKUP_SCHEDULE)
     }
 }
 

@@ -67,6 +67,12 @@ enum class TriggerEvidenceStage {
     PROACTIVE_CALL_ATTEMPTED,
     PROACTIVE_CALL_SUCCEEDED,
     PROACTIVE_CALL_FAILED,
+
+    // BETA 7 — the work stayed within its time budget? A hung evaluation is its own checkpoint (the successor alarm is
+    // still re-armed), and every re-arm pass (boot, update, zone/clock change) leaves a verifiable trace.
+    PROACTIVE_CALL_TIMED_OUT,
+    REARM_COMPLETED,
+    REARM_STEP_FAILED,
 }
 
 /**

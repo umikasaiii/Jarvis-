@@ -62,8 +62,14 @@ class DrivingModeManager @Inject constructor(
     /** Destination prepared by "imposta navigazione per X", consumed by "avvia percorso". */
     @Volatile private var pendingDestinationQuery: String? = null
 
-    /** The mode active before DRIVING, restored on close (spec §18: "riporta JARVIS alla modalità normale"). */
-    @Volatile private var previousMode: String? = null
+    /**
+     * BETA 7: start/stop bookkeeping (previous mode, in-flight start, idempotent stop) lives in a pure, tested class.
+     * Previously a second start before the service was up overwrote the remembered mode with DRIVING itself, a stop with
+     * nothing running started the service just to stop it, and a service that died or failed to start left the mode on
+     * DRIVING for good.
+     */
+    private val lifecycle = com.simone.jarvismobile.core.reliability.DrivingLifecycle(JarvisModes.DRIVING)
+    private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default)
 
     fun hasOverlayPermission(): Boolean = Settings.canDrawOverlays(context)
 
@@ -87,16 +93,24 @@ class DrivingModeManager @Inject constructor(
     suspend fun start(): DrivingStartResult {
         if (_state.value.active) return DrivingStartResult.Started
         if (!hasOverlayPermission()) return DrivingStartResult.MissingOverlayPermission
-        previousMode = modeManager.mode.value
+        // A start already underway (voice command + button): do nothing, and above all do not re-read the mode — the
+        // first request has already switched it to DRIVING.
+        if (!lifecycle.requestStart(modeManager.mode.value)) return DrivingStartResult.Started
         runCatching { modeManager.setMode(JarvisModes.DRIVING) }
-        ContextCompat.startForegroundService(context, Intent(context, DrivingModeService::class.java))
+        try {
+            ContextCompat.startForegroundService(context, Intent(context, DrivingModeService::class.java))
+        } catch (e: Throwable) {
+            // e.g. the platform refused a foreground start. Roll the mode back instead of leaving it on DRIVING with
+            // no service behind it.
+            lifecycle.startFailed()?.let { mode -> runCatching { modeManager.setMode(mode) } }
+            throw e
+        }
         return DrivingStartResult.Started
     }
 
     /** Part of the graceful shutdown sequence — called before the service actually stops. */
     suspend fun restorePreviousMode() {
-        val mode = previousMode ?: return
-        previousMode = null
+        val mode = lifecycle.serviceDown() ?: return
         runCatching { modeManager.setMode(mode) }
     }
 
@@ -106,11 +120,20 @@ class DrivingModeManager @Inject constructor(
      * saving the parking note (spec §18.7) — before it actually tears down.
      */
     fun stop() {
-        context.startService(Intent(context, DrivingModeService::class.java).setAction(DrivingModeService.ACTION_STOP))
+        // Nothing running (or a stop already in flight): do not start the service just to stop it.
+        if (!lifecycle.requestStop()) return
+        try {
+            context.startService(Intent(context, DrivingModeService::class.java).setAction(DrivingModeService.ACTION_STOP))
+        } catch (e: Throwable) {
+            // The graceful path was refused (e.g. background start restriction): stop the service directly so it is
+            // never left running; onServiceStopped() still restores the mode.
+            runCatching { context.stopService(Intent(context, DrivingModeService::class.java)) }
+        }
     }
 
     /** Called by [DrivingModeService] once the overlay window is actually up. */
     fun onServiceStarted() {
+        lifecycle.serviceUp()
         _state.update { DrivingModeState(active = true) }
         wakeWordController.get().setDrivingModeActive(true)
     }
@@ -118,8 +141,11 @@ class DrivingModeManager @Inject constructor(
     /** Called by [DrivingModeService] on teardown, whatever the reason. */
     fun onServiceStopped() {
         _state.update { DrivingModeState(active = false) }
-        wakeWordController.get().setDrivingModeActive(false)
+        runCatching { wakeWordController.get().setDrivingModeActive(false) }
         pendingDestinationQuery = null
+        // Whatever the reason the service ended (graceful stop, system kill, crash, failed start), the user's previous
+        // mode comes back exactly once. After a graceful stop it was already restored and this is a no-op.
+        scope.launch { restorePreviousMode() }
     }
 
     fun setVoiceState(v: DrivingVoiceState) {
