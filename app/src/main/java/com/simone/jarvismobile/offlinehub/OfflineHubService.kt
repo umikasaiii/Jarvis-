@@ -33,7 +33,7 @@ import javax.inject.Singleton
 
 /**
  * Kiwix + Organic Maps hand-over for chat commands, the Library screen and the driving commands (BETA 6).
- * Everything here is an Android Intent to an app the user installed: no network call, no geocoder, no download.
+ * Everything here is an Android Intent to an app the user installed: no network call, no online lookup of places, no download.
  * Destinations get coordinates only from saved JARVIS places or coordinates the user typed; otherwise the text is
  * left to Organic Maps' own offline search — coordinates are never invented.
  */

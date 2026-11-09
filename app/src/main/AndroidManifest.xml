@@ -97,7 +97,7 @@
          when it is missing (see HealthConnectManager.kt). -->
     <uses-permission android:name="android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND" />
 
-    <!-- Deliberately NOT requested: MANAGE_EXTERNAL_STORAGE, QUERY_ALL_PACKAGES,
+    <!-- Deliberately NOT requested: broad all-files storage access, QUERY_ALL_PACKAGES,
          REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, any Accessibility service. See
          docs/PRIVACY.md and docs/SECURITY.md. -->
 
