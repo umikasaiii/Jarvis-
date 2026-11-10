@@ -85,3 +85,12 @@ either engine ever makes goes through the same `ToolRegistry`/`ToolRunner`.
   keeping the loop in `ConversationalJarvisEngine` and `JarvisBrain` strictly
   reasoning-only (never touching `ToolRunner`), matching the requirement to
   keep reasoning and execution on separate call stacks.
+
+
+## Addendum 2026-11-10 — hotfix di routing (non modifica la decisione sopra)
+
+Il difetto «Quale numero devo preparare nel dialer?» su domande conoscitive non dipendeva dalla scelta del motore né dal modello,
+ma dal matcher deterministico condiviso (regex non ancorata). Corretto con una grammatica di hard-command ancorata (Master §11),
+evidenza obbligatoria nel turno corrente per le proposte sensibili del classificatore (§4.2) e politica di risposta per le domande
+in sospeso (§4.1/§10.2). La decisione di fondo di questo ADR (due motori selezionabili, nessuna unificazione prematura) resta invariata:
+l'unificazione (A3) segue i gate semantici.

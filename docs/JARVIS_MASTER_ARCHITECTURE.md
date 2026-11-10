@@ -3615,6 +3615,33 @@ Resta richiesto un **passaggio separato di mappatura** (docs-only) che
 definisca i 30 macro-step a partire dalle track §65, con stati
 DONE / ACTIVE / PAUSED / PLANNED supportati dal Master.
 
+## 65.8 ADDENDUM 2026-11-10 — BETA 8 HOTFIX 2 (false intent / routing conversazionale)
+
+Aggiunta datata: **non modifica né sostituisce** nulla di §65.1–§65.7. Le track A0/A1/A2/A3/A4/B restano come sopra;
+A1 e A3 **non sono avviate** da questo hotfix.
+
+- **Evidenza (device Honor 200, build `cd3f034`, poi riprodotta su JVM con il vero `CommandMatcher`):** domande
+  conoscitive («Quale dei due conserva i dati anche quando spengo il telefono?», «Ricorda che il mio animale
+  immaginario si chiama Nebulix. Come si chiama?») ricevevano «Quale numero devo preparare nel dialer?».
+- **Causa:** il matcher deterministico `dialDraftCall` (eseguito PRIMA del classificatore e del modello) usava una regex non
+  ancorata che scattava su `chiama`/`telefon…` ovunque nella frase («si chiama», «il telefono»): una keyword router nascosta
+  (§4.19, §11.6). Né Gemma né `LlmIntentClassifier` erano coinvolti in quel percorso. Aggravante: una domanda in sospeso
+  (`pendingSlot`) catturava il messaggio successivo e lo ripeteva.
+- **Correzione conforme al Master:** (a) la sola grammatica di «hard command» ammessa da §11 per le chiamate/SMS
+  (`core/tools/PhoneCommandGrammar`): la richiesta deve **aprirsi** con un imperativo esplicito; (b) §4.2 «model output ≠
+  authorization»: il classificatore può solo *proporre* un intento sensibile e la proposta è accettata solo con
+  evidenza coerente nel turno corrente (numero + vocabolario), altrimenti decade (nessuna domanda inventata dal solo nome);
+  (c) §4.1/§10.2 «turno esplicito > contesto precedente»: una risposta a una domanda in sospeso conta solo se ha la forma
+  del valore chiesto (`SlotAnswerPolicy`), scade dopo 120 s e la stessa domanda non si ripete; (d) traccia del percorso per
+  turno (`route=…`). Nessun nuovo router generale, nessun quarto modello, motore Classico non rimosso, due motori non unificati
+  (A3 resta dopo i gate semantici).
+- **Stato:** CI VERIFIED per il percorso di routing (JVM + emulatore, modello simulato/assente); **non DEVICE VERIFIED**:
+  la risposta reale di Gemma/LiteRT-LM sull'Honor 200 resta da provare. Dettaglio: `docs/BETA_STEP08_HOTFIX2_INTENT_ROUTING.md`.
+- **Limite noto, non risolto qui:** «Ricorda che X. <domanda>?» in un unico messaggio salva il fatto (comando di memoria) ma non
+  risponde alla domanda finale nello stesso turno. Candidato per la track semantica (A1/A3), non per questo hotfix.
+
+---
+
 # 66. IMPLEMENTATION PASS HISTORY
 
 | Pass | Stato sintetico |

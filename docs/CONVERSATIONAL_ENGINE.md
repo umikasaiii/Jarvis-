@@ -159,3 +159,19 @@ until at least one conversational turn has run.
    svuotare solo la memoria episodica.
 5. Diagnostica (build debug) mostra il pannello "Motore conversazionale" con
    la telemetria dell'ultimo turno.
+
+
+## Addendum 2026-11-10 — routing hotfix (BETA 8 hotfix 2)
+
+Valido per entrambi i motori (Classico e Conversazionale) perché il difetto stava nel matcher condiviso:
+
+- `FastPathRouter` (Conversazionale) e `classicAnswer` (Classico) usano lo stesso `CommandMatcher`. Le richieste di chiamata/SMS
+  ora passano dalla grammatica ancorata `core/tools/PhoneCommandGrammar`: «si chiama» e «telefono» dentro una frase non sono
+  più comandi.
+- `LlmIntentClassifier` non può più autorizzare da solo un intento sensibile (chiamate, SMS, navigazione, app, media, vault,
+  notifiche, calendario esterno, modifica/cancellazione appunti): nome e punteggio instradano al builder deterministico; senza
+  evidenza nel turno corrente la proposta decade e la richiesta resta conversazionale.
+- `pendingSlot` ha una politica di risposta (`SlotAnswerPolicy`): forma del valore, TTL 120 s, nessuna domanda ripetuta;
+  «Nuova conversazione» azzera anche `lastAskedSlot`.
+- Diagnostica per turno: `route=deterministic|classifier|pending|pending-dropped|conversation` (nessun testo utente).
+- Non cambia: nessun nuovo router, nessuna unificazione dei motori, il motore Classico resta.
