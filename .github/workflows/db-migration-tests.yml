@@ -48,7 +48,7 @@ jobs:
           api-level: 34
           arch: x86_64
           target: google_apis
-          script: ./gradlew --no-daemon :app:connectedDebugAndroidTest -Pjarvis.emulatorAbi=x86_64 -Pandroid.testInstrumentationRunnerArguments.class=com.simone.jarvismobile.background.JarvisMigrationInstrumentedTest,com.simone.jarvismobile.archive.NotesStoreInstrumentedTest,com.simone.jarvismobile.document.DocumentPipelineInstrumentedTest,com.simone.jarvismobile.offlinehub.OfflineHubIntentInstrumentedTest,com.simone.jarvismobile.reliability.DailyReliabilityInstrumentedTest,com.simone.jarvismobile.reliability.CrossModuleInstrumentedTest,com.simone.jarvismobile.regex.ParserInitInstrumentedTest,com.simone.jarvismobile.regex.ConversationRoutingInstrumentedTest
+          script: ./gradlew --no-daemon :app:connectedDebugAndroidTest -Pjarvis.emulatorAbi=x86_64 -Pandroid.testInstrumentationRunnerArguments.class=com.simone.jarvismobile.background.JarvisMigrationInstrumentedTest,com.simone.jarvismobile.archive.NotesStoreInstrumentedTest,com.simone.jarvismobile.document.DocumentPipelineInstrumentedTest,com.simone.jarvismobile.offlinehub.OfflineHubIntentInstrumentedTest,com.simone.jarvismobile.reliability.DailyReliabilityInstrumentedTest,com.simone.jarvismobile.reliability.CrossModuleInstrumentedTest,com.simone.jarvismobile.regex.ParserInitInstrumentedTest,com.simone.jarvismobile.regex.ConversationRoutingInstrumentedTest,com.simone.jarvismobile.background.AssistantQueueRecoveryInstrumentedTest
       - name: Test results summary (failures with their messages)
         if: always()
         run: |

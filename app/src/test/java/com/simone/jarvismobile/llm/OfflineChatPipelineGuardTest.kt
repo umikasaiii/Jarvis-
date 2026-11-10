@@ -54,10 +54,10 @@ class OfflineChatPipelineGuardTest {
         val e = src("llm/LitertLmEngine.kt")
         assertTrue("private val loadMutex = Mutex()" in e)
         assertTrue("loadMutex.withLock" in e)
-        assertTrue("withTimeoutOrNull(UNWIND_TIMEOUT_MS) { chatMutex.lock() }" in e)
-        assertTrue("opCounter" in e) // a load issued after unload() wins
+        // HOTFIX 3: generation/reset/close are serialised by the tested core InferenceSlot, not by ad-hoc mutexes.
+        assertTrue("InferenceSlot(" in e)
+        assertTrue("old.awaitClosed(UNWIND_TIMEOUT_MS)" in e) // a retired engine is closed by the slot, never under use
         assertTrue("ModelLoadAdvisor.assess" in e)
-        assertTrue("GenerationStopController" in e)
     }
 
     @Test fun reloadingTheSameFileIsANoOp() {

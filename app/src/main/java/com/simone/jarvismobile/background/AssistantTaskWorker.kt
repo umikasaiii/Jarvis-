@@ -16,6 +16,7 @@ import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 import com.simone.jarvismobile.R
 import com.simone.jarvismobile.core.chat.EnqueueGuard
+import com.simone.jarvismobile.core.chat.QueueLiveness
 import com.simone.jarvismobile.audio.SessionCoordinator
 import com.simone.jarvismobile.data.SettingsRepository
 import com.simone.jarvismobile.ui.MainActivity
@@ -50,7 +51,9 @@ class AssistantTaskWorker(
             // BETA 2/8: answer in arrival order. A newer message waits (bounded) for older queued ones, so two
             // quick sends can never produce "answer 2, answer 1" in the chat.
             val waitUntil = System.currentTimeMillis() + ORDER_WAIT_MS
-            while (dao.olderActiveCount(id, task.createdAt) > 0 && System.currentTimeMillis() < waitUntil) {
+            while (dao.olderActiveCount(id, task.createdAt, QueueLiveness.staleBefore(System.currentTimeMillis())) > 0 &&
+                System.currentTimeMillis() < waitUntil
+            ) {
                 kotlinx.coroutines.delay(ORDER_POLL_MS)
             }
             update(dao, id, AssistantTaskStatus.LOADING_MODEL, 10)

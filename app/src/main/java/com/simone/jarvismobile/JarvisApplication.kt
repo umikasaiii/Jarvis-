@@ -29,6 +29,7 @@ import javax.inject.Inject
 class JarvisApplication : Application() {
 
     @Inject lateinit var widgetUpdater: JarvisWidgetUpdater
+    @Inject lateinit var inferenceDiagnostics: com.simone.jarvismobile.llm.InferenceDiagnostics
     @Inject lateinit var backupScheduler: BackupScheduler
     @Inject lateinit var backupRepository: BackupRepository
     @Inject lateinit var automationServiceController:
@@ -65,6 +66,8 @@ class JarvisApplication : Application() {
         // above) — the one startup phase this recorder honestly cannot
         // observe if IT is what fails (§7).
         StartupDiagnostics.checkpoint(Checkpoint.HILT_READY)
+        // HOTFIX 3: content-free LLM/lifecycle trail (process start, boot counter, previous exit reason).
+        runCatching { inferenceDiagnostics.install(this) }
         createListeningChannel()
         JarvisNotifications.createChannels(this)
         // § JARVIS Implementation Master Plan PASSAGGIO 10.2 §3 — safe to

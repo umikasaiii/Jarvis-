@@ -84,7 +84,16 @@ class DiagnosticsViewModel @Inject constructor(
     private val sileroManager: com.simone.jarvismobile.audio.silero.SileroVadModelManager,
     private val duplexController: com.simone.jarvismobile.audio.duplex.DuplexMonitorController,
     private val sileroQualification: com.simone.jarvismobile.audio.silero.SileroVadQualificationService,
+    private val llmDiagnostics: com.simone.jarvismobile.llm.InferenceDiagnostics,
 ) : AndroidViewModel(application) {
+
+    // HOTFIX 3: content-free event trail of the local inference stack (types, timings, counts only).
+    private val _llmReport = MutableStateFlow("")
+    val llmReport: StateFlow<String> = _llmReport.asStateFlow()
+
+    fun refreshLlmReport() {
+        _llmReport.value = llmDiagnostics.report()
+    }
 
     /**
      * § JARVIS Implementation Master Plan — MICRO-PATCH E.1 §7/§8. Whatever

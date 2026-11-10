@@ -202,6 +202,26 @@ fun DiagnosticsScreen(
             Text("Reset audio")
         }
 
+        // HOTFIX 3: inference event trail (no conversation content). Distinguishes a stuck generation, a
+        // background/foreground switch, a process death and a real device reboot (boot counter + uptime).
+        val llmReport by viewModel.llmReport.collectAsStateWithLifecycle()
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Diagnostica inferenza LLM", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Eventi con tempi (nessun testo di conversazione): caricamento, risposte, annullamenti, " +
+                        "timeout, primo piano/sfondo, schermo, avvio processo, contatore di avvii del telefono.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                OutlinedButton(onClick = viewModel::refreshLlmReport, modifier = Modifier.fillMaxWidth()) {
+                    Text("Mostra eventi recenti")
+                }
+                if (llmReport.isNotEmpty()) {
+                    Text(llmReport, style = MaterialTheme.typography.bodySmall, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+                }
+            }
+        }
+
         // Supertonic FAST/BALANCED/QUALITY A/B comparison (spec §"TEST"). Debug-only
         // like the GPS simulator below: not something a shipped build should expose.
         if (BuildConfig.DEBUG) {

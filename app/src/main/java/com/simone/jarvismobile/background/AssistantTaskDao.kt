@@ -41,9 +41,10 @@ interface AssistantTaskDao {
     /** BETA 2/8 — how many OLDER tasks are still active: a newer answer waits its turn so the chat keeps arrival order. */
     @Query(
         "SELECT COUNT(*) FROM assistant_tasks WHERE id != :id AND createdAt < :createdAt " +
+            "AND updatedAt >= :staleBefore " +
             "AND status IN ('QUEUED','LOADING_MODEL','UNDERSTANDING','RETRIEVING_MEMORY','GENERATING')",
     )
-    suspend fun olderActiveCount(id: String, createdAt: Long): Int
+    suspend fun olderActiveCount(id: String, createdAt: Long, staleBefore: Long): Int
 
     @Query(
         "UPDATE assistant_tasks SET status = :status, progress = :progress, " +

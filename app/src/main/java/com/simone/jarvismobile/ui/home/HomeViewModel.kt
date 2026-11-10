@@ -149,6 +149,14 @@ class HomeViewModel @Inject constructor(
 
     /** Clears the conversation and the model's in-session memory. */
     fun onNewConversation() {
+        // HOTFIX 3: an answer still being generated belongs to the OLD conversation — stop it (native cancel +
+        // queue rows) before the reset, so it can neither run on a half-reset engine nor land in the new chat.
+        _stopRequested.value = true
+        coordinator.cancelTextGeneration()
+        viewModelScope.launch {
+            taskQueue.cancelActive()
+            _stopRequested.value = false
+        }
         coordinator.newConversation()
     }
 

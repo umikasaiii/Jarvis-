@@ -9,46 +9,52 @@ import com.google.ai.edge.litertlm.Conversation
 import com.google.ai.edge.litertlm.ConversationConfig
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
-import com.simone.jarvismobile.core.llm.GenerationCancelled
-import com.simone.jarvismobile.core.llm.GenerationStopController
 import com.simone.jarvismobile.core.llm.GenerationTimedOut
+import com.simone.jarvismobile.core.llm.InferenceEvent
+import com.simone.jarvismobile.core.llm.InferenceEventLog
+import com.simone.jarvismobile.core.llm.InferenceEventType
+import com.simone.jarvismobile.core.llm.InferenceScheduler
+import com.simone.jarvismobile.core.llm.InferenceSlot
 import com.simone.jarvismobile.core.llm.LoadAdviceLevel
 import com.simone.jarvismobile.core.llm.ModelLoadAdvisor
-import com.simone.jarvismobile.core.llm.StopReason
+import com.simone.jarvismobile.core.llm.NativeConversation
+import com.simone.jarvismobile.core.llm.NativeEngine
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import java.io.File
-import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
+import java.io.File
 import java.util.concurrent.CancellationException
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicReference
 import javax.inject.Inject
 
 /**
- * On-device LLM backed by LiteRT-LM (Google AI Edge). Runs fully offline on a
- * `.litertlm` model file the user imports — the format AI Edge Gallery / the
- * HuggingFace LiteRT community publish, and Google's current direction now that
- * the MediaPipe LLM Inference API is in maintenance mode.
+ * On-device LLM backed by LiteRT-LM (Google AI Edge). Runs fully offline on a `.litertlm` model file the user
+ * imports. CPU backend for maximum compatibility; nothing is bundled.
  *
- * We use the CPU backend for maximum device compatibility (the GPU/NPU backends
- * need extra native libraries and are model-dependent). Everything is offline;
- * the model file is imported by the user and never bundled.
+ * HOTFIX 3 — this class is now only the Android adapter. Everything about WHEN native resources may be used,
+ * closed, cancelled or abandoned lives in the JVM-tested [InferenceSlot] (`:core`): one lane per engine, a
+ * deferred (never concurrent) reset/close, caller cancellation wired to `Conversation.cancelProcess()`,
+ * discarded conversations after any stop/failure/degenerate output, and wedge detection. What remains here:
+ * loading the model file, mapping LiteRT types onto the slot's tiny native contract, and recovery by
+ * replacing a wedged engine.
  *
  * Not compiled in the scaffolding container (no Android SDK); built in CI.
  */
 class LitertLmEngine @Inject constructor(
     @ApplicationContext private val context: Context,
+    private val diagnostics: InferenceDiagnostics,
 ) : LlmEngine {
+
+    /** "fast" / "advanced" / "classifier" — set by [LlmRouter]; only used to label diagnostics. */
+    @Volatile var label: String = "llm"
 
     private val _loadState = MutableStateFlow(LlmLoadState.UNLOADED)
     override val loadState = _loadState.asStateFlow()
@@ -62,72 +68,66 @@ class LitertLmEngine @Inject constructor(
     private val _generating = MutableStateFlow(false)
     override val generating = _generating.asStateFlow()
 
-    @Volatile private var engine: Engine? = null
-
-    // A single conversation reused across turns so the model REMEMBERS the chat
-    // (KV cache / history). Created lazily on the first chat() after a load/reset.
-    @Volatile private var conversation: Conversation? = null
-
-    /** System instruction the live conversation was seeded with. */
-    @Volatile private var seededSystemPrompt: String? = null
-
-    /** Changes whenever the live KV-cache conversation is discarded. */
-    @Volatile var conversationEpoch: Long = 0L
-        private set
-
-    // Serializes chat() calls: sendMessage is blocking and a Conversation is not
-    // safe to drive from two coroutines at once.
-    private val chatMutex = Mutex()
-
-    // BETA 2/8 — load/unload are serialized with each other and with generation. Before this, two
-    // callers (app start, the first queued answer, the Models screen) could run `load()` at the same
-    // time, and a load/unload/delete could close the native engine under a running generation.
-    private val loadMutex = Mutex()
+    @Volatile private var slot: InferenceSlot? = null
     @Volatile private var loadedPath: String? = null
-    private val opCounter = AtomicLong(0)
+    @Volatile private var loadedName: String? = null
+
+    /** Epoch contributed by slots that were already replaced, so [conversationEpoch] never goes backwards. */
+    @Volatile private var epochBase: Long = 0L
+
+    /** Changes whenever the live KV-cache conversation is discarded (reset, stop, timeout, reload, recovery). */
+    val conversationEpoch: Long get() = epochBase + (slot?.epoch ?: 0L)
+
+    // Only load/unload/recovery are serialised here; generation is serialised inside the slot.
+    private val loadMutex = Mutex()
     private val engineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-    /**
-     * LiteRT-LM 0.14 exposes a native [Conversation.cancelProcess] operation.
-     * Keep the precise in-flight conversation so UI/WorkManager cancellation
-     * stops inference itself, not only the surrounding coroutine.
-     */
-    private val activeGeneration = AtomicReference<ActiveGeneration?>(null)
     private val watchdog = Executors.newSingleThreadScheduledExecutor { runnable ->
         Thread(runnable, "jarvis-llm-watchdog").apply { isDaemon = true }
+    }
+    private val scheduler = InferenceScheduler { delayMs, task ->
+        val future = watchdog.schedule({ task() }, delayMs, TimeUnit.MILLISECONDS)
+        val cancelTask: () -> Unit = { future.cancel(false) }
+        cancelTask
+    }
+
+    private fun note(type: InferenceEventType, durationMs: Long = -1, tag: String = "") {
+        diagnostics.log.record(
+            InferenceEvent(System.currentTimeMillis(), type, label, conversationEpoch, durationMs, -1, -1, InferenceEventLog.sanitiseTag(tag)),
+        )
     }
 
     override suspend fun load(modelPath: String, modelName: String): Boolean =
         withContext(Dispatchers.Default) {
-            opCounter.incrementAndGet() // supersedes any unload() still waiting for the lock
-            loadMutex.withLock {
-                // Already serving exactly this file: a second caller must not reload it (double RAM, lost chat).
-                if (_loadState.value == LlmLoadState.LOADED && loadedPath == modelPath && engine != null) {
-                    _loadedModelName.value = modelName
-                    return@withLock true
-                }
-                // Stop any in-flight generation and wait (bounded) for native code to let go of the engine
-                // BEFORE closing it. Closing under a running generation crashes the process.
-                cancel()
-                if (withTimeoutOrNull(UNWIND_TIMEOUT_MS) { chatMutex.lock() } == null) {
-                    _lastLoadDetail.value = "il motore sta ancora terminando una risposta: riprova tra qualche secondo"
-                    Log.w(TAG, "llm_load_busy")
-                    return@withLock false
-                }
-                try {
-                    loadLocked(modelPath, modelName)
-                } finally {
-                    chatMutex.unlock()
-                }
-            }
+            loadMutex.withLock { loadLocked(modelPath, modelName, force = false) }
         }
 
-    /** Body of [load]; runs with [loadMutex] and [chatMutex] held. */
-    private fun loadLocked(modelPath: String, modelName: String): Boolean {
+    /** Body of [load]; runs with [loadMutex] held. */
+    private suspend fun loadLocked(modelPath: String, modelName: String, force: Boolean): Boolean {
+        // Already serving exactly this file: a second caller must not reload it (double RAM, lost chat).
+        if (!force && _loadState.value == LlmLoadState.LOADED && loadedPath == modelPath && slot != null) {
+            _loadedModelName.value = modelName
+            return true
+        }
+        val started = System.currentTimeMillis()
+        note(InferenceEventType.LOAD_START)
         _loadState.value = LlmLoadState.LOADING
-        resetConversation()
-        runCatching { engine?.close() }
-        engine = null
+        // Retire the old engine WITHOUT closing it under a running generation: the slot closes it itself once
+        // native code has returned. Wait (bounded) so two multi-hundred-MB engines never coexist for long;
+        // a wedged slot is allowed to linger (it will be closed if/when native code ever returns).
+        val old = slot
+        if (old != null) {
+            epochBase += old.epoch + 1
+            slot = null
+            old.shutdown()
+            if (!old.awaitClosed(UNWIND_TIMEOUT_MS) && !old.wedged) {
+                slot = old // keep it reachable; the caller can retry
+                _lastLoadDetail.value = "il motore sta ancora terminando una risposta: riprova tra qualche secondo"
+                _loadState.value = if (_loadedModelName.value != null) LlmLoadState.LOADED else LlmLoadState.ERROR
+                note(InferenceEventType.LOAD_FAIL, tag = "busy")
+                return false
+            }
+        }
         loadedPath = null
         return try {
             val file = File(modelPath)
@@ -142,9 +142,7 @@ class LitertLmEngine @Inject constructor(
             val config = EngineConfig(
                 modelPath = modelPath,
                 backend = Backend.CPU(),
-                // Context window (sum of input+output tokens). Larger = the
-                // model can remember a much longer conversation before it must
-                // drop the oldest turns. 4096 is a good balance on ~8 GB RAM.
+                // Context window (sum of input+output tokens). 4096 is a good balance on ~8 GB RAM.
                 maxNumTokens = MAX_CONTEXT_TOKENS,
                 // Writable dir for compiled artifacts → faster subsequent loads.
                 cacheDir = context.cacheDir.absolutePath,
@@ -152,12 +150,21 @@ class LitertLmEngine @Inject constructor(
             val e = Engine(config)
             // Can take several seconds; we are already off the main thread.
             e.initialize()
-            engine = e
+            slot = InferenceSlot(
+                label = label,
+                engine = LiteRtNativeEngine(e),
+                scheduler = scheduler,
+                log = diagnostics.log,
+                onGenerating = { _generating.value = it },
+                onWedged = { wedgedSlot -> engineScope.launch { recoverFromWedge(wedgedSlot) } },
+            )
             loadedPath = modelPath
+            loadedName = modelName
             _loadedModelName.value = modelName
             _lastLoadDetail.value = advice.message.orEmpty()
             _loadState.value = LlmLoadState.LOADED
             Log.i(TAG, "llm_loaded")
+            note(InferenceEventType.LOAD_OK, durationMs = System.currentTimeMillis() - started)
             true
         } catch (e: Throwable) {
             Log.w(TAG, "llm_load_failed ${e.javaClass.simpleName}")
@@ -168,224 +175,95 @@ class LitertLmEngine @Inject constructor(
             }
             _loadState.value = LlmLoadState.ERROR
             _loadedModelName.value = null
-            runCatching { engine?.close() }
-            engine = null
+            slot = null
             loadedPath = null
+            note(InferenceEventType.LOAD_FAIL, tag = e.javaClass.simpleName)
             false
         }
     }
 
     private class InsufficientMemoryException(message: String) : RuntimeException(message)
 
-    override fun unload() {
-        val token = opCounter.incrementAndGet()
-        // The UI sees "unloaded" at once; the native engine is released as soon as no generation is using it.
-        _loadState.value = LlmLoadState.UNLOADED
-        _loadedModelName.value = null
-        cancel()
-        engineScope.launch {
-            loadMutex.withLock {
-                // A load() issued after this unload() wins: do not tear down what it just built.
-                if (opCounter.get() != token) return@withLock
-                if (withTimeoutOrNull(UNWIND_TIMEOUT_MS) { chatMutex.lock() } == null) {
-                    Log.w(TAG, "llm_unload_busy")
-                    return@withLock
-                }
-                try {
-                    resetConversation()
-                    runCatching { engine?.close() }
-                    engine = null
-                    loadedPath = null
-                } finally {
-                    chatMutex.unlock()
-                }
-            }
+    /** Native code ignored a stop request past the grace period: replace the engine instead of hanging forever. */
+    private suspend fun recoverFromWedge(wedgedSlot: InferenceSlot) {
+        loadMutex.withLock {
+            if (slot !== wedgedSlot) return@withLock
+            val path = loadedPath ?: return@withLock
+            val name = loadedName ?: return@withLock
+            Log.w(TAG, "llm_wedged_recovering")
+            loadLocked(path, name, force = true)
         }
     }
 
-    override suspend fun generate(
-        prompt: String,
-        timeoutSeconds: Long,
-    ): String? = withContext(Dispatchers.Default) {
-        val e = engine ?: return@withContext null
-        try {
-            // A fresh conversation per call keeps generation stateless (no memory).
-            e.createConversation().use { conv ->
-                // sendMessage returns a Message; Message.toString() concatenates its
-                // text Contents into the plain reply string (Content.Text.toString()
-                // is the raw text). Blocking call — we are on Dispatchers.Default.
-                runGeneration(conv, prompt, timeoutSeconds)
-            }
+    override fun unload() {
+        // The UI sees "unloaded" at once; the slot closes the native engine as soon as nothing is using it.
+        _loadState.value = LlmLoadState.UNLOADED
+        _loadedModelName.value = null
+        val old = slot
+        if (old != null) epochBase += old.epoch + 1
+        slot = null
+        loadedPath = null
+        old?.shutdown()
+        note(InferenceEventType.UNLOAD)
+    }
+
+    override suspend fun generate(prompt: String, timeoutSeconds: Long): String? =
+        runOnSlot { it.once(prompt, null, timeoutSeconds * 1000L, "generate") }
+
+    override suspend fun chat(userText: String, systemPrompt: String, timeoutSeconds: Long): String? =
+        runOnSlot { it.chat(userText, systemPrompt, timeoutSeconds * 1000L) }
+
+    override suspend fun chatStateless(userText: String, systemPrompt: String, timeoutSeconds: Long): String? =
+        runOnSlot { it.once(userText, systemPrompt, timeoutSeconds * 1000L, "stateless") }
+
+    override fun resetConversation() {
+        // Safe at any time: if a generation is running the slot defers the native close until it returned.
+        slot?.reset("api")
+    }
+
+    override fun cancel() {
+        slot?.cancel()
+    }
+
+    private suspend fun runOnSlot(block: suspend (InferenceSlot) -> String?): String? {
+        val s = slot ?: return null
+        return try {
+            block(s)
         } catch (e: CancellationException) {
             throw e
-        } catch (e: LlmGenerationTimeoutException) {
-            throw e
+        } catch (e: GenerationTimedOut) {
+            throw LlmGenerationTimeoutException()
         } catch (t: Throwable) {
-            Log.w(TAG, "llm_generate_failed ${t.javaClass.simpleName}")
+            Log.w(TAG, "llm_call_failed ${t.javaClass.simpleName}")
             null
         }
     }
 
-    override suspend fun chat(
-        userText: String,
-        systemPrompt: String,
-        timeoutSeconds: Long,
-    ): String? =
-        withContext(Dispatchers.Default) {
-            val e = engine ?: return@withContext null
-            // Bounded acquire, not chatMutex.withLock's unbounded wait. A just-cancelled
-            // generation's native call may not actually unwind the moment cancelProcess()
-            // is requested (that native latency is outside this app's control) — but the
-            // app itself must not stay stuck waiting for it: a lock that isn't free within
-            // LOCK_WAIT_TIMEOUT_MS is treated as "unavailable right now" (same as no model
-            // loaded), so the next turn fails fast and the app is interactable again in
-            // seconds, not minutes, even while the orphaned call finishes in the background.
-            if (withTimeoutOrNull(LOCK_WAIT_TIMEOUT_MS) { chatMutex.lock() } == null) {
-                Log.w(TAG, "llm_chat_busy")
-                return@withContext null
+    /** Maps the LiteRT-LM classes onto the tiny contract [InferenceSlot] works with. */
+    private class LiteRtNativeEngine(private val engine: Engine) : NativeEngine {
+        override fun open(systemPrompt: String?): NativeConversation {
+            val conv = if (systemPrompt == null) {
+                engine.createConversation()
+            } else {
+                engine.createConversation(ConversationConfig(systemInstruction = Contents.of(systemPrompt)))
             }
-            try {
-                // The conversation is NOT re-created when [systemPrompt] differs
-                // from the seeded one. It used to be, and that quietly destroyed
-                // the chat memory: the caller rebuilds the system instruction
-                // every turn (it carries retrieved notes, which change with the
-                // question), so almost every message threw away the KV cache and
-                // the model could not even remember the previous line. The
-                // instruction is seeded once; use [resetConversation] to change it.
-                val conv = conversation ?: e.createConversation(
-                    ConversationConfig(systemInstruction = Contents.of(systemPrompt)),
-                ).also {
-                    conversation = it
-                    seededSystemPrompt = systemPrompt
-                }
-                // Only the new user message is sent; the conversation keeps the
-                // whole history internally, so the model remembers the context.
-                runGeneration(conv, userText, timeoutSeconds)
-            } catch (e: CancellationException) {
-                discardConversation(conversation)
-                throw e
-            } catch (e: LlmGenerationTimeoutException) {
-                discardConversation(conversation)
-                throw e
-            } catch (t: Throwable) {
-                Log.w(TAG, "llm_chat_failed ${t.javaClass.simpleName}")
-                null
-            } finally {
-                chatMutex.unlock()
-            }
+            return LiteRtNativeConversation(conv)
         }
 
-    override fun resetConversation() {
-        runCatching { conversation?.close() }
-        conversation = null
-        seededSystemPrompt = null
-        conversationEpoch++
-    }
-
-    /**
-     * § FASE 2A.6 §9 — replaces the FASE 2A.4 fix (`resetConversation(slot)`
-     * before every Conversational-engine local-fallback call), which worked by
-     * discarding the ONE persistent `conversation` this engine instance
-     * shares with Classic mode's `SessionCoordinator` on the same slot — a
-     * real, previously-accepted trade-off ("could wipe Classic's memory if the
-     * user switches modes mid-session"). A brand-new `Conversation` created
-     * and closed within this single call never reads or writes [conversation]/
-     * [seededSystemPrompt] at all, so it can neither leak into nor be
-     * contaminated by another turn on either side — Classic's persistent
-     * conversation is now never touched by this path, not just "less likely
-     * to be". Reuses [chatMutex]/[runGeneration] (the same single-flight/
-     * watchdog/cancellation discipline [chat] uses) so a stateless and a
-     * persistent call on this engine still never run concurrently.
-     */
-    override suspend fun chatStateless(
-        userText: String,
-        systemPrompt: String,
-        timeoutSeconds: Long,
-    ): String? =
-        withContext(Dispatchers.Default) {
-            val e = engine ?: return@withContext null
-            if (withTimeoutOrNull(LOCK_WAIT_TIMEOUT_MS) { chatMutex.lock() } == null) {
-                Log.w(TAG, "llm_chat_stateless_busy")
-                return@withContext null
-            }
-            try {
-                e.createConversation(
-                    ConversationConfig(systemInstruction = Contents.of(systemPrompt)),
-                ).use { conv -> runGeneration(conv, userText, timeoutSeconds) }
-            } catch (ce: CancellationException) {
-                throw ce
-            } catch (te: LlmGenerationTimeoutException) {
-                throw te
-            } catch (t: Throwable) {
-                Log.w(TAG, "llm_chat_stateless_failed ${t.javaClass.simpleName}")
-                null
-            } finally {
-                chatMutex.unlock()
-            }
-        }
-
-    override fun cancel() {
-        activeGeneration.get()?.request(StopReason.USER)
-    }
-
-    /**
-     * Runs the synchronous native API with an independent watchdog. A coroutine
-     * timeout alone cannot interrupt a JNI call; cancelProcess() can. The mutex
-     * remains held until native code acknowledges the stop, preventing a second
-     * request from entering the same Conversation concurrently.
-     */
-    private fun runGeneration(
-        conv: Conversation,
-        text: String,
-        timeoutSeconds: Long = GENERATION_TIMEOUT_SECONDS,
-    ): String {
-        val active = ActiveGeneration(conv)
-        check(activeGeneration.compareAndSet(null, active)) { "generation_already_running" }
-        _generating.value = true
-        val timeout = watchdog.schedule(
-            { active.request(StopReason.TIMEOUT) },
-            timeoutSeconds,
-            TimeUnit.SECONDS,
-        )
-        try {
-            val answer = conv.sendMessage(text).toString()
-            active.throwIfStopped()
-            return answer
-        } catch (t: Throwable) {
-            active.throwIfStopped()
-            if (t is CancellationException) throw t
-            throw t
-        } finally {
-            timeout.cancel(false)
-            activeGeneration.compareAndSet(active, null)
-            _generating.value = false
+        override fun close() {
+            runCatching { engine.close() }
         }
     }
 
-    private fun discardConversation(expected: Conversation?) {
-        if (expected == null || conversation !== expected) return
-        conversation = null
-        seededSystemPrompt = null
-        conversationEpoch++
-        runCatching { expected.close() }
-    }
-
-    /** One in-flight native call; the stop decision lives in the tested core [GenerationStopController]. */
-    private class ActiveGeneration(conversation: Conversation) {
-        private val controller = GenerationStopController { conversation.cancelProcess() }
-
-        fun request(stopReason: StopReason) {
-            controller.request(stopReason)
+    private class LiteRtNativeConversation(private val conversation: Conversation) : NativeConversation {
+        // sendMessage returns a Message; toString() concatenates its text Contents. Blocking JNI call.
+        override fun send(text: String): String = conversation.sendMessage(text).toString()
+        override fun cancel() {
+            conversation.cancelProcess()
         }
 
-        fun throwIfStopped() {
-            try {
-                controller.throwIfStopped()
-            } catch (_: GenerationCancelled) {
-                throw CancellationException("generation_cancelled")
-            } catch (_: GenerationTimedOut) {
-                throw LlmGenerationTimeoutException()
-            }
+        override fun close() {
+            conversation.close()
         }
     }
 
@@ -395,19 +273,7 @@ class LitertLmEngine @Inject constructor(
         /** Context window (input+output tokens) — how much conversation fits in memory. */
         const val MAX_CONTEXT_TOKENS = 4096
 
-        /** Prevents a damaged native turn from spinning forever in background. */
-        const val GENERATION_TIMEOUT_SECONDS = 90L
-
-        /**
-         * How long a new [chat] call waits for [chatMutex] before giving up.
-         * Only matters right after a cancel/timeout: the previous native call may
-         * still be unwinding in the background (native cancellation latency this
-         * app cannot control), but the app itself must recover in seconds, not
-         * however long that takes — see [chat]'s own doc comment at the call site.
-         */
-        const val LOCK_WAIT_TIMEOUT_MS = 4_000L
-
-        /** How long load()/unload() wait for a cancelled generation to release the engine. */
+        /** How long load() waits for a cancelled generation to release the previous engine. */
         const val UNWIND_TIMEOUT_MS = 15_000L
     }
 }

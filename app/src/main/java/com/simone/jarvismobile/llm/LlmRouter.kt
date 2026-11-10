@@ -37,6 +37,13 @@ class LlmRouter @Inject constructor(
     val advanced: LitertLmEngine,
     val classifier: LitertLmEngine,
 ) : ClassifierEngineProvider {
+    init {
+        // HOTFIX 3: label the three unscoped engine instances so diagnostics say which brain did what.
+        fast.label = "fast"
+        advanced.label = "advanced"
+        classifier.label = "classifier"
+    }
+
     /** The fast engine backs the UI's load indicator — it is the always-on brain. */
     val loadState: StateFlow<LlmLoadState> get() = fast.loadState
     val loadedModelName: StateFlow<String?> get() = fast.loadedModelName
