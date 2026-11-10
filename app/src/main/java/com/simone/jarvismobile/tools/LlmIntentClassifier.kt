@@ -174,8 +174,8 @@ class LlmIntentClassifier @Inject constructor(
             // The model supplies only a NAME and a score, which is not authority (Master §4.2). It may route the
             // request to the deterministic builder; if the builder finds no evidence in the CURRENT turn the proposal
             // is dropped (null → the request stays conversational). The old code replaced a missing builder result
-            // with an invented "Quale numero…?" / "Verso quale destinazione?" question, which is how a knowledge
-            // question became a phone command. See core SensitiveIntents.
+            // with a made-up follow-up question (asking for a phone number or a destination), which is how a
+            // knowledge question became a phone command. See core PhoneCommandGrammar.
             "forget_memory" -> CommandMatcher.forgetMemoryCall(utterance)
 
             "update_memory" -> CommandMatcher.updateMemoryCall(utterance)

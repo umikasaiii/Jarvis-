@@ -368,7 +368,7 @@ object CommandMatcher {
 
     /** "chiama 333..." opens only ACTION_DIAL; contact-name guessing is forbidden. */
     fun dialDraftCall(raw: String): Match? {
-        val t = normalize(raw)
+        val t = normalizeForPhone(raw)
         // BETA 8 hotfix 2: strict hard-command grammar (core). The old unanchored regex fired on "si chiama" and "telefono".
         if (!PhoneCommandGrammar.isDialRequest(t)) return null
         if (Regex("""\b(?:tra|fra)\b""").containsMatchIn(t) && ItalianNumbers.duration(t) != null) {
@@ -404,7 +404,7 @@ object CommandMatcher {
 
     /** "prepara un SMS al 333...: arrivo" creates an editable draft only. */
     fun smsDraftCall(raw: String): Match? {
-        val t = normalize(raw)
+        val t = normalizeForPhone(raw)
         if (!PhoneCommandGrammar.isSmsRequest(t, extractPhone(raw) != null)) return null
         val number = extractPhone(raw)
         val body = extractSmsBody(raw, number)
@@ -840,6 +840,20 @@ object CommandMatcher {
      * Strips accents and polite wrappers so one pattern covers many phrasings.
      * "Puoi accendere la torcia?" -> "accendere la torcia"
      */
+    /**
+     * [normalize] for the call/SMS grammar: a leading clitic «mi/ti» is KEPT, because «Mi telefona mia madre» says
+     * that someone phones ME — stripping the clitic would turn that statement into the command «telefona…». It is still
+     * dropped before a polite modal («mi puoi chiamare Marco»).
+     */
+    private fun normalizeForPhone(raw: String): String {
+        val lower = raw.trim().lowercase()
+        val clitic = listOf("mi ", "ti ").firstOrNull { lower.startsWith(it) } ?: return normalize(raw)
+        val rest = raw.trim().substring(clitic.length)
+        val restLower = rest.trim().lowercase()
+        if (listOf("puoi ", "potresti ", "riesci ", "sai ", "vuoi ").any { restLower.startsWith(it) }) return normalize(raw)
+        return clitic + normalize(rest)
+    }
+
     fun normalize(s: String): String {
         var t = s.lowercase()
             .replace('à', 'a').replace('è', 'e').replace('é', 'e')

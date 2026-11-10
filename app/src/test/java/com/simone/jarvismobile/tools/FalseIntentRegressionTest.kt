@@ -58,6 +58,8 @@ class FalseIntentRegressionTest {
             "Mi telefona mia madre ogni giorno",
             "Scrivi un messaggio di auguri per mia madre",
             "Ho ricevuto un sms ieri, cos'è?",
+            "Ti telefono domani",             // «mi/ti» before the verb makes it a statement about someone phoning,
+            "Mi chiama sempre mio padre",     // not an imperative addressed to JARVIS
         ).forEach(::assertNoPhoneAction)
     }
 
@@ -67,6 +69,7 @@ class FalseIntentRegressionTest {
         assertEquals("3331234567", run.call.arguments["number"]?.jsonPrimitive?.content)
         val polite = CommandMatcher.match("Potresti telefonare al +39 333 123 4567?") as Match.Run
         assertEquals("+393331234567", polite.call.arguments["number"]?.jsonPrimitive?.content)
+        assertEquals("ask:prepare_call/number", route(CommandMatcher.match("Mi puoi chiamare Marco")))
         val ask = CommandMatcher.match("Chiama Marco") as Match.Ask
         assertEquals("prepare_call", ask.tool); assertEquals("number", ask.missing)
         val sms = CommandMatcher.match("Prepara un SMS al +39 333 123 4567: arrivo tra poco") as Match.Run
