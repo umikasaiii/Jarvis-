@@ -3640,6 +3640,31 @@ A1 e A3 **non sono avviate** da questo hotfix.
 - **Limite noto, non risolto qui:** «Ricorda che X. <domanda>?» in un unico messaggio salva il fatto (comando di memoria) ma non
   risponde alla domanda finale nello stesso turno. Candidato per la track semantica (A1/A3), non per questo hotfix.
 
+
+## 65.9 FUTURE CANDIDATES — Coding Studio e Modalità Agente Live (2026-11-10)
+
+**Decisione dell'utente: PLANNED / DEFERRED. Nessuna implementazione avviata o autorizzata ora.**
+Spec dedicata: [`docs/FUTURE_CODING_STUDIO_AGENT_LIVE.md`](FUTURE_CODING_STUDIO_AGENT_LIVE.md).
+
+1. **Coding Studio locale**: futura sezione dedicata con chat a un modello specializzato per scrivere codice,
+   creazione/modifica di HTML, CSS, JavaScript e piccole PWA (es. pagina delle scadenze), workspace protetto,
+   diff/rollback ed **anteprima live** locale in WebView isolata. Il modello coding deve essere qualificato sul
+   telefono; Core opzionale solo per progetti più pesanti. Nessuna esecuzione indiscriminata del codice generato,
+   nessuna shell/permesso arbitrario, nessuna pubblicazione online automatica.
+2. **Modalità Agente Live**: futura icona flottante attivata dall'utente, per aprire app, predisporre ricerca o
+   navigazione e aprire il dialer tramite capability Android validate. Permessi minimi, conferma per ogni effetto
+   sensibile, sessione revocabile, indicatore visibile, nessun controllo remoto o Accessibility permanenti per
+   default, nessun bypass PIN/MagicOS; nessun invio/chiamata autonomo.
+3. **Architettura e sicurezza**: i due domini si collegano al SemanticFrame, all'orchestratore unico previsto
+   in A3 e all'attuale ToolRegistry/ToolPolicy; non creano un secondo brain, planner o esecutore con privilegi
+   paralleli. I risultati del modello, file generati e contenuti dello schermo sono input non attendibili;
+   threat model, isolamento, test anti-prompt-injection, audit di azioni e acceptance Honor 200 obbligatori.
+4. **Ordine**: prima stabilizzare LiteRT-LM e completare la Beta; poi gate A1/A3; prototipi autorizzati di UI,
+   preview e agent capability ristrette in A4; Core coding più potente come enhancement B. Nessuna modifica ai
+   30 macro-step finché non avviene la mappatura canonica prevista dal §65.7.
+5. **Criterio di avvio**: nuova autorizzazione esplicita dell'utente con scope e security review. Questa
+   registrazione documentale non autorizza codice, build, permessi, release o merge.
+
 ---
 
 # 66. IMPLEMENTATION PASS HISTORY
