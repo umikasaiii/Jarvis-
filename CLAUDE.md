@@ -34,6 +34,24 @@ The Master Architecture is a living document — update it (per its own §79
 update policy) alongside any change that shifts ownership, roadmap phase,
 source of truth, or a major architectural decision.
 
+## Regola permanente: link APK Beta in OGNI risposta
+
+Alla fine di **OGNI** risposta di Claude Code, inserire sempre questo blocco:
+
+```
+APK JARVIS Beta — Download diretto
+
+https://github.com/umikasaiii/Jarvis-/releases/download/beta-current/JARVIS_BETA.apk
+```
+
+e indicare anche:
+
+- **Build e SHA-256** dell'APK attualmente pubblicato (leggerli dalle note della release `beta-current`, non indovinarli).
+- Se la risposta **non** ha prodotto un nuovo APK: dire che il collegamento punta **all'ultima Beta verificata**.
+- Se la pubblicazione **non è riuscita**: dichiarare il fallimento, senza presentare il nuovo codice come scaricabile.
+
+Infrastruttura (vedi `docs/BETA_PUBLISHING.md`): job `publish-beta` in `.github/workflows/ci.yml`, release prerelease `beta-current` (asset fisso `JARVIS_BETA.apk`) + storiche `beta-<sha7>`. Pubblica solo push su branch `claude/beta*` con test + build isolata verdi **e** `apk_impacting == true`: i commit esclusivamente documentali/CI (allowlist in `.github/scripts/classify-apk-impact.sh`) **non** pubblicano. Mai toccare `latest-debug`; mai pubblicare un APK solo per aggiungere istruzioni.
+
 ## Product goal
 
 An **offline-first** Italian personal assistant for Android, tuned for an

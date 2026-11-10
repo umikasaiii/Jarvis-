@@ -12,7 +12,8 @@ emit() { echo "apk_impacting=$1"; echo "reason=$2"; exit 0; }
 is_non_impacting() {
   case "$1" in
     docs/*|CLAUDE.md|README.md|LICENSE|\
-    .github/workflows/ci.yml|.github/scripts/classify-apk-impact.sh|.github/scripts/test-classify-apk-impact.sh) return 0 ;;
+    .github/workflows/ci.yml|.github/scripts/classify-apk-impact.sh|.github/scripts/test-classify-apk-impact.sh|\
+    .github/scripts/ci_publish_guard.py|.github/scripts/test-ci-publish-guard.sh) return 0 ;;
     *) return 1 ;;
   esac
 }

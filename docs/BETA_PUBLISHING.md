@@ -15,3 +15,8 @@ a run whose `run-number` is not newer than the one recorded in the release notes
 `beta-current` untouched; the final step downloads the public link and compares SHA-256.
 The release notes record commit, branch, CI run URL, run-number and SHA-256.
 Guard: `.github/scripts/ci_publish_guard.py` rule R7 (mutation-tested by `test-ci-publish-guard.sh`).
+
+## Documentation-only pushes
+`publish-beta` also requires `needs.build.outputs.apk_impacting == 'true'` (same classifier as `latest-debug`,
+`.github/scripts/classify-apk-impact.sh`). Pushes touching only `docs/`, `CLAUDE.md`, `README.md`, the CI
+workflow/guard scripts do not publish a Beta; `beta-current` keeps pointing to the last verified build.

@@ -54,6 +54,8 @@ def check_beta(body):
         errs.append("ci.yml:publish-beta: R7 must run on push events only")
     if "startsWith(github.ref, 'refs/heads/claude/beta')" not in cond:
         errs.append("ci.yml:publish-beta: R7 must be gated on claude/beta* refs")
+    if "needs.build.outputs.apk_impacting == 'true'" not in cond:
+        errs.append("ci.yml:publish-beta: R7 must skip documentation-only/non-APK pushes (apk_impacting)")
     if re.search(r"pull_request|workflow_dispatch|github\.ref\s*!=", cond):
         errs.append("ci.yml:publish-beta: R7 forbidden event/ref condition")
     needs = re.search(r"\n    needs:\s*(.*)", "\n" + body)

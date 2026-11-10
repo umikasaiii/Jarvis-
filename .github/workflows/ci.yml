@@ -217,7 +217,8 @@ jobs:
     if: >-
       github.repository == 'umikasaiii/Jarvis-' &&
       github.event_name == 'push' &&
-      startsWith(github.ref, 'refs/heads/claude/beta')
+      startsWith(github.ref, 'refs/heads/claude/beta') &&
+      needs.build.outputs.apk_impacting == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     concurrency:
