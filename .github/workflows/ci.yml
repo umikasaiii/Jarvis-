@@ -205,6 +205,125 @@ jobs:
             --notes "APK di debug piu recente. Commit ${{ github.sha }}. Firmato con app/debug.keystore (committato, stabile): si aggiorna in place, non serve disinstallare." \
             --target "${{ github.sha }}"
 
+  # BETA PUBLISH — one stable direct link for every verified Beta build:
+  #   https://github.com/umikasaiii/Jarvis-/releases/download/beta-current/JARVIS_BETA.apk
+  # Separate from 'latest-debug' (never touched). Prerelease, never "Latest". Publishes ONLY the
+  # CI-built app-debug-isolated.apk (no rebuild), only after tests (build) AND the isolated build
+  # succeeded, only for push events on authorised Beta branches (claude/beta*) of this repository.
+  # No pull_request / fork run can reach it. An older run can never overwrite a newer one.
+  publish-beta:
+    name: Publish Beta (beta-current, direct link)
+    needs: [build, isolated-apk]
+    if: >-
+      github.repository == 'umikasaiii/Jarvis-' &&
+      github.event_name == 'push' &&
+      startsWith(github.ref, 'refs/heads/claude/beta')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    concurrency:
+      group: publish-beta
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    env:
+      EXPECTED_PACKAGE: com.simone.jarvismobile.debug.beta
+      EXPECTED_CERT_SHA256: 33018d7f10c4a1aa07cc1e609ba541caf1cd318d7e670556f9c826d29b07c8fb
+      ASSET: JARVIS_BETA.apk
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Download the isolated APK built by THIS run
+        uses: actions/download-artifact@v4
+        with:
+          name: app-debug-isolated
+          path: beta
+
+      - name: Verify identity, signature, checksum and provenance
+        run: |
+          set -euo pipefail
+          cd beta
+          test -f app-debug-isolated.apk && test -f app-debug-isolated.apk.sha256 && test -f isolated-apk-report.txt
+          sha256sum -c app-debug-isolated.apk.sha256
+          SHA="$(sha256sum app-debug-isolated.apk | cut -d' ' -f1)"
+          grep -q "^commit: ${GITHUB_SHA}$" isolated-apk-report.txt
+          grep -q "^sha256=${SHA}$" isolated-apk-report.txt
+          cd ..
+          bash .github/scripts/inspect-apk.sh beta/app-debug-isolated.apk > beta/fresh-report.txt
+          cat beta/fresh-report.txt | head -30
+          grep -q "^package=${EXPECTED_PACKAGE}$" beta/fresh-report.txt
+          grep -q '^verifies=yes$' beta/fresh-report.txt
+          grep -qi "^cert-sha256=${EXPECTED_CERT_SHA256}$" beta/fresh-report.txt
+          grep -q '^debuggable=yes$' beta/fresh-report.txt
+          unzip -tq beta/app-debug-isolated.apk
+          echo "APK_SHA256=${SHA}" >> "$GITHUB_ENV"
+          echo "VERSION_CODE=$(sed -n 's/^versionCode=//p' beta/fresh-report.txt)" >> "$GITHUB_ENV"
+
+      - name: Publish immutable historical release (beta-<sha7>)
+        run: |
+          set -euo pipefail
+          S7="${GITHUB_SHA::7}"
+          cp beta/app-debug-isolated.apk "beta/JARVIS_BETA-${S7}.apk"
+          if gh release view "beta-${S7}" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "beta-${S7} already exists: left untouched (immutable)"
+          else
+            gh release create "beta-${S7}" "beta/JARVIS_BETA-${S7}.apk" --repo "$GITHUB_REPOSITORY" \
+              --prerelease --latest=false --target "$GITHUB_SHA" \
+              --title "JARVIS Beta ${S7} (storico)" \
+              --notes "Build storica immutabile. Commit ${GITHUB_SHA}. Run ${GITHUB_RUN_ID} (#${GITHUB_RUN_NUMBER}). SHA-256 ${APK_SHA256}. Branch ${GITHUB_REF_NAME}."
+          fi
+
+      - name: Update the stable beta-current release (older run can never overwrite a newer one)
+        run: |
+          set -euo pipefail
+          cp beta/app-debug-isolated.apk "beta/${ASSET}"
+          NOTES="Ultima Beta verificata (prerelease, non Latest).
+          commit: ${GITHUB_SHA}
+          branch: ${GITHUB_REF_NAME}
+          ci-run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+          run-number: ${GITHUB_RUN_NUMBER}
+          sha256: ${APK_SHA256}
+          applicationId: ${EXPECTED_PACKAGE}
+          versionCode: ${VERSION_CODE}
+          storico: beta-${GITHUB_SHA::7}"
+          if gh release view beta-current --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            CUR="$(gh release view beta-current --repo "$GITHUB_REPOSITORY" --json body --jq .body | sed -n 's/^run-number: *//p' | head -1)"
+            echo "published run-number: ${CUR:-none}; this run: ${GITHUB_RUN_NUMBER}"
+            if [ -n "$CUR" ] && [ "$CUR" -ge "$GITHUB_RUN_NUMBER" ]; then
+              echo "A newer (or same) build is already published: beta-current left untouched."
+              exit 0
+            fi
+            gh release upload beta-current "beta/${ASSET}" --clobber --repo "$GITHUB_REPOSITORY"
+            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/git/refs/tags/beta-current" -f sha="$GITHUB_SHA" -F force=true >/dev/null
+            gh release edit beta-current --repo "$GITHUB_REPOSITORY" --prerelease --latest=false \
+              --title "JARVIS Beta (corrente)" --notes "$NOTES"
+          else
+            gh release create beta-current "beta/${ASSET}" --repo "$GITHUB_REPOSITORY" \
+              --prerelease --latest=false --target "$GITHUB_SHA" \
+              --title "JARVIS Beta (corrente)" --notes "$NOTES"
+          fi
+
+      - name: Verify the DIRECT link downloads and matches the expected SHA-256
+        run: |
+          set -euo pipefail
+          URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/beta-current/${ASSET}"
+          CUR="$(gh release view beta-current --repo "$GITHUB_REPOSITORY" --json body --jq .body | sed -n 's/^run-number: *//p' | head -1)"
+          if [ "$CUR" != "$GITHUB_RUN_NUMBER" ]; then
+            echo "A newer build owns beta-current (run-number $CUR): skipping link check for this run."; exit 0
+          fi
+          mkdir -p dl
+          for i in 1 2 3 4 5; do
+            curl -fsSL --retry 3 -o dl/check.apk "$URL" && break || sleep 10
+          done
+          GOT="$(sha256sum dl/check.apk | cut -d' ' -f1)"
+          echo "link: $URL"; echo "expected: $APK_SHA256"; echo "got:      $GOT"
+          [ "$GOT" = "$APK_SHA256" ]
+          bash .github/scripts/inspect-apk.sh dl/check.apk | grep -E '^(package|verifies|cert-sha256|versionCode)='
+          gh release view beta-current --repo "$GITHUB_REPOSITORY" --json isPrerelease,isDraft,targetCommitish --jq '"prerelease=\(.isPrerelease) draft=\(.isDraft)"'
+          echo "DIRECT LINK VERIFIED: $URL sha256=$GOT commit=$GITHUB_SHA" | tee -a "$GITHUB_STEP_SUMMARY"
+
   # BETA 1/8 — read-only identity report of the APK THIS run built (provenance, SHA-256, application id,
   # signing certificate, permissions) plus an in-place-update compatibility check against the
   # currently published latest-debug APK. Reads the release (public download), never writes it.
