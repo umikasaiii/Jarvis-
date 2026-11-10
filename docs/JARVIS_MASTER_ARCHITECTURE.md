@@ -3640,6 +3640,158 @@ A1 e A3 **non sono avviate** da questo hotfix.
 - **Limite noto, non risolto qui:** «Ricorda che X. <domanda>?» in un unico messaggio salva il fatto (comando di memoria) ma non
   risponde alla domanda finale nello stesso turno. Candidato per la track semantica (A1/A3), non per questo hotfix.
 
+## 65.9 FUTURE CANDIDATES — Coding Studio e Modalità Agente Live (2026-11-10)
+
+**Decisione dell'utente: PLANNED / DEFERRED. Nessuna implementazione avviata o autorizzata ora.**
+Spec dedicata: [`docs/FUTURE_CODING_STUDIO_AGENT_LIVE.md`](FUTURE_CODING_STUDIO_AGENT_LIVE.md).
+
+1. **Coding Studio locale**: futura sezione dedicata con chat a un modello specializzato per scrivere codice,
+   creazione/modifica di HTML, CSS, JavaScript e piccole PWA (es. pagina delle scadenze), workspace protetto,
+   diff/rollback ed **anteprima live** locale in WebView isolata. Il modello coding deve essere qualificato sul
+   telefono; Core opzionale solo per progetti più pesanti. Nessuna esecuzione indiscriminata del codice generato,
+   nessuna shell/permesso arbitrario, nessuna pubblicazione online automatica.
+2. **Modalità Agente Live**: futura icona flottante attivata dall'utente, per aprire app, predisporre ricerca o
+   navigazione e aprire il dialer tramite capability Android validate. Permessi minimi, conferma per ogni effetto
+   sensibile, sessione revocabile, indicatore visibile, nessun controllo remoto o Accessibility permanenti per
+   default, nessun bypass PIN/MagicOS; nessun invio/chiamata autonomo.
+3. **Architettura e sicurezza**: i due domini si collegano al SemanticFrame, all'orchestratore unico previsto
+   in A3 e all'attuale ToolRegistry/ToolPolicy; non creano un secondo brain, planner o esecutore con privilegi
+   paralleli. I risultati del modello, file generati e contenuti dello schermo sono input non attendibili;
+   threat model, isolamento, test anti-prompt-injection, audit di azioni e acceptance Honor 200 obbligatori.
+4. **Ordine**: prima stabilizzare LiteRT-LM e completare la Beta; poi gate A1/A3; prototipi autorizzati di UI,
+   preview e agent capability ristrette in A4; Core coding più potente come enhancement B. Nessuna modifica ai
+
+
+## 65.10 EXPANSION BACKLOG — Security, Privacy, Networking, AI e Sistema Operativo (2026-11-10)
+
+**Richiesta integrale dell'utente: SALVATA / PLANNED / DEFERRED. Nessuna voce è autorizzata all'implementazione ora.**
+
+**Obiettivo:** trasformare in futuro JARVIS da assistente AI offline-first a piattaforma personale avanzata per cybersecurity, privacy, gestione dispositivi, automazione e controllo intelligente del sistema.
+
+**Gate di ingresso (OBBLIGATORIO):** prima completare la stabilizzazione dell'inferenza locale (inclusi l'Hotfix 3 e la prova reale Honor 200), la qualifica della Beta, le fasi architetturali A0–A4 già approvate e i relativi test e requisiti di sicurezza. Soltanto dopo valutare e autorizzare uno per uno questi ampliamenti. Le 8 fasi sotto sono **un backlog aggiuntivo futuro**, non sono le Beta 1–8 e **non** modificano il denominatore canonico di 30 macro-step (§65.7). Non sovrascrivono §65.1–§65.6.
+
+**Integrazione delle richieste precedenti:** la sezione §65.9 e il dettaglio in [`docs/FUTURE_CODING_STUDIO_AGENT_LIVE.md`](FUTURE_CODING_STUDIO_AGENT_LIVE.md) conservano **Coding Studio** (modello dedicato al codice + chat + preview HTML/PWA locale live) e **Modalità Agente Live** (icona flottante, controllo limitato e autorizzato del telefono, difesa multilivello). Entrambi restano nel medesimo backlog futuro e non si devono perdere né sostituire con Security Center/JARVIS OS. Nessun secondo orchestratore privilegiato.
+
+### Backlog completo — 64 capacità candidate
+
+### 1. CYBERSECURITY & PROTEZIONE
+
+- [ ] **JARVIS Security Center:** dashboard centralizzata per sicurezza, privacy, permessi e stato delle protezioni.
+- [ ] **Firewall intelligente:** controllo delle connessioni delle applicazioni tramite VPN locale.
+- [ ] **AdBlock integrato:** blocco DNS di pubblicità, tracker e domini malevoli.
+- [ ] **VPN privata:** tunnel cifrato con WireGuard verso server personali.
+- [ ] **Network Monitor:** analisi delle connessioni, DNS, traffico e anomalie.
+- [ ] **Intrusion Detection System:** rilevamento di attività sospette in base ai dati di rete accessibili.
+- [ ] **Privacy Monitor:** verifica autorizzazioni, esposizione di dati e configurazioni rischiose.
+- [ ] **File Security Scanner:** scansione di file e documenti con motori di sicurezza locali.
+- [ ] **APK Security Analyzer:** analisi APK, manifest, permessi, librerie e indicatori sospetti.
+- [ ] **Encrypted Vault:** archivio personale cifrato con autenticazione biometrica.
+- [ ] **Secure Backup:** backup cifrati, verifica integrità e recupero sicuro.
+- [ ] **Security Alerts:** avvisi intelligenti su anomalie, vulnerabilità e configurazioni insicure.
+
+### 2. PENTEST & REVERSE ENGINEERING
+
+- [ ] **JARVIS Pentest Assistant:** gestione intelligente dei test di sicurezza autorizzati.
+- [ ] **Automated Security Audit:** audit periodici dell'applicazione JARVIS e del proprio laboratorio.
+- [ ] **Static Application Security Testing:** scansione automatica del codice sorgente.
+- [ ] **Dynamic Application Security Testing:** test dinamici in ambienti isolati.
+- [ ] **Reverse Engineering Studio:** analisi dei propri APK e programmi tramite JADX, Ghidra e strumenti equivalenti.
+- [ ] **Mobile Security Testing:** integrazione con MobSF e standard OWASP MASVS/MASTG.
+- [ ] **API Security Testing:** verifica di autenticazione, autorizzazioni e sicurezza delle API.
+- [ ] **Fuzz Testing:** generazione di input anomali per individuare crash e comportamenti imprevisti.
+- [ ] **Vulnerability Management:** archivio delle vulnerabilità, gravità, stato e correzioni.
+- [ ] **AI Security Analyst:** interpretazione intelligente di log, scansioni e risultati tecnici.
+- [ ] **Security Regression Testing:** ripetizione automatica dei test dopo modifiche al codice.
+- [ ] **Security Release Gate:** blocco del rilascio in presenza di problemi critici verificati.
+
+### 3. RETE, SERVER E DISPOSITIVI
+
+- [ ] **JARVIS Mini Server:** server locale con API autenticate e accesso controllato.
+- [ ] **Personal Web Dashboard:** interfaccia web per consultare e gestire JARVIS.
+- [ ] **Secure Device Network:** comunicazione cifrata tra smartphone, PC e dispositivi autorizzati.
+- [ ] **Local File Sharing:** trasferimento sicuro di documenti tra dispositivi.
+- [ ] **Secure Remote Access:** accesso remoto a JARVIS tramite VPN privata.
+- [ ] **Network Discovery:** individuazione autorizzata dei dispositivi presenti nella rete domestica.
+- [ ] **Device Health Monitor:** controllo stato, disponibilità e risorse dei dispositivi collegati.
+- [ ] **Smart Home Security:** integrazione sicura con dispositivi domestici e Home Assistant.
+- [ ] **Offline Local Services:** servizi essenziali funzionanti senza Internet.
+- [ ] **JARVIS Core Security Server:** esecuzione sul PC di strumenti di analisi e scansioni pesanti.
+
+### 4. AI INTELLIGENCE & AUTOMAZIONE
+
+- [ ] **AI Security Reasoning:** analisi delle anomalie con spiegazioni e suggerimenti di intervento.
+- [ ] **Intelligent Tool Orchestration:** selezione degli strumenti più adatti alle richieste.
+- [ ] **Threat Intelligence Locale:** consultazione di database aggiornabili di vulnerabilità e indicatori di compromissione.
+- [ ] **Automated Incident Reports:** produzione di report strutturati sugli eventi di sicurezza.
+- [ ] **Context-Aware Protection:** suggerimenti di protezione basati sul contesto, senza decisioni invasive automatiche.
+- [ ] **Permission-Based Actions:** autorizzazioni esplicite per operazioni sensibili.
+- [ ] **Sandboxed AI Tools:** esecuzione isolata dei componenti potenzialmente rischiosi.
+- [ ] **Prompt Injection Protection:** difese contro istruzioni malevole contenute in documenti, siti e risultati degli strumenti.
+- [ ] **Self-Diagnostics:** monitoraggio di errori, prestazioni e affidabilità di JARVIS.
+- [ ] **AI-Assisted Maintenance:** identificazione di possibili problemi e proposta di correzioni, con approvazione umana.
+
+### 5. JARVIS OS & CONTROLLO SISTEMA
+
+- [ ] **JARVIS OS Interface:** ambiente grafico futuristico e personalizzato.
+- [ ] **Custom Android Launcher:** schermata principale intelligente con accesso alle funzioni di JARVIS.
+- [ ] **Unified Control Center:** gestione centralizzata di AI, strumenti, sicurezza e dispositivi.
+- [ ] **Contextual Dashboard:** interfaccia dinamica in base ad attività e contesto.
+- [ ] **Local Automation Engine:** automazioni Android autorizzate e funzionanti offline.
+- [ ] **Modular Plugin System:** aggiunta di funzionalità tramite moduli verificati e isolati.
+- [ ] **Secure System Integration:** integrazione con le API Android senza privilegi eccessivi.
+- [ ] **Custom AOSP Research:** studio futuro di un sistema Android personalizzato con JARVIS integrato.
+
+### 6. HARDENING E AFFIDABILITÀ
+
+- [ ] **Threat Modeling:** definizione delle minacce e delle risorse da proteggere.
+- [ ] **Least Privilege Architecture:** ogni modulo dispone esclusivamente dei permessi necessari.
+- [ ] **Zero Trust Internal Design:** autenticazione e autorizzazione anche tra componenti interni.
+- [ ] **Strong Encryption:** crittografia affidabile per dati, comunicazioni e backup.
+- [ ] **Secure Key Management:** gestione delle chiavi tramite Android Keystore e meccanismi appropriati sul Core.
+- [ ] **Dependency Security Scanning:** controllo delle librerie e vulnerabilità conosciute.
+- [ ] **Software Supply Chain Security:** verifica provenienza, firme e integrità degli artefatti.
+- [ ] **APK Integrity Verification:** protezione e verifica degli APK distribuiti.
+- [ ] **Continuous Security Testing:** analisi automatizzate integrate nella CI.
+- [ ] **Recovery & Rollback:** ripristino dopo aggiornamenti difettosi.
+- [ ] **Offline Resilience:** mantenimento delle funzioni essenziali senza rete o Core.
+- [ ] **Device Verification:** test sul dispositivo reale prima di dichiarare una funzione affidabile.
+
+### Ordine consigliato di implementazione — 8 fasi FUTURE (dopo tutti i gate precedenti)
+
+1. **FASE 1 — Sicurezza delle fondamenta:** Threat modeling, audit codice, pentest APK/API, cifratura, gestione autorizzazioni e test automatici.
+2. **FASE 2 — JARVIS Security Center:** Dashboard sicurezza, Privacy Monitor, diagnostica, controllo integrità e avvisi.
+3. **FASE 3 — Network Shield:** AdBlock DNS, firewall con VPN locale e successiva integrazione VPN cifrata.
+4. **FASE 4 — Secure Device Network:** Mini server, comunicazione Android–Core, API autenticate e accesso remoto sicuro.
+5. **FASE 5 — Cybersecurity Toolkit:** APK Analyzer, scansioni autorizzate, reverse engineering e gestione vulnerabilità.
+6. **FASE 6 — AI Security Intelligence:** Interpretazione log, analisi delle minacce, report e strumenti di assistenza alla sicurezza.
+7. **FASE 7 — JARVIS OS:** Launcher personalizzato, Control Center, automazioni e interfaccia unificata.
+8. **FASE 8 — Advanced Security Platform:** Monitoraggio intelligente, orchestrazione di strumenti isolati, test continui e difesa multilivello.
+
+### Principi fondamentali — vincolanti per ogni futura espansione
+
+1. Android rimane completamente autonomo e offline-first.
+2. JARVIS Core rappresenta un potenziamento, mai una dipendenza obbligatoria.
+3. Nessun modello AI deve avere accesso incontrollato a shell, file, rete o funzioni critiche.
+4. Ogni nuova capacità deve rispettare l'architettura master esistente.
+5. Nessun modulo va dichiarato completo senza le verifiche pertinenti.
+6. Le funzionalità di pentest operano esclusivamente su sistemi propri o esplicitamente autorizzati.
+7. La sicurezza deve essere verificabile e mantenibile, senza promettere un sistema impenetrabile.
+
+### Note di fattibilità, dipendenze e sicurezza (non sostituiscono le richieste)
+
+- **Funzioni già parzialmente presenti:** backup cifrato, diagnostica, automazioni e alcune protezioni sono componenti esistenti. Queste voci indicano **hardening, unificazione o ampliamento**, non richiedono inventare una seconda autorità, un secondo vault o un nuovo scheduler. Nessuna voce qui è segnata DONE solo perché esiste un componente simile.
+- **Firewall locale, AdBlock e WireGuard:** su Android un'unica VPN `VpnService` può essere attiva per utente/profilo nello stesso momento; firewall, DNS filter e VPN cifrata devono essere progettati come uno stack interoperabile oppure alternative esplicite, con esclusioni/consenso e modalità fail-safe. Nessuna promessa di coesistenza automatica con qualsiasi VPN di terze parti.
+- **Telemetria/IDS:** Android ordinario non espone automaticamente il traffico, i processi, i permessi o i dati di tutte le altre app. Limitarsi ai dati legittimamente accessibili via API, VPN locale con consenso o a sorgenti esterne autorizzate. Nessuna richiesta di root, Accessibility, cattura schermo o privilegio amministrativo come prerequisito implicito. Dichiarare i limiti d'osservabilità.
+- **Network discovery, pentest, DAST, fuzzing, reverse engineering:** target propri o autorizzati, limiti di portata, ambienti isolati e consenso; niente scansioni automatiche di reti pubbliche o dispositivi di terzi. Strumenti pesanti come Ghidra/MobSF/JADX possono essere eseguiti sul Core opzionale, non promessi come motori Android locali equivalenti.
+- **Mini Server / Web Dashboard / accesso remoto:** opt-in, bind su interfacce ristrette, autenticazione forte, TLS o tunnel, pairing dei dispositivi, chiavi gestite e revocabili, scoping per capability, audit, rate limits, nessuna esposizione Internet di default. No remote control non autorizzato.
+- **Vault e sicurezza delle chiavi:** riusare/estendere l'autorità crittografica esistente, Android Keystore e storage cifrato; biometria solo attraverso i meccanismi di autenticazione di sistema. Definire recupero/rotazione/revoca e limiti dei backup.
+- **AI Security Analyst / agenti / plugin:** l'AI suggerisce, la policy autorizza, l'esecutore deterministico attua; risultati di scansioni, pacchetti, codice, pagine e log sono dati non attendibili (prompt injection). Esecuzione di script o tool generati: sandbox + perimetro autorizzato + ricevuta; bloccare azioni sensibili senza conferma appropriata.
+- **JARVIS OS:** un launcher personalizzato non conferisce privilegi di sistema. AOSP custom è solo ricerca separata, con threat model, rischi di bootloader/aggiornamenti e compatibilità dispositivi valutati prima di qualsiasi prova.
+- **Allineamento con §65.9:** Coding Studio è un dominio per generare codice in workspace isolato; Reverse Engineering Studio e Security Toolkit sono domini autorizzati di analisi. Agente Live esegue soltanto capability validate e non può usare strumenti di pentest, Vault, VPN, Core o plugin per aggirare il controllo delle autorizzazioni.
+- **Acceptance:** ogni funzione richiede threat model, progetto, revisione della sicurezza, test automatici e prova reale Honor 200 o hardware Core pertinente prima di essere detta implementata/affidabile. Rischi o limiti non risolti restano espliciti.
+
+**Regola di stato:** 64/64 candidati registrati come `PLANNED / DEFERRED`; NON significa 64 funzioni implementate. Anche Coding Studio e Agente Live (2 progetti trasversali, §65.9) restano `PLANNED / DEFERRED`. Non iniziare nessuna delle 8 fasi o nuove permission/capability senza approvazione dell'utente.
+
 ---
 
 # 66. IMPLEMENTATION PASS HISTORY
