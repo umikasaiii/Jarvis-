@@ -34,6 +34,16 @@ The Master Architecture is a living document — update it (per its own §79
 update policy) alongside any change that shifts ownership, roadmap phase,
 source of truth, or a major architectural decision.
 
+
+## Backlog espansioni FUTURE 2026-11-10 — NON AVVIARE
+
+La roadmap canonica contiene ora:
+- §65.9 — Coding Studio locale con modello dedicato, chat di coding e anteprima HTML/PWA in sandbox; Modalità Agente Live con icona flottante e strumenti Android sottoposti a policy.
+- §65.10 — **64 capacità future** in Security/Privacy/Pentest/Networking/AI/JARVIS OS/Hardening, divise in 8 fasi ordinate, con 7 principi fondamentali e caveat Android. Leggere la checklist integrale prima di qualsiasi pianificazione dell'espansione.
+- `docs/FUTURE_CODING_STUDIO_AGENT_LIVE.md` — requisiti e threat model preliminare delle due iniziative trasversali.
+
+**Tutte queste iniziative sono PLANNED / DEFERRED.** Prima stabilizzare e qualificare la Beta sull'Honor 200 e completare i gate Master già approvati (incluse A1/A3/A4 applicabili). Non iniziare sviluppo, accessi, modifiche ai permessi, installazioni, merge o release di espansione senza un nuovo incarico esplicito. Non rinumerare i 30 macro-step e non inventare stati di completamento.
+
 ## Regola permanente: link APK Beta in OGNI risposta
 
 Alla fine di **OGNI** risposta di Claude Code, inserire sempre questo blocco:
