@@ -5,6 +5,8 @@ import com.simone.jarvismobile.core.agenda.WhenParsed
 import com.simone.jarvismobile.core.notes.NoteCommand
 import com.simone.jarvismobile.core.notes.NoteCommandParser
 import com.simone.jarvismobile.core.protocol.ToolCall
+import com.simone.jarvismobile.core.tools.PhoneCommandGrammar
+import com.simone.jarvismobile.core.tools.PhoneNumbers
 import com.simone.jarvismobile.core.memory.MemoryKind
 import com.simone.jarvismobile.core.memory.MemoryStructure
 import kotlinx.serialization.json.JsonObject
@@ -367,7 +369,8 @@ object CommandMatcher {
     /** "chiama 333..." opens only ACTION_DIAL; contact-name guessing is forbidden. */
     fun dialDraftCall(raw: String): Match? {
         val t = normalize(raw)
-        if (!DIAL_REQUEST_RE.containsMatchIn(t)) return null
+        // BETA 8 hotfix 2: strict hard-command grammar (core). The old unanchored regex fired on "si chiama" and "telefono".
+        if (!PhoneCommandGrammar.isDialRequest(t)) return null
         if (Regex("""\b(?:tra|fra)\b""").containsMatchIn(t) && ItalianNumbers.duration(t) != null) {
             return null // "chiamami tra 10 minuti" is a countdown, not a phone call.
         }
@@ -379,10 +382,30 @@ object CommandMatcher {
         }
     }
 
+    /**
+     * A call proposed by the classifier for a request the strict grammar did not recognise. Accepted only when the
+     * CURRENT turn carries a phone number and call vocabulary; otherwise null (the request stays conversational).
+     * The number always comes from the user's words.
+     */
+    fun modelProposedDial(raw: String): Match? {
+        val number = extractPhone(raw) ?: return null
+        return if (PhoneCommandGrammar.modelProposedCallHasEvidence(normalize(raw), true)) call("prepare_call", "number" to number) else null
+    }
+
+    /** SMS twin of [modelProposedDial]: number + message vocabulary required; the draft still needs a body to run. */
+    fun modelProposedSms(raw: String): Match? {
+        if (!PhoneCommandGrammar.modelProposedSmsHasEvidence(normalize(raw), extractPhone(raw) != null)) return null
+        val number = extractPhone(raw) ?: return null
+        val body = extractSmsBody(raw, number)
+        val partial = buildMap { put("number", number); body?.let { put("body", it) } }
+        return if (body == null) Match.Ask("Cosa devo scrivere nell'SMS?", "compose_sms", "body", partial)
+        else call("compose_sms", *partial.entries.map { it.key to it.value }.toTypedArray())
+    }
+
     /** "prepara un SMS al 333...: arrivo" creates an editable draft only. */
     fun smsDraftCall(raw: String): Match? {
         val t = normalize(raw)
-        if (!SMS_REQUEST_RE.containsMatchIn(t)) return null
+        if (!PhoneCommandGrammar.isSmsRequest(t, extractPhone(raw) != null)) return null
         val number = extractPhone(raw)
         val body = extractSmsBody(raw, number)
         val partial = buildMap {
@@ -863,9 +886,7 @@ object CommandMatcher {
         .replace("le impostazioni", "impostazioni")
         .trim()
 
-    private fun extractPhone(raw: String): String? = PHONE_RE.find(raw)?.value
-        ?.trim()?.replace(Regex("""[ ()-]"""), "")
-        ?.takeIf { it.count(Char::isDigit) in 3..15 }
+    private fun extractPhone(raw: String): String? = PhoneNumbers.extract(raw)
 
     private fun extractSmsBody(raw: String, number: String?): String? {
         val marked = SMS_BODY_RE.find(raw)?.groupValues?.getOrNull(1)?.trim()
@@ -1047,12 +1068,6 @@ object CommandMatcher {
             """\b(?:un|una)\s+(?:evento|appuntamento|attivita|task)\b""",
     )
 
-    private val DIAL_REQUEST_RE = Regex(
-        """\b(?:chiama|telefon\w*|prepara\w*\s+(?:una\s+)?chiamat\w*|apri\w*\s+(?:il\s+)?dialer)\b""",
-    )
-    private val SMS_REQUEST_RE = Regex(
-        """\b(?:sms|messaggio\s+sms)\b|\b(?:prepara|scrivi|componi|manda|invia)\w*\b.{0,20}\b(?:messaggio|sms)\b""",
-    )
     private val PHONE_RE = Regex("""(?<!\w)\+?\d[\d ()-]{1,28}\d(?!\w)""")
     private val SMS_BODY_RE = Regex(
         """(?i)(?:dicendo|con\s+scritto|con\s+testo|testo\s*:|messaggio\s*:|:)\s*(.+)$""",

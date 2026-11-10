@@ -116,7 +116,8 @@ class LlmIntentClassifier @Inject constructor(
         // The fast model also judges whether the answer needs real thinking, so
         // the big model is only woken for questions that deserve it.
         lastNeedsReasoning = lastNeedsReasoning || name == "ragiona" || confidence < LOW_CONFIDENCE
-        Log.i(TAG, "intent=$name confidence=${(confidence * 100).toInt()}")
+        // Counts and enum-like names only — never the user's words.
+        Log.i(TAG, "intent=$name confidence=${(confidence * 100).toInt()} reported=${reportedConfidence != null}")
 
         val match = when (name) {
             "get_time", "list_memories" -> Match.Run(call(name))
@@ -169,44 +170,41 @@ class LlmIntentClassifier @Inject constructor(
                 }
             }
 
+            // BETA 8 hotfix 2 — SENSITIVE intents (communication, destructive, private data, launching other apps).
+            // The model supplies only a NAME and a score, which is not authority (Master §4.2). It may route the
+            // request to the deterministic builder; if the builder finds no evidence in the CURRENT turn the proposal
+            // is dropped (null → the request stays conversational). The old code replaced a missing builder result
+            // with an invented "Quale numero…?" / "Verso quale destinazione?" question, which is how a knowledge
+            // question became a phone command. See core SensitiveIntents.
             "forget_memory" -> CommandMatcher.forgetMemoryCall(utterance)
-                ?: Match.Ask("Quale appunto devo eliminare?", "forget_memory", "text")
 
             "update_memory" -> CommandMatcher.updateMemoryCall(utterance)
-                ?: Match.Ask("Cosa devo modificare, e come?", "update_memory", "old")
 
             "search_knowledge" -> Match.Run(call("search_knowledge", "query" to utterance.trim()))
 
             "list_agenda" -> CommandMatcher.agendaCall(utterance)
 
             "open_app" -> CommandMatcher.appCall(utterance)
-                ?: Match.Ask("Quale app supportata devo aprire?", "open_app", "app")
 
             "open_settings" -> CommandMatcher.settingsCall(utterance)
                 ?: Match.Run(call("open_settings", "area" to "generali"))
 
             "create_calendar_event" -> CommandMatcher.calendarEventCall(utterance)
-                ?: Match.Ask("Qual è il titolo dell'evento?", "create_calendar_event", "title")
 
-            "prepare_call" -> CommandMatcher.dialDraftCall(utterance)
-                ?: Match.Ask("Quale numero devo preparare nel dialer?", "prepare_call", "number")
+            // Calls/SMS: the strict grammar, or (for a paraphrase) a phone number + call/message vocabulary in this very turn.
+            "prepare_call" -> CommandMatcher.dialDraftCall(utterance) ?: CommandMatcher.modelProposedDial(utterance)
 
-            "compose_sms" -> CommandMatcher.smsDraftCall(utterance)
-                ?: Match.Ask("A quale numero preparo l'SMS?", "compose_sms", "number")
+            "compose_sms" -> CommandMatcher.smsDraftCall(utterance) ?: CommandMatcher.modelProposedSms(utterance)
 
             "navigate" -> CommandMatcher.navigationCall(utterance)
-                ?: Match.Ask("Verso quale destinazione?", "navigate", "destination")
 
             "play_media" -> CommandMatcher.playMediaCall(utterance)
-                ?: Match.Ask("Cosa vuoi ascoltare?", "play_media", "query")
 
             "media_control" -> CommandMatcher.mediaControlCall(utterance)
 
             "list_notifications" -> CommandMatcher.notificationCall(utterance)
-                ?: Match.Run(call("list_notifications"))
 
             "search_vault" -> CommandMatcher.searchVaultCall(utterance)
-                ?: Match.Ask("Cosa devo cercare nel vault?", "search_vault", "query")
 
             // Clock arithmetic is done in code, never by the model.
             "time_until" -> CommandMatcher.timeUntilCall(utterance)
@@ -332,6 +330,12 @@ class LlmIntentClassifier @Inject constructor(
         Risposta: none|96
         Richiesta: sì, va bene
         Risposta: none|92
+        Richiesta: come si chiama la capitale della Francia?
+        Risposta: ragiona|96
+        Richiesta: quale dei due telefoni conserva i dati quando si spegne?
+        Risposta: ragiona|95
+        Richiesta: il mio gatto si chiama Luna
+        Risposta: none|96
 
         Attenzione: se l'utente CONSTATA qualcosa invece di chiedere un'azione,
         rispondi "none|fiducia" anche se la frase contiene parole come batteria o timer.

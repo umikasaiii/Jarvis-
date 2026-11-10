@@ -62,6 +62,8 @@ import com.simone.jarvismobile.util.runCancellable
 import com.simone.jarvismobile.tools.ToolRunner
 import dagger.hilt.android.qualifiers.ApplicationContext
 import com.simone.jarvismobile.core.reliability.MicrophonePolicy
+import com.simone.jarvismobile.core.tools.SlotAnswerPolicy
+import com.simone.jarvismobile.core.tools.SlotAnswerVerdict
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
@@ -416,7 +418,13 @@ class SessionCoordinator @Inject constructor(
     @Volatile private var pendingConfirmation: com.simone.jarvismobile.core.protocol.ToolCall? = null
 
     /** A tool JARVIS asked a follow-up question about, with what it already knows. */
-    private data class Pending(val tool: String, val missing: String, val args: Map<String, String>)
+    private data class Pending(
+        val tool: String,
+        val missing: String,
+        val args: Map<String, String>,
+        /** BETA 8 hotfix 2: when the question was asked — a stale question must not capture a later, unrelated message. */
+        val askedAtMs: Long = System.currentTimeMillis(),
+    )
 
     @Volatile private var pendingSlot: Pending? = null
 
@@ -1109,14 +1117,28 @@ class SessionCoordinator @Inject constructor(
         pendingSlot?.let { pending ->
             val toolName = pending.tool
             pendingSlot = null
-            when (val completed = fillSlot(pending, transcript)) {
+            // BETA 8 hotfix 2: the reply is fed to the slot filler ONLY if it has the shape of the asked value, the
+            // question is still fresh, and it is not the same question again. Otherwise the pending question is
+            // dropped and the message continues down the normal pipeline as an independent request.
+            val verdict = SlotAnswerPolicy.assess(
+                pending.tool, pending.missing, transcript, System.currentTimeMillis() - pending.askedAtMs,
+            )
+            if (verdict != SlotAnswerVerdict.ANSWER) {
+                _diagnostic.value = "route=pending-dropped:$toolName/${pending.missing} (${verdict.name.lowercase()})"
+                Log.i(TAG, "route pending_dropped tool=$toolName slot=${pending.missing} verdict=${verdict.name}")
+            } else when (val completed = fillSlot(pending, transcript)) {
                 is Match.Ask -> {
-                    pendingSlot = Pending(completed.tool, completed.missing, completed.partial)
-                    _diagnostic.value = "chiedo: ${completed.missing}"
-                    return completed.question
+                    if (SlotAnswerPolicy.isRepeatOfSameQuestion(pending.tool, pending.missing, completed.tool, completed.missing)) {
+                        _diagnostic.value = "route=pending-dropped:$toolName/${pending.missing} (same_question)"
+                        Log.i(TAG, "route pending_dropped tool=$toolName slot=${pending.missing} verdict=SAME_QUESTION")
+                    } else {
+                        pendingSlot = Pending(completed.tool, completed.missing, completed.partial)
+                        _diagnostic.value = "chiedo: ${completed.missing} [route=pending:$toolName]"
+                        return completed.question
+                    }
                 }
                 is Match.Run -> {
-                    _diagnostic.value = "tool completato: $toolName"
+                    _diagnostic.value = "tool completato: $toolName [route=pending:$toolName]"
                     return when (val outcome = tools.run(completed.call)) {
                         is ToolOutcome.Done -> outcome.spoken
                         is ToolOutcome.Failed -> outcome.spoken
@@ -1159,11 +1181,13 @@ class SessionCoordinator @Inject constructor(
         when (val match = CommandMatcher.match(transcript, recentContext = recentContext)) {
             is Match.Ask -> {
                 pendingSlot = Pending(match.tool, match.missing, match.partial)
-                _diagnostic.value = "chiedo: ${match.missing}"
+                _diagnostic.value = "chiedo: ${match.missing} [route=deterministic:${match.tool}]"
+                Log.i(TAG, "route deterministic ask tool=${match.tool} slot=${match.missing}")
                 return match.question
             }
             is Match.Run -> {
-                _diagnostic.value = "tool: ${match.call.name}"
+                _diagnostic.value = "tool: ${match.call.name} [route=deterministic]"
+                Log.i(TAG, "route deterministic run tool=${match.call.name}")
                 return when (val outcome = tools.run(match.call)) {
                     is ToolOutcome.Done -> outcome.spoken
                     is ToolOutcome.Failed -> outcome.spoken
@@ -1221,11 +1245,13 @@ class SessionCoordinator @Inject constructor(
                 }
                 lastAskedSlot = key
                 pendingSlot = Pending(aiMatch.tool, aiMatch.missing, aiMatch.partial)
-                _diagnostic.value = "chiedo (piano): ${aiMatch.missing}"
+                _diagnostic.value = "chiedo (piano): ${aiMatch.missing} [route=classifier:${aiMatch.tool}]"
+                Log.i(TAG, "route classifier ask tool=${aiMatch.tool} slot=${aiMatch.missing}")
                 return aiMatch.question
             }
             is Match.Run -> {
-                _diagnostic.value = "tool (piano): ${aiMatch.call.name}"
+                _diagnostic.value = "tool (piano): ${aiMatch.call.name} [route=classifier]"
+                Log.i(TAG, "route classifier run tool=${aiMatch.call.name}")
                 return when (val outcome = tools.run(aiMatch.call)) {
                     is ToolOutcome.Done -> outcome.spoken
                     is ToolOutcome.Failed -> outcome.spoken
@@ -1426,6 +1452,7 @@ class SessionCoordinator @Inject constructor(
         conversationHint: String = "",
     ): String {
         lastAskedSlot = null
+        _diagnostic.value = "route=conversation"
         val retrieved = runCancellable { memory.retrieveSmart(transcript, MEMORY_TOP_K) }.getOrDefault(emptyList())
         val notes = retrieved.map { it.chunk.text.replace('\n', ' ').trim().take(600) }
 
@@ -2327,6 +2354,7 @@ class SessionCoordinator @Inject constructor(
         router.resetConversation()
         pendingConfirmation = null
         pendingSlot = null
+        lastAskedSlot = null
         pendingPick = null
         pendingDestinationPick = null
         lastAgendaEntryId = null
