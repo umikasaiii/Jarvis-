@@ -3792,6 +3792,78 @@ Spec dedicata: [`docs/FUTURE_CODING_STUDIO_AGENT_LIVE.md`](FUTURE_CODING_STUDIO_
 
 **Regola di stato:** 64/64 candidati registrati come `PLANNED / DEFERRED`; NON significa 64 funzioni implementate. Anche Coding Studio e Agente Live (2 progetti trasversali, §65.9) restano `PLANNED / DEFERRED`. Non iniziare nessuna delle 8 fasi o nuove permission/capability senza approvazione dell'utente.
 
+
+## 65.11 SECURE DEVICE MIGRATION, BACKUP RECOVERY & STRONG AUTHENTICATION (richiesta 2026-11-11)
+
+**Stato:** REQUISITI REGISTRATI / PLANNED. **NO IMPLEMENTATION / NO RELEASE.** Aggiornamento della roadmap di hardening §65.10 (soprattutto Secure Backup, Encrypted Vault, Strong Encryption, Secure Key Management, Recovery & Rollback, Offline Resilience, Device Verification); **non** nuovi sistemi duplicati o nuove fasi numerate. Le componenti di backup cifrato e restore già presenti restano l'unica base da qualificare e ampliare. Il livello finale di sicurezza non si dichiara completato per il solo fatto che esistano il codice o test CI.
+
+**Obiettivo:** passare in sicurezza a un altro smartphone Android, anche di marca diversa, ripristinando i dati supportati, e resistere realisticamente ad accessi non autorizzati, perdita/furto/distruzione del vecchio dispositivo e backup manipolati. Android rimane offline-first; cloud/Core sempre facoltativi.
+
+### A. Migrazione sicura tra smartphone — requisiti
+
+- [ ] Backup **completo rispetto al perimetro dichiarato e supportato**, cifrato e documentato: note, conversazioni, memoria AI accettata, documenti, attività/promemoria, automazioni, preferenze e configurazioni trasferibili. Inventario verificabile dei dati inclusi/esclusi; non presentare come backup totale ciò che è escluso.
+- [ ] Trasferimento **offline** di archivi cifrati via file, USB o altro collegamento locale autenticato, con verifica integrità e provenienza.
+- [ ] Ripristino **facoltativo da Google Drive**: cifrare e autenticare i dati prima dell'upload, senza consegnare al cloud chiavi in chiaro; disponibilità offline del percorso file/USB senza account obbligatorio.
+- [ ] **Chiave/codice di recupero d'emergenza** conservabile separatamente dal telefono e dal backup, con istruzioni chiare di conservazione e prova di utilizzo. Non esportare o considerare trasferibili le chiavi non esportabili di Android Keystore; progettare wrapping/recovery crittografico indipendente da quelle chiavi e nuova protezione con Keystore sul nuovo dispositivo.
+- [ ] Gestione delle **risorse pesanti** non incluse nel backup ordinario (modelli AI, mappe, archivi Kiwix/ZIM): inventario e hash/versione, verifica compatibilità, istruzioni per trasferimento separato o reimportazione; non promettere recupero automatico se la copia manca.
+- [ ] Verifica crittografica di **integrità e autenticità** di archivi e manifest, versioni, nonce e legami con la recovery key; nessuna fiducia nel solo nome file/estensione/CRC.
+- [ ] Compatibilità tra versioni JARVIS e migrazioni database **non distruttive**, con preflight di versione/schema, downgrade non supportato esplicitamente dichiarato e controlli dopo il restore.
+- [ ] Ripristino possibile su **nuovo telefono o installazione pulita**, anche dopo disinstallazione, furto, smarrimento o distruzione del vecchio dispositivo, **purché siano disponibili backup e segreti di recupero necessari**.
+- [ ] Ripristino transazionale: **verifica completa prima di scrivere**, staging isolato, backup di sicurezza dei dati presenti, commit/cutover atomico per quanto possibile, rollback verificato se fallisce o viene interrotto; nessuna sovrascrittura/cancellazione irreversibile in caso di errore.
+- [ ] Dopo la migrazione, **nuova concessione esplicita** di permessi Android, credenziali locali/esterne, account, sessioni, servizi, autenticazioni biometriche e autorizzazioni legate al dispositivo. Non migrare segreti/device tokens come se fossero universalmente validi.
+
+### B. Autenticazione e protezione degli accessi — requisiti
+
+- [ ] **BiometricPrompt** Android dove appropriato, con autenticazione forte e fallback controllato alla **credenziale del dispositivo**; nessuna biometria o PIN proprietari improvvisati.
+- [ ] **Timeout sessione configurabile**, lock all'uscita/ritorno dopo inattività e invalidazione sicura delle sessioni quando necessario.
+- [ ] **Riautenticazione** per operazioni ad alto impatto: visualizzazione/esportazione di segreti, restore, modifica o recupero chiavi, collegamenti remoti, accessi a vault, cancellazioni o azioni AI sensibili.
+- [ ] Chiavi protette tramite **Android Keystore** e hardware sicuro/StrongBox **se presente**, senza assumere che sia sempre disponibile o che sopravviva a cambio telefono, reset o reinstallazione.
+- [ ] Protezione selettiva di dati sensibili da **screenshot, anteprime app, notifiche e appunti**; schermate protette, contenuti notifiche ridotti, copia temporanea controllata dove Android consente, senza dichiarare impossibile ogni acquisizione esterna.
+- [ ] **Nessuna password, token o chiave hardcoded** nel codice, APK, log, file di esempio, CI o documentazione pubblica; scansione dei segreti e gestione/revoca.
+- [ ] **Autenticità e integrità release/aggiornamenti**: firma APK, provenienza e checksum, policy di update, certificati release non confusi con la firma debug Beta, supply-chain e dipendenze native.
+- [ ] Difese verificabili contro **replay, intent malevoli, componenti esportati, escalation privilegiata, accessi impropri e prompt injection**; il modello non può autorizzare da sé azioni reali.
+- [ ] **Autorizzazione esplicita e legata alla singola azione** per effetti sensibili proposti dall'AI, con policy, controllo stato/permessi, conferma/riautenticazione ove necessario, esecuzione deterministica e ricevuta auditabile.
+- [ ] Gestione di **fallimenti biometrici, credenziali revocate/cambiate e cambio dispositivo** (chiavi invalidate, re-enrollment, accesso d'emergenza e fail-closed senza perdita silenziosa dei dati).
+- [ ] Audit di **dipendenze e componenti native**, SAST/DAST/fuzzing pertinente e verifica aggiornata delle vulnerabilità conosciute.
+- [ ] **Nessuna dipendenza obbligatoria** da server, cloud o account remoto; il percorso offline resta completo per le funzioni dichiarate.
+
+### C. Disaster recovery — scenari obbligatori reali
+
+- [ ] Vecchio telefono **smarrito**: nuovo dispositivo senza accesso al precedente.
+- [ ] Vecchio telefono **distrutto**: nessun pairing/trasferimento dal vecchio telefono.
+- [ ] **Installazione pulita** sul secondo smartphone (o ambiente pulito equivalente esplicitamente distinto), con versione/schema verificati.
+- [ ] Backup **danneggiato, troncato o incompleto**: rifiuto senza perdita dei dati presenti.
+- [ ] Recovery key **mancante o errata**: errore onesto, nessun bypass e nessuna promessa di recupero impossibile.
+- [ ] **Interruzione del ripristino** (process death, interruzione alimentazione, spazio insufficiente): rollback e stato ripetibile senza dati corrotti.
+- [ ] **Blackout e assenza di Internet**: backup, verifica e ripristino locale indipendenti da Drive/Core.
+- [ ] **Credenziali revocate o cambiate**: nuova autenticazione/pairing, vecchi token non riutilizzati.
+- [ ] Backup **manipolato** o replay di una versione obsoleta: rilevazione/rifiuto dove crittograficamente possibile, policy esplicita contro rollback malevolo e recupero sicuro.
+
+### Collocazione e gate — non anticipare l'Advanced Hardening
+
+**PRIMA DELLA CHIUSURA DELLA BETA (requisito di accettazione, non nuovo sviluppo automatico):**
+1. Stabilizzare inferenza e chiudere i bug P0/P1 aperti, poi verificare backup locale cifrato, chiave/codice di recupero e **ripristino reale sull'installazione Beta isolata** con dati fittizi. Confrontare dataset prima/dopo, integrità, permessi, compatibilità e comportamento offline.
+2. Eseguire prove negative almeno per chiave errata, archivio corrotto/manomesso, ripristino interrotto e verifica dei dati precedenti rimasti intatti. Correggere eventuali vulnerabilità **critiche** di accesso/backup prima di dichiarare un GO.
+3. Agganciare la qualifica a `docs/BETA_FINAL_HONOR200_TEST_PLAN.md` (A16, B14, Main App GO) e `docs/BETA_STEP08_FINAL_INTEGRATION.md` §9: stato reale **DEVICE VERIFIED** solo dopo prova fisica. Non modificare l'app principale prima dei gate già esistenti.
+
+**ADVANCED HARDENING FINALE (§65.10 FASE 1/8, e A4 dove pertinente):**
+1. Completare autentificazione forte, session timeout/re-auth, protezioni delle schermate/chiavi, migrazione guidata inter-brand, inventario risorse voluminose e recupero autonomo con recovery key.
+2. Qualificare export/import offline, Google Drive **opzionale**, disattivazione/revoca dispositivi, controlli contro attacchi e restore avversari.
+3. Eseguire test offensivi autorizzati, disaster recovery su un **secondo dispositivo o installazione pulita**, audit indipendenti ove fattibile, verifiche native, aggiornamenti e regressioni offline. Documentare risultati, limiti e rischi residui.
+
+### Definition of Done: condizioni cumulative
+
+Non dichiarare questa estensione COMPLETATA se non sono soddisfatte **tutte**:
+
+1. Almeno un **ripristino reale e completo dei dati supportati** su secondo dispositivo oppure installazione pulita, con confronto dei dati e inventario delle esclusioni.
+2. Prove ripetibili per archivi **corrotti, incompleti, interrotti e manipolati**, senza perdita di dati esistenti.
+3. Recupero verificato **senza poter accedere al vecchio telefono**, usando soltanto backup e recovery material disponibile.
+4. Protezioni validate contro accessi non autorizzati ed esposizione delle **chiavi**, compresi biometria, fallback, sessioni, replay/intent/prompt injection pertinenti.
+5. Elenco chiaro di dati **non trasferibili**, credenziali che richiedono riconnessione e **rischi residui**.
+6. **Regressioni delle funzionalità offline** eseguite su dispositivo, senza obbligo di cloud/Core.
+
+**Vincoli permanenti:** non promettere sicurezza assoluta, telefono impenetrabile o recupero garantito se mancano backup o chiavi. Nessuna di queste voci crea ora permessi, implementazioni, build, merge o release; serve una futura autorizzazione esplicita. Il backlog di 64 capacità (§65.10), i due progetti Coding Studio/Agente Live (§65.9), le track A0–A4/B e i **30 macro-step fissi** (§65.7) rimangono invariati.
+
 ---
 
 # 66. IMPLEMENTATION PASS HISTORY
