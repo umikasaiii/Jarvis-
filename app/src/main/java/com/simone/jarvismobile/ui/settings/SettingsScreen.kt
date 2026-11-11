@@ -83,6 +83,7 @@ fun SettingsScreen(
     onOpenArchive: () -> Unit = {},
     onOpenNotes: () -> Unit = {},
     onOpenLibrary: () -> Unit = {},
+    onOpenGuardian: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val name by viewModel.assistantName.collectAsStateWithLifecycle()
@@ -803,6 +804,22 @@ fun SettingsScreen(
             }
         }
 
+        }
+
+        CollapsibleSection("Sicurezza · JARVIS Guardian") {
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Device Guardian — G2 iniziale", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "Verifiche offline del sistema Android e impronta SHA-256 dei file selezionati. " +
+                            "Firewall, VPN e antivirus non sono ancora implementati.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    OutlinedButton(onClick = onOpenGuardian, modifier = Modifier.fillMaxWidth()) {
+                        Text("Apri JARVIS Guardian")
+                    }
+                }
+            }
         }
 
         CollapsibleSection("Altro e sistema") {

@@ -39,6 +39,9 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <!-- Guardian G2: Android 16+ read-only query, never a privileged or VPN operation. -->
+    <uses-permission android:name="android.permission.QUERY_ADVANCED_PROTECTION_MODE" />
+
     <!-- Offline navigation: GNSS position (works with no network) and a typed
          foreground service so navigation continues with the screen off. -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />

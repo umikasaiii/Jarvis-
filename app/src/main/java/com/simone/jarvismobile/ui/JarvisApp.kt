@@ -47,6 +47,7 @@ import com.simone.jarvismobile.ui.models.ModelsScreen
 import com.simone.jarvismobile.ui.settings.SettingsScreen
 import com.simone.jarvismobile.ui.agenda.AgendaScreen
 import com.simone.jarvismobile.ui.status.SystemStatusScreen
+import com.simone.jarvismobile.ui.guardian.GuardianScreen
 
 /**
  * Full-screen destinations reached from Home. Home itself (§ richiesta
@@ -60,7 +61,7 @@ import com.simone.jarvismobile.ui.status.SystemStatusScreen
  */
 private enum class Overlay {
     CHAT, MODELS, MEMORY, DIAGNOSTICS, AUTOMATIONS, RULES, TRANSLATOR, DOCUMENTS,
-    NAVIGATION, MAPS, FAVORITES, BACKUP, ARCHIVE, NOTES, LIBRARY, SYSTEM_STATUS, AGENDA, SETTINGS,
+    NAVIGATION, MAPS, FAVORITES, BACKUP, ARCHIVE, NOTES, LIBRARY, SYSTEM_STATUS, GUARDIAN, AGENDA, SETTINGS,
 }
 
 /**
@@ -198,7 +199,7 @@ fun JarvisApp(
             overlay == Overlay.TRANSLATOR || overlay == Overlay.DOCUMENTS ||
             overlay == Overlay.NAVIGATION || overlay == Overlay.MAPS ||
             overlay == Overlay.FAVORITES || overlay == Overlay.BACKUP ||
-            overlay == Overlay.ARCHIVE || overlay == Overlay.NOTES || overlay == Overlay.LIBRARY || overlay == Overlay.SYSTEM_STATUS ||
+            overlay == Overlay.ARCHIVE || overlay == Overlay.NOTES || overlay == Overlay.LIBRARY || overlay == Overlay.SYSTEM_STATUS || overlay == Overlay.GUARDIAN ||
             overlay == Overlay.AGENDA || overlay == Overlay.SETTINGS
         ) {
             BackHandler { overlay = null }
@@ -233,6 +234,7 @@ fun JarvisApp(
                         onOpenDocuments = { overlay = Overlay.DOCUMENTS },
                     )
                     Overlay.SYSTEM_STATUS -> SystemStatusScreen(onBack = { overlay = null })
+                    Overlay.GUARDIAN -> GuardianScreen(onBack = { overlay = null })
                     Overlay.AGENDA -> AgendaScreen()
                     Overlay.SETTINGS -> SettingsScreen(
                         onBack = { overlay = null },
@@ -248,6 +250,7 @@ fun JarvisApp(
                         onOpenArchive = { overlay = Overlay.ARCHIVE },
                         onOpenNotes = { overlay = Overlay.NOTES },
                         onOpenLibrary = { overlay = Overlay.LIBRARY },
+                        onOpenGuardian = { overlay = Overlay.GUARDIAN },
                     )
                     else -> Unit
                 }
