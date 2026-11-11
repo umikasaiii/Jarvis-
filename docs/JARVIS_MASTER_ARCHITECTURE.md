@@ -3640,6 +3640,251 @@ A1 e A3 **non sono avviate** da questo hotfix.
 - **Limite noto, non risolto qui:** «Ricorda che X. <domanda>?» in un unico messaggio salva il fatto (comando di memoria) ma non
   risponde alla domanda finale nello stesso turno. Candidato per la track semantica (A1/A3), non per questo hotfix.
 
+## 65.9 FUTURE CANDIDATES — Coding Studio e Modalità Agente Live (2026-11-10)
+
+**Decisione dell'utente: PLANNED / DEFERRED. Nessuna implementazione avviata o autorizzata ora.**
+Spec dedicata: [`docs/FUTURE_CODING_STUDIO_AGENT_LIVE.md`](FUTURE_CODING_STUDIO_AGENT_LIVE.md).
+
+1. **Coding Studio locale**: futura sezione dedicata con chat a un modello specializzato per scrivere codice,
+   creazione/modifica di HTML, CSS, JavaScript e piccole PWA (es. pagina delle scadenze), workspace protetto,
+   diff/rollback ed **anteprima live** locale in WebView isolata. Il modello coding deve essere qualificato sul
+   telefono; Core opzionale solo per progetti più pesanti. Nessuna esecuzione indiscriminata del codice generato,
+   nessuna shell/permesso arbitrario, nessuna pubblicazione online automatica.
+2. **Modalità Agente Live**: futura icona flottante attivata dall'utente, per aprire app, predisporre ricerca o
+   navigazione e aprire il dialer tramite capability Android validate. Permessi minimi, conferma per ogni effetto
+   sensibile, sessione revocabile, indicatore visibile, nessun controllo remoto o Accessibility permanenti per
+   default, nessun bypass PIN/MagicOS; nessun invio/chiamata autonomo.
+3. **Architettura e sicurezza**: i due domini si collegano al SemanticFrame, all'orchestratore unico previsto
+   in A3 e all'attuale ToolRegistry/ToolPolicy; non creano un secondo brain, planner o esecutore con privilegi
+   paralleli. I risultati del modello, file generati e contenuti dello schermo sono input non attendibili;
+   threat model, isolamento, test anti-prompt-injection, audit di azioni e acceptance Honor 200 obbligatori.
+4. **Ordine**: prima stabilizzare LiteRT-LM e completare la Beta; poi gate A1/A3; prototipi autorizzati di UI,
+   preview e agent capability ristrette in A4; Core coding più potente come enhancement B. Nessuna modifica ai
+
+
+## 65.10 EXPANSION BACKLOG — Security, Privacy, Networking, AI e Sistema Operativo (2026-11-10)
+
+**Richiesta integrale dell'utente: SALVATA / PLANNED / DEFERRED. Nessuna voce è autorizzata all'implementazione ora.**
+
+**Obiettivo:** trasformare in futuro JARVIS da assistente AI offline-first a piattaforma personale avanzata per cybersecurity, privacy, gestione dispositivi, automazione e controllo intelligente del sistema.
+
+**Gate di ingresso (OBBLIGATORIO):** prima completare la stabilizzazione dell'inferenza locale (inclusi l'Hotfix 3 e la prova reale Honor 200), la qualifica della Beta, le fasi architetturali A0–A4 già approvate e i relativi test e requisiti di sicurezza. Soltanto dopo valutare e autorizzare uno per uno questi ampliamenti. Le 8 fasi sotto sono **un backlog aggiuntivo futuro**, non sono le Beta 1–8 e **non** modificano il denominatore canonico di 30 macro-step (§65.7). Non sovrascrivono §65.1–§65.6.
+
+**Integrazione delle richieste precedenti:** la sezione §65.9 e il dettaglio in [`docs/FUTURE_CODING_STUDIO_AGENT_LIVE.md`](FUTURE_CODING_STUDIO_AGENT_LIVE.md) conservano **Coding Studio** (modello dedicato al codice + chat + preview HTML/PWA locale live) e **Modalità Agente Live** (icona flottante, controllo limitato e autorizzato del telefono, difesa multilivello). Entrambi restano nel medesimo backlog futuro e non si devono perdere né sostituire con Security Center/JARVIS OS. Nessun secondo orchestratore privilegiato.
+
+### Backlog completo — 64 capacità candidate
+
+### 1. CYBERSECURITY & PROTEZIONE
+
+- [ ] **JARVIS Security Center:** dashboard centralizzata per sicurezza, privacy, permessi e stato delle protezioni.
+- [ ] **Firewall intelligente:** controllo delle connessioni delle applicazioni tramite VPN locale.
+- [ ] **AdBlock integrato:** blocco DNS di pubblicità, tracker e domini malevoli.
+- [ ] **VPN privata:** tunnel cifrato con WireGuard verso server personali.
+- [ ] **Network Monitor:** analisi delle connessioni, DNS, traffico e anomalie.
+- [ ] **Intrusion Detection System:** rilevamento di attività sospette in base ai dati di rete accessibili.
+- [ ] **Privacy Monitor:** verifica autorizzazioni, esposizione di dati e configurazioni rischiose.
+- [ ] **File Security Scanner:** scansione di file e documenti con motori di sicurezza locali.
+- [ ] **APK Security Analyzer:** analisi APK, manifest, permessi, librerie e indicatori sospetti.
+- [ ] **Encrypted Vault:** archivio personale cifrato con autenticazione biometrica.
+- [ ] **Secure Backup:** backup cifrati, verifica integrità e recupero sicuro.
+- [ ] **Security Alerts:** avvisi intelligenti su anomalie, vulnerabilità e configurazioni insicure.
+
+### 2. PENTEST & REVERSE ENGINEERING
+
+- [ ] **JARVIS Pentest Assistant:** gestione intelligente dei test di sicurezza autorizzati.
+- [ ] **Automated Security Audit:** audit periodici dell'applicazione JARVIS e del proprio laboratorio.
+- [ ] **Static Application Security Testing:** scansione automatica del codice sorgente.
+- [ ] **Dynamic Application Security Testing:** test dinamici in ambienti isolati.
+- [ ] **Reverse Engineering Studio:** analisi dei propri APK e programmi tramite JADX, Ghidra e strumenti equivalenti.
+- [ ] **Mobile Security Testing:** integrazione con MobSF e standard OWASP MASVS/MASTG.
+- [ ] **API Security Testing:** verifica di autenticazione, autorizzazioni e sicurezza delle API.
+- [ ] **Fuzz Testing:** generazione di input anomali per individuare crash e comportamenti imprevisti.
+- [ ] **Vulnerability Management:** archivio delle vulnerabilità, gravità, stato e correzioni.
+- [ ] **AI Security Analyst:** interpretazione intelligente di log, scansioni e risultati tecnici.
+- [ ] **Security Regression Testing:** ripetizione automatica dei test dopo modifiche al codice.
+- [ ] **Security Release Gate:** blocco del rilascio in presenza di problemi critici verificati.
+
+### 3. RETE, SERVER E DISPOSITIVI
+
+- [ ] **JARVIS Mini Server:** server locale con API autenticate e accesso controllato.
+- [ ] **Personal Web Dashboard:** interfaccia web per consultare e gestire JARVIS.
+- [ ] **Secure Device Network:** comunicazione cifrata tra smartphone, PC e dispositivi autorizzati.
+- [ ] **Local File Sharing:** trasferimento sicuro di documenti tra dispositivi.
+- [ ] **Secure Remote Access:** accesso remoto a JARVIS tramite VPN privata.
+- [ ] **Network Discovery:** individuazione autorizzata dei dispositivi presenti nella rete domestica.
+- [ ] **Device Health Monitor:** controllo stato, disponibilità e risorse dei dispositivi collegati.
+- [ ] **Smart Home Security:** integrazione sicura con dispositivi domestici e Home Assistant.
+- [ ] **Offline Local Services:** servizi essenziali funzionanti senza Internet.
+- [ ] **JARVIS Core Security Server:** esecuzione sul PC di strumenti di analisi e scansioni pesanti.
+
+### 4. AI INTELLIGENCE & AUTOMAZIONE
+
+- [ ] **AI Security Reasoning:** analisi delle anomalie con spiegazioni e suggerimenti di intervento.
+- [ ] **Intelligent Tool Orchestration:** selezione degli strumenti più adatti alle richieste.
+- [ ] **Threat Intelligence Locale:** consultazione di database aggiornabili di vulnerabilità e indicatori di compromissione.
+- [ ] **Automated Incident Reports:** produzione di report strutturati sugli eventi di sicurezza.
+- [ ] **Context-Aware Protection:** suggerimenti di protezione basati sul contesto, senza decisioni invasive automatiche.
+- [ ] **Permission-Based Actions:** autorizzazioni esplicite per operazioni sensibili.
+- [ ] **Sandboxed AI Tools:** esecuzione isolata dei componenti potenzialmente rischiosi.
+- [ ] **Prompt Injection Protection:** difese contro istruzioni malevole contenute in documenti, siti e risultati degli strumenti.
+- [ ] **Self-Diagnostics:** monitoraggio di errori, prestazioni e affidabilità di JARVIS.
+- [ ] **AI-Assisted Maintenance:** identificazione di possibili problemi e proposta di correzioni, con approvazione umana.
+
+### 5. JARVIS OS & CONTROLLO SISTEMA
+
+- [ ] **JARVIS OS Interface:** ambiente grafico futuristico e personalizzato.
+- [ ] **Custom Android Launcher:** schermata principale intelligente con accesso alle funzioni di JARVIS.
+- [ ] **Unified Control Center:** gestione centralizzata di AI, strumenti, sicurezza e dispositivi.
+- [ ] **Contextual Dashboard:** interfaccia dinamica in base ad attività e contesto.
+- [ ] **Local Automation Engine:** automazioni Android autorizzate e funzionanti offline.
+- [ ] **Modular Plugin System:** aggiunta di funzionalità tramite moduli verificati e isolati.
+- [ ] **Secure System Integration:** integrazione con le API Android senza privilegi eccessivi.
+- [ ] **Custom AOSP Research:** studio futuro di un sistema Android personalizzato con JARVIS integrato.
+
+### 6. HARDENING E AFFIDABILITÀ
+
+- [ ] **Threat Modeling:** definizione delle minacce e delle risorse da proteggere.
+- [ ] **Least Privilege Architecture:** ogni modulo dispone esclusivamente dei permessi necessari.
+- [ ] **Zero Trust Internal Design:** autenticazione e autorizzazione anche tra componenti interni.
+- [ ] **Strong Encryption:** crittografia affidabile per dati, comunicazioni e backup.
+- [ ] **Secure Key Management:** gestione delle chiavi tramite Android Keystore e meccanismi appropriati sul Core.
+- [ ] **Dependency Security Scanning:** controllo delle librerie e vulnerabilità conosciute.
+- [ ] **Software Supply Chain Security:** verifica provenienza, firme e integrità degli artefatti.
+- [ ] **APK Integrity Verification:** protezione e verifica degli APK distribuiti.
+- [ ] **Continuous Security Testing:** analisi automatizzate integrate nella CI.
+- [ ] **Recovery & Rollback:** ripristino dopo aggiornamenti difettosi.
+- [ ] **Offline Resilience:** mantenimento delle funzioni essenziali senza rete o Core.
+- [ ] **Device Verification:** test sul dispositivo reale prima di dichiarare una funzione affidabile.
+
+### Ordine consigliato di implementazione — 8 fasi FUTURE (dopo tutti i gate precedenti)
+
+1. **FASE 1 — Sicurezza delle fondamenta:** Threat modeling, audit codice, pentest APK/API, cifratura, gestione autorizzazioni e test automatici.
+2. **FASE 2 — JARVIS Security Center:** Dashboard sicurezza, Privacy Monitor, diagnostica, controllo integrità e avvisi.
+3. **FASE 3 — Network Shield:** AdBlock DNS, firewall con VPN locale e successiva integrazione VPN cifrata.
+4. **FASE 4 — Secure Device Network:** Mini server, comunicazione Android–Core, API autenticate e accesso remoto sicuro.
+5. **FASE 5 — Cybersecurity Toolkit:** APK Analyzer, scansioni autorizzate, reverse engineering e gestione vulnerabilità.
+6. **FASE 6 — AI Security Intelligence:** Interpretazione log, analisi delle minacce, report e strumenti di assistenza alla sicurezza.
+7. **FASE 7 — JARVIS OS:** Launcher personalizzato, Control Center, automazioni e interfaccia unificata.
+8. **FASE 8 — Advanced Security Platform:** Monitoraggio intelligente, orchestrazione di strumenti isolati, test continui e difesa multilivello.
+
+### Principi fondamentali — vincolanti per ogni futura espansione
+
+1. Android rimane completamente autonomo e offline-first.
+2. JARVIS Core rappresenta un potenziamento, mai una dipendenza obbligatoria.
+3. Nessun modello AI deve avere accesso incontrollato a shell, file, rete o funzioni critiche.
+4. Ogni nuova capacità deve rispettare l'architettura master esistente.
+5. Nessun modulo va dichiarato completo senza le verifiche pertinenti.
+6. Le funzionalità di pentest operano esclusivamente su sistemi propri o esplicitamente autorizzati.
+7. La sicurezza deve essere verificabile e mantenibile, senza promettere un sistema impenetrabile.
+
+### Note di fattibilità, dipendenze e sicurezza (non sostituiscono le richieste)
+
+- **Funzioni già parzialmente presenti:** backup cifrato, diagnostica, automazioni e alcune protezioni sono componenti esistenti. Queste voci indicano **hardening, unificazione o ampliamento**, non richiedono inventare una seconda autorità, un secondo vault o un nuovo scheduler. Nessuna voce qui è segnata DONE solo perché esiste un componente simile.
+- **Firewall locale, AdBlock e WireGuard:** su Android un'unica VPN `VpnService` può essere attiva per utente/profilo nello stesso momento; firewall, DNS filter e VPN cifrata devono essere progettati come uno stack interoperabile oppure alternative esplicite, con esclusioni/consenso e modalità fail-safe. Nessuna promessa di coesistenza automatica con qualsiasi VPN di terze parti.
+- **Telemetria/IDS:** Android ordinario non espone automaticamente il traffico, i processi, i permessi o i dati di tutte le altre app. Limitarsi ai dati legittimamente accessibili via API, VPN locale con consenso o a sorgenti esterne autorizzate. Nessuna richiesta di root, Accessibility, cattura schermo o privilegio amministrativo come prerequisito implicito. Dichiarare i limiti d'osservabilità.
+- **Network discovery, pentest, DAST, fuzzing, reverse engineering:** target propri o autorizzati, limiti di portata, ambienti isolati e consenso; niente scansioni automatiche di reti pubbliche o dispositivi di terzi. Strumenti pesanti come Ghidra/MobSF/JADX possono essere eseguiti sul Core opzionale, non promessi come motori Android locali equivalenti.
+- **Mini Server / Web Dashboard / accesso remoto:** opt-in, bind su interfacce ristrette, autenticazione forte, TLS o tunnel, pairing dei dispositivi, chiavi gestite e revocabili, scoping per capability, audit, rate limits, nessuna esposizione Internet di default. No remote control non autorizzato.
+- **Vault e sicurezza delle chiavi:** riusare/estendere l'autorità crittografica esistente, Android Keystore e storage cifrato; biometria solo attraverso i meccanismi di autenticazione di sistema. Definire recupero/rotazione/revoca e limiti dei backup.
+- **AI Security Analyst / agenti / plugin:** l'AI suggerisce, la policy autorizza, l'esecutore deterministico attua; risultati di scansioni, pacchetti, codice, pagine e log sono dati non attendibili (prompt injection). Esecuzione di script o tool generati: sandbox + perimetro autorizzato + ricevuta; bloccare azioni sensibili senza conferma appropriata.
+- **JARVIS OS:** un launcher personalizzato non conferisce privilegi di sistema. AOSP custom è solo ricerca separata, con threat model, rischi di bootloader/aggiornamenti e compatibilità dispositivi valutati prima di qualsiasi prova.
+- **Allineamento con §65.9:** Coding Studio è un dominio per generare codice in workspace isolato; Reverse Engineering Studio e Security Toolkit sono domini autorizzati di analisi. Agente Live esegue soltanto capability validate e non può usare strumenti di pentest, Vault, VPN, Core o plugin per aggirare il controllo delle autorizzazioni.
+- **Acceptance:** ogni funzione richiede threat model, progetto, revisione della sicurezza, test automatici e prova reale Honor 200 o hardware Core pertinente prima di essere detta implementata/affidabile. Rischi o limiti non risolti restano espliciti.
+
+**Regola di stato:** 64/64 candidati registrati come `PLANNED / DEFERRED`; NON significa 64 funzioni implementate. Anche Coding Studio e Agente Live (2 progetti trasversali, §65.9) restano `PLANNED / DEFERRED`. Non iniziare nessuna delle 8 fasi o nuove permission/capability senza approvazione dell'utente.
+
+
+## 65.11 SECURE DEVICE MIGRATION, BACKUP RECOVERY & STRONG AUTHENTICATION (richiesta 2026-11-11)
+
+**Stato:** REQUISITI REGISTRATI / PLANNED. **NO IMPLEMENTATION / NO RELEASE.** Aggiornamento della roadmap di hardening §65.10 (soprattutto Secure Backup, Encrypted Vault, Strong Encryption, Secure Key Management, Recovery & Rollback, Offline Resilience, Device Verification); **non** nuovi sistemi duplicati o nuove fasi numerate. Le componenti di backup cifrato e restore già presenti restano l'unica base da qualificare e ampliare. Il livello finale di sicurezza non si dichiara completato per il solo fatto che esistano il codice o test CI.
+
+**Obiettivo:** passare in sicurezza a un altro smartphone Android, anche di marca diversa, ripristinando i dati supportati, e resistere realisticamente ad accessi non autorizzati, perdita/furto/distruzione del vecchio dispositivo e backup manipolati. Android rimane offline-first; cloud/Core sempre facoltativi.
+
+### A. Migrazione sicura tra smartphone — requisiti
+
+- [ ] Backup **completo rispetto al perimetro dichiarato e supportato**, cifrato e documentato: note, conversazioni, memoria AI accettata, documenti, attività/promemoria, automazioni, preferenze e configurazioni trasferibili. Inventario verificabile dei dati inclusi/esclusi; non presentare come backup totale ciò che è escluso.
+- [ ] Trasferimento **offline** di archivi cifrati via file, USB o altro collegamento locale autenticato, con verifica integrità e provenienza.
+- [ ] Ripristino **facoltativo da Google Drive**: cifrare e autenticare i dati prima dell'upload, senza consegnare al cloud chiavi in chiaro; disponibilità offline del percorso file/USB senza account obbligatorio.
+- [ ] **Chiave/codice di recupero d'emergenza** conservabile separatamente dal telefono e dal backup, con istruzioni chiare di conservazione e prova di utilizzo. Non esportare o considerare trasferibili le chiavi non esportabili di Android Keystore; progettare wrapping/recovery crittografico indipendente da quelle chiavi e nuova protezione con Keystore sul nuovo dispositivo.
+- [ ] Gestione delle **risorse pesanti** non incluse nel backup ordinario (modelli AI, mappe, archivi Kiwix/ZIM): inventario e hash/versione, verifica compatibilità, istruzioni per trasferimento separato o reimportazione; non promettere recupero automatico se la copia manca.
+- [ ] Verifica crittografica di **integrità e autenticità** di archivi e manifest, versioni, nonce e legami con la recovery key; nessuna fiducia nel solo nome file/estensione/CRC.
+- [ ] Compatibilità tra versioni JARVIS e migrazioni database **non distruttive**, con preflight di versione/schema, downgrade non supportato esplicitamente dichiarato e controlli dopo il restore.
+- [ ] Ripristino possibile su **nuovo telefono o installazione pulita**, anche dopo disinstallazione, furto, smarrimento o distruzione del vecchio dispositivo, **purché siano disponibili backup e segreti di recupero necessari**.
+- [ ] Ripristino transazionale: **verifica completa prima di scrivere**, staging isolato, backup di sicurezza dei dati presenti, commit/cutover atomico per quanto possibile, rollback verificato se fallisce o viene interrotto; nessuna sovrascrittura/cancellazione irreversibile in caso di errore.
+- [ ] Dopo la migrazione, **nuova concessione esplicita** di permessi Android, credenziali locali/esterne, account, sessioni, servizi, autenticazioni biometriche e autorizzazioni legate al dispositivo. Non migrare segreti/device tokens come se fossero universalmente validi.
+
+### B. Autenticazione e protezione degli accessi — requisiti
+
+- [ ] **BiometricPrompt** Android dove appropriato, con autenticazione forte e fallback controllato alla **credenziale del dispositivo**; nessuna biometria o PIN proprietari improvvisati.
+- [ ] **Timeout sessione configurabile**, lock all'uscita/ritorno dopo inattività e invalidazione sicura delle sessioni quando necessario.
+- [ ] **Riautenticazione** per operazioni ad alto impatto: visualizzazione/esportazione di segreti, restore, modifica o recupero chiavi, collegamenti remoti, accessi a vault, cancellazioni o azioni AI sensibili.
+- [ ] Chiavi protette tramite **Android Keystore** e hardware sicuro/StrongBox **se presente**, senza assumere che sia sempre disponibile o che sopravviva a cambio telefono, reset o reinstallazione.
+- [ ] Protezione selettiva di dati sensibili da **screenshot, anteprime app, notifiche e appunti**; schermate protette, contenuti notifiche ridotti, copia temporanea controllata dove Android consente, senza dichiarare impossibile ogni acquisizione esterna.
+- [ ] **Nessuna password, token o chiave hardcoded** nel codice, APK, log, file di esempio, CI o documentazione pubblica; scansione dei segreti e gestione/revoca.
+- [ ] **Autenticità e integrità release/aggiornamenti**: firma APK, provenienza e checksum, policy di update, certificati release non confusi con la firma debug Beta, supply-chain e dipendenze native.
+- [ ] Difese verificabili contro **replay, intent malevoli, componenti esportati, escalation privilegiata, accessi impropri e prompt injection**; il modello non può autorizzare da sé azioni reali.
+- [ ] **Autorizzazione esplicita e legata alla singola azione** per effetti sensibili proposti dall'AI, con policy, controllo stato/permessi, conferma/riautenticazione ove necessario, esecuzione deterministica e ricevuta auditabile.
+- [ ] Gestione di **fallimenti biometrici, credenziali revocate/cambiate e cambio dispositivo** (chiavi invalidate, re-enrollment, accesso d'emergenza e fail-closed senza perdita silenziosa dei dati).
+- [ ] Audit di **dipendenze e componenti native**, SAST/DAST/fuzzing pertinente e verifica aggiornata delle vulnerabilità conosciute.
+- [ ] **Nessuna dipendenza obbligatoria** da server, cloud o account remoto; il percorso offline resta completo per le funzioni dichiarate.
+
+### C. Disaster recovery — scenari obbligatori reali
+
+- [ ] Vecchio telefono **smarrito**: nuovo dispositivo senza accesso al precedente.
+- [ ] Vecchio telefono **distrutto**: nessun pairing/trasferimento dal vecchio telefono.
+- [ ] **Installazione pulita** sul secondo smartphone (o ambiente pulito equivalente esplicitamente distinto), con versione/schema verificati.
+- [ ] Backup **danneggiato, troncato o incompleto**: rifiuto senza perdita dei dati presenti.
+- [ ] Recovery key **mancante o errata**: errore onesto, nessun bypass e nessuna promessa di recupero impossibile.
+- [ ] **Interruzione del ripristino** (process death, interruzione alimentazione, spazio insufficiente): rollback e stato ripetibile senza dati corrotti.
+- [ ] **Blackout e assenza di Internet**: backup, verifica e ripristino locale indipendenti da Drive/Core.
+- [ ] **Credenziali revocate o cambiate**: nuova autenticazione/pairing, vecchi token non riutilizzati.
+- [ ] Backup **manipolato** o replay di una versione obsoleta: rilevazione/rifiuto dove crittograficamente possibile, policy esplicita contro rollback malevolo e recupero sicuro.
+
+### Collocazione e gate — non anticipare l'Advanced Hardening
+
+**PRIMA DELLA CHIUSURA DELLA BETA (requisito di accettazione, non nuovo sviluppo automatico):**
+1. Stabilizzare inferenza e chiudere i bug P0/P1 aperti, poi verificare backup locale cifrato, chiave/codice di recupero e **ripristino reale sull'installazione Beta isolata** con dati fittizi. Confrontare dataset prima/dopo, integrità, permessi, compatibilità e comportamento offline.
+2. Eseguire prove negative almeno per chiave errata, archivio corrotto/manomesso, ripristino interrotto e verifica dei dati precedenti rimasti intatti. Correggere eventuali vulnerabilità **critiche** di accesso/backup prima di dichiarare un GO.
+3. Agganciare la qualifica a `docs/BETA_FINAL_HONOR200_TEST_PLAN.md` (A16, B14, Main App GO) e `docs/BETA_STEP08_FINAL_INTEGRATION.md` §9: stato reale **DEVICE VERIFIED** solo dopo prova fisica. Non modificare l'app principale prima dei gate già esistenti.
+
+**ADVANCED HARDENING FINALE (§65.10 FASE 1/8, e A4 dove pertinente):**
+1. Completare autentificazione forte, session timeout/re-auth, protezioni delle schermate/chiavi, migrazione guidata inter-brand, inventario risorse voluminose e recupero autonomo con recovery key.
+2. Qualificare export/import offline, Google Drive **opzionale**, disattivazione/revoca dispositivi, controlli contro attacchi e restore avversari.
+3. Eseguire test offensivi autorizzati, disaster recovery su un **secondo dispositivo o installazione pulita**, audit indipendenti ove fattibile, verifiche native, aggiornamenti e regressioni offline. Documentare risultati, limiti e rischi residui.
+
+### Definition of Done: condizioni cumulative
+
+Non dichiarare questa estensione COMPLETATA se non sono soddisfatte **tutte**:
+
+1. Almeno un **ripristino reale e completo dei dati supportati** su secondo dispositivo oppure installazione pulita, con confronto dei dati e inventario delle esclusioni.
+2. Prove ripetibili per archivi **corrotti, incompleti, interrotti e manipolati**, senza perdita di dati esistenti.
+3. Recupero verificato **senza poter accedere al vecchio telefono**, usando soltanto backup e recovery material disponibile.
+4. Protezioni validate contro accessi non autorizzati ed esposizione delle **chiavi**, compresi biometria, fallback, sessioni, replay/intent/prompt injection pertinenti.
+5. Elenco chiaro di dati **non trasferibili**, credenziali che richiedono riconnessione e **rischi residui**.
+6. **Regressioni delle funzionalità offline** eseguite su dispositivo, senza obbligo di cloud/Core.
+
+**Vincoli permanenti:** non promettere sicurezza assoluta, telefono impenetrabile o recupero garantito se mancano backup o chiavi. Nessuna di queste voci crea ora permessi, implementazioni, build, merge o release; serve una futura autorizzazione esplicita. Il backlog di 64 capacità (§65.10), i due progetti Coding Studio/Agente Live (§65.9), le track A0–A4/B e i **30 macro-step fissi** (§65.7) rimangono invariati.
+
+## 65.12 JARVIS GUARDIAN — Advanced Device Security & Privacy (2026-11-11)
+
+**New candidate with explicit user authorization for G1 + initial G2 development only.** Source: `docs/JARVIS_GUARDIAN_G1_ARCHITECTURE.md`.
+
+**Non-regression rule:** LiteRT-LM Hotfix 3 `169cd4d` and Honor 200 Beta stability acceptance remain higher priorities. JARVIS Guardian is a **separate opt-in, isolated feature branch** `claude/guardian-g1-g2`; no merge to canonical branch, no change to installed Beta, no release, no new network service or VPN.
+
+Guardian's future **four protection levels**:
+1. **Device Guardian**: offline-first local observability (patch date, secure screen lock, Android 16+ Advanced Protection when permitted, system settings guidance, explicit user-selected file hashes, safe local dashboard). No fictitious checks; PENDING for anything not observed; no blanket "device protected".
+2. **Network Guardian**: optional VPN-local firewall, DNS blocking, local lists, per-app traffic rules only where available, DNS/IPv6 correctness. Requires `VpnService` explicit user approval; never silently replaces an existing VPN, and cannot be marked active before a real packet-processing datapath exists.
+3. **Private VPN**: optional WireGuard transport integrated in the **same** `VpnService` architecture, sound key management, reconnection and DNS/IPv6 leak tests; no proprietary cryptography or claims of total IP invisibility.
+4. **Private browsing**: optional open official Tor Browser; no homemade Tor network, no general Tor tunnel or claim of full anonymity.
+
+**Milestones / gate:** G1 audit + threat model + architecture; G2 initial offline checks + functional UI + user-selected file hashing, unit tests and CI; G3 VpnService/firewall; G4 WireGuard; G5 optional official Tor integration; G6 security review (OWASP MASVS/MASTG, dependencies, native, battery); G7 Honor 200 device acceptance. G3–G7 **PLANNED ONLY**, no implementation authorized now. G1/G2 stay NOT DEVICE VERIFIED until Honor test and remain subordinate to Beta stability.
+
+**Authorization boundary:** Observer ≠ enforcer. Every check must disclose whether JARVIS applies it, merely reads it, guides the user, or cannot access it. Security state choices: `PROTETTO (solo per uno specifico controllo verificato)`, `ATTENZIONE`, `NON VERIFICATO`, `NON DISPONIBILE`; no optimistic global scores. No root, Accessibility misuse, Device Owner, malware-scanning claims, CA installs, elevated permissions, arbitrary app scanning, hidden network interception, AI-driven security actions, or remote dependency.
+
+**Threat model:** untrusted file/APK metadata and malicious content, social engineering, prompt injection, exported component abuse, privilege escalation, privacy leaks in diagnostics, tampered blocklists/updates, unsafe VPN conflicts, network fail-open, stolen/unlocked phone, device/OS limitations. User action is required for any sensitive protection change. **G2 code must make no network requests**.
+
+**Security acceptance:** only tests/code/device evidence justify labels or numerical scores. G1/G2 cannot be declared a full Device Guardian/Network Guardian/VPN; they are a first on-demand local check layer while OS security itself remains active. Future protections require separate consent and evaluation of battery/network/emergency access.
+
+
 ---
 
 # 66. IMPLEMENTATION PASS HISTORY
