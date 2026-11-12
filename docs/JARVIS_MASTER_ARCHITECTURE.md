@@ -3660,7 +3660,9 @@ Spec dedicata: [`docs/FUTURE_CODING_STUDIO_AGENT_LIVE.md`](FUTURE_CODING_STUDIO_
    threat model, isolamento, test anti-prompt-injection, audit di azioni e acceptance Honor 200 obbligatori.
 4. **Ordine**: prima stabilizzare LiteRT-LM e completare la Beta; poi gate A1/A3; prototipi autorizzati di UI,
    preview e agent capability ristrette in A4; Core coding più potente come enhancement B. Nessuna modifica ai
-
+   30 macro-step finché non avviene la mappatura canonica prevista dal §65.7.
+5. **Criterio di avvio**: nuova autorizzazione esplicita dell'utente con scope e security review. Questa
+   registrazione documentale non autorizza codice, build, permessi, release o merge.
 
 ## 65.10 EXPANSION BACKLOG — Security, Privacy, Networking, AI e Sistema Operativo (2026-11-10)
 
@@ -3863,6 +3865,27 @@ Non dichiarare questa estensione COMPLETATA se non sono soddisfatte **tutte**:
 6. **Regressioni delle funzionalità offline** eseguite su dispositivo, senza obbligo di cloud/Core.
 
 **Vincoli permanenti:** non promettere sicurezza assoluta, telefono impenetrabile o recupero garantito se mancano backup o chiavi. Nessuna di queste voci crea ora permessi, implementazioni, build, merge o release; serve una futura autorizzazione esplicita. Il backlog di 64 capacità (§65.10), i due progetti Coding Studio/Agente Live (§65.9), le track A0–A4/B e i **30 macro-step fissi** (§65.7) rimangono invariati.
+
+
+## 65.12 JARVIS GUARDIAN — Advanced Device Security & Privacy (2026-11-11)
+
+**Authorization: G1 + initial G2 only. Stato aggiornato: G1 DOCUMENTED, G2 INITIAL CI VERIFIED (run #553, SHA `9920e518`), Honor 200 DEVICE PENDING; G3–G7 NOT IMPLEMENTED.** Source: `docs/JARVIS_GUARDIAN_G1_ARCHITECTURE.md`.
+
+**Non-regression rule:** LiteRT-LM Hotfix 3 `169cd4d` and Honor 200 Beta stability acceptance remain higher priorities. JARVIS Guardian is a **separate opt-in, isolated feature branch** `claude/guardian-g1-g2`; no merge to canonical branch, no change to installed Beta, no release, no new network service or VPN.
+
+Guardian's future **four protection levels**:
+1. **Device Guardian**: offline-first local observability (patch date, secure screen lock, Android 16+ Advanced Protection when permitted, system settings guidance, explicit user-selected file hashes, safe local dashboard). No fictitious checks; PENDING for anything not observed; no blanket "device protected".
+2. **Network Guardian**: optional VPN-local firewall, DNS blocking, local lists, per-app traffic rules only where available, DNS/IPv6 correctness. Requires `VpnService` explicit user approval; never silently replaces an existing VPN, and cannot be marked active before a real packet-processing datapath exists.
+3. **Private VPN**: optional WireGuard transport integrated in the **same** `VpnService` architecture, sound key management, reconnection and DNS/IPv6 leak tests; no proprietary cryptography or claims of total IP invisibility.
+4. **Private browsing**: optional open official Tor Browser; no homemade Tor network, no general Tor tunnel or claim of full anonymity.
+
+**Milestones / gate:** G1 audit + threat model + architecture; G2 initial offline checks + functional UI + user-selected file hashing, unit tests and CI; G3 VpnService/firewall; G4 WireGuard; G5 optional official Tor integration; G6 security review (OWASP MASVS/MASTG, dependencies, native, battery); G7 Honor 200 device acceptance. G3–G7 **PLANNED ONLY**, no implementation authorized now. G1/G2 stay NOT DEVICE VERIFIED until Honor test and remain subordinate to Beta stability.
+
+**Authorization boundary:** Observer ≠ enforcer. Every check must disclose whether JARVIS applies it, merely reads it, guides the user, or cannot access it. Security state choices: `PROTETTO (solo per uno specifico controllo verificato)`, `ATTENZIONE`, `NON VERIFICATO`, `NON DISPONIBILE`; no optimistic global scores. No root, Accessibility misuse, Device Owner, malware-scanning claims, CA installs, elevated permissions, arbitrary app scanning, hidden network interception, AI-driven security actions, or remote dependency.
+
+**Threat model:** untrusted file/APK metadata and malicious content, social engineering, prompt injection, exported component abuse, privilege escalation, privacy leaks in diagnostics, tampered blocklists/updates, unsafe VPN conflicts, network fail-open, stolen/unlocked phone, device/OS limitations. User action is required for any sensitive protection change. **G2 code must make no network requests**.
+
+**Security acceptance:** only tests/code/device evidence justify labels or numerical scores. G1/G2 cannot be declared a full Device Guardian/Network Guardian/VPN; they are a first on-demand local check layer while OS security itself remains active. Future protections require separate consent and evaluation of battery/network/emergency access.
 
 ---
 
