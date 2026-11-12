@@ -26,4 +26,9 @@ object EnqueueGuard {
         "Non sono riuscito a completare la risposta" +
             (code?.takeIf { it.isNotBlank() }?.let { " (errore tecnico: ${it.take(60)})" } ?: "") +
             ". Puoi riprovare a scrivere il messaggio; se si ripete, scegli «Nuova conversazione» o ricarica il modello dalla schermata Modelli."
+
+    /** HOTFIX 4 — a retried older message that newer answers already overtook is not answered out of order. */
+    fun supersededMessage(): String =
+        "Questa richiesta non è stata completata prima dei messaggi successivi, quindi non la rispondo fuori ordine. " +
+            "Se ti serve ancora, scrivila di nuovo."
 }

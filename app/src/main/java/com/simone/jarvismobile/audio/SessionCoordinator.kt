@@ -354,7 +354,9 @@ class SessionCoordinator @Inject constructor(
         val snapshot = _messages.value.map {
             StoredMessage(it.fromUser, it.text, System.currentTimeMillis(), it.taskId)
         }
-        scope.launch {
+        // HOTFIX 4: strictly ordered writes — an older snapshot must never finish after a newer one (or after
+        // the clear done by «Nuova conversazione») and resurrect stale history.
+        chatWriter.submit {
             chatStore.save(snapshot)
             conversationMemory.update(snapshot)
         }
@@ -404,6 +406,18 @@ class SessionCoordinator @Inject constructor(
     val sending: StateFlow<Boolean> = _sending.asStateFlow()
 
     private val sessionMutex = Mutex()
+
+    // HOTFIX 4 — ONE authority for "may this turn's answer still be written?": every typed turn is registered in
+    // [turns], runs behind [sessionMutex] and commits through [turnRunner] only. Stop, «Nuova conversazione» and a
+    // newer answered message invalidate older turns so a stale reply can never land under the wrong question.
+    private val turns = com.simone.jarvismobile.core.chat.TurnLedger(router.eventLog)
+    private val chatWriter = com.simone.jarvismobile.core.chat.SerialWriter(scope)
+    private val turnRunner = com.simone.jarvismobile.core.chat.ChatTurnRunner(
+        lane = sessionMutex,
+        ledger = turns,
+        sink = com.simone.jarvismobile.core.chat.ChatSink { fromUser, text, taskId -> appendMessage(fromUser, text, taskId) },
+        engineEpoch = { router.conversationEpoch(ModelSlot.FAST) },
+    )
 
     /**
      * The coroutine running the current voice turn, owned by the coordinator's own
@@ -1679,7 +1693,7 @@ class SessionCoordinator @Inject constructor(
      * "ricorda …" command all work — and appends both sides to the on-screen log.
      */
     suspend fun sendText(text: String) {
-        processText(text, taskId = null)
+        processText(text, taskId = null, orderKey = System.currentTimeMillis())
     }
 
     /**
@@ -1687,10 +1701,14 @@ class SessionCoordinator @Inject constructor(
      * Android stops the process after saving the user line, a WorkManager retry
      * resumes without duplicating that message or a reply already completed.
      */
-    suspend fun processQueuedText(taskId: String, text: String): String? {
+    suspend fun processQueuedText(taskId: String, text: String): String? =
+        (processQueuedText(taskId, text, System.currentTimeMillis()) as? com.simone.jarvismobile.core.chat.TurnResult.Answered)?.text
+
+    suspend fun processQueuedText(taskId: String, text: String, orderKey: Long): com.simone.jarvismobile.core.chat.TurnResult? {
         restoreChat()
-        Transcript.existingReply(_messages.value.map { TranscriptLine(it.fromUser, it.text, it.taskId) }, taskId)?.let { return it }
-        return processText(text, taskId)
+        Transcript.existingReply(_messages.value.map { TranscriptLine(it.fromUser, it.text, it.taskId) }, taskId)
+            ?.let { return com.simone.jarvismobile.core.chat.TurnResult.Answered(it) }
+        return processText(text, taskId, orderKey)
     }
 
     /**
@@ -1716,37 +1734,35 @@ class SessionCoordinator @Inject constructor(
             ?.message ?: "Il modello non risponde."
     }
 
-    private suspend fun processText(text: String, taskId: String?): String? {
+    private suspend fun processText(text: String, taskId: String?, orderKey: Long): com.simone.jarvismobile.core.chat.TurnResult? {
         // The chat mode picker prefixes the input with a focus tag; split it back
         // out so the user only ever sees their own words.
         val (focus, raw) = ChatFocus.parse(text)
         val message = raw.trim()
         if (message.isBlank()) return null
-        return sessionMutex.withLock {
-            _lastError.value = null
-            _sending.value = true
-            try {
-                appendMessage(fromUser = true, text = message, taskId = taskId)
-                _transcript.value = message
-                _diagnostic.value = "chat scritta"
-                val answer = if (focus == ChatFocus.ALL) {
-                    generateAnswer(message)
-                } else {
-                    focusedAnswer(message, focus)
-                }
-                _reply.value = answer
-                appendMessage(fromUser = false, text = answer, taskId = taskId)
-                answer
-            } catch (e: CancellationException) {
-                _diagnostic.value = "risposta annullata"
-                throw e
-            } catch (e: Exception) {
-                _lastError.value = "text_crash_${e.javaClass.simpleName}"
-                _diagnostic.value = "CRASH ${e.javaClass.simpleName}"
-                null
-            } finally {
-                _sending.value = false
+        return try {
+            turnRunner.run(
+                taskId = taskId,
+                orderKey = orderKey,
+                userText = message,
+                onStart = {
+                    _lastError.value = null
+                    _sending.value = true
+                    _transcript.value = message
+                    _diagnostic.value = "chat scritta"
+                },
+                onCommitted = { answer -> _reply.value = answer },
+                onEnd = { _sending.value = false },
+            ) { m ->
+                if (focus == ChatFocus.ALL) generateAnswer(m) else focusedAnswer(m, focus)
             }
+        } catch (e: CancellationException) {
+            _diagnostic.value = "risposta annullata"
+            throw e
+        } catch (e: Exception) {
+            _lastError.value = "text_crash_${e.javaClass.simpleName}"
+            _diagnostic.value = "CRASH ${e.javaClass.simpleName}"
+            null
         }
     }
 
@@ -2350,6 +2366,10 @@ class SessionCoordinator @Inject constructor(
         // activeEpochs below but never touched ConversationalJarvisEngine/
         // ConversationManager at all — an old "sì/no"/disambiguation/semantic
         // frame from Motore = Conversazionale could silently outlive a reset.
+        // HOTFIX 4: invalidate every turn still in flight BEFORE touching chat/engine state, so a reply that
+        // finishes during the reset is discarded instead of being written into the new conversation.
+        turns.newConversation()
+        router.cancel()
         conversationalEngine.reset()
         router.resetConversation()
         pendingConfirmation = null
@@ -2370,7 +2390,7 @@ class SessionCoordinator @Inject constructor(
         _transcript.value = ""
         _reply.value = ""
         _diagnostic.value = "nuova conversazione"
-        scope.launch {
+        chatWriter.submit {
             chatStore.clear()
             conversationMemory.clear()
             // Pick up a persona / capture change made in Impostazioni.
@@ -2554,9 +2574,17 @@ class SessionCoordinator @Inject constructor(
 
     /** Stops only the active written-answer inference — local or, if one is in flight, remote (§ tryRemoteChat). */
     fun cancelTextGeneration() {
+        // HOTFIX 4: the ledger is told FIRST (synchronously), so a reply that completes while the native stop is
+        // still propagating is rejected at commit instead of being shown after the user pressed Stop.
+        turns.stopAll()
         router.cancel()
         remoteChatState.activeRequestId?.let { remoteAiEngine.cancel(it) }
         _diagnostic.value = "annullamento risposta…"
+    }
+
+    /** Stops ONE queued answer (notification «Annulla»): other turns, including newer ones, are untouched. */
+    fun cancelTurn(taskId: String) {
+        if (turns.stop(taskId)) router.cancel()
     }
 
     // --- Diagnostics helpers --------------------------------------------

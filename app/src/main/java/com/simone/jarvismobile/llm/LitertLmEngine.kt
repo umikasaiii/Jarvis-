@@ -53,6 +53,9 @@ class LitertLmEngine @Inject constructor(
     private val diagnostics: InferenceDiagnostics,
 ) : LlmEngine {
 
+    /** The shared, content-free event trail (also used by the turn ledger). */
+    val eventLog: InferenceEventLog get() = diagnostics.log
+
     /** "fast" / "advanced" / "classifier" — set by [LlmRouter]; only used to label diagnostics. */
     @Volatile var label: String = "llm"
 

@@ -48,7 +48,7 @@ class InferenceLifecycleGuardTest {
         val vm = code(src("ui/home/HomeViewModel.kt"))
         val body = vm.substringAfter("fun onNewConversation()").substringBefore("fun onSendText")
         assertTrue("coordinator.cancelTextGeneration()" in body)
-        assertTrue("taskQueue.cancelActive()" in body)
+        assertTrue("taskQueue.cancelActive(" in body)
         assertTrue(body.indexOf("cancelTextGeneration") < body.indexOf("coordinator.newConversation()"))
     }
 

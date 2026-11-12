@@ -30,6 +30,25 @@ interface AssistantTaskDao {
     )
     suspend fun activeIds(): List<String>
 
+    /** HOTFIX 4 — active ids created up to [cutoff]: a Stop must not cancel a message sent right after it. */
+    @Query(
+        "SELECT id FROM assistant_tasks WHERE createdAt <= :cutoff " +
+            "AND status IN ('QUEUED','LOADING_MODEL','UNDERSTANDING','RETRIEVING_MEMORY','GENERATING') " +
+            "ORDER BY createdAt DESC",
+    )
+    suspend fun activeIdsUpTo(cutoff: Long): List<String>
+
+    /** HOTFIX 4 — completes a task unless the user already cancelled it (no late "answer ready" for a Stop). */
+    @Query(
+        "UPDATE assistant_tasks SET status = 'COMPLETED', progress = 100, output = :output, errorCode = NULL, " +
+            "updatedAt = :updatedAt WHERE id = :id AND status != 'CANCELLED'",
+    )
+    suspend fun completeUnlessCancelled(id: String, output: String, updatedAt: Long = System.currentTimeMillis()): Int
+
+    /** HOTFIX 4 — already-ANSWERED tasks newer than this one: a retry of [id] now would surface out of order. */
+    @Query("SELECT COUNT(*) FROM assistant_tasks WHERE id != :id AND createdAt > :createdAt AND status = 'COMPLETED'")
+    suspend fun newerCompletedCount(id: String, createdAt: Long): Int
+
     /** BETA 2/8 — (id, input) of tasks still queued or running; read-only query, no schema change. */
     @Query(
         "SELECT id, input FROM assistant_tasks " +

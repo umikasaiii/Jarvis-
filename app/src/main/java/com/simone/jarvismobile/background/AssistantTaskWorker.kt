@@ -17,6 +17,7 @@ import androidx.work.WorkerParameters
 import com.simone.jarvismobile.R
 import com.simone.jarvismobile.core.chat.EnqueueGuard
 import com.simone.jarvismobile.core.chat.QueueLiveness
+import com.simone.jarvismobile.core.chat.TurnResult
 import com.simone.jarvismobile.audio.SessionCoordinator
 import com.simone.jarvismobile.data.SettingsRepository
 import com.simone.jarvismobile.ui.MainActivity
@@ -46,6 +47,14 @@ class AssistantTaskWorker(
         val task = dao.get(id) ?: return Result.failure()
         if (task.parsedStatus == AssistantTaskStatus.CANCELLED) return Result.success()
 
+        // HOTFIX 4: a RETRY of an older message must not surface its answer after newer messages were already
+        // answered (it would look like an answer to a previous question under the current one).
+        if (runAttemptCount > 0 && dao.newerCompletedCount(id, task.createdAt) > 0) {
+            dao.update(id, AssistantTaskStatus.CANCELLED.name, 0, errorCode = "superseded_retry")
+            runCatching { dependencies.coordinator().reportQueuedFailure(id, EnqueueGuard.supersededMessage()) }
+            return Result.success()
+        }
+
         setForeground(processingForeground(id, 5, "Preparazione"))
         return runCatching {
             // BETA 2/8: answer in arrival order. A newer message waits (bounded) for older queued ones, so two
@@ -67,8 +76,19 @@ class AssistantTaskWorker(
 
             update(dao, id, AssistantTaskStatus.GENERATING, 60)
             setForeground(processingForeground(id, 60, "Generazione della risposta"))
-            val answer = dependencies.coordinator().processQueuedText(id, task.input)
-                ?: error("empty_answer")
+            val answer = when (val outcome = dependencies.coordinator().processQueuedText(id, task.input, task.createdAt)) {
+                is TurnResult.Answered -> outcome.text
+                is TurnResult.Discarded -> {
+                    // Stopped / conversation reset / superseded: nothing was written to the chat. Not a failure,
+                    // so no retry, no TTS, no notification.
+                    dao.update(
+                        id, AssistantTaskStatus.CANCELLED.name, 0,
+                        errorCode = "discarded_" + outcome.reason.name.lowercase(),
+                    )
+                    return@runCatching Result.success()
+                }
+                null -> error("empty_answer")
+            }
 
             if (dependencies.settings().speakBackgroundResponses.first()) {
                 setForeground(
@@ -90,7 +110,8 @@ class AssistantTaskWorker(
                 }
             }
 
-            dao.update(id, AssistantTaskStatus.COMPLETED.name, 100, output = answer)
+            // The user may have pressed Stop while the answer was being spoken: never flip CANCELLED to COMPLETED.
+            if (dao.completeUnlessCancelled(id, answer) == 0) return@runCatching Result.success()
             showReadyNotification(id, answer)
             Result.success()
         }.getOrElse { error ->

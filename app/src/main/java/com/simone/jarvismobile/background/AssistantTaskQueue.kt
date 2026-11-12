@@ -49,17 +49,22 @@ class AssistantTaskQueue @Inject constructor(
     }
 
     suspend fun cancel(id: String) {
-        coordinator.cancelTextGeneration()
+        // HOTFIX 4: stop THIS task's turn only; newer messages keep running.
+        coordinator.cancelTurn(id)
         workManager.cancelUniqueWork(workName(id))
-        dao.update(id, AssistantTaskStatus.CANCELLED.name, progress = 0)
+        dao.update(id, AssistantTaskStatus.CANCELLED.name, progress = 0, errorCode = "stopped")
     }
 
-    /** Stops every unfinished response. The chat UI currently permits one at a time. */
-    suspend fun cancelActive() {
-        coordinator.cancelTextGeneration()
-        dao.activeIds().forEach { id ->
+    /**
+     * Stops every unfinished response CREATED UP TO [cutoffMs] (the moment the user tapped Stop / «Nuova
+     * conversazione»). A message sent right after the tap is newer than the cut-off and is left alone — the
+     * engine/turn stop itself already happened synchronously in the caller.
+     */
+    suspend fun cancelActive(cutoffMs: Long = Long.MAX_VALUE) {
+        dao.activeIdsUpTo(cutoffMs).forEach { id ->
+            coordinator.cancelTurn(id)
             workManager.cancelUniqueWork(workName(id))
-            dao.update(id, AssistantTaskStatus.CANCELLED.name, progress = 0)
+            dao.update(id, AssistantTaskStatus.CANCELLED.name, progress = 0, errorCode = "stopped")
         }
     }
 

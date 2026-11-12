@@ -7363,3 +7363,17 @@ Aggiunta datata: **non modifica né sostituisce** §65.1–§65.8. A1 e A3 **non
   sole interfacce. Dettaglio, mappa test e limiti: `docs/BETA_STEP08_HOTFIX3_LITERTLM_STABILITY.md`.
 - **Stato:** CI VERIFIED a run completata; **non DEVICE VERIFIED**. La causa esatta di «212121» e della schermata PIN resta
   non provata: la nuova diagnostica senza contenuto serve a distinguerle sul dispositivo.
+
+## 65.10 ADDENDUM 2026-11-12 — BETA 8 HOTFIX 4 (associazione risposta ↔ domanda)
+
+Aggiunta datata: **non modifica né sostituisce** §65.1–§65.9; la numerazione dei macro-step è invariata. A0–A4 **non sono avviate**.
+
+- **Evidenza (Honor 200, Beta `169cd4d`):** risposte a «Quanto è grande l'Asia?» / «Dimmi un piatto tipico italiano» con contenuto delle domande precedenti,
+  dopo prove di Stop e invii ravvicinati.
+- **Cause trovate nel codice (non provato che siano quelle accadute sul dispositivo):** scrittura della risposta senza controllo di validità del turno (Stop/Reset/ordine);
+  retry del Worker che risponde a una domanda vecchia dopo quelle nuove; Stop che poteva colpire il messaggio successivo e riportare a COMPLETED un task fermato;
+  salvataggio cronologia non ordinato.
+- **Ownership (una sola autorità):** il commit di un turno scritto ha ora un unico proprietario, `core/chat/ChatTurnRunner` + `TurnLedger`, che usa la **stessa**
+  corsia (`sessionMutex`) e lo stesso `LlmRouter`/`InferenceSlot`; nessun secondo scheduler/coda/motore. Il percorso vocale non è cambiato.
+- **Stato:** CI VERIFIED a run completata; **non DEVICE VERIFIED**. Ipotesi aperta: sensibilità del modello 1B al recap in prompt. Dettaglio e prove:
+  `docs/BETA_STEP08_HOTFIX4_ANSWER_CONTEXT.md`.

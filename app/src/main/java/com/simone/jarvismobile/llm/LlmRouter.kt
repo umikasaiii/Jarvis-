@@ -37,6 +37,9 @@ class LlmRouter @Inject constructor(
     val advanced: LitertLmEngine,
     val classifier: LitertLmEngine,
 ) : ClassifierEngineProvider {
+    /** Content-free diagnostics trail shared with the turn ledger (HOTFIX 4). */
+    val eventLog: com.simone.jarvismobile.core.llm.InferenceEventLog get() = fast.eventLog
+
     init {
         // HOTFIX 3: label the three unscoped engine instances so diagnostics say which brain did what.
         fast.label = "fast"

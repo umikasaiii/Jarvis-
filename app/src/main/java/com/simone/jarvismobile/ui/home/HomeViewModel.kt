@@ -143,8 +143,9 @@ class HomeViewModel @Inject constructor(
     /** Stops the active typed response in WorkManager and inside LiteRT-LM. */
     fun onStopResponse() {
         _stopRequested.value = true
+        val cutoff = System.currentTimeMillis() // anything sent after this tap is a NEW question
         coordinator.cancelTextGeneration()
-        viewModelScope.launch { taskQueue.cancelActive() }
+        viewModelScope.launch { taskQueue.cancelActive(cutoff) }
     }
 
     /** Clears the conversation and the model's in-session memory. */
@@ -152,12 +153,13 @@ class HomeViewModel @Inject constructor(
         // HOTFIX 3: an answer still being generated belongs to the OLD conversation — stop it (native cancel +
         // queue rows) before the reset, so it can neither run on a half-reset engine nor land in the new chat.
         _stopRequested.value = true
+        val cutoff = System.currentTimeMillis()
         coordinator.cancelTextGeneration()
+        coordinator.newConversation()
         viewModelScope.launch {
-            taskQueue.cancelActive()
+            taskQueue.cancelActive(cutoff)
             _stopRequested.value = false
         }
-        coordinator.newConversation()
     }
 
     /**

@@ -61,4 +61,42 @@ class AssistantQueueRecoveryInstrumentedTest {
         assertEquals(0, dao.olderActiveCount("new", newer, stale))
         db.close()
     }
+
+    // ---- HOTFIX 4 ------------------------------------------------------------------------------------
+
+    @Test fun stopCutoffCancelsOnlyMessagesCreatedBeforeTheTap() = runBlocking {
+        val db = open()
+        val dao = db.assistantTaskDao()
+        val now = System.currentTimeMillis()
+        dao.insert(AssistantTask("before", "a", AssistantTaskStatus.GENERATING.name, createdAt = now - 5_000, updatedAt = now))
+        dao.insert(AssistantTask("after", "b", AssistantTaskStatus.QUEUED.name, createdAt = now + 5_000, updatedAt = now))
+        assertEquals(listOf("before"), dao.activeIdsUpTo(now))
+        db.close()
+    }
+
+    @Test fun aStoppedTaskIsNeverFlippedBackToCompleted() = runBlocking {
+        val db = open()
+        val dao = db.assistantTaskDao()
+        dao.insert(AssistantTask("t", "q", AssistantTaskStatus.GENERATING.name))
+        dao.update("t", AssistantTaskStatus.CANCELLED.name, 0, errorCode = "stopped")
+        assertEquals(0, dao.completeUnlessCancelled("t", "late answer"))
+        assertEquals(AssistantTaskStatus.CANCELLED, dao.get("t")!!.parsedStatus)
+        assertEquals(null, dao.get("t")!!.output)
+        // a task that was NOT cancelled completes normally
+        dao.insert(AssistantTask("ok", "q2", AssistantTaskStatus.GENERATING.name))
+        assertEquals(1, dao.completeUnlessCancelled("ok", "answer"))
+        assertEquals("answer", dao.get("ok")!!.output)
+        db.close()
+    }
+
+    @Test fun aRetryOfAnOlderMessageIsDetectedWhenNewerOnesWereAnswered() = runBlocking {
+        val db = open()
+        val dao = db.assistantTaskDao()
+        val now = System.currentTimeMillis()
+        dao.insert(AssistantTask("old", "q1", AssistantTaskStatus.FAILED.name, createdAt = now - 3_000))
+        dao.insert(AssistantTask("new", "q2", AssistantTaskStatus.COMPLETED.name, createdAt = now - 1_000))
+        assertEquals(1, dao.newerCompletedCount("old", now - 3_000))
+        assertEquals(0, dao.newerCompletedCount("new", now - 1_000))
+        db.close()
+    }
 }
