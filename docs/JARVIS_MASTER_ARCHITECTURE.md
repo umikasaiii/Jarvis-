@@ -3660,7 +3660,9 @@ Spec dedicata: [`docs/FUTURE_CODING_STUDIO_AGENT_LIVE.md`](FUTURE_CODING_STUDIO_
    threat model, isolamento, test anti-prompt-injection, audit di azioni e acceptance Honor 200 obbligatori.
 4. **Ordine**: prima stabilizzare LiteRT-LM e completare la Beta; poi gate A1/A3; prototipi autorizzati di UI,
    preview e agent capability ristrette in A4; Core coding più potente come enhancement B. Nessuna modifica ai
-
+   30 macro-step finché non avviene la mappatura canonica prevista dal §65.7.
+5. **Criterio di avvio**: nuova autorizzazione esplicita dell'utente con scope e security review. Questa
+   registrazione documentale non autorizza codice, build, permessi, release o merge.
 
 ## 65.10 EXPANSION BACKLOG — Security, Privacy, Networking, AI e Sistema Operativo (2026-11-10)
 
@@ -3884,6 +3886,22 @@ Guardian's future **four protection levels**:
 
 **Security acceptance:** only tests/code/device evidence justify labels or numerical scores. G1/G2 cannot be declared a full Device Guardian/Network Guardian/VPN; they are a first on-demand local check layer while OS security itself remains active. Future protections require separate consent and evaluation of battery/network/emergency access.
 
+
+
+## 65.13 ADDENDUM 2026-11-10 — BETA 8 HOTFIX 3 (stabilità del ciclo di vita LiteRT-LM)
+
+Aggiunta datata: **non modifica né sostituisce** §65.1–§65.8. A1 e A3 **non sono avviate**.
+
+- **Evidenza (Honor 200, Beta `aa3c61c`):** dopo «Nuova conversazione» risposte degeneri («212121»); dopo riavvio/background
+  generazioni bloccate fino al timeout; in un caso schermata di blocco col solo PIN.
+- **Cause trovate nel codice:** `resetConversation()` chiudeva la `Conversation` nativa senza lock mentre `sendMessage()` era attivo;
+  `generate()` (classificatore/interprete) bypassava il lock di `chat()`; la cancellazione della coroutine non raggiungeva
+  `cancelProcess()`; righe di coda orfane dopo process death bloccavano i messaggi nuovi.
+- **Ownership (invariata la regola «un solo proprietario»):** il ciclo di vita del motore nativo ha ora un unico proprietario
+  testato, `core/llm/InferenceSlot`; `LitertLmEngine` è solo l'adattatore. Nessun secondo motore/pipeline: `LlmEngine` e `LlmRouter` restano le
+  sole interfacce. Dettaglio, mappa test e limiti: `docs/BETA_STEP08_HOTFIX3_LITERTLM_STABILITY.md`.
+- **Stato:** CI VERIFIED a run completata; **non DEVICE VERIFIED**. La causa esatta di «212121» e della schermata PIN resta
+  non provata: la nuova diagnostica senza contenuto serve a distinguerle sul dispositivo.
 
 ---
 
@@ -7593,18 +7611,3 @@ Decisione chiave:
 
 
 **END OF JARVIS MASTER ARCHITECTURE v1.28**
-
-## 65.9 ADDENDUM 2026-11-10 — BETA 8 HOTFIX 3 (stabilità del ciclo di vita LiteRT-LM)
-
-Aggiunta datata: **non modifica né sostituisce** §65.1–§65.8. A1 e A3 **non sono avviate**.
-
-- **Evidenza (Honor 200, Beta `aa3c61c`):** dopo «Nuova conversazione» risposte degeneri («212121»); dopo riavvio/background
-  generazioni bloccate fino al timeout; in un caso schermata di blocco col solo PIN.
-- **Cause trovate nel codice:** `resetConversation()` chiudeva la `Conversation` nativa senza lock mentre `sendMessage()` era attivo;
-  `generate()` (classificatore/interprete) bypassava il lock di `chat()`; la cancellazione della coroutine non raggiungeva
-  `cancelProcess()`; righe di coda orfane dopo process death bloccavano i messaggi nuovi.
-- **Ownership (invariata la regola «un solo proprietario»):** il ciclo di vita del motore nativo ha ora un unico proprietario
-  testato, `core/llm/InferenceSlot`; `LitertLmEngine` è solo l'adattatore. Nessun secondo motore/pipeline: `LlmEngine` e `LlmRouter` restano le
-  sole interfacce. Dettaglio, mappa test e limiti: `docs/BETA_STEP08_HOTFIX3_LITERTLM_STABILITY.md`.
-- **Stato:** CI VERIFIED a run completata; **non DEVICE VERIFIED**. La causa esatta di «212121» e della schermata PIN resta
-  non provata: la nuova diagnostica senza contenuto serve a distinguerle sul dispositivo.
