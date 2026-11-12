@@ -3866,7 +3866,7 @@ Non dichiarare questa estensione COMPLETATA se non sono soddisfatte **tutte**:
 
 ## 65.12 JARVIS GUARDIAN — Advanced Device Security & Privacy (2026-11-11)
 
-**New candidate with explicit user authorization for G1 + initial G2 development only.** Source: `docs/JARVIS_GUARDIAN_G1_ARCHITECTURE.md`.
+**Authorization: G1 + initial G2 only. Stato aggiornato: G1 DOCUMENTED, G2 INITIAL CI VERIFIED (run #553, SHA `9920e518`), Honor 200 DEVICE PENDING; G3–G7 NOT IMPLEMENTED.** Source: `docs/JARVIS_GUARDIAN_G1_ARCHITECTURE.md`.
 
 **Non-regression rule:** LiteRT-LM Hotfix 3 `169cd4d` and Honor 200 Beta stability acceptance remain higher priorities. JARVIS Guardian is a **separate opt-in, isolated feature branch** `claude/guardian-g1-g2`; no merge to canonical branch, no change to installed Beta, no release, no new network service or VPN.
 
