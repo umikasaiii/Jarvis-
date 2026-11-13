@@ -19,6 +19,8 @@ object AnswerQuality {
         ECHO_OF_EARLIER_ANSWER,
         /** Number(s) in a source-grounded answer that appear in none of the retrieved passages. */
         UNSUPPORTED_NUMBERS,
+        /** Named entit(ies) the answer introduces that appear in neither the question nor any retrieved passage. */
+        UNSUPPORTED_ENTITIES,
     }
 
     enum class Provenance {
@@ -30,7 +32,16 @@ object AnswerQuality {
         MODEL_GENERAL,
     }
 
-    data class Assessment(val flags: Set<Flag>, val numericClaims: List<String>, val unsupportedNumbers: List<String>) {
+    data class Assessment(
+        val flags: Set<Flag>,
+        val numericClaims: List<String>,
+        val unsupportedNumbers: List<String>,
+        val entityClaims: List<String> = emptyList(),
+        val unsupportedEntities: List<String> = emptyList(),
+    ) {
+        /** The answer states checkable facts (numbers or named things) — the cases where provenance matters. */
+        val hasCheckableClaims: Boolean get() = numericClaims.isNotEmpty() || entityClaims.isNotEmpty()
+        val hasUnsupportedClaims: Boolean get() = unsupportedNumbers.isNotEmpty() || unsupportedEntities.isNotEmpty()
         /** Worth ONE bounded retry on a fresh conversation (the slot already handles DEGENERATE itself). */
         val retryable: Boolean get() = Flag.EMPTY in flags || Flag.INCOMPLETE in flags || Flag.ECHO_OF_EARLIER_ANSWER in flags
         val ok: Boolean get() = flags.isEmpty()
@@ -64,7 +75,15 @@ object AnswerQuality {
             emptyList()
         }
         if (unsupported.isNotEmpty()) flags += Flag.UNSUPPORTED_NUMBERS
-        return Assessment(flags, claims, unsupported)
+        val entities = namedEntities(a).filter { KnowledgeFold.fold(it) !in foldedWords(question) }
+        val unsupportedEntities = if (evidence != null) {
+            val ev = foldedWords(evidence)
+            entities.filter { KnowledgeFold.fold(it) !in ev }
+        } else {
+            emptyList()
+        }
+        if (unsupportedEntities.isNotEmpty()) flags += Flag.UNSUPPORTED_ENTITIES
+        return Assessment(flags, claims, unsupported, entities, unsupportedEntities)
     }
 
     /**
@@ -77,8 +96,8 @@ object AnswerQuality {
         val a = answer.trimEnd()
         return when {
             provenance == Provenance.TOOL -> a
-            provenance == Provenance.MODEL_GENERAL && assessment.numericClaims.isNotEmpty() -> a + "\n" + NOTE_UNVERIFIED
-            provenance == Provenance.SOURCE && assessment.unsupportedNumbers.isNotEmpty() -> a + "\n" + NOTE_NOT_IN_SOURCES
+            provenance == Provenance.MODEL_GENERAL && assessment.hasCheckableClaims -> a + "\n" + NOTE_UNVERIFIED
+            provenance == Provenance.SOURCE && assessment.hasUnsupportedClaims -> a + "\n" + NOTE_NOT_IN_SOURCES
             else -> a
         }
     }
@@ -88,7 +107,7 @@ object AnswerQuality {
         text.lineSequence().filterNot { it.trim() == NOTE_UNVERIFIED || it.trim() == NOTE_NOT_IN_SOURCES }
             .joinToString("\n").trimEnd()
 
-    const val NOTE_UNVERIFIED = "Nota: i numeri vengono dalla memoria del modello, non da una fonte verificata offline."
+    const val NOTE_UNVERIFIED = "Nota: non ho trovato fonti offline per verificare questo dato; viene dalla memoria del modello."
     const val NOTE_NOT_IN_SOURCES = "Nota: alcuni valori non compaiono nelle fonti consultate."
 
     // ---- completeness ---------------------------------------------------------------------------------
@@ -171,6 +190,33 @@ object AnswerQuality {
     fun significantNumbers(text: String): List<String> =
         NUMBER.findAll(text).map { it.value.trimEnd('.', ',') }.filter { digitsOf(it).length >= 2 }.distinct().toList()
 
+    // ---- named entities ---------------------------------------------------------------------------------
+
+    private val IGNORED_ENTITIES = setOf("jarvis", "simone")
+
+    /**
+     * Capitalised words that are NOT the first word of a sentence/line (those are capitalised by grammar) — the names
+     * of places, people, works and organisations an answer introduces. A shape heuristic, not a name list.
+     */
+    fun namedEntities(text: String): List<String> {
+        val out = LinkedHashSet<String>()
+        for (m in Regex("""\p{L}[\p{L}'’-]*""").findAll(text)) {
+            val w = m.value
+            if (w.length < 3 || !w[0].isUpperCase()) continue
+            var i = m.range.first - 1
+            while (i >= 0 && (text[i] == ' ' || text[i] == '\t')) i--
+            val sentenceInitial = i < 0 || text[i] in ".!?:;\n•*-–—\"«(\u201C"
+            if (sentenceInitial) continue
+            val clean = w.trim('\'', '’', '-')
+            if (KnowledgeFold.fold(clean) in IGNORED_ENTITIES) continue
+            out += clean
+        }
+        return out.toList()
+    }
+
+    private fun foldedWords(text: String): Set<String> =
+        Regex("""\p{L}[\p{L}\p{Nd}'’-]*""").findAll(text).map { KnowledgeFold.fold(it.value.trim('\'', '’', '-')) }.toSet()
+
     private fun digitsOf(tok: String) = tok.filter { it.isDigit() }
 
     private fun digitSet(text: String): Set<String> = NUMBER.findAll(text).map { digitsOf(it.value) }.toSet()
@@ -185,4 +231,10 @@ object AnswerQuality {
         val inter = a.count { it in b }
         return inter.toDouble() / (a.size + b.size - inter)
     }
+}
+
+/** Accent/case folding shared with the knowledge package (kept here to avoid a package cycle). */
+internal object KnowledgeFold {
+    fun fold(s: String): String =
+        java.text.Normalizer.normalize(s.lowercase(), java.text.Normalizer.Form.NFD).filter { Character.getType(it) != Character.NON_SPACING_MARK.toInt() }
 }

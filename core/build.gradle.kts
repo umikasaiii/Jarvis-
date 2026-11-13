@@ -22,6 +22,11 @@ dependencies {
     testImplementation(kotlin("test"))
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
     testImplementation("app.cash.turbine:turbine:1.1.0")
+    // ZIM clusters are zstd/xz compressed. The reader itself only knows a tiny decompressor interface (core stays
+    // free of native code); these two libraries (BSD-2 / public domain) are used by the JVM tests and, in the Android
+    // app, by the real adapter. NOT libkiwix/libzim: those are GPLv3 and the project is Apache-2.0.
+    testImplementation("com.github.luben:zstd-jni:1.5.6-4")
+    testImplementation("org.tukaani:xz:1.10")
 }
 
 kotlin {

@@ -63,7 +63,7 @@ class KnowledgeSearch(private val minScore: Double = MIN_SCORE) {
         return if (best.isEmpty()) Evidence.NoEvidence else Evidence.Grounded(best)
     }
 
-    private fun terms(text: String): List<String> = text.lowercase()
+    internal fun terms(text: String): List<String> = text.lowercase()
         .replace('à', 'a').replace('è', 'e').replace('é', 'e')
         .replace('ì', 'i').replace('ò', 'o').replace('ù', 'u')
         .split(NON_WORD)
@@ -85,15 +85,15 @@ class KnowledgeSearch(private val minScore: Double = MIN_SCORE) {
         return w
     }
 
-    private companion object {
+    companion object {
         /**
          * Cosine similarity below this is treated as no answer. Tuned so a
          * question about a topic absent from the library scores under it even
          * when it shares common words with some passage.
          */
-        const val MIN_SCORE = 0.12
+        internal const val MIN_SCORE = 0.12
 
-        val NON_WORD = Regex("""[^\p{L}\p{Nd}]+""")
+        internal val NON_WORD = Regex("""[^\p{L}\p{Nd}]+""")
 
         val SUFFIXES = listOf(
             "amento", "azione", "zione", "mente", "ando", "endo", "arsi", "ersi", "irsi",
@@ -101,7 +101,7 @@ class KnowledgeSearch(private val minScore: Double = MIN_SCORE) {
             "oni", "one", "che", "chi", "gli", "he", "hi", "i", "e", "o", "a",
         )
 
-        val STOPWORDS = setOf(
+        internal val STOPWORDS = setOf(
             "che", "chi", "con", "come", "cosa", "del", "della", "delle", "degli", "dei",
             "per", "una", "uno", "nel", "nella", "nelle", "negli", "sono", "quando",
             "dove", "questo", "questa", "quello", "quella", "mio", "mia", "miei", "mie",

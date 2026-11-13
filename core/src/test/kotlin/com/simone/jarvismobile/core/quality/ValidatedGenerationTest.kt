@@ -32,13 +32,13 @@ class ValidatedGenerationTest {
 
     @Test fun `a good first answer is used with no retry`() {
         val (r, calls) = run(listOf("La capitale della Francia è Parigi."))
-        assertEquals("La capitale della Francia è Parigi.", r.text)
+        assertEquals("La capitale della Francia è Parigi.", AnswerQuality.stripPresentationNotes(r.text!!))
         assertEquals(1, calls); assertFalse(r.retried)
     }
 
     @Test fun `an incomplete first answer triggers exactly one retry and the complete one wins`() {
         val (r, calls) = run(listOf("La capitale della Francia è una città che si trova sulla", "La capitale della Francia è Parigi."))
-        assertEquals("La capitale della Francia è Parigi.", r.text)
+        assertEquals("La capitale della Francia è Parigi.", AnswerQuality.stripPresentationNotes(r.text!!))
         assertEquals(2, calls); assertTrue(r.retried)
         assertTrue(Flag.INCOMPLETE in r.firstFlags)
     }
@@ -64,7 +64,7 @@ class ValidatedGenerationTest {
             listOf(prev, "L'Asia è il continente più esteso della Terra."), question = "Quanto è grande l'Asia?",
             earlier = listOf(prev), earlierQ = listOf("Che lingua si parla in Italia?"),
         )
-        assertEquals("L'Asia è il continente più esteso della Terra.", r.text)
+        assertEquals("L'Asia è il continente più esteso della Terra.", AnswerQuality.stripPresentationNotes(r.text!!))
     }
 
     @Test fun `null output then a valid retry`() {
