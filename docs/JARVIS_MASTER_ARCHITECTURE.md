@@ -3903,6 +3903,67 @@ Aggiunta datata: **non modifica né sostituisce** §65.1–§65.8. A1 e A3 **non
 - **Stato:** CI VERIFIED a run completata; **non DEVICE VERIFIED**. La causa esatta di «212121» e della schermata PIN resta
   non provata: la nuova diagnostica senza contenuto serve a distinguerle sul dispositivo.
 
+
+## 65.14 POST-RELEASE — AUTONOMOUS INTELLIGENCE & ADVANCED NETWORK FEATURES (richiesta 2026-11-13)
+
+**Stato: SOLO ROADMAP / PLANNED / DEFERRED.** Nessun componente di questa sezione è implementato, autorizzato all'implementazione, qualificato su Honor 200 o pronto per il rilascio. Questa registrazione è **documentation-only**: nessun codice, workflow, permesso Android, modello, servizio VPN, branch operativo, APK, release, merge o test runtime viene avviato/modificato. **Non anticipare** questa fase per velocizzare la Beta o Guardian.
+
+### Gate d'ingresso vincolanti — TUTTI cumulativi, nessuna eccezione implicita
+
+La fase può iniziare **soltanto dopo**:
+1. **Completamento di tutte le funzionalità principali e di tutte le track già autorizzate nel Master**, con i rispettivi criteri di accettazione (A0–A4 e ulteriori componenti che facciano parte del perimetro finale approvato). La fase non sostituisce, riduce o riordina il backlog esistente.
+2. **Chiusura definitiva della BETA**, con stabilità dell'inferenza LiteRT-LM, nessun difetto bloccante P0/P1, regressioni superate, backup/ripristino e prove sul dispositivo reale. I CI VERIFIED degli Hotfix non valgono come DEVICE VERIFIED.
+3. **Completamento integrale di JARVIS Guardian**, inclusi G1–G7: reale Network Guardian/firewall, eventuale WireGuard, integrazione Tor nei limiti dichiarati, audit sicurezza e acceptance Honor 200. Un Guardian G1/G2 parziale **non** soddisfa il gate.
+4. **Verifica di stabilità, sicurezza e affidabilità sul dispositivo fisico** dell'intero progetto completato, documentata con evidenze; nessuna funzione critica o modalità offline deve regredire.
+5. **Nuova autorizzazione esplicita dell'utente**, con scope, threat model, risorse e criteri di successo verificabili per ciascun modulo; la presente registrazione non la costituisce.
+
+La nuova fase è **successiva** alle 8 fasi di espansione §65.10, alle due estensioni §65.9, all'hardening/recupero §65.11, a Guardian §65.12 e ai gate originari §65.1–§65.7. Non crea un 31° macro-step, non altera i **30 macro-step fissi** e non ridenomina PASSAGGIO 14/14B/15. Non aggiungere due nuove copie del planner, della memoria, del firewall o della VPN.
+
+### Modulo A — JARVIS AUTONOMOUS AGENTS — 100% OFFLINE
+
+**Obiettivo:** completare attività personali e progetti complessi su Android con coordinamento multi-agente **logico**, eseguendo l'intera catena decisionale sul telefono, **senza Core PC, cloud, servizi esterni o invio remoto di prompt/dati**. Non promettere autonomia universale né prestazioni superiori alla capacità verificata del modello.
+
+- [ ] **LLM unico condiviso:** qualificare inizialmente **Qwen 3.5 4B** come candidato, solo in un artefatto locale effettivamente compatibile con il runtime disponibile e le risorse Honor 200 (formato, quantizzazione, licenza, RAM, temperatura e latenza); altrimenti registrare il blocco e usare solo alternative esplicitamente qualificate, senza fingere compatibilità LiteRT-LM/GGUF. Nessun download automatico e nessuna necessità di tenere più copie dello stesso modello in RAM. Usare gli owner esistenti per inferenza e routing (`LlmRouter`, `InferenceSlot`, A3).
+- [ ] **Planner:** scomposizione di un obiettivo autorizzato in piano, sottoattività, dipendenze, prerequisiti, criteri di completamento e limiti di risorse, con tracciabilità e revisione dell'utente.
+- [ ] **Executor:** esecuzione deterministica mediante `ToolRegistry`/`ToolPolicy` e API Android realmente disponibili, con privilegi minimi, limiti di perimetro, conferme per side effect sensibili e ricevute. Nessuna shell arbitraria, Accessibility abusiva, bypass delle restrizioni Android o esecuzione diretta di proposte LLM.
+- [ ] **Verifier:** riscontro **oggettivo** dei risultati mediante stato reale, output degli strumenti, dati/fonte e condizioni di successo verificabili; la sola auto-valutazione del modello non è prova indipendente.
+- [ ] **Recovery:** gestione di errori, timeout, interruzioni e process death; retry bounded/idempotenti, rollback quando possibile, checkpoint e ripresa sicura evitando azioni duplicate o cicli infiniti.
+- [ ] **Memoria persistente dei progetti:** obiettivi, piano versionato, attività e loro avanzamento, checkpoint e ricevute auditabili, con crittografia/retention e compatibilità backup/restore; riutilizzare il Persistent Agent Kernel/Responsibility store di A0 ove pertinente, senza inventare un secondo archivio autoritativo.
+- [ ] **Background programmato:** usare i meccanismi Android consentiti (es. WorkManager, notifiche e foreground service solo quando le policy di piattaforma lo consentono); dichiarare restrizioni MagicOS/Doze/risparmio energetico. Nessuna promessa di esecuzione continuativa o puntualità assoluta.
+- [ ] **Ruoli logici coordinati:** Planner / Executor / Verifier / Recovery costituiscono un workflow con **un modello caricato** e chiamate serializzate o pianificate, non quattro LLM residenti o quattro agenti con policy indipendenti. Riutilizzare l'orchestratore A3 e le regole di singola autorità.
+- [ ] **Sicurezza e controllo:** approvazione esplicita e per azione per modifiche, invii, comunicazioni, file, dati sensibili o permessi; revoca immediata/Stop, limiti di tool-call/tempo/energia, anti-prompt-injection, segregazione dati non attendibili, audit locale minimizzato e modalità fail-closed.
+- [ ] **Efficienza e acceptance:** benchmark sul dispositivo reale per qualità dei piani, successo verificato, ripresa dopo crash, idempotenza, RAM, CPU, batteria e impatto sulle altre funzioni; ammettere esplicitamente obiettivi non fattibili senza privilegio, modello o capacità sufficiente.
+
+**Non duplicazione:** questa è l'estensione di autonomia complessa **post-release** rispetto a `Persistent Agent Kernel` (§65.1), Unified Orchestration A3, Modalità Agente Live (§65.9), Intelligent Tool Orchestration / Permission-Based Actions (§65.10). Le capability già realizzate sono prerequisiti da riutilizzare, non moduli da riscrivere.
+
+### Modulo B — JARVIS GUARDIAN — IP GEOLOCATION & GEO-SELECT
+
+**Obiettivo:** ampliare il **medesimo** stack di rete Guardian già completato (G3 firewall/`VpnService`, G4 WireGuard, G5 eventuale handoff al Tor Browser) con consapevolezza dell'IP di uscita e scelta della località del nodo VPN, senza alterare il GPS del dispositivo né promettere anonimato.
+
+- [ ] **IP pubblico di uscita:** mostrare l'IP visibile all'esterno e indicare **da quale percorso** è stato osservato (rete normale, server VPN, browser Tor se misurabile separatamente). Non confondere l'IP locale LAN con quello pubblico.
+- [ ] **IP geolocation:** Paese, regione e città **approssimativi**, con fonte, data/aggiornamento e stato di affidabilità/indisponibilità; la geolocalizzazione IP non coincide con GPS, posizione fisica o indirizzo reale.
+- [ ] **Geo-select manuale:** scegliere il Paese di uscita VPN **solo** tra quelli con endpoint realmente disponibili/configurati. Se nessun server esiste nel Paese richiesto, spiegare il limite: non si può simulare quel Paese cambiando soltanto una stringa o un'impostazione.
+- [ ] **Scelta automatica del server:** selezionare tra i server disponibili nel Paese scelto usando criteri **misurati** di salute, affidabilità, latenza e policy, senza inventare tempi, copertura o prestazioni.
+- [ ] **Paese preferito:** memorizzare una preferenza locale revocabile, applicata soltanto quando il relativo server è disponibile e il tunnel può essere stabilito in sicurezza.
+- [ ] **Verifica dopo connessione:** controllare IP pubblico di uscita e posizione IP effettivamente riportata dalla fonte; distinguere il cambio IP riuscito dall'attendibilità geografica del database e gestire inconsistenze.
+- [ ] **Leak protection:** test e mitigazioni per DNS, IPv6, split tunneling, disconnessione e traffico fuori tunnel nei limiti del sistema Android; risultati distinti `VERIFICATO`, `ATTENZIONE`, `NON VERIFICATO` e `NON DISPONIBILE`, mai claim assoluti.
+- [ ] **Kill switch / riconnessione sicura:** sfruttare i meccanismi Android Always-on/Block connections without VPN ove disponibili e configurabili, oltre alla policy del tunnel; documentare quando il blocco non è applicabile e il trade-off con accessibilità di rete/emergenze.
+- [ ] **Interoperabilità:** mantenere una sola architettura `VpnService`/firewall/DNS/WireGuard per profilo; rispettare il limite Android di VPN attive, le eccezioni per app e l'impossibilità di promettere coesistenza automatica con VPN terze.
+- [ ] **Tor:** mantenere l'integrazione prevista in Guardian G5 tramite **Tor Browser ufficiale**; non definire Tor come VPN globale, non promettere controllo del Paese di uscita Tor o catene VPN+Tor simultanee senza una progettazione compatibile, testata e autorizzata.
+- [ ] **Privacy delle verifiche:** servizi esterni per IP pubblico e geolocalizzazione IP sono **opzionali**, opt-in, con disclosure dell'esposizione dell'IP al servizio e policy di minimizzazione dati. Un database geografico offline importato può produrre solo stime locali aggiornate alla data del database; **non** può conoscere/verificare l'IP pubblico corrente dall'esterno in modo attendibile senza una fonte di osservazione appropriata. Gestire offline/unavailable con trasparenza.
+- [ ] **Acceptance reale:** test con e senza VPN, server di Paesi diversi effettivamente disponibili, perdita rete, cambio Wi-Fi/mobile, IPv6/DNS, background, riavvio, conflitto VPN, Tor Browser, batteria, MagicOS e casi di dati IP assenti/inaccurati, senza divulgare indirizzi personali nei log.
+
+**Non duplicazione:** estensione **successiva** di Guardian §65.12 G3/G4/G5 e della VPN/Firewall/AdBlock §65.10, non un secondo client VPN, secondo `VpnService`, secondo firewall o nuovo strato Tor proprietario. La selezione del Paese cambia esclusivamente il **nodo/server di uscita disponibile**, non la geolocalizzazione GPS, la posizione reale dello smartphone o l'identità online in senso assoluto.
+
+### Ordine, Definition of Done e controllo del perimetro
+
+1. Entrambi i moduli restano **POST-RELEASE ONLY** e **NOT STARTED** fino alla verifica cumulativa dei gate precedenti. Ogni sottofunzione può iniziare solo con autorizzazione successiva e threat model aggiornato.
+2. Progettazione e implementazione future devono rispettare l'architettura principale, le policy già esistenti, l'assenza di privilegi impropri, il percorso offline e la capacità reale dell'Honor 200.
+3. La **Definition of Done degli Autonomous Agents** richiede workflow completi ripetibili e verificati su dispositivo, autorizzazioni sensibili, recovery/idempotenza, benchmark sulle risorse e zero dipendenze da Core/cloud/servizi esterni per i compiti dichiarati offline.
+4. La **Definition of Done di IP GEOLOCATION & GEO-SELECT** richiede tunnel/Paesi reali, esito verificato e controlli di leak/fail-safe sul dispositivo, indicazione onesta della fonte della geolocalizzazione e privacy/consenso; quando manca connettività o endpoint, dichiarare indisponibilità anziché simulare un successo.
+5. Nessuna conclusione `DEVICE VERIFIED`, punteggio di anonimato, avanzamento dei 30 macro-step o stato `DONE` può derivare da questa sola registrazione. Gli impegni esistenti restano prioritari senza rinumerazioni o scope creep.
+
+
 ---
 
 # 66. IMPLEMENTATION PASS HISTORY
