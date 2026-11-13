@@ -79,7 +79,7 @@ class InferenceSlotTest {
         /** Returns an immediate reply, or null to block until released/cancelled. */
         @Volatile var script: (FakeConversation, String) -> String? = { _, _ -> null }
 
-        override fun open(systemPrompt: String?): NativeConversation =
+        override fun open(systemPrompt: String?, seed: ChatSeed): NativeConversation =
             FakeConversation(this, conversations.size + 1).also { conversations.add(it) }
 
         override fun close() { engineClosed = true }

@@ -1,0 +1,1265 @@
+[
+ {
+  "id": "gen000",
+  "category": "general_knowledge",
+  "prompt": "Qual è la capitale della Spagna?",
+  "route": "general",
+  "numeric": false,
+  "split": "dev",
+  "ref": [
+   "madrid"
+  ],
+  "group": "gk_spain"
+ },
+ {
+  "id": "gen001",
+  "category": "general_knowledge",
+  "prompt": "Chi ha dipinto la Gioconda?",
+  "route": "general",
+  "numeric": false,
+  "split": "dev",
+  "ref": [
+   "leonardo"
+  ],
+  "group": null
+ },
+ {
+  "id": "gen002",
+  "category": "general_knowledge",
+  "prompt": "In che continente si trova l'Egitto?",
+  "route": "general",
+  "numeric": false,
+  "split": "holdout",
+  "ref": [
+   "africa"
+  ],
+  "group": null
+ },
+ {
+  "id": "gen003",
+  "category": "general_knowledge",
+  "prompt": "Come si chiama il fiume che attraversa Parigi?",
+  "route": "general",
+  "numeric": false,
+  "split": "dev",
+  "ref": [
+   "senna"
+  ],
+  "group": null
+ },
+ {
+  "id": "gen004",
+  "category": "general_knowledge",
+  "prompt": "Chi ha scritto I promessi sposi?",
+  "route": "general",
+  "numeric": false,
+  "split": "dev",
+  "ref": [
+   "manzoni"
+  ],
+  "group": null
+ },
+ {
+  "id": "gen005",
+  "category": "general_knowledge",
+  "prompt": "Che lingua si parla in Brasile?",
+  "route": "general",
+  "numeric": false,
+  "split": "holdout",
+  "ref": [
+   "portoghese"
+  ],
+  "group": null
+ },
+ {
+  "id": "gen006",
+  "category": "general_knowledge",
+  "prompt": "Dimmi un piatto tipico giapponese",
+  "route": "general",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "gen007",
+  "category": "general_knowledge",
+  "prompt": "Che lingua si parla in Italia?",
+  "route": "general",
+  "numeric": false,
+  "split": "dev",
+  "ref": [
+   "italiano"
+  ],
+  "group": "gk_lang",
+  "observed": true
+ },
+ {
+  "id": "gen008",
+  "category": "general_knowledge",
+  "prompt": "Che cosa è la fotosintesi?",
+  "route": "general",
+  "numeric": false,
+  "split": "holdout",
+  "ref": [
+   "luce"
+  ],
+  "group": null
+ },
+ {
+  "id": "gen009",
+  "category": "general_knowledge",
+  "prompt": "Quale oceano bagna la costa occidentale dell'America?",
+  "route": "general",
+  "numeric": false,
+  "split": "dev",
+  "ref": [
+   "pacifico"
+  ],
+  "group": null
+ },
+ {
+  "id": "gen010",
+  "category": "general_knowledge",
+  "prompt": "Chi fu il primo uomo sulla Luna?",
+  "route": "general",
+  "numeric": false,
+  "split": "dev",
+  "ref": [
+   "armstrong"
+  ],
+  "group": null
+ },
+ {
+  "id": "gen011",
+  "category": "general_knowledge",
+  "prompt": "Che lingua si parla in Germania?",
+  "route": "general",
+  "numeric": false,
+  "split": "holdout",
+  "ref": [
+   "tedesco"
+  ],
+  "group": null
+ },
+ {
+  "id": "tec012",
+  "category": "technical_definitions",
+  "prompt": "Cos'è un SSD?",
+  "route": "general",
+  "numeric": false,
+  "split": "dev",
+  "group": "td_ssd",
+  "observed": true
+ },
+ {
+  "id": "tec013",
+  "category": "technical_definitions",
+  "prompt": "Che differenza c'è tra RAM e memoria di archiviazione?",
+  "route": "general",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "tec014",
+  "category": "technical_definitions",
+  "prompt": "Cos'è un processore?",
+  "route": "general",
+  "numeric": false,
+  "split": "holdout",
+  "group": null
+ },
+ {
+  "id": "tec015",
+  "category": "technical_definitions",
+  "prompt": "Spiegami cos'è il Wi-Fi",
+  "route": "general",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "tec016",
+  "category": "technical_definitions",
+  "prompt": "Che cos'è una VPN?",
+  "route": "general",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "tec017",
+  "category": "technical_definitions",
+  "prompt": "Cos'è il cloud computing?",
+  "route": "general",
+  "numeric": false,
+  "split": "holdout",
+  "group": null
+ },
+ {
+  "id": "tec018",
+  "category": "technical_definitions",
+  "prompt": "Che cos'è un algoritmo?",
+  "route": "general",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "tec019",
+  "category": "technical_definitions",
+  "prompt": "Cos'è la crittografia?",
+  "route": "general",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "tec020",
+  "category": "technical_definitions",
+  "prompt": "Cos'è una batteria agli ioni di litio?",
+  "route": "general",
+  "numeric": false,
+  "split": "holdout",
+  "group": null
+ },
+ {
+  "id": "tec021",
+  "category": "technical_definitions",
+  "prompt": "Che cos'è il Bluetooth?",
+  "route": "general",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "tec022",
+  "category": "technical_definitions",
+  "prompt": "Cos'è un firmware?",
+  "route": "general",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "qua023",
+  "category": "quantitative",
+  "prompt": "Quanto è grande l'Asia?",
+  "route": "general",
+  "numeric": true,
+  "split": "dev",
+  "group": "q_asia",
+  "observed": true
+ },
+ {
+  "id": "qua024",
+  "category": "quantitative",
+  "prompt": "Quanto è alto il Monte Bianco?",
+  "route": "general",
+  "numeric": true,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "qua025",
+  "category": "quantitative",
+  "prompt": "Quanti abitanti ha l'Italia?",
+  "route": "general",
+  "numeric": true,
+  "split": "holdout",
+  "group": null
+ },
+ {
+  "id": "qua026",
+  "category": "quantitative",
+  "prompt": "Quanti chilometri è lunga l'Italia?",
+  "route": "general",
+  "numeric": true,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "qua027",
+  "category": "quantitative",
+  "prompt": "Quanto dista la Luna dalla Terra?",
+  "route": "general",
+  "numeric": true,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "qua028",
+  "category": "quantitative",
+  "prompt": "Quanti pianeti ci sono nel sistema solare?",
+  "route": "general",
+  "numeric": true,
+  "split": "holdout",
+  "ref": [
+   "8",
+   "otto"
+  ],
+  "group": null
+ },
+ {
+  "id": "qua029",
+  "category": "quantitative",
+  "prompt": "Quanti giorni ha un anno bisestile?",
+  "route": "general",
+  "numeric": true,
+  "split": "dev",
+  "ref": [
+   "366"
+  ],
+  "group": null
+ },
+ {
+  "id": "qua030",
+  "category": "quantitative",
+  "prompt": "Quanto pesa un litro d'acqua?",
+  "route": "general",
+  "numeric": true,
+  "split": "dev",
+  "ref": [
+   "1 kg",
+   "un chilo",
+   "1 chilo",
+   "kg"
+  ],
+  "group": null
+ },
+ {
+  "id": "qua031",
+  "category": "quantitative",
+  "prompt": "Quante regioni ha l'Italia?",
+  "route": "general",
+  "numeric": true,
+  "split": "holdout",
+  "ref": [
+   "20",
+   "venti"
+  ],
+  "group": null
+ },
+ {
+  "id": "qua032",
+  "category": "quantitative",
+  "prompt": "Quanto è profondo l'oceano Pacifico?",
+  "route": "general",
+  "numeric": true,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "qua033",
+  "category": "quantitative",
+  "prompt": "In che anno è caduto il muro di Berlino?",
+  "route": "general",
+  "numeric": true,
+  "split": "dev",
+  "ref": [
+   "1989"
+  ],
+  "group": null
+ },
+ {
+  "id": "qua034",
+  "category": "quantitative",
+  "prompt": "Quante ossa ha il corpo umano adulto?",
+  "route": "general",
+  "numeric": true,
+  "split": "holdout",
+  "ref": [
+   "206"
+  ],
+  "group": null
+ },
+ {
+  "id": "nat035",
+  "category": "natural_conversation",
+  "prompt": "Ciao come stai?",
+  "route": "general",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "nat036",
+  "category": "natural_conversation",
+  "prompt": "Mi racconti qualcosa di interessante?",
+  "route": "general",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "nat037",
+  "category": "natural_conversation",
+  "prompt": "Sono un po' stanco oggi",
+  "route": "general",
+  "numeric": false,
+  "split": "holdout",
+  "group": null
+ },
+ {
+  "id": "nat038",
+  "category": "natural_conversation",
+  "prompt": "Che ne pensi del caffè al mattino?",
+  "route": "general",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "nat039",
+  "category": "natural_conversation",
+  "prompt": "Grazie, sei stato utile",
+  "route": "general",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "nat040",
+  "category": "natural_conversation",
+  "prompt": "Dammi un consiglio per rilassarmi",
+  "route": "general",
+  "numeric": false,
+  "split": "holdout",
+  "group": null
+ },
+ {
+  "id": "nat041",
+  "category": "natural_conversation",
+  "prompt": "Preferisci l'estate o l'inverno?",
+  "route": "general",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "nat042",
+  "category": "natural_conversation",
+  "prompt": "Buonanotte JARVIS",
+  "route": "general",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "nat043",
+  "category": "natural_conversation",
+  "prompt": "Oggi ho fatto una lunga camminata",
+  "route": "general",
+  "numeric": false,
+  "split": "holdout",
+  "group": null
+ },
+ {
+  "id": "nat044",
+  "category": "natural_conversation",
+  "prompt": "Dimmi una curiosità",
+  "route": "general",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "com045",
+  "category": "complex_requests",
+  "prompt": "Spiegami in tre punti i vantaggi e gli svantaggi di un SSD rispetto a un disco meccanico",
+  "route": "general",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "com046",
+  "category": "complex_requests",
+  "prompt": "Come posso organizzare una settimana di studio per un esame difficile?",
+  "route": "general",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "com047",
+  "category": "complex_requests",
+  "prompt": "Confronta in breve l'energia solare e quella eolica",
+  "route": "general",
+  "numeric": false,
+  "split": "holdout",
+  "group": null
+ },
+ {
+  "id": "com048",
+  "category": "complex_requests",
+  "prompt": "Dammi una procedura passo passo per preparare una pasta al pomodoro",
+  "route": "general",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "com049",
+  "category": "complex_requests",
+  "prompt": "Che cosa devo valutare prima di comprare uno smartphone nuovo?",
+  "route": "general",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "com050",
+  "category": "complex_requests",
+  "prompt": "Spiega la differenza tra clima e meteo con un esempio",
+  "route": "general",
+  "numeric": false,
+  "split": "holdout",
+  "group": null
+ },
+ {
+  "id": "com051",
+  "category": "complex_requests",
+  "prompt": "Come funziona in sintesi un motore a combustione interna?",
+  "route": "general",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "com052",
+  "category": "complex_requests",
+  "prompt": "Quali sono i pro e i contro del lavoro da casa?",
+  "route": "general",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "com053",
+  "category": "complex_requests",
+  "prompt": "Aiutami a scrivere un messaggio gentile per rimandare un appuntamento",
+  "route": "general",
+  "numeric": false,
+  "split": "holdout",
+  "group": null
+ },
+ {
+  "id": "com054",
+  "category": "complex_requests",
+  "prompt": "Riassumi cos'è l'intelligenza artificiale in poche frasi",
+  "route": "general",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "amb055",
+  "category": "ambiguous",
+  "prompt": "Quanto costa?",
+  "route": "ambiguous",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "amb056",
+  "category": "ambiguous",
+  "prompt": "Dimmi di più",
+  "route": "ambiguous",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "amb057",
+  "category": "ambiguous",
+  "prompt": "E quello?",
+  "route": "ambiguous",
+  "numeric": false,
+  "split": "holdout",
+  "group": null
+ },
+ {
+  "id": "amb058",
+  "category": "ambiguous",
+  "prompt": "Mi serve aiuto",
+  "route": "ambiguous",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "amb059",
+  "category": "ambiguous",
+  "prompt": "Cos'è?",
+  "route": "ambiguous",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "amb060",
+  "category": "ambiguous",
+  "prompt": "Come si fa?",
+  "route": "ambiguous",
+  "numeric": false,
+  "split": "holdout",
+  "group": null
+ },
+ {
+  "id": "amb061",
+  "category": "ambiguous",
+  "prompt": "Ne vale la pena?",
+  "route": "ambiguous",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "amb062",
+  "category": "ambiguous",
+  "prompt": "Quando?",
+  "route": "ambiguous",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "amb063",
+  "category": "ambiguous",
+  "prompt": "Fammelo vedere",
+  "route": "ambiguous",
+  "numeric": false,
+  "split": "holdout",
+  "group": null
+ },
+ {
+  "id": "amb064",
+  "category": "ambiguous",
+  "prompt": "Perché?",
+  "route": "ambiguous",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "per065",
+  "category": "personal_memory",
+  "prompt": "Come si chiama il mio animale immaginario?",
+  "route": "personal",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "per066",
+  "category": "personal_memory",
+  "prompt": "Cosa ti ho detto di ricordare sul mio compleanno?",
+  "route": "personal",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "per067",
+  "category": "personal_memory",
+  "prompt": "Qual è il mio cibo preferito?",
+  "route": "personal",
+  "numeric": false,
+  "split": "holdout",
+  "group": null
+ },
+ {
+  "id": "per068",
+  "category": "personal_memory",
+  "prompt": "Quali appunti ho salvato su Marco?",
+  "route": "personal",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "per069",
+  "category": "personal_memory",
+  "prompt": "Che cosa ti ho chiesto ieri di segnare?",
+  "route": "personal",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "per070",
+  "category": "personal_memory",
+  "prompt": "Ricordi dove ho parcheggiato?",
+  "route": "personal",
+  "numeric": false,
+  "split": "holdout",
+  "group": null
+ },
+ {
+  "id": "per071",
+  "category": "personal_memory",
+  "prompt": "Qual è la mia targa?",
+  "route": "personal",
+  "numeric": false,
+  "split": "dev",
+  "group": "pm_plate"
+ },
+ {
+  "id": "per072",
+  "category": "personal_memory",
+  "prompt": "Che cosa mi piace bere la mattina?",
+  "route": "personal",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "per073",
+  "category": "personal_memory",
+  "prompt": "Cosa sai di me?",
+  "route": "personal",
+  "numeric": false,
+  "split": "holdout",
+  "group": null
+ },
+ {
+  "id": "per074",
+  "category": "personal_memory",
+  "prompt": "Quali sono i miei impegni importanti?",
+  "route": "personal",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "doc075",
+  "category": "documents",
+  "prompt": "Riassumi il documento che ho importato",
+  "route": "document",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "doc076",
+  "category": "documents",
+  "prompt": "Cosa dice il manuale sulla garanzia?",
+  "route": "document",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "doc077",
+  "category": "documents",
+  "prompt": "Cerca nel PDF la parte sui pagamenti",
+  "route": "document",
+  "numeric": false,
+  "split": "holdout",
+  "group": null
+ },
+ {
+  "id": "doc078",
+  "category": "documents",
+  "prompt": "Confronta il contratto A con il contratto B",
+  "route": "document",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "doc079",
+  "category": "documents",
+  "prompt": "Qual è la scadenza indicata nel documento?",
+  "route": "document",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "doc080",
+  "category": "documents",
+  "prompt": "Che cosa riporta la pagina 3 del file?",
+  "route": "document",
+  "numeric": false,
+  "split": "holdout",
+  "group": null
+ },
+ {
+  "id": "doc081",
+  "category": "documents",
+  "prompt": "Estrai i punti principali dall'allegato",
+  "route": "document",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "doc082",
+  "category": "documents",
+  "prompt": "Nel documento si parla di rimborsi?",
+  "route": "document",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "doc083",
+  "category": "documents",
+  "prompt": "Elenca le date citate nel PDF",
+  "route": "document",
+  "numeric": false,
+  "split": "holdout",
+  "group": null
+ },
+ {
+  "id": "doc084",
+  "category": "documents",
+  "prompt": "Dimmi chi firma il documento",
+  "route": "document",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "cal085",
+  "category": "calc_tools",
+  "prompt": "Quanto fa 12 per 12?",
+  "route": "tool",
+  "numeric": false,
+  "split": "dev",
+  "group": "ct_mul",
+  "observed": true
+ },
+ {
+  "id": "cal086",
+  "category": "calc_tools",
+  "prompt": "Calcola 345 più 678",
+  "route": "tool",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "cal087",
+  "category": "calc_tools",
+  "prompt": "Quanto fa 1000 diviso 8?",
+  "route": "tool",
+  "numeric": false,
+  "split": "holdout",
+  "group": null
+ },
+ {
+  "id": "cal088",
+  "category": "calc_tools",
+  "prompt": "Qual è il 15 per cento di 240?",
+  "route": "tool",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "cal089",
+  "category": "calc_tools",
+  "prompt": "Quanto fa 7 alla seconda?",
+  "route": "tool",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "cal090",
+  "category": "calc_tools",
+  "prompt": "Calcola 99 meno 37",
+  "route": "tool",
+  "numeric": false,
+  "split": "holdout",
+  "group": null
+ },
+ {
+  "id": "cal091",
+  "category": "calc_tools",
+  "prompt": "Quanto fa 3,5 per 4?",
+  "route": "tool",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "cal092",
+  "category": "calc_tools",
+  "prompt": "Che ore sono?",
+  "route": "tool",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "cal093",
+  "category": "calc_tools",
+  "prompt": "Quanto manca alle 18?",
+  "route": "tool",
+  "numeric": false,
+  "split": "holdout",
+  "group": null
+ },
+ {
+  "id": "cal094",
+  "category": "calc_tools",
+  "prompt": "Che giorno è oggi?",
+  "route": "tool",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "cal095",
+  "category": "calc_tools",
+  "prompt": "Quanta batteria ho?",
+  "route": "tool",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "cal096",
+  "category": "calc_tools",
+  "prompt": "Imposta un timer di dieci minuti",
+  "route": "tool",
+  "numeric": false,
+  "split": "holdout",
+  "group": null
+ },
+ {
+  "id": "top097",
+  "category": "topic_switch",
+  "prompt": "Parlami della Luna",
+  "route": "general",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "top098",
+  "category": "topic_switch",
+  "prompt": "E ora dimmi una ricetta veloce",
+  "route": "general",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "top099",
+  "category": "topic_switch",
+  "prompt": "Cambiamo argomento: cos'è un buco nero?",
+  "route": "general",
+  "numeric": false,
+  "split": "holdout",
+  "group": null
+ },
+ {
+  "id": "top100",
+  "category": "topic_switch",
+  "prompt": "Torniamo al cibo: dimmi un dolce tipico",
+  "route": "general",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "top101",
+  "category": "topic_switch",
+  "prompt": "Ok, e la capitale della Grecia?",
+  "route": "general",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "top102",
+  "category": "topic_switch",
+  "prompt": "Dimmi una cosa sulla storia romana",
+  "route": "general",
+  "numeric": false,
+  "split": "holdout",
+  "group": null
+ },
+ {
+  "id": "top103",
+  "category": "topic_switch",
+  "prompt": "Adesso parlami di calcio in due frasi",
+  "route": "general",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "top104",
+  "category": "topic_switch",
+  "prompt": "Mi spieghi cos'è un vulcano?",
+  "route": "general",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "top105",
+  "category": "topic_switch",
+  "prompt": "Cosa mangiano i panda?",
+  "route": "general",
+  "numeric": false,
+  "split": "holdout",
+  "group": null
+ },
+ {
+  "id": "top106",
+  "category": "topic_switch",
+  "prompt": "Parliamo di musica: chi era Mozart?",
+  "route": "general",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "no_107",
+  "category": "no_source",
+  "prompt": "Qual è il prezzo attuale del petrolio?",
+  "route": "nosource",
+  "numeric": true,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "no_108",
+  "category": "no_source",
+  "prompt": "Che tempo farà domani a Roma?",
+  "route": "nosource",
+  "numeric": true,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "no_109",
+  "category": "no_source",
+  "prompt": "Quanto costa un biglietto del treno per Milano oggi?",
+  "route": "nosource",
+  "numeric": true,
+  "split": "holdout",
+  "group": null
+ },
+ {
+  "id": "no_110",
+  "category": "no_source",
+  "prompt": "Qual è il numero di telefono del ristorante sotto casa?",
+  "route": "nosource",
+  "numeric": true,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "no_111",
+  "category": "no_source",
+  "prompt": "A che ora chiude il supermercato vicino a me?",
+  "route": "nosource",
+  "numeric": true,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "no_112",
+  "category": "no_source",
+  "prompt": "Chi ha vinto la partita di ieri sera?",
+  "route": "nosource",
+  "numeric": true,
+  "split": "holdout",
+  "group": null
+ },
+ {
+  "id": "no_113",
+  "category": "no_source",
+  "prompt": "Qual è il cambio euro dollaro adesso?",
+  "route": "nosource",
+  "numeric": true,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "no_114",
+  "category": "no_source",
+  "prompt": "Quanti follower ha il mio profilo?",
+  "route": "nosource",
+  "numeric": true,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "no_115",
+  "category": "no_source",
+  "prompt": "Quanto costa la benzina oggi?",
+  "route": "nosource",
+  "numeric": true,
+  "split": "holdout",
+  "group": null
+ },
+ {
+  "id": "no_116",
+  "category": "no_source",
+  "prompt": "Qual è l'ultima notizia del giorno?",
+  "route": "nosource",
+  "numeric": true,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "lon117",
+  "category": "long_conversation_recovery",
+  "prompt": "Dopo Stop: dimmi un piatto tipico italiano",
+  "route": "general",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "lon118",
+  "category": "long_conversation_recovery",
+  "prompt": "Dopo Nuova conversazione: che lingua si parla in Francia?",
+  "route": "general",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "lon119",
+  "category": "long_conversation_recovery",
+  "prompt": "Dopo timeout: cos'è la RAM?",
+  "route": "general",
+  "numeric": false,
+  "split": "holdout",
+  "group": null
+ },
+ {
+  "id": "lon120",
+  "category": "long_conversation_recovery",
+  "prompt": "Dopo dieci domande: quanti giorni ha febbraio?",
+  "route": "general",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "lon121",
+  "category": "long_conversation_recovery",
+  "prompt": "Dopo Stop ripetuto: capitale del Portogallo?",
+  "route": "general",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "lon122",
+  "category": "long_conversation_recovery",
+  "prompt": "Dopo reset: spiegami cos'è un SSD",
+  "route": "general",
+  "numeric": false,
+  "split": "holdout",
+  "group": null
+ },
+ {
+  "id": "lon123",
+  "category": "long_conversation_recovery",
+  "prompt": "Dopo una risposta lunga: riassumila in una frase",
+  "route": "general",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "lon124",
+  "category": "long_conversation_recovery",
+  "prompt": "Dopo un cambio argomento: torna a quello di prima",
+  "route": "general",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "lon125",
+  "category": "long_conversation_recovery",
+  "prompt": "Dopo il riavvio dell'app: continua il discorso",
+  "route": "general",
+  "numeric": false,
+  "split": "holdout",
+  "group": null
+ },
+ {
+  "id": "lon126",
+  "category": "long_conversation_recovery",
+  "prompt": "Dopo due invii ravvicinati: rispondi solo all'ultimo",
+  "route": "general",
+  "numeric": false,
+  "split": "dev",
+  "group": null
+ },
+ {
+  "id": "par127",
+  "category": "general_knowledge",
+  "prompt": "Mi dici qual è la città capitale spagnola?",
+  "route": "general",
+  "numeric": false,
+  "split": "holdout",
+  "group": "gk_spain",
+  "ref": [
+   "madrid"
+  ]
+ },
+ {
+  "id": "par128",
+  "category": "technical_definitions",
+  "prompt": "Spiegami che cosa è un'unità SSD",
+  "route": "general",
+  "numeric": false,
+  "split": "holdout",
+  "group": "td_ssd"
+ },
+ {
+  "id": "par129",
+  "category": "quantitative",
+  "prompt": "Qual è l'estensione del continente asiatico?",
+  "route": "general",
+  "numeric": true,
+  "split": "holdout",
+  "group": "q_asia"
+ },
+ {
+  "id": "par130",
+  "category": "general_knowledge",
+  "prompt": "In Italia quale lingua parlano le persone?",
+  "route": "general",
+  "numeric": false,
+  "split": "holdout",
+  "group": "gk_lang",
+  "ref": [
+   "italiano"
+  ]
+ },
+ {
+  "id": "par131",
+  "category": "calc_tools",
+  "prompt": "Dodici moltiplicato dodici quanto dà?",
+  "route": "tool",
+  "numeric": false,
+  "split": "holdout",
+  "group": "ct_mul"
+ },
+ {
+  "id": "par132",
+  "category": "personal_memory",
+  "prompt": "Mi ricordi la targa della mia auto?",
+  "route": "personal",
+  "numeric": false,
+  "split": "holdout",
+  "group": "pm_plate"
+ }
+]

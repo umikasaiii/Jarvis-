@@ -1,5 +1,6 @@
 package com.simone.jarvismobile.core.chat
 
+import com.simone.jarvismobile.core.llm.ChatSeed
 import com.simone.jarvismobile.core.llm.GenerationTimedOut
 import com.simone.jarvismobile.core.llm.InferenceConfig
 import com.simone.jarvismobile.core.llm.InferenceEventLog
@@ -55,7 +56,7 @@ class ChatTurnRunnerTest {
     private class FakeEng : NativeEngine {
         val sent = CopyOnWriteArrayList<String>()
         @Volatile var started = CountDownLatch(1)
-        override fun open(systemPrompt: String?): NativeConversation = FakeConv(this)
+        override fun open(systemPrompt: String?, seed: ChatSeed): NativeConversation = FakeConv(this)
         override fun close() {}
     }
 

@@ -9,6 +9,9 @@ import com.google.ai.edge.litertlm.Conversation
 import com.google.ai.edge.litertlm.ConversationConfig
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
+import com.google.ai.edge.litertlm.Message
+import com.google.ai.edge.litertlm.SamplerConfig
+import com.simone.jarvismobile.core.llm.ChatSeed
 import com.simone.jarvismobile.core.llm.GenerationTimedOut
 import com.simone.jarvismobile.core.llm.InferenceEvent
 import com.simone.jarvismobile.core.llm.InferenceEventLog
@@ -219,6 +222,9 @@ class LitertLmEngine @Inject constructor(
     override suspend fun chatStateless(userText: String, systemPrompt: String, timeoutSeconds: Long): String? =
         runOnSlot { it.once(userText, systemPrompt, timeoutSeconds * 1000L, "stateless") }
 
+    override suspend fun chatSeeded(userText: String, systemPrompt: String, seed: ChatSeed, timeoutSeconds: Long): String? =
+        runOnSlot { it.chat(userText, systemPrompt, timeoutSeconds * 1000L, seed) }
+
     override fun resetConversation() {
         // Safe at any time: if a generation is running the slot defers the native close until it returned.
         slot?.reset("api")
@@ -244,11 +250,25 @@ class LitertLmEngine @Inject constructor(
 
     /** Maps the LiteRT-LM classes onto the tiny contract [InferenceSlot] works with. */
     private class LiteRtNativeEngine(private val engine: Engine) : NativeEngine {
-        override fun open(systemPrompt: String?): NativeConversation {
+        override fun open(systemPrompt: String?, seed: ChatSeed): NativeConversation {
+            val history = seed.normalized()
             val conv = if (systemPrompt == null) {
                 engine.createConversation()
             } else {
-                engine.createConversation(ConversationConfig(systemInstruction = Contents.of(systemPrompt)))
+                // Documented API (LiteRT-LM Kotlin v0.14.0): ConversationConfig(systemInstruction, initialMessages,
+                // samplerConfig). Earlier turns are real user/model messages; sampling is applied only when given.
+                val sampler = seed.sampling?.let { SamplerConfig(topK = it.topK, topP = it.topP, temperature = it.temperature) }
+                val initial = history.map { if (it.fromUser) Message.user(it.text) else Message.model(it.text) }
+                when {
+                    sampler != null && initial.isNotEmpty() ->
+                        engine.createConversation(ConversationConfig(systemInstruction = Contents.of(systemPrompt), initialMessages = initial, samplerConfig = sampler))
+                    sampler != null ->
+                        engine.createConversation(ConversationConfig(systemInstruction = Contents.of(systemPrompt), samplerConfig = sampler))
+                    initial.isNotEmpty() ->
+                        engine.createConversation(ConversationConfig(systemInstruction = Contents.of(systemPrompt), initialMessages = initial))
+                    else ->
+                        engine.createConversation(ConversationConfig(systemInstruction = Contents.of(systemPrompt)))
+                }
             }
             return LiteRtNativeConversation(conv)
         }

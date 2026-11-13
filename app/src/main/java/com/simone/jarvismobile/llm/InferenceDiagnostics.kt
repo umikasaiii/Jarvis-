@@ -43,6 +43,10 @@ class InferenceDiagnostics @Inject constructor(
     val log = InferenceEventLog(capacity = 400) { e -> persist(e) }
     private val started = AtomicInteger(0)
 
+    /** Per-generation METADATA (sizes, counts, flags, timings) — never text. Persisted to its own bounded file. */
+    private val traceFile = File(context.filesDir, "diag/gen_trace.log")
+    val trace = com.simone.jarvismobile.core.quality.GenerationTraceLog(capacity = 100) { line -> persistTrace(line) }
+
     /** Records an app-level event (lifecycle, screen, process) on the same trail as the engine events. */
     fun event(type: InferenceEventType, tag: String = "", n1: Long = -1, n2: Long = -1) {
         log.record(
@@ -142,6 +146,8 @@ class InferenceDiagnostics @Inject constructor(
         append("JARVIS LLM diagnostics (nessun contenuto di conversazione)\n")
         append("uptime=").append(SystemClock.elapsedRealtime() / 1000).append("s sdk=").append(Build.VERSION.SDK_INT).append('\n')
         append(log.render(limit))
+        append("\n\n# Generazioni recenti (solo metadati; token generati e motivo di arresto: UNAVAILABLE)\n")
+        append(trace.render(20))
     }
 
     private fun persist(e: InferenceEvent) {
@@ -151,6 +157,20 @@ class InferenceDiagnostics @Inject constructor(
             runCatching {
                 file.parentFile?.mkdirs()
                 file.appendText(line + "\n")
+            }
+        }
+    }
+
+    private fun persistTrace(line: String) {
+        Log.i(TAG, line)
+        writer.execute {
+            runCatching {
+                traceFile.parentFile?.mkdirs()
+                traceFile.appendText(line + "\n")
+                if (traceFile.length() > MAX_FILE_BYTES) {
+                    val keep = traceFile.readLines().takeLast(KEEP_LINES)
+                    traceFile.writeText(keep.joinToString("\n") + "\n")
+                }
             }
         }
     }

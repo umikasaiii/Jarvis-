@@ -113,15 +113,16 @@ class LlmRouter @Inject constructor(
         return chat(userText, systemPrompt, slot, timeoutSeconds)
     }
 
-    /** Chats with an already resolved [slot]. */
+    /** Chats with an already resolved [slot]. [seed] only matters when a NEW conversation has to be opened. */
     suspend fun chat(
         userText: String,
         systemPrompt: String,
         slot: ModelSlot,
         timeoutSeconds: Long = DEFAULT_GENERATION_TIMEOUT_SECONDS,
+        seed: com.simone.jarvismobile.core.llm.ChatSeed = com.simone.jarvismobile.core.llm.ChatSeed.NONE,
     ): String? {
         Log.i(TAG, "chat_slot=$slot")
-        return engineFor(slot).chat(userText, systemPrompt, timeoutSeconds)
+        return engineFor(slot).chatSeeded(userText, systemPrompt, seed, timeoutSeconds)
     }
 
     /** § FASE 2A.6 §9 — one stateless turn on [slot]; see [LlmEngine.chatStateless]. */

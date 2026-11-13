@@ -65,6 +65,18 @@ interface LlmEngine {
      */
     suspend fun chat(userText: String, systemPrompt: String, timeoutSeconds: Long = DEFAULT_GENERATION_TIMEOUT_SECONDS): String?
 
+    /**
+     * HOTFIX 5 — like [chat], but a NEW conversation also starts from [seed]: earlier turns as real user/model
+     * messages (instead of text pasted into the system instruction) and sampling parameters. Ignored when a live
+     * conversation already exists. Engines that cannot honour a seed fall back to plain [chat].
+     */
+    suspend fun chatSeeded(
+        userText: String,
+        systemPrompt: String,
+        seed: com.simone.jarvismobile.core.llm.ChatSeed,
+        timeoutSeconds: Long = DEFAULT_GENERATION_TIMEOUT_SECONDS,
+    ): String? = chat(userText, systemPrompt, timeoutSeconds)
+
     /** Drops the multi-turn history and starts a fresh conversation next [chat]. */
     fun resetConversation()
 

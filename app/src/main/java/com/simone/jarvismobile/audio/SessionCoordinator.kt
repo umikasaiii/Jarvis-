@@ -38,6 +38,20 @@ import com.simone.jarvismobile.core.llm.ModelRuntimeState
 import com.simone.jarvismobile.core.memory.StoredFactQuestion
 import com.simone.jarvismobile.llm.LlmRouter
 import com.simone.jarvismobile.llm.ModelSlot
+import com.simone.jarvismobile.core.llm.ChatSeed
+import com.simone.jarvismobile.core.llm.SamplingProfiles
+import com.simone.jarvismobile.core.llm.SeedTurn
+import com.simone.jarvismobile.core.quality.AnswerQuality
+import com.simone.jarvismobile.core.quality.ClassicPromptComposer
+import com.simone.jarvismobile.core.quality.ContextBudget
+import com.simone.jarvismobile.core.quality.ConversationTokenLedger
+import com.simone.jarvismobile.core.quality.DebugTextProbe
+import com.simone.jarvismobile.core.quality.GenerationTrace
+import com.simone.jarvismobile.core.quality.PromptBudgeter
+import com.simone.jarvismobile.core.quality.PromptParts
+import com.simone.jarvismobile.core.quality.Termination
+import com.simone.jarvismobile.core.quality.TokenEstimator
+import com.simone.jarvismobile.core.quality.ValidatedGeneration
 import com.simone.jarvismobile.knowledge.KnowledgeRepository
 import com.simone.jarvismobile.core.knowledge.Evidence
 import com.simone.jarvismobile.memory.MemoryIndex
@@ -132,6 +146,7 @@ class SessionCoordinator @Inject constructor(
     private val agenda: com.simone.jarvismobile.agenda.AgendaRepository,
     private val automations: AutomationRepository,
     private val conversationMemory: ConversationMemoryStore,
+    private val inferenceDiagnostics: com.simone.jarvismobile.llm.InferenceDiagnostics,
     private val liveTranslator: LiveTranslatorManager,
     private val liveTranslatorRepo: LiveTranslatorRepository,
     private val documents: com.simone.jarvismobile.document.DocumentImportManager,
@@ -257,6 +272,12 @@ class SessionCoordinator @Inject constructor(
      * throws away everything said so far. Rebuilt only by [newConversation].
      */
     private val activeSystems = mutableMapOf<ModelSlot, String>()
+
+    // HOTFIX 5: explicit context budget + running usage of each live native conversation, and the ledger turn the
+    // current typed generation belongs to (for diagnostics only).
+    private val promptBudget = ContextBudget()
+    private val tokenLedgers = mutableMapOf<ModelSlot, ConversationTokenLedger>()
+    @Volatile private var currentTurnSeq: Long = -1L
     private val activeEpochs = mutableMapOf<ModelSlot, Long>()
 
     /** Note chunks already given to each model in this conversation. */
@@ -1480,6 +1501,22 @@ class SessionCoordinator @Inject constructor(
             activeSystems.remove(slot)
             activeEpochs.remove(slot)
             injectedContexts.remove(slot)
+            tokenLedgers.remove(slot)
+        }
+
+        // HOTFIX 5: the live native conversation grows with every turn. Before the next turn would eat into the
+        // reply reserve of the 4096-token window, start a fresh conversation reseeded from a compact history
+        // instead of letting the engine hit an overflow whose behaviour the API does not document.
+        var rotated = false
+        if (activeSystems.containsKey(slot) &&
+            tokenLedgers[slot]?.needsRotation(TokenEstimator.message(transcript) + EVIDENCE_TOKEN_ALLOWANCE) == true
+        ) {
+            router.resetConversation(slot)
+            activeSystems.remove(slot)
+            activeEpochs.remove(slot)
+            injectedContexts.remove(slot)
+            tokenLedgers.remove(slot)
+            rotated = true
         }
 
         // A persistent Conversation belongs to exactly one model. If routing
@@ -1491,6 +1528,7 @@ class SessionCoordinator @Inject constructor(
             activeSystems.remove(slot)
             activeEpochs.remove(slot)
             injectedContexts.remove(slot)
+            tokenLedgers.remove(slot)
         }
         val injectedContext = injectedContexts.getOrPut(slot) { LinkedHashSet() }
 
@@ -1562,44 +1600,150 @@ class SessionCoordinator @Inject constructor(
             "memoria: ${retrieved.size} frammenti · $brain"
         }
         lastConversationSlot = slot
-        val firstReply = try {
-            router.chat(message, system, slot)
+
+        // HOTFIX 5 — earlier turns reach a NEW native conversation as real user/model messages (budgeted, newest
+        // kept whole), not as a transcript pasted into the system block. A live conversation ignores the seed.
+        val history = chatHistoryForSeed()
+        val plan = PromptBudgeter.plan(system, emptyList(), history, message, promptBudget)
+        val seed = ChatSeed(plan.history, SamplingProfiles.CONSERVATIVE)
+        if (tokenLedgers[slot] == null) {
+            tokenLedgers[slot] = ConversationTokenLedger(promptBudget).also { it.start(plan.estSystem + plan.estHistory) }
+        }
+
+        val provenance = when {
+            conversationHint.isNotBlank() -> AnswerQuality.Provenance.TOOL
+            evidence != null || docEvidence != null -> AnswerQuality.Provenance.SOURCE
+            else -> AnswerQuality.Provenance.MODEL_GENERAL
+        }
+        val sourceText = listOfNotNull(evidence, docEvidence).joinToString("\n").ifBlank { null }
+        val (earlierQuestions, earlierAnswers) = earlierExchanges()
+
+        val startedAt = System.currentTimeMillis()
+        var termination = Termination.COMPLETED
+        var retried = false
+        var attempts = 0
+        var lastSystemChars = system.length
+        val outcome = try {
+            ValidatedGeneration.run(
+                question = transcript,
+                earlierAnswers = earlierAnswers,
+                earlierQuestions = earlierQuestions,
+                evidence = sourceText,
+                provenance = provenance,
+                clean = AssistantReplyCleaner::clean,
+            ) { retry, firstFlags ->
+                attempts++
+                if (!retry) {
+                    router.chat(message, system, slot, seed = seed)
+                } else {
+                    // Bounded retry on a FRESH conversation (the old "riprovo con conversazione nuova" path, now also
+                    // used for incomplete / echoed answers). If the first answer echoed an earlier turn, the history is
+                    // the suspect: restart WITHOUT it rather than replaying it.
+                    retried = true
+                    Log.w(TAG, "llm_chat_retrying_fresh")
+                    _diagnostic.value = "riprovo con conversazione nuova"
+                    router.resetConversation(slot)
+                    activeSystems.remove(slot)
+                    activeEpochs.remove(slot)
+                    injectedContexts.remove(slot)
+                    tokenLedgers.remove(slot)
+                    injectedContexts[slot] = LinkedHashSet<String>().also { it += notes }
+                    val retrySystem = buildSystem(notes).also {
+                        activeSystems[slot] = it
+                        activeEpochs[slot] = router.conversationEpoch(slot)
+                    }
+                    lastSystemChars = retrySystem.length
+                    val retrySeed = if (AnswerQuality.Flag.ECHO_OF_EARLIER_ANSWER in firstFlags) {
+                        ChatSeed(emptyList(), SamplingProfiles.CONSERVATIVE)
+                    } else {
+                        seed
+                    }
+                    tokenLedgers[slot] = ConversationTokenLedger(promptBudget).also {
+                        it.start(TokenEstimator.message(retrySystem) + retrySeed.normalized().sumOf { t -> TokenEstimator.message(t.text) })
+                    }
+                    router.chat(message, retrySystem, slot, seed = retrySeed)
+                }
+            }
         } catch (e: CancellationException) {
+            recordTrace(Termination.CANCELLED, transcript, system.length, message, evidence, plan, slot, rotated, startedAt, 0, 0, emptySet(), retried, provenance, false)
             throw e
         } catch (_: LlmGenerationTimeoutException) {
             _diagnostic.value = "risposta fermata: tempo massimo"
+            recordTrace(Termination.TIMEOUT, transcript, system.length, message, evidence, plan, slot, rotated, startedAt, 0, 0, emptySet(), retried, provenance, false)
             return TIMEOUT_REPLY
         }
-        firstReply?.let(AssistantReplyCleaner::clean)?.ifBlank { null }?.let { return it }
 
-        // Generation failed. The usual cause is an exhausted/corrupted KV cache
-        // after a long chat, which a fresh conversation clears — so retry once
-        // (losing the in-session history, not the vault memory) before giving up.
-        Log.w(TAG, "llm_chat_null_retrying_fresh")
-        _diagnostic.value = "riprovo con conversazione nuova"
-        router.resetConversation(slot)
-        activeSystems.remove(slot)
-        activeEpochs.remove(slot)
-        injectedContexts.remove(slot)
-        val retryContext = LinkedHashSet<String>().also { it += notes }
-        injectedContexts[slot] = retryContext
-        val retrySystem = buildSystem(notes).also {
-            activeSystems[slot] = it
-            activeEpochs[slot] = router.conversationEpoch(slot)
+        val text = outcome.text
+        if (text == null) termination = Termination.NO_OUTPUT
+        recordTrace(
+            termination, transcript, lastSystemChars, message, evidence, plan, slot, rotated, startedAt,
+            outcome.rawChars, outcome.cleanChars, outcome.assessment.flags, outcome.retried, provenance,
+            text != null && (text.contains(AnswerQuality.NOTE_UNVERIFIED) || text.contains(AnswerQuality.NOTE_NOT_IN_SOURCES)),
+        )
+        DebugTextProbe.capture(
+            System.currentTimeMillis(),
+            DebugTextProbe.Capture(currentTurnSeq, system, message, outcome.lastRaw.orEmpty(), text.orEmpty()),
+        )
+        if (text != null) {
+            tokenLedgers[slot]?.record(TokenEstimator.message(message), TokenEstimator.message(text))
+            return text
         }
-        val retryReply = try {
-            router.chat(message, retrySystem, slot)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: LlmGenerationTimeoutException) {
-            _diagnostic.value = "risposta fermata: tempo massimo"
-            return TIMEOUT_REPLY
-        }
-        retryReply?.let(AssistantReplyCleaner::clean)?.ifBlank { null }?.let { return it }
 
+        // Nothing usable. Never fabricate a better-looking answer: say what happened.
         if (llm.loadState.value != LlmLoadState.LOADED) return modelUnavailableMessage()
+        if (AnswerQuality.Flag.ECHO_OF_EARLIER_ANSWER in outcome.firstFlags || AnswerQuality.Flag.ECHO_OF_EARLIER_ANSWER in outcome.assessment.flags) {
+            return "Non sono riuscito a dare una risposta affidabile a questa domanda. Riformulala, " +
+                "oppure scegli «Nuova conversazione» se il discorso si è confuso."
+        }
         return "Il modello non è riuscito a rispondere. Prova «Nuova conversazione», " +
             "o ricarica il modello dalla schermata Modelli."
+    }
+
+    /** Earlier turns, oldest first, with the presentation notes removed (they are not the model's own speech). */
+    private fun chatHistoryForSeed(): List<SeedTurn> =
+        _messages.value.dropLastWhile { it.fromUser }.map {
+            SeedTurn(it.fromUser, if (it.fromUser) it.text else AnswerQuality.stripPresentationNotes(it.text))
+        }
+
+    /** (question, answer) pairs for the last answered exchanges, used to recognise a reply that belongs to an earlier turn. */
+    private fun earlierExchanges(): Pair<List<String>, List<String>> {
+        val qs = ArrayList<String>(); val answers = ArrayList<String>()
+        var lastUser: String? = null
+        for (m in _messages.value) {
+            if (m.fromUser) {
+                lastUser = m.text
+            } else if (lastUser != null) {
+                qs += lastUser; answers += AnswerQuality.stripPresentationNotes(m.text); lastUser = null
+            }
+        }
+        return qs.takeLast(ECHO_WINDOW) to answers.takeLast(ECHO_WINDOW)
+    }
+
+    private fun recordTrace(
+        termination: Termination, transcript: String, systemChars: Int, message: String, evidence: String?,
+        plan: PromptParts, slot: ModelSlot, rotated: Boolean, startedAt: Long, rawChars: Int, cleanChars: Int,
+        flags: Set<AnswerQuality.Flag>, retried: Boolean, provenance: AnswerQuality.Provenance, noteAppended: Boolean,
+    ) {
+        runCatching {
+            inferenceDiagnostics.trace.record(
+                GenerationTrace(
+                    atMs = System.currentTimeMillis(), turnSeq = currentTurnSeq, engineMode = "classic", path = when (provenance) {
+                        AnswerQuality.Provenance.SOURCE -> "chat_grounded"
+                        AnswerQuality.Provenance.TOOL -> "chat_tool_grounded"
+                        else -> "chat_general"
+                    },
+                    slot = slot.name.lowercase(), conversationEpoch = router.conversationEpoch(slot),
+                    systemChars = systemChars, notesChars = 0, historyChars = plan.history.sumOf { it.text.length },
+                    evidenceChars = evidence?.length ?: 0, userChars = transcript.length,
+                    estPromptTokens = TokenEstimator.estimate(message) + plan.estSystem + plan.estHistory,
+                    windowTokens = promptBudget.windowTokens, replyReserveTokens = promptBudget.replyReserveTokens,
+                    seedTurns = plan.history.size, droppedHistoryTurns = plan.droppedHistoryTurns, droppedNotes = plan.droppedNotes,
+                    rotated = rotated, generationMs = System.currentTimeMillis() - startedAt, rawChars = rawChars, cleanChars = cleanChars,
+                    flags = if (flags.isEmpty()) "-" else flags.joinToString(",") { it.name }, retried = retried,
+                    termination = termination, presented = provenance.name, noteAppended = noteAppended,
+                ),
+            )
+        }
     }
 
     /**
@@ -1642,45 +1786,15 @@ class SessionCoordinator @Inject constructor(
         return "Vuoi che me lo ricordi$marker? Posso salvare: «${candidate.fact}»."
     }
 
-    private fun buildSystem(notes: List<String>): String = buildString {
-        append(systemPrompt.trim())
-        persona.trim().takeIf { it.isNotEmpty() }?.let {
-            append("\n\nPERSONALITÀ (adotta questo carattere in ogni risposta):\n").append(it)
-        }
-        append("\n\nTi chiami ").append(assistantName)
-        append(". Se Simone ti chiede il tuo nome, rispondi con questo.")
-
-        val now = LocalDateTime.now()
-        append("\n\nAdesso è ")
-        append(now.format(DateTimeFormatter.ofPattern("EEEE d MMMM yyyy, HH:mm", Locale.ITALIAN)))
-        append(".")
-
-        if (notes.isNotEmpty()) {
-            append("\n\nAPPUNTI DI SIMONE (usali quando sono pertinenti, senza citarli se non serve):\n")
-            notes.forEach { append("- ").append(it).append('\n') }
-        }
-
-        val summary = conversationMemory.snapshot.value
-        if (!summary.isEmpty) {
-            append("\n\nMEMORIA BREVE STRUTTURATA DELLA CONVERSAZIONE ")
-            append("(temporanea, non è nel vault):\n")
-            append(summary.forPrompt())
-            append('\n')
-        }
-
-        // The message being answered right now is sent as the user turn, so it
-        // must not also appear in the recap or the model reads it as already dealt with.
-        val history = _messages.value.dropLastWhile { it.fromUser }
-        if (history.isNotEmpty()) {
-            append("\n\nCONVERSAZIONE IN CORSO CON SIMONE (le battute precedenti, ")
-            append("continuala senza ripeterla e senza salutare di nuovo):\n")
-            history.takeLast(RECAP_MESSAGES).forEach { m ->
-                append(if (m.fromUser) "Simone: " else "Tu: ")
-                append(m.text.replace('\n', ' ').take(RECAP_CHARS))
-                append('\n')
-            }
-        }
-    }
+    private fun buildSystem(notes: List<String>): String = ClassicPromptComposer.compose(
+        base = systemPrompt,
+        persona = persona,
+        assistantName = assistantName,
+        now = LocalDateTime.now(),
+        notes = notes,
+        shortMemory = conversationMemory.snapshot.value.takeIf { !it.isEmpty }?.forPrompt().orEmpty(),
+        budget = promptBudget,
+    )
 
     /**
      * Starts a fresh conversation: the model forgets the previous chat. The
@@ -1751,6 +1865,7 @@ class SessionCoordinator @Inject constructor(
                     _transcript.value = message
                     _diagnostic.value = "chat scritta"
                 },
+                onTurn = { seq -> currentTurnSeq = seq },
                 onCommitted = { answer -> _reply.value = answer },
                 onEnd = { _sending.value = false },
             ) { m ->
@@ -2383,6 +2498,7 @@ class SessionCoordinator @Inject constructor(
         activeSystems.clear()
         activeEpochs.clear()
         injectedContexts.clear()
+        tokenLedgers.clear()
         lastConversationSlot = null
         bargeInRequested = false
         offeredFacts.clear()
@@ -2678,6 +2794,12 @@ class SessionCoordinator @Inject constructor(
 
         /** How many vault chunks to inject as grounding context per question. */
         const val MEMORY_TOP_K = 4
+
+        /** Rough allowance for retrieved evidence when deciding whether the next turn still fits the window. */
+        const val EVIDENCE_TOKEN_ALLOWANCE = 400
+
+        /** How many recent answered exchanges are compared against a new reply to detect an answer from an earlier turn. */
+        const val ECHO_WINDOW = 6
 
         /** How many past lines are recapped to the model when a chat resumes. */
         const val RECAP_MESSAGES = 16

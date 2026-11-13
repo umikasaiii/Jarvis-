@@ -47,7 +47,7 @@ class OfflineChatPipelineGuardTest {
         val c = src("audio/SessionCoordinator.kt")
         // tryRemoteChat(...)?.let { return it } — null means "not answered remotely": the local engine runs next.
         assertTrue("tryRemoteChat(message, system, needsReasoning)?.let { return it }" in c)
-        assertTrue("router.chat(message, system, slot)" in c)
+        assertTrue("router.chat(message, system, slot, seed = seed)" in c)
     }
 
     @Test fun engineSerializesLoadUnloadWithGeneration() {

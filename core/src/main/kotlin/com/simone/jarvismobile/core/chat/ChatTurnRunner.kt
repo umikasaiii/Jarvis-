@@ -33,6 +33,7 @@ class ChatTurnRunner(
         orderKey: Long,
         userText: String,
         onStart: () -> Unit = {},
+        onTurn: (Long) -> Unit = {},
         onCommitted: (String) -> Unit = {},
         onEnd: () -> Unit = {},
         generate: suspend (String) -> String,
@@ -45,6 +46,7 @@ class ChatTurnRunner(
                     return@withLock TurnResult.Discarded(reason)
                 }
                 onStart()
+                onTurn(turn.seq)
                 try {
                     sink.append(true, userText, taskId)
                     val answer = generate(userText)

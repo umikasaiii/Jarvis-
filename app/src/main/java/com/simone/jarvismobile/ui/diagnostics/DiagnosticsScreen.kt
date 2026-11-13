@@ -219,6 +219,23 @@ fun DiagnosticsScreen(
                 if (llmReport.isNotEmpty()) {
                     Text(llmReport, style = MaterialTheme.typography.bodySmall, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
                 }
+                // HOTFIX 5: temporary local text inspection (not persisted, not transmitted, expires after 10 minutes).
+                val probeText by viewModel.probeText.collectAsStateWithLifecycle()
+                Text(
+                    "Ispezione testi (solo debug): mostra prompt, memoria, risposta grezza e pulita degli ultimi turni. " +
+                        "Resta in memoria, si spegne da sola dopo 10 minuti e non viene mai salvata né inviata.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = viewModel::enableTextProbe, modifier = Modifier.weight(1f)) { Text("Attiva") }
+                    OutlinedButton(onClick = viewModel::showTextProbe, modifier = Modifier.weight(1f)) { Text("Mostra") }
+                    OutlinedButton(onClick = viewModel::clearTextProbe, modifier = Modifier.weight(1f)) { Text("Spegni") }
+                }
+                if (probeText.isNotEmpty()) {
+                    androidx.compose.foundation.text.selection.SelectionContainer {
+                        Text(probeText, style = MaterialTheme.typography.bodySmall, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+                    }
+                }
             }
         }
 

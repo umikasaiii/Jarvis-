@@ -12,6 +12,9 @@ on:
       - 'app/src/main/java/com/simone/jarvismobile/**/*Migrations.kt'
       - 'app/src/main/java/com/simone/jarvismobile/di/DatabaseModule.kt'
       - 'app/src/androidTest/**'
+      - 'app/src/main/assets/prompts/**'
+      - 'app/src/main/java/com/simone/jarvismobile/audio/SessionCoordinator.kt'
+      - 'app/src/main/java/com/simone/jarvismobile/llm/**'
       - 'app/src/main/java/com/simone/jarvismobile/archive/**'
       - 'app/src/main/java/com/simone/jarvismobile/document/**'
       - 'app/src/main/java/com/simone/jarvismobile/offlinehub/**'
@@ -48,7 +51,7 @@ jobs:
           api-level: 34
           arch: x86_64
           target: google_apis
-          script: ./gradlew --no-daemon :app:connectedDebugAndroidTest -Pjarvis.emulatorAbi=x86_64 -Pandroid.testInstrumentationRunnerArguments.class=com.simone.jarvismobile.background.JarvisMigrationInstrumentedTest,com.simone.jarvismobile.archive.NotesStoreInstrumentedTest,com.simone.jarvismobile.document.DocumentPipelineInstrumentedTest,com.simone.jarvismobile.offlinehub.OfflineHubIntentInstrumentedTest,com.simone.jarvismobile.reliability.DailyReliabilityInstrumentedTest,com.simone.jarvismobile.reliability.CrossModuleInstrumentedTest,com.simone.jarvismobile.regex.ParserInitInstrumentedTest,com.simone.jarvismobile.regex.ConversationRoutingInstrumentedTest,com.simone.jarvismobile.background.AssistantQueueRecoveryInstrumentedTest
+          script: ./gradlew --no-daemon :app:connectedDebugAndroidTest -Pjarvis.emulatorAbi=x86_64 -Pandroid.testInstrumentationRunnerArguments.class=com.simone.jarvismobile.background.JarvisMigrationInstrumentedTest,com.simone.jarvismobile.archive.NotesStoreInstrumentedTest,com.simone.jarvismobile.document.DocumentPipelineInstrumentedTest,com.simone.jarvismobile.offlinehub.OfflineHubIntentInstrumentedTest,com.simone.jarvismobile.reliability.DailyReliabilityInstrumentedTest,com.simone.jarvismobile.reliability.CrossModuleInstrumentedTest,com.simone.jarvismobile.regex.ParserInitInstrumentedTest,com.simone.jarvismobile.regex.ConversationRoutingInstrumentedTest,com.simone.jarvismobile.background.AssistantQueueRecoveryInstrumentedTest,com.simone.jarvismobile.quality.QualityAssetInstrumentedTest
       - name: Test results summary (failures with their messages)
         if: always()
         run: |

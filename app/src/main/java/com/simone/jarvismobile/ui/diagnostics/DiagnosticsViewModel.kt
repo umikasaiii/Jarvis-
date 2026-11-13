@@ -95,6 +95,33 @@ class DiagnosticsViewModel @Inject constructor(
         _llmReport.value = llmDiagnostics.report()
     }
 
+    // HOTFIX 5 — TEMPORARY, EXPLICIT, LOCAL text inspection (prompts / raw / cleaned output of the last turns).
+    // Off by default, expires on its own, held in memory only (never written to disk, never transmitted).
+    private val _probeText = MutableStateFlow("")
+    val probeText: StateFlow<String> = _probeText.asStateFlow()
+
+    fun enableTextProbe() {
+        com.simone.jarvismobile.core.quality.DebugTextProbe.enable(System.currentTimeMillis())
+        _probeText.value = "Ispezione testi ATTIVA per 10 minuti (solo in memoria). Fai una domanda e poi premi «Mostra»."
+    }
+
+    fun showTextProbe() {
+        val now = System.currentTimeMillis()
+        val items = com.simone.jarvismobile.core.quality.DebugTextProbe.snapshot(now)
+        _probeText.value = if (items.isEmpty()) {
+            "Nessuna cattura (ispezione spenta, scaduta o nessuna domanda dopo l'attivazione)."
+        } else {
+            items.joinToString("\n\n") {
+                "— turno ${it.turnSeq}\nSYSTEM: ${it.system}\nUTENTE (con contesto): ${it.userMessage}\nGREZZO: ${it.raw}\nPULITO/PRESENTATO: ${it.cleaned}"
+            }
+        }
+    }
+
+    fun clearTextProbe() {
+        com.simone.jarvismobile.core.quality.DebugTextProbe.disable()
+        _probeText.value = "Ispezione spenta e testi cancellati."
+    }
+
     /**
      * § JARVIS Implementation Master Plan — MICRO-PATCH E.1 §7/§8. Whatever
      * [StartupDiagnostics] recorded about the PREVIOUS process's startup —

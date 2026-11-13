@@ -68,16 +68,16 @@ class InferenceSlot(
     // ---- public API ------------------------------------------------------------------------------------
 
     /** Multi-turn chat on the persistent conversation (seeded with [systemPrompt] on first use). */
-    suspend fun chat(userText: String, systemPrompt: String, timeoutMs: Long): String? =
+    suspend fun chat(userText: String, systemPrompt: String, timeoutMs: Long, seed: ChatSeed = ChatSeed.NONE): String? =
         gated(config.chatLockWaitMs, "chat") {
-            val first = turnOnPersistent(userText, systemPrompt, timeoutMs)
+            val first = turnOnPersistent(userText, systemPrompt, timeoutMs, seed)
             val verdict = first?.let { DegenerateOutput.analyze(it) } ?: DegenerateOutput.Verdict.OK
             if (!verdict.degenerate) return@gated first
             noteDegenerate("chat", verdict)
             discardConversation("degenerate")
             if (!config.retryDegenerateChat) return@gated null
             record(InferenceEventType.DEGENERATE_RETRY)
-            val second = turnOnPersistent(userText, systemPrompt, timeoutMs)
+            val second = turnOnPersistent(userText, systemPrompt, timeoutMs, seed)
             val v2 = second?.let { DegenerateOutput.analyze(it) } ?: DegenerateOutput.Verdict.OK
             if (v2.degenerate) {
                 noteDegenerate("chat_retry", v2)
@@ -189,13 +189,13 @@ class InferenceSlot(
         }
     }
 
-    private suspend fun turnOnPersistent(userText: String, systemPrompt: String, timeoutMs: Long): String? {
+    private suspend fun turnOnPersistent(userText: String, systemPrompt: String, timeoutMs: Long, seed: ChatSeed): String? {
         val start = now()
         record(InferenceEventType.CHAT_START, n1 = conversationTurns.toLong(), tag = conversationOrigin)
         var conv = conversation
         if (conv == null) {
             try {
-                conv = engine.open(systemPrompt)
+                conv = engine.open(systemPrompt, seed)
             } catch (t: Throwable) {
                 record(InferenceEventType.FAILED, tag = "open_" + t.javaClass.simpleName)
                 return null

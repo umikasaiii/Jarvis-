@@ -7377,3 +7377,15 @@ Aggiunta datata: **non modifica né sostituisce** §65.1–§65.9; la numerazion
   corsia (`sessionMutex`) e lo stesso `LlmRouter`/`InferenceSlot`; nessun secondo scheduler/coda/motore. Il percorso vocale non è cambiato.
 - **Stato:** CI VERIFIED a run completata; **non DEVICE VERIFIED**. Ipotesi aperta: sensibilità del modello 1B al recap in prompt. Dettaglio e prove:
   `docs/BETA_STEP08_HOTFIX4_ANSWER_CONTEXT.md`.
+
+## 65.11 ADDENDUM 2026-11-13 — BETA HOTFIX 5 — Quality Engine
+
+Aggiunta datata: **non modifica né sostituisce** §65.1–§65.10; i 30 macro-step e la loro numerazione sono invariati. A0–A4 **non sono avviate**.
+
+- **Evidenza (Honor 200, Beta `03086e9`, Motore Classico):** risposte incomplete, definizioni imprecise, numeri errati presentati con sicurezza, saluti ripetitivi, qualità variabile.
+- **Cause trovate nel codice (Classico):** prompt di sistema grande e contraddittorio per un modello da 1B; cronologia incollata come testo nel blocco di sistema (formato che induce continuazione del dialogo) senza budget; nessun controllo
+  della finestra da 4096 token; nessuna validazione né provenienza dei numeri; nessuna traccia di generazione; campionamento non impostato. Il Motore Conversazionale non è coinvolto e non è stato modificato.
+- **Ownership (nessun nuovo orchestratore):** un'unica fase post-generazione condivisa e testata su JVM (`core/quality`: `AnswerQuality`, `ValidatedGeneration`, `PromptBudgeter`, `ClassicPromptComposer`, `GenerationTrace`), chiamata da `SessionCoordinator.chatReply`; stessa corsia,
+  stesso `LlmRouter`/`InferenceSlot`, stesso `KnowledgeRepository`. Cronologia al motore come turni reali (`initialMessages`), campionamento via `SamplerConfig` (API documentata v0.14.0).
+- **Grounding:** nessuna conoscenza hardcoded e nessun router per parole chiave: decisioni basate sull'evidenza recuperata e sulla forma dell'output. Dipendenza dichiarata e non operativa: contenuti di conoscenza offline indicizzabili (i Kiwix ZIM non sono interrogabili direttamente).
+- **Stato:** CI VERIFIED a run completata; **non DEVICE VERIFIED**; nessuna misura di qualità del modello reale eseguita. Dettaglio, misure (solo prompt) e prove Honor 200: `docs/BETA_STEP08_HOTFIX5_QUALITY_ENGINE.md`.
