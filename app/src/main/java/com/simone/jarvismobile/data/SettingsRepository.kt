@@ -59,6 +59,7 @@ class SettingsRepository @Inject constructor(
         val MAPS_PROVIDER = stringPreferencesKey("hub_maps_provider")
         val ZIM_TREE_URI = stringPreferencesKey("hub_zim_tree_uri")
         val ZIM_DOC_URIS = stringPreferencesKey("hub_zim_doc_uris")
+        val ZIM_VERIFIED = stringPreferencesKey("knowledge_zim_verified")
         val KIWIX_PREFERRED = stringPreferencesKey("hub_kiwix_preferred_pkg")
         val OM_PREFERRED = stringPreferencesKey("hub_organic_preferred_pkg")
         val EMBEDDING_MODEL_PATH = stringPreferencesKey("embedding_model_path")
@@ -238,6 +239,18 @@ class SettingsRepository @Inject constructor(
     val hubZimTreeUri: Flow<String> = context.settingsDataStore.data.map { it[Keys.ZIM_TREE_URI] ?: "" }
     suspend fun setHubZimTreeUri(value: String) {
         context.settingsDataStore.edit { if (value.isBlank()) it.remove(Keys.ZIM_TREE_URI) else it[Keys.ZIM_TREE_URI] = value }
+    }
+
+    /**
+     * Archives whose DIRECT reading was verified on this device (open + a real article decompressed through the native
+     * library), stored as `uri|sizeBytes`. Only these feed the answer path; a changed size invalidates the entry.
+     */
+    val zimVerified: Flow<Set<String>> =
+        context.settingsDataStore.data.map { (it[Keys.ZIM_VERIFIED] ?: "").split('\u001F').filter { u -> u.isNotBlank() }.toSet() }
+    suspend fun setZimVerified(value: Set<String>) {
+        context.settingsDataStore.edit {
+            if (value.isEmpty()) it.remove(Keys.ZIM_VERIFIED) else it[Keys.ZIM_VERIFIED] = value.joinToString("\u001F")
+        }
     }
 
     /** SAF document URIs of individually selected ZIM files. */

@@ -38,7 +38,44 @@ class OfflineHubViewModel @Inject constructor(
     private val zim: ZimLibrary,
     private val settings: SettingsRepository,
     private val knowledge: KnowledgeRepository,
+    private val zimKnowledge: com.simone.jarvismobile.knowledge.zim.ZimKnowledge,
 ) : ViewModel() {
+
+    // KNOWLEDGE ENGINE — on-device verification of DIRECT ZIM reading, per archive, and a probe search.
+    private val _zimReports = MutableStateFlow<Map<String, com.simone.jarvismobile.knowledge.zim.ZimKnowledge.Report>>(emptyMap())
+    val zimReports: StateFlow<Map<String, com.simone.jarvismobile.knowledge.zim.ZimKnowledge.Report>> = _zimReports.asStateFlow()
+    private val _verifiedUris = MutableStateFlow<Set<String>>(emptySet())
+    val verifiedUris: StateFlow<Set<String>> = _verifiedUris.asStateFlow()
+    private val _probe = MutableStateFlow("")
+    val probe: StateFlow<String> = _probe.asStateFlow()
+    private val _verifying = MutableStateFlow<String?>(null)
+    val verifying: StateFlow<String?> = _verifying.asStateFlow()
+
+    fun verifyZim(e: ZimEntry) = viewModelScope.launch {
+        _verifying.value = e.uri
+        val r = zimKnowledge.verify(e.uri)
+        _zimReports.value = _zimReports.value + (e.uri to r)
+        _verifying.value = null
+        refreshVerified()
+    }
+
+    fun probeSearch(question: String) = viewModelScope.launch {
+        _probe.value = "Cerco…"
+        val t0 = System.currentTimeMillis()
+        val ev = runCatching { knowledge.gather(question, 3) }.getOrNull()
+        val ms = System.currentTimeMillis() - t0
+        _probe.value = when (ev) {
+            is com.simone.jarvismobile.core.knowledge.Evidence.Grounded ->
+                "Evidenza (${ev.strength.name.lowercase()}${if (ev.conflict) ", fonti discordanti" else ""}) in $ms ms:\n" +
+                    ev.passages.joinToString("\n") { "• " + it.chunk.reference + (if (it.chunk.section.isNotBlank()) ", " + it.chunk.section else "") + ": " + it.chunk.text.replace('\n', ' ').take(180) } +
+                    (if (ev.uncovered.isNotEmpty()) "\nNessuna fonte per: " + ev.uncovered.joinToString(", ") else "")
+            else -> "Nessuna evidenza adeguata nelle fonti verificate ($ms ms): JARVIS dichiarerebbe che il dato non è verificabile offline."
+        }
+    }
+
+    private suspend fun refreshVerified() {
+        _verifiedUris.value = settings.zimVerified.first().map { it.substringBeforeLast('|') }.toSet()
+    }
 
     private val _kiwix = MutableStateFlow(AppStatus())
     val kiwix: StateFlow<AppStatus> = _kiwix.asStateFlow()
@@ -66,6 +103,7 @@ class OfflineHubViewModel @Inject constructor(
             _folderName.value = zim.folderName()
             _zims.value = runCatching { zim.entries() }.getOrDefault(emptyList())
             _knowledgeName.value = runCatching { knowledge.libraryName() }.getOrNull()
+            refreshVerified()
         }
     }
 
@@ -82,7 +120,7 @@ class OfflineHubViewModel @Inject constructor(
 
     fun addZimFolder(uri: Uri) = viewModelScope.launch { zim.addFolder(uri); refresh(); _message.value = "Cartella collegata in sola lettura. " + com.simone.jarvismobile.core.offlinehub.ZimPolicy.NO_COPY }
     fun addZimFile(uri: Uri) = viewModelScope.launch { zim.addFile(uri); refresh(); _message.value = "Archivio aggiunto. " + com.simone.jarvismobile.core.offlinehub.ZimPolicy.NO_COPY }
-    fun removeZim(e: ZimEntry) = viewModelScope.launch { zim.removeFile(e.uri); refresh() }
+    fun removeZim(e: ZimEntry) = viewModelScope.launch { zimKnowledge.forget(e.uri); zim.removeFile(e.uri); refresh() }
     fun removeZimFolder() = viewModelScope.launch { zim.removeFolder(); refresh() }
 
     fun setKnowledgeFolder(uri: Uri) = viewModelScope.launch { knowledge.setLibrary(uri); refresh() }

@@ -216,6 +216,9 @@ dependencies {
 
     // On-device LLM (Phase 3, LiteRT-LM) + SAF document access for model import.
     implementation(libs.litertlm.android)
+    // Direct ZIM reading: decompression only (the reader itself is pure Kotlin in :core).
+    implementation("com.github.luben:zstd-jni:${libs.versions.zstdJni.get()}@aar")
+    implementation(libs.xz)
     implementation(libs.androidx.documentfile)
     implementation(libs.onnxruntime.android)
     // § FASE 2A.11 — base LiteRT (TensorFlow Lite) Interpreter runtime for

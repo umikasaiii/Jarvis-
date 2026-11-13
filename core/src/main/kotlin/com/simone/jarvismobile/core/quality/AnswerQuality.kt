@@ -104,10 +104,16 @@ object AnswerQuality {
 
     /** The note lines are presentation only: they must never be replayed to the model as its own speech. */
     fun stripPresentationNotes(text: String): String =
-        text.lineSequence().filterNot { it.trim() == NOTE_UNVERIFIED || it.trim() == NOTE_NOT_IN_SOURCES }
-            .joinToString("\n").trimEnd()
+        text.lineSequence().filterNot {
+            val l = it.trim()
+            l == NOTE_UNVERIFIED || l == NOTE_NOT_IN_SOURCES || l.startsWith(NOTE_NO_SOURCE_FOR) || l.startsWith(FOOTER_PREFIX)
+        }.joinToString("\n").trimEnd()
 
     const val NOTE_UNVERIFIED = "Nota: non ho trovato fonti offline per verificare questo dato; viene dalla memoria del modello."
+    /** "Non ho trovato fonti per: X." — the question named something no retrieved source covers. */
+    const val NOTE_NO_SOURCE_FOR = "Non ho trovato fonti per: "
+    /** Line added by [com.simone.jarvismobile.core.knowledge.SourceFooter]. */
+    const val FOOTER_PREFIX = "Fonte: "
     const val NOTE_NOT_IN_SOURCES = "Nota: alcuni valori non compaiono nelle fonti consultate."
 
     // ---- completeness ---------------------------------------------------------------------------------

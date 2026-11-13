@@ -59,6 +59,11 @@ fun OfflineLibraryScreen(
 ) {
     val kiwix by viewModel.kiwix.collectAsStateWithLifecycle()
     val zims by viewModel.zims.collectAsStateWithLifecycle()
+    val verifiedUris by viewModel.verifiedUris.collectAsStateWithLifecycle()
+    val zimReports by viewModel.zimReports.collectAsStateWithLifecycle()
+    val verifying by viewModel.verifying.collectAsStateWithLifecycle()
+    val probe by viewModel.probe.collectAsStateWithLifecycle()
+    var probeQuery by remember { mutableStateOf("") }
     val folder by viewModel.folderName.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
     val kStatus by viewModel.knowledgeStatus.collectAsStateWithLifecycle()
@@ -135,7 +140,26 @@ fun OfflineLibraryScreen(
                             style = MaterialTheme.typography.bodySmall,
                             color = if (z.access == ZimAccess.READABLE) Good else Warn,
                         )
-                        Text("Consultabile in Kiwix · non interrogabile dall'AI", style = MaterialTheme.typography.labelSmall)
+                        val verified = z.uri in verifiedUris
+                        val report = zimReports[z.uri]
+                        Text(
+                            if (verified) "Lettura diretta VERIFICATA su questo telefono: JARVIS può cercare per titolo e citare l'articolo."
+                            else "Consultabile in Kiwix · non ancora interrogabile dall'AI (premi «Verifica lettura»)",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (verified) Good else Warn,
+                        )
+                        report?.let {
+                            Text(
+                                if (it.ok) "«${it.title}» · ${it.date} · ${it.language} · ${it.entries} voci" else it.detail,
+                                style = MaterialTheme.typography.bodySmall, color = if (it.ok) Good else Warn,
+                            )
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(
+                                onClick = { viewModel.verifyZim(z) },
+                                enabled = z.access == ZimAccess.READABLE && verifying == null,
+                            ) { Text(if (verifying == z.uri) "Verifico…" else "Verifica lettura") }
+                        }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             OutlinedButton(onClick = { viewModel.openZim(z) }, enabled = kiwix.isInstalled && z.access == ZimAccess.READABLE) { Text("Apri in Kiwix") }
                             TextButton(onClick = { viewModel.removeZim(z) }) { Text("Rimuovi") }
@@ -143,6 +167,17 @@ fun OfflineLibraryScreen(
                     }
                 }
                 Text("«Accessibile» significa solo che JARVIS vede il file e l'intestazione ZIM è valida: non garantisce che Kiwix riesca ad aprirlo.", style = MaterialTheme.typography.bodySmall)
+            }
+        }
+
+        // --- Probe search over the verified archives ------------------------------
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Prova ricerca nelle fonti verificate", fontWeight = FontWeight.SemiBold)
+                Text("Cerca per titolo negli archivi ZIM verificati e nella biblioteca testuale, con lo stesso controllo di pertinenza della chat. Nessun modello coinvolto.", style = MaterialTheme.typography.bodySmall)
+                OutlinedTextField(value = probeQuery, onValueChange = { probeQuery = it }, modifier = Modifier.fillMaxWidth(), singleLine = true, label = { Text("Domanda di prova") })
+                OutlinedButton(onClick = { viewModel.probeSearch(probeQuery) }, enabled = probeQuery.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text("Cerca") }
+                if (probe.isNotEmpty()) Text(probe, style = MaterialTheme.typography.bodySmall)
             }
         }
 

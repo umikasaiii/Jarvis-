@@ -38,6 +38,7 @@ import javax.inject.Singleton
 class KnowledgeRepository @Inject constructor(
     @ApplicationContext private val context: Context,
     private val settings: SettingsRepository,
+    private val zim: com.simone.jarvismobile.knowledge.zim.ZimKnowledge,
 ) {
     /** Observable state of the library, for the UI. */
     data class Status(
@@ -56,6 +57,22 @@ class KnowledgeRepository @Inject constructor(
     private val mutex = Mutex()
 
     suspend fun isConfigured(): Boolean = settings.knowledgeUri.first().isNotBlank()
+
+    /** Something to search: a text library folder and/or at least one ZIM archive verified on this device. */
+    suspend fun isAvailable(): Boolean = isConfigured() || zim.hasVerified()
+
+    private val assembler = com.simone.jarvismobile.core.knowledge.EvidenceAssembler()
+
+    /**
+     * KNOWLEDGE ENGINE — the one retrieval entry point for general knowledge: ZIM archives (articles whose TITLE the question
+     * names, read on demand) and the text library, merged and judged by the SAME [EvidenceAssembler] gate. Personal memory
+     * and the user's imported documents are NOT sources here: they have their own paths and never mix with encyclopaedic text.
+     */
+    suspend fun gather(question: String, limit: Int = 3): Evidence = withContext(Dispatchers.Default) {
+        val zimHits = zim.sources().flatMap { src -> runCatching { src.articles(question, 3) }.getOrDefault(emptyList()) }
+        val docChunks = (find(question, 6) as? Evidence.Grounded)?.passages?.map { it.chunk }.orEmpty()
+        assembler.assemble(question, zimHits, docChunks, limit)
+    }
 
     /** Persists the picked folder and takes a durable READ permission only. */
     suspend fun setLibrary(treeUri: Uri) {

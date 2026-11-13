@@ -72,6 +72,7 @@ class KiwixZimTest {
         val e = ZimEntry("content://x", "wiki.zim", 10, ZimAccess.READABLE, true)
         assertFalse(e.aiQueryable)
         assertTrue("non posso leggerne il contenuto" in ZimPolicy.NOT_QUERYABLE)
+        assertTrue("sperimentale" in ZimPolicy.NOT_QUERYABLE && "Verifica lettura" in ZimPolicy.NOT_QUERYABLE)
         assertTrue("non ne legge il contenuto" in ZimPolicy.LIBRARY_BANNER)
         assertTrue("non vengono copiati" in ZimPolicy.NO_COPY)
     }

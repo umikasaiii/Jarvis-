@@ -46,7 +46,10 @@ data class ZimEntry(
     /** Whether the Storage Access Framework grant for this URI is still persisted. */
     val persistedPermission: Boolean,
 ) {
-    /** The AI never reads a ZIM: JARVIS only hands it to Kiwix. Constant on purpose; a test pins it. */
+    /**
+     * Always false HERE on purpose: whether JARVIS may read an archive is not a property of the file but of an explicit,
+     * on-device verification (`ZimKnowledge.verify`, stored with the file size). A test pins this constant.
+     */
     val aiQueryable: Boolean get() = false
 }
 
@@ -73,11 +76,12 @@ object ZimClassifier {
 /** The honest statements about what JARVIS can and cannot do with a ZIM. */
 object ZimPolicy {
     const val NOT_QUERYABLE =
-        "Gli archivi ZIM (Wikipedia offline) li apro in Kiwix, ma non posso leggerne il contenuto né rispondere da lì: " +
-            "JARVIS non ha un lettore ZIM. Posso rispondere su documenti importati e sulla biblioteca testuale (TXT/Markdown). " +
+        "Gli archivi ZIM (Wikipedia offline) li apro in Kiwix, ma finché non verifichi la lettura diretta non posso leggerne il contenuto né rispondere da lì " +
+            "(la lettura diretta è sperimentale: Biblioteca offline › «Verifica lettura»). Posso rispondere su documenti importati e sulla biblioteca testuale (TXT/Markdown). " +
             "Per un articolo di Wikipedia, dimmi «cerca … su Kiwix» oppure aprilo in Kiwix."
     const val LIBRARY_BANNER =
-        "JARVIS apre gli archivi ZIM in Kiwix ma non ne legge il contenuto: l'AI risponde solo su documenti importati e sulla biblioteca testuale."
+        "JARVIS apre gli archivi ZIM in Kiwix e non ne legge il contenuto finché non verifichi la lettura diretta su questo telefono (sperimentale): " +
+            "l'AI risponde su documenti importati, sulla biblioteca testuale e sugli archivi verificati."
     const val NO_COPY = "Gli archivi non vengono copiati: JARVIS conserva solo il riferimento (sola lettura)."
 }
 

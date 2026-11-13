@@ -13,6 +13,8 @@ This list is the project's dependency/license inventory (SBOM-lite, docs/SECURIT
 | Jetpack Compose + Material 3 | Apache-2.0 |
 | Dagger / Hilt (Google) | Apache-2.0 |
 | OkHttp (Square) | Apache-2.0 |
+| zstd-jni (Luben Karavelov) + bundled Zstandard (Meta) — decompression of ZIM clusters | BSD-2-Clause |
+| XZ for Java (Tukaani) — decompression of legacy ZIM clusters | Public domain / 0BSD |
 | Android Gradle Plugin, KSP | Apache-2.0 |
 
 ## Test libraries
