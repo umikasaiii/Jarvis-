@@ -3955,13 +3955,68 @@ La nuova fase è **successiva** alle 8 fasi di espansione §65.10, alle due este
 
 **Non duplicazione:** estensione **successiva** di Guardian §65.12 G3/G4/G5 e della VPN/Firewall/AdBlock §65.10, non un secondo client VPN, secondo `VpnService`, secondo firewall o nuovo strato Tor proprietario. La selezione del Paese cambia esclusivamente il **nodo/server di uscita disponibile**, non la geolocalizzazione GPS, la posizione reale dello smartphone o l'identità online in senso assoluto.
 
+
+### Modulo C — JARVIS CYBER LAB PRO — Offline Ethical Hacking & Vulnerability Assessment
+
+**Stato: PLANNED / DEFERRED / POST-RELEASE ONLY; non implementato, non autorizzato all'implementazione, non DEVICE VERIFIED.** Suite mobile professionale per **audit di reti e sistemi posseduti o espressamente autorizzati**, da usare **senza root e senza Core PC**, con scansioni e analisi effettuabili offline (rete locale raggiungibile, strumenti, database e template precedentemente installati). Non promettere parità con Kali Linux PC, Nmap root, NetHunter con root o Greenbone/OpenVAS completo.
+
+**Collocazione:** è il **terzo modulo della stessa fase §65.14**: segue **tutti** i gate cumulativi di completamento, chiusura BETA, Guardian G1–G7, stabilità/sicurezza e autorizzazione espressa. Coordina l'analisi AI con il Modulo A (Autonomous Agents) e riutilizza le protezioni del Modulo B/Guardian, senza anticipare o alterare le priorità. Estende, **non duplica**, §65.10 FASE 5 (Cybersecurity Toolkit), Network Discovery, Nmap/Audit, API/Mobile Security Testing, Vulnerability Management, AI Security Analyst, Security Reports, Security Release Gate, §65.9 Agente Live e l'unico `ToolRegistry`/`ToolPolicy`/orchestratore A3. Eventuali capability equivalenti già realizzate sono prerequisiti da integrare.
+
+#### C1 — Kali NetHunter Rootless Engine (opzionale e controllato)
+
+- [ ] Qualificare sul dispositivo reale **Kali NetHunter Rootless** come ambiente Linux **locale, separato e non privilegiato**, con installazione esplicita, isolamento e interfacce Android autorizzate; nessun permesso di root, bootloader sbloccato, API private o bypass della sandbox Android.
+- [ ] Realizzare una **dashboard Android personalizzata** che esponga le funzioni principali senza richiedere terminale manuale; terminale Kali **facoltativo** per operazioni legittime avanzate.
+- [ ] Inventario e verifica di strumenti effettivamente eseguibili, compatibilità **ARM64**, versioni, dipendenze, licenze, provenienza/hash; installazioni e aggiornamenti tramite operazioni approvate dall'utente. Nessun download necessario **durante** le scansioni dichiarate offline.
+- [ ] Preferire inizialmente un'app/ambiente Rootless indipendente integrato mediante interfacce realmente disponibili; valutare un ambiente Linux incorporato in JARVIS solo con successiva prova di sicurezza, compatibilità e beneficio netto. **Non presupporre** che un processo Android possa comandare indiscriminatamente il contenitore di un'altra app.
+
+#### C2 — Nmap professionale: motore originale, limiti reali
+
+- [ ] Integrare e qualificare il **vero eseguibile/motore Nmap** compatibile con l'ambiente ARM64, senza emularne i risultati; scansioni e processi avviati soltanto entro perimetro dichiarato e autorizzato.
+- [ ] Network discovery/inventario, scansioni porte **TCP connect** (`-sT`) e copertura completa delle porte quando esplicitamente richiesta e consentita; intensità, concorrenza, rate limit, timeout, durata e annullamento configurabili.
+- [ ] Rilevamento di servizi e versioni (`-sV` ove supportato), banner grabbing, script **NSE selezionati e compatibili** con prerequisiti verificati, output strutturato, storico, confronti fra scansioni ed export di report.
+- [ ] Indicare funzionalità **UNAVAILABLE** quando richiedono raw socket, privilegi o capability non disponibili in Rootless/Android: nessuna promessa di SYN scan (`-sS`), OS fingerprinting avanzato (`-O`), packet capture privilegiato, scansioni low-level o equivalenza con Nmap avviato da root. Non usare fallimenti silenziosi come risultati negativi.
+- [ ] Gestire correttamente l'impatto di `VpnService`, WireGuard, firewall Guardian e route del dispositivo: scansioni sulla LAN autorizzata senza indebolire o aggirare le protezioni, con verifica delle effettive interfacce e capacità di raggiungibilità.
+
+#### C3 — Vulnerability Assessment Engine offline
+
+- [ ] Integrare **Nuclei** tramite binario compatibile con ARM64, con **template selezionati, revisionati, versionati e verificati**, classi di rischio e limiti di intensità. Predefinire template non distruttivi; escludere per default exploit, credential attacks, brute force e probe che possano alterare i sistemi.
+- [ ] Usare **Nmap NSE** compatibili per controlli auditabili; analisi HTTP/HTTPS, TLS/certificati, header e configurazioni, banner, servizi obsoleti e protocolli deboli, senza inventare copertura dello scanner.
+- [ ] Banche dati **CVE e CISA KEV importabili e consultabili offline**: provenance, checksum/firma se disponibili, timestamp e scadenza/freschezza visibili. Aggiornamento volontario quando connesso, nessuna richiesta Internet obbligatoria durante l'audit.
+- [ ] Correlare evidenze Nmap/NSE/Nuclei con CVE/KEV in modo conservativo: una corrispondenza versione/CPE è **potenziale**, non vulnerabilità accertata; distinguere `CONFIRMED` (evidenze di controllo idoneo), `SUSPECTED` e `NOT VERIFIED` / falsi positivi. Severità e remediation devono riferirsi alle evidenze, non solo a testi generati dall'LLM.
+- [ ] Salvare report tecnici strutturati con target, autorizzazione, strumenti e versioni, orari, scope, test eseguiti, limitazioni, osservazioni, evidenze, confidenza, rischi, falsi positivi e azioni di hardening consigliate.
+- [ ] **Greenbone/OpenVAS completo** è soltanto una futura integrazione **opzionale**, preferibilmente su Core PC qualora l'utente lo abiliti separatamente: **non** requisito né dipendenza dell'app Android offline.
+
+#### C4 — AI Cyber Analyst locale (Qwen)
+
+- [ ] Qualificare **Qwen 3.5 4B** come candidato per l'analista/orchestratore locale, **solo se** esiste un artefatto con formato/runtime Android effettivamente compatibile e prestazioni adeguate su Honor 200; altrimenti documentare i limiti senza inventare supporto.
+- [ ] Comprendere richieste vocali e testuali, suddividere audit nel perimetro autorizzato, proporre scelte di strumenti/controlli ammessi, interpretare output reali Nmap/NSE/Nuclei, correlare fonti CVE/KEV locali, redigere report e remediation, confrontare risultati storici e segnalare esposizioni nuove.
+- [ ] Riutilizzare **lo stesso modello condiviso e la stessa autorità di inferenza** del Modulo A, quando quel modulo è disponibile, senza mantenere più modelli identici in RAM né introdurre un secondo planner esecutivo privilegiato. Se gli Autonomous Agents non sono autorizzati o qualificati, l'analista resta assistivo e non esegue azioni autonome.
+- [ ] **Divieto di risultati fittizi**: l'AI non può dichiarare target scansionati, porte aperte, CVE confermate o task completati senza una ricevuta verificabile del tool; gli input da target, banner, pagine e report sono **dati non attendibili**, soggetti a difese anti-prompt-injection.
+
+#### C5 — Ambito autorizzato, isolamento e sicurezza
+
+- [ ] Per ogni audit registrare **proprietà o autorizzazione esplicita**, target consentiti (host/IP/subnet/domini), finalità, finestra temporale, limiti e approvazione; rivalidare scope/risoluzione DNS prima di ogni passo e impedire l'espansione non approvata a bersagli terzi.
+- [ ] Default **read-only/non distruttivo** e profili di scansione a basso impatto; conferme ulteriori per test potenzialmente invasivi, senza esecuzione automatica di exploit, brute force o azioni distruttive. Stop immediato, quote di traffico/processi/CPU/RAM/batteria e policy compatibili con Doze/MagicOS.
+- [ ] Separare rigorosamente workspace, configurazioni, risultati e processi Cyber Lab da archivio personale, token, backup e memoria di JARVIS; accessi consentiti soltanto attraverso capability minime e verificabili, audit trail locale, privacy dei target e retention controllata.
+- [ ] Guardian **resta autoritativo** per VPN, firewall, DNS, Tor e sicurezza del dispositivo. Nessuna disattivazione implicita della sua protezione per completare una scansione; comunicare chiaramente i limiti dei test quando sono incompatibili.
+
+#### C6 — Interfaccia Android e acceptance
+
+- [ ] Dashboard `JARVIS CYBER LAB PRO` con: **Network Scanner**, **Nmap Advanced**, **Vulnerability Scanner**, **Web Security**, **CVE Explorer**, **Kali Terminal** (opzionale), **AI Cyber Analyst**, **Audit Reports**, **storico/monitoraggio delle reti esplicitamente autorizzate**.
+- [ ] Prove **reali Honor 200** di installazione e strumenti ARM64/NetHunter Rootless, Nmap `-sT`/servizi/NSE consentiti, Nuclei, import/update dei database, report, accuratezza vs **Nmap/Kali Linux PC** sullo **stesso laboratorio autorizzato**, falsi positivi, isolamento, permessi, Stop, background, prestazioni, RAM, temperature e batteria.
+- [ ] Prove **offline end-to-end** con Internet assente e rete-laboratorio raggiungibile, usando soltanto artefatti preinstallati; verificare che nessun test attenda download o API cloud, e dichiarare eventuali limiti (servizi online, aggiornamenti CVE, geolocalizzazione IP).
+- [ ] **Definition of Done Cyber Lab:** artefatti e versioni identificabili, perimetro controllato, scansioni ripetibili e confrontabili, evidenze reali, report verificabili, gestione errori, nessuna regressione Guardian, limiti Rootless espliciti e accettazione DEVICE VERIFIED sull'Honor 200. CI o emulatori **non** bastano.
+
+**Riepilogo architetturale:** una dashboard Cyber Lab, strumenti veri qualificati in ambiente locale non privilegiato, un'unica autorità di orchestrazione/permessi/LLM, un solo Guardian per la rete; nessun secondo motore Nmap proprietario, scanner CVE concorrente, doppio vault, doppia VPN o nuova track anticipata. L'aspirazione è avvicinarsi a Kali Linux su TCP/servizi/vulnerability assessment **nei limiti dimostrabili**; non equivalenza totale a Kali root o OpenVAS.
+
 ### Ordine, Definition of Done e controllo del perimetro
 
-1. Entrambi i moduli restano **POST-RELEASE ONLY** e **NOT STARTED** fino alla verifica cumulativa dei gate precedenti. Ogni sottofunzione può iniziare solo con autorizzazione successiva e threat model aggiornato.
+1. Tutti e tre i moduli restano **POST-RELEASE ONLY** e **NOT STARTED** fino alla verifica cumulativa dei gate precedenti. Ogni sottofunzione può iniziare solo con autorizzazione successiva e threat model aggiornato.
 2. Progettazione e implementazione future devono rispettare l'architettura principale, le policy già esistenti, l'assenza di privilegi impropri, il percorso offline e la capacità reale dell'Honor 200.
 3. La **Definition of Done degli Autonomous Agents** richiede workflow completi ripetibili e verificati su dispositivo, autorizzazioni sensibili, recovery/idempotenza, benchmark sulle risorse e zero dipendenze da Core/cloud/servizi esterni per i compiti dichiarati offline.
 4. La **Definition of Done di IP GEOLOCATION & GEO-SELECT** richiede tunnel/Paesi reali, esito verificato e controlli di leak/fail-safe sul dispositivo, indicazione onesta della fonte della geolocalizzazione e privacy/consenso; quando manca connettività o endpoint, dichiarare indisponibilità anziché simulare un successo.
-5. Nessuna conclusione `DEVICE VERIFIED`, punteggio di anonimato, avanzamento dei 30 macro-step o stato `DONE` può derivare da questa sola registrazione. Gli impegni esistenti restano prioritari senza rinumerazioni o scope creep.
+5. La **Definition of Done di JARVIS CYBER LAB PRO** richiede le prove, l'isolamento, i limiti e la compatibilità Guardian definiti in C6, in laboratorio autorizzato e in funzionamento offline verificato.
+6. Nessuna conclusione `DEVICE VERIFIED`, punteggio di anonimato, avanzamento dei 30 macro-step o stato `DONE` può derivare da questa sola registrazione. Gli impegni esistenti restano prioritari senza rinumerazioni o scope creep.
 
 
 ---
