@@ -3583,6 +3583,10 @@ dedup, authorization, retry safety o completion.
 
 ## 65.7 ROADMAP PROGRESS INDEX — 30 FIXED MACRO-STEPS
 
+**AGGIORNAMENTO CANONICO 2026-11-14:** per nuova autorizzazione dell'utente, il limite storico di **30 macro-step** è stato **superato**. Il registro aggiornato è [**50 macro-step in 10 categorie**](https://github.com/umikasaiii/Jarvis-/blob/claude/beta-knowledge-engine/docs/JARVIS_ROADMAP_MACRO_CATEGORIES.md) e conserva integralmente la collocazione di Guardian G1–G7, 64 candidati/8 fasi avanzate, Coding Studio, Agente Live e le 3 estensioni §65.14. Le prescrizioni successive in questo Master circa il 'denominatore fisso 30' sono **storiche e superseded ai fini del solo conteggio**, non cancellano alcun gate o dipendenza. Il file consolidato è sul ramo BETA più recente; questa è una cross-reference documentale, **non** un merge di codice o una dichiarazione di implementazione delle estensioni.
+
+
+
 Convenzione di tracking scelta esplicitamente dal proprietario del progetto
 (2026-10-05). Esisteva nella conversazione di progetto ma **non** era mai stata
 resa canonica nel repository: questa sezione ne è la prima registrazione.
