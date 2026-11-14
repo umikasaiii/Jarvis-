@@ -35,7 +35,7 @@ Su autorizzazione dell'utente, il limite storico **30 macro-step** (§65.7 del M
 | `A04` | Document RAG e risposte su file personali | CI VERIFIED; DEVICE PENDING | BETA 4/8 |
 | `A05` | Traduttore offline, testo e voce | CI VERIFIED; DEVICE PENDING | BETA 5/8 |
 | `A06` | Offline Hub: Kiwix, Organic Maps e integrazioni | CI VERIFIED; DEVICE PENDING | BETA 6/8; non equivale a risposta AI basata su ZIM |
-| `A07` | Knowledge Engine: lettura ZIM, ricerca titoli, citazioni | CI VERIFIED; DEVICE PENDING | BETA e9ddd5a→22c15e7; lettura ZIM moderni da ritestare fisicamente |
+| `A07` | Knowledge Engine: lettura ZIM, ricerca titoli, citazioni | CI VERIFIED; ZIM READ DEVICE VERIFIED (utente); GROUNDING DEVICE PENDING | BETA e9ddd5a→22c15e7 + Knowledge Engine 2.0 (§65.13) |
 | `A08` | BETA 7/8 e 8/8: affidabilità quotidiana, restore, A/B/C Honor e GO | CI VERIFIED; DEVICE GATES OPEN | Notifiche, boot, backup/ripristino, prove 3 giorni; non dichiarare BETA chiusa |
 
 ### B. Conoscenza, intelligenza locale e orchestrazione (6 macro-step)
@@ -44,8 +44,8 @@ Su autorizzazione dell'utente, il limite storico **30 macro-step** (§65.7 del M
 
 | ID | Macro-step | Stato comprovato / prudenziale | Ambito e riferimento |
 |---|---|---|---|
-| `B01` | Indice offline persistente e ricerca FTS/semantica sui contenuti | PLANNED | SQLite FTS incrementale, indicizzazione on-device, ricerca oltre titoli; nessun secondo knowledge store |
-| `B02` | Grounding fattuale, controllo evidenze e benchmark con modelli reali | PARTIAL; DEVICE FAILED/PENDING | Citazioni/supporto ai fatti, errori, recall, fonti mancanti, casi holdout |
+| `B01` | Indice offline persistente e ricerca FTS/semantica sui contenuti | FTS CI VERIFIED; DEVICE PENDING; SEMANTICA PLANNED | SQLite FTS4 incrementale e opt-in (biblioteca testuale + introduzioni di archivi scelti, tetto di spazio, ripresa), ricerca oltre titoli; semantica/embedding non realizzata; nessun secondo knowledge store (§65.13) |
+| `B02` | Grounding fattuale, controllo evidenze e benchmark con modelli reali | PARTIAL; JVM/SIMULATED CI VERIFIED; DEVICE PENDING | Sufficienza ≠ pertinenza, 4 stati (NO_EVIDENCE/INSUFFICIENT/SOURCE_FOUND/CLAIM_SUPPORTED), citazioni solo di supporto; 121 domande simulate; benchmark con modelli reali ancora da fare (§65.13) |
 | `B03` | Modelli FAST/ADVANCED locali e confronto prestazioni reali | CANDIDATE / DEVICE PENDING | Qwen 3.5 4B solo se formato/runtime/risorse Honor compatibili; Gemma 1B fallback rapido |
 | `B04` | Semantic Pass 14B reale e learned head | PAUSED; PC TOOLING REQUIRED | Tooling PC dell'utente per qualifica del modello, non Core come dipendenza Android |
 | `B05` | Pass 15 calibration/OOD, BLIND, riferimenti e semantica Honor | PLANNED; BLOCKED BY B04 | Gate semantici originari non superati |

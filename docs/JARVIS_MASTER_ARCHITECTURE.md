@@ -7402,3 +7402,14 @@ Aggiunta datata: **non modifica** §65.1–§65.11; i 30 macro-step sono invaria
 - **Problema reale su Honor 200:** «Verifica lettura» falliva con `pointer_lists_out_of_bounds` su Wikipedia/Wiktionary/Wikibooks IT 2026. **Causa confermata:** i ZIM moderni possono omettere la lista titoli storica (`titlePtrPos` = sentinella `-1`) e usare `X/listing/titleOrdered/v1`; il lettore pretendeva la lista storica.
 - **Correzione:** assenza distinta da puntatore invalido (controlli di integrità invariati), ricerca per titolo tramite listing v1 (letture di 4 byte per passo, nessun caricamento in RAM), compatibilità storica mantenuta, redirect raggiunti dall'indice URL, diagnostica dell'header senza dati personali. Dettaglio, versioni supportate e procedura: `docs/KNOWLEDGE_ENGINE_ZIM.md`.
 - **Stato:** CI VERIFIED a run completata; **non DEVICE VERIFIED**. L'indice SQLite FTS persistente resta una fase separata, non realizzata.
+
+## 65.13 ADDENDUM 2026-11-14 — KNOWLEDGE ENGINE 2.0 (grounding rigoroso, indice FTS)
+
+Aggiunta datata: **non modifica** §65.1–§65.12 né i macro-step della roadmap consolidata (`docs/JARVIS_ROADMAP_MACRO_CATEGORIES.md`: 50 macro-step); aggiorna lo stato di A07, B01 e B02 **senza duplicarli**. A0–A4 **non avviate**.
+
+- **Evidenza (Honor 200):** «capitale del Portogallo» ⇒ passaggi di Wikizionario STRONG; risposta giusta con fonti non sufficienti.
+- **Cause (codice):** pertinenza ≡ sufficienza (titolo parola-comune + copertura che contava il titolo), proper-noun gate soddisfatto da qualunque menzione, citazione costruita da tutti i passaggi recuperati, ricerca per soli prefissi di titolo.
+- **Ownership (nessun nuovo orchestratore/store):** `SupportJudge` + `EvidenceAssembler` (sufficienza), `GroundingVerifier` (4 stati sulla risposta finale, codice puro — il LLM non verifica sé stesso), `SourceFooter` per stato, `KnowledgeGatherer` unico punto di recupero usato da `KnowledgeRepository.gather`, `KnowledgeIndex` (FTS4, `knowledge_fts.db` separato, cache ricostruibile) alimentato da biblioteca testuale e, opt-in, dalle introduzioni degli archivi scelti. Memoria personale e documenti importati restano nei loro percorsi.
+- **Limiti dichiarati:** co-occorrenza lessicale, non implicazione; nessun thesaurus; il percorso documentale chiede ancora la citazione al modello (non modificato). Dettaglio, cifre (fonti simulate/JVM), limiti e cinque prove Honor 200: `docs/KNOWLEDGE_ENGINE_ZIM.md` § Knowledge Engine 2.0.
+- **Stato:** CI VERIFIED a run completata; **non DEVICE VERIFIED**; nessuna accuratezza del modello reale dichiarata.
+
