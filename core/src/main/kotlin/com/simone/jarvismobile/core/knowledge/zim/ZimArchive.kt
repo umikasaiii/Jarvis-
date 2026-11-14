@@ -163,6 +163,15 @@ class ZimArchive private constructor(
 
     // ---- title index ------------------------------------------------------------------------------------------
 
+    /** Number of entries in title order (front articles only for the modern listing, every entry for the legacy list). */
+    val titleOrderCount: Int get() = titleCount
+
+    /** The entry at [position] of the title-ordered list: lets a caller walk the archive in bounded, resumable steps. */
+    fun titleEntryAt(position: Int): ZimEntry {
+        if (position < 0 || position >= titleCount) throw ZimFormatException("title_position_out_of_range")
+        return titleEntry(position)
+    }
+
     private fun titleEntry(titleListPos: Int): ZimEntry {
         val idx = u32(source.read(titleIndexPos + 4L * titleListPos, 4), 0)
         if (idx >= entryCount) throw ZimFormatException("title_index_entry_out_of_range")

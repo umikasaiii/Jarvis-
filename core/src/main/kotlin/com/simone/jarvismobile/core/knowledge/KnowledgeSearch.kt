@@ -77,15 +77,18 @@ class KnowledgeSearch(private val minScore: Double = MIN_SCORE) {
      * meet. A real stemmer is overkill for a personal library and would need a
      * dependency; this is enough to stop plural/singular from hiding a passage.
      */
-    private fun stem(w: String): String {
-        if (w.length <= 4) return w
-        for (s in SUFFIXES) {
-            if (w.length - s.length >= 3 && w.endsWith(s)) return w.dropLast(s.length)
-        }
-        return w
-    }
+    private fun stem(w: String): String = stemWord(w)
 
     companion object {
+        /** Crude suffix stripping shared by retrieval and the support judge (same stems on both sides). */
+        internal fun stemWord(w: String): String {
+            if (w.length <= 4) return w
+            for (s in SUFFIXES) {
+                if (w.length - s.length >= 3 && w.endsWith(s)) return w.dropLast(s.length)
+            }
+            return w
+        }
+
         /**
          * Cosine similarity below this is treated as no answer. Tuned so a
          * question about a topic absent from the library scores under it even

@@ -27,6 +27,8 @@ dependencies {
     // app, by the real adapter. NOT libkiwix/libzim: those are GPLv3 and the project is Apache-2.0.
     testImplementation("com.github.luben:zstd-jni:1.5.6-4")
     testImplementation("org.tukaani:xz:1.10")
+    // The persistent knowledge index (FTS4) is written against a tiny FtsDb interface; the JVM tests run it on real SQLite.
+    testImplementation("org.xerial:sqlite-jdbc:3.46.1.3")
 }
 
 kotlin {

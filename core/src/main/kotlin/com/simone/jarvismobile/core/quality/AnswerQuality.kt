@@ -106,7 +106,8 @@ object AnswerQuality {
     fun stripPresentationNotes(text: String): String =
         text.lineSequence().filterNot {
             val l = it.trim()
-            l == NOTE_UNVERIFIED || l == NOTE_NOT_IN_SOURCES || l.startsWith(NOTE_NO_SOURCE_FOR) || l.startsWith(FOOTER_PREFIX)
+            l == NOTE_UNVERIFIED || l == NOTE_NOT_IN_SOURCES || l == NOTE_NOT_CONFIRMED || l.startsWith(NOTE_NO_SOURCE_FOR) || l.startsWith(FOOTER_PREFIX) ||
+                l.startsWith(NOTE_INSUFFICIENT) || l.startsWith("Fonti consultate (") || l.startsWith("Fonti offline consultate,")
         }.joinToString("\n").trimEnd()
 
     const val NOTE_UNVERIFIED = "Nota: non ho trovato fonti offline per verificare questo dato; viene dalla memoria del modello."
@@ -115,6 +116,10 @@ object AnswerQuality {
     /** Line added by [com.simone.jarvismobile.core.knowledge.SourceFooter]. */
     const val FOOTER_PREFIX = "Fonte: "
     const val NOTE_NOT_IN_SOURCES = "Nota: alcuni valori non compaiono nelle fonti consultate."
+    /** A supporting passage exists, but the answer's own values/names were not confirmed by it. */
+    const val NOTE_NOT_CONFIRMED = "Nota: la risposta non è confermata dai passaggi trovati nelle fonti offline."
+    /** Relevant sources exist, but none contains a passage that answers the question. */
+    const val NOTE_INSUFFICIENT = "Nota: le fonti offline pertinenti non contengono una risposta a questa domanda"
 
     // ---- completeness ---------------------------------------------------------------------------------
 
