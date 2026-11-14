@@ -27,7 +27,16 @@ interface ZimDecompressor {
     fun decompress(type: Int, data: ByteArray, maxOutputBytes: Int): ByteArray
 }
 
-class ZimFormatException(message: String) : Exception(message)
+/** [diagnostics] is a technical, content-free description of the header (versions, counts, index mode) — never a path or a title. */
+class ZimFormatException(message: String, val diagnostics: String = "") : Exception(message)
+
+/** Which structure answers "entries in title order". */
+enum class ZimTitleIndex {
+    /** `X/listing/titleOrdered/v1`: a blob of u32 entry indexes (front articles only) inside an UNCOMPRESSED cluster. Modern writers. */
+    LISTING_V1,
+    /** The header's historical title pointer list (`titlePtrPos`). Older writers; modern ones may omit it (sentinel -1). */
+    LEGACY_V0,
+}
 
 /** One directory entry. [index] is its position in the URL-ordered pointer list. */
 data class ZimEntry(
@@ -52,13 +61,23 @@ class ZimArchive private constructor(
     val entryCount: Int,
     val clusterCount: Int,
     private val urlPtrPos: Long,
-    private val titlePtrPos: Long,
     private val clusterPtrPos: Long,
     private val checksumPos: Long,
     val mainPageIndex: Int,
     val mimeTypes: List<String>,
     val uuid: String,
+    private val headerTitlePtr: Long,
+    private val mimePtrPos: Long,
 ) {
+    // Set once by open() right after construction (the v1 listing is found through the URL index, which needs `this`).
+    private var titleIndexPos: Long = -1L
+    private var titleCount: Int = 0
+    var titleIndexMode: ZimTitleIndex = ZimTitleIndex.LEGACY_V0
+        private set
+
+    /** Content-free technical summary: header fields and the title-index mode. Safe to log and to show. */
+    fun diagnostics(): String = describeHeader(majorVersion, minorVersion, entryCount, clusterCount, headerTitlePtr, titleIndexMode.name, titleCount, mimeTypes.size)
+
     /** 'C' for the modern layout, 'A' for archives written before 2020. */
     val articleNamespace: Char by lazy {
         if (hasNamespace('C')) 'C' else 'A'
@@ -145,8 +164,49 @@ class ZimArchive private constructor(
     // ---- title index ------------------------------------------------------------------------------------------
 
     private fun titleEntry(titleListPos: Int): ZimEntry {
-        val idx = u32(source.read(titlePtrPos + 4L * titleListPos, 4), 0).toInt()
-        return entry(idx)
+        val idx = u32(source.read(titleIndexPos + 4L * titleListPos, 4), 0)
+        if (idx >= entryCount) throw ZimFormatException("title_index_entry_out_of_range")
+        return entry(idx.toInt())
+    }
+
+    /**
+     * Finds `X/listing/titleOrdered/v1` and returns (absolute position of its u32 array, element count), or null when it is
+     * absent or unusable (compressed, misaligned, out of range) — exactly the cases libzim itself skips. Never reads the
+     * array: only the cluster info byte and two offsets.
+     */
+    private fun locateListingV1(): Pair<Long, Int>? {
+        val e = findByPath('X', "listing/titleOrdered/v1")?.let { resolve(it) } ?: return null
+        if (e.clusterNumber < 0 || e.clusterNumber >= clusterCount || e.blobNumber < 0) return null
+        val cStart = u64(source.read(clusterPtrPos + 8L * e.clusterNumber, 8), 0)
+        val cEnd = if (e.clusterNumber + 1 < clusterCount) u64(source.read(clusterPtrPos + 8L * (e.clusterNumber + 1), 8), 0) else checksumPos
+        if (cStart <= 0 || cEnd <= cStart || cEnd > source.size) return null
+        val info = source.read(cStart, 1).firstOrNull()?.toInt()?.and(0xFF) ?: return null
+        if ((info and 0x0F) > 1) return null // compressed: not a valid listing
+        val offSize = if ((info and 0x10) != 0) 8 else 4
+        val dataStart = cStart + 1
+        val b = source.read(dataStart + offSize.toLong() * e.blobNumber, offSize * 2)
+        if (b.size < offSize * 2) return null
+        val from = if (offSize == 8) u64(b, 0) else u32(b, 0)
+        val to = if (offSize == 8) u64(b, 8) else u32(b, 4)
+        if (from < 0 || to < from || dataStart + to > cEnd) return null
+        val bytes = to - from
+        if (bytes % 4L != 0L || bytes / 4 > entryCount.toLong()) return null
+        val count = (bytes / 4).toInt()
+        if (count == 0) return null
+        val base = dataStart + from
+        // cheap spot check of the ends: every stored index must be a real entry
+        for (i in listOf(0, count / 2, count - 1)) if (u32(source.read(base + 4L * i, 4), 0) >= entryCount) return null
+        return base to count
+    }
+
+    internal fun chooseTitleIndex() {
+        val v1 = runCatching { locateListingV1() }.getOrNull()
+        if (v1 != null) {
+            titleIndexPos = v1.first; titleCount = v1.second; titleIndexMode = ZimTitleIndex.LISTING_V1
+            return
+        }
+        if (headerTitlePtr == TITLE_PTR_ABSENT) throw ZimFormatException("title_index_missing", diagnostics())
+        titleIndexPos = headerTitlePtr; titleCount = entryCount; titleIndexMode = ZimTitleIndex.LEGACY_V0
     }
 
     /**
@@ -156,7 +216,7 @@ class ZimArchive private constructor(
     fun titlesWithPrefix(namespace: Char, prefix: String, limit: Int): List<ZimEntry> {
         if (prefix.isEmpty() || limit <= 0) return emptyList()
         var lo = 0
-        var hi = entryCount
+        var hi = titleCount
         while (lo < hi) { // lower bound of (namespace, prefix)
             val mid = (lo + hi) ushr 1
             val e = titleEntry(mid)
@@ -164,7 +224,7 @@ class ZimArchive private constructor(
         }
         val out = ArrayList<ZimEntry>()
         var i = lo
-        while (i < entryCount && out.size < limit) {
+        while (i < titleCount && out.size < limit) {
             val e = titleEntry(i)
             if (e.namespace != namespace || !e.displayTitle.startsWith(prefix)) break
             out += e
@@ -249,6 +309,13 @@ class ZimArchive private constructor(
 
     companion object {
         const val MAGIC = 72173914L
+        /** Header value (all ones) a modern writer stores in `titlePtrPos` when it wrote no historical title list. */
+        const val TITLE_PTR_ABSENT = -1L
+
+        internal fun describeHeader(major: Int, minor: Int, entries: Long, clusters: Long, titlePtr: Long, mode: String, titleCount: Int, mimes: Int): String =
+            "zim=v$major.$minor entries=$entries clusters=$clusters titlePtr=${if (titlePtr == TITLE_PTR_ABSENT) "absent" else "present"} titleIndex=$mode titleCount=$titleCount mimes=$mimes"
+        private fun describeHeader(major: Int, minor: Int, entries: Int, clusters: Int, titlePtr: Long, mode: String, titleCount: Int, mimes: Int) =
+            describeHeader(major, minor, entries.toLong(), clusters.toLong(), titlePtr, mode, titleCount, mimes)
         private const val HEADER_BYTES = 80
         private const val MAX_REDIRECTS = 8
         private const val MAX_DIRENT_BYTES = 64 * 1024
@@ -277,16 +344,26 @@ class ZimArchive private constructor(
             val size = source.size
             if (entries > Int.MAX_VALUE || clusters > Int.MAX_VALUE) throw ZimFormatException("counts_invalid")
             fun inside(pos: Long, bytes: Long) = pos in HEADER_BYTES..size && bytes >= 0 && pos + bytes <= size
-            if (!inside(urlPtr, 8L * entries) || !inside(titlePtr, 4L * entries) || !inside(clusterPtr, 8L * clusters) || mimePtr !in HEADER_BYTES..size) {
-                throw ZimFormatException("pointer_lists_out_of_bounds")
+            val diag = describeHeader(major, minor, entries, clusters, titlePtr, "UNRESOLVED", 0, 0) +
+                " urlPtr=${urlPtr in HEADER_BYTES..size} clusterPtr=${clusterPtr in HEADER_BYTES..size} mimePtr=${mimePtr in HEADER_BYTES..size}"
+            // The historical title list may be legitimately ABSENT (sentinel -1, modern writers); anything else must be sane.
+            val titleListOk = titlePtr == TITLE_PTR_ABSENT || inside(titlePtr, 4L * entries)
+            if (!inside(urlPtr, 8L * entries) || !titleListOk || !inside(clusterPtr, 8L * clusters) || mimePtr !in HEADER_BYTES..size) {
+                throw ZimFormatException("pointer_lists_out_of_bounds", diag + " titleListOk=$titleListOk")
             }
             val effectiveChecksumPos = if (checksumPos in clusterPtr..size) checksumPos else (size - 16).coerceAtLeast(clusterPtr)
             val mimes = readMimeList(source, mimePtr)
             val uuid = h.copyOfRange(8, 24).joinToString("") { "%02x".format(it) }
-            return ZimArchive(
-                source, decompressor, major, minor, entries.toInt(), clusters.toInt(), urlPtr, titlePtr, clusterPtr,
-                effectiveChecksumPos, if (mainPage == 0xFFFFFFFFL) -1 else mainPage.toInt(), mimes, uuid,
+            val archive = ZimArchive(
+                source, decompressor, major, minor, entries.toInt(), clusters.toInt(), urlPtr, clusterPtr,
+                effectiveChecksumPos, if (mainPage == 0xFFFFFFFFL) -1 else mainPage.toInt(), mimes, uuid, titlePtr, mimePtr,
             )
+            try {
+                archive.chooseTitleIndex()
+            } catch (e: ZimFormatException) {
+                throw ZimFormatException(e.message ?: "title_index_invalid", e.diagnostics.ifEmpty { diag })
+            }
+            return archive
         }
 
         private fun readMimeList(source: ByteSource, pos: Long): List<String> {

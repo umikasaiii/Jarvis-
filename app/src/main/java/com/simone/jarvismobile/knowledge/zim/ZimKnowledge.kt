@@ -30,7 +30,7 @@ class ZimKnowledge @Inject constructor(
     private val library: ZimLibrary,
     private val settings: SettingsRepository,
 ) {
-    data class Report(val uri: String, val ok: Boolean, val title: String, val date: String, val language: String, val entries: Int, val articleNamespace: Char?, val detail: String)
+    data class Report(val uri: String, val ok: Boolean, val title: String, val date: String, val language: String, val entries: Int, val articleNamespace: Char?, val detail: String, val diagnostics: String = "")
 
     private class Opened(val size: Long, val bytes: SafByteSource, val source: ZimKnowledgeSource)
 
@@ -57,16 +57,18 @@ class ZimKnowledge @Inject constructor(
                 if (ZimHtml.toText(String(html, Charsets.UTF_8).take(200_000)).text.isBlank()) throw IllegalStateException("article_empty")
                 settings.setZimVerified(settings.zimVerified.first().filterNot { it.substringBeforeLast('|') == uri }.toSet() + "$uri|${bytes.size}")
                 opened[uri] = Opened(bytes.size, bytes, source)
-                Report(uri, true, source.label, source.date, source.language, zim.entryCount, zim.articleNamespace, "Lettura verificata su questo telefono.")
+                Report(uri, true, source.label, source.date, source.language, zim.entryCount, zim.articleNamespace, "Lettura verificata su questo telefono.", zim.diagnostics())
             } catch (t: Throwable) {
                 runCatching { bytes.close() }
-                Log.w(TAG, "zim_verify_failed ${t.javaClass.simpleName}")
-                fail(uri, "Lettura non riuscita: ${t.message ?: t.javaClass.simpleName}")
+                // Header fields and index mode only (versions, counts, flags): never a file name, path, title or text.
+                val diag = (t as? com.simone.jarvismobile.core.knowledge.zim.ZimFormatException)?.diagnostics.orEmpty()
+                Log.w(TAG, "zim_verify_failed ${t.javaClass.simpleName}" + ((t as? com.simone.jarvismobile.core.knowledge.zim.ZimFormatException)?.let { ":${it.message} $diag" } ?: ""))
+                fail(uri, "Lettura non riuscita: ${t.message ?: t.javaClass.simpleName}", diag)
             }
         }
     }
 
-    private fun fail(uri: String, detail: String) = Report(uri, false, "", "", "", 0, null, detail)
+    private fun fail(uri: String, detail: String, diagnostics: String = "") = Report(uri, false, "", "", "", 0, null, detail, diagnostics)
 
     /** True when at least one archive has been verified and is still the file that was verified. */
     suspend fun hasVerified(): Boolean = verifiedEntries().isNotEmpty()

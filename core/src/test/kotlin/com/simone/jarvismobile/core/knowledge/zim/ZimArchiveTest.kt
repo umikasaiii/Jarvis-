@@ -100,6 +100,22 @@ class ZimArchiveTest {
         assertTrue(fraction < 0.12, "read ${src.bytesRead.get()} of ${bytes.size} (${"%.3f".format(fraction)}) — the archive must not be loaded")
         assertTrue(src.reads.get() < 400, "reads=${src.reads.get()}")
     }
+
+    @Test fun `search and article read touch a tiny fraction of a large MODERN archive (v1 listing, no header title list)`() {
+        val b = TestZimBuilder().apply { entriesPerCluster = 40; compression = 5; titleLayout = TitleLayout.MODERN }
+        for (i in 0 until 6000) b.article("Voce_%05d".format(i), "Voce %05d".format(i), "<p>${"Testo di riempimento della voce $i. ".repeat(40)}</p>")
+        b.article("Zeta_Speciale", "Zeta Speciale", "<p>Contenuto cercato: valore 42.</p>")
+        val bytes = b.build()
+        val src = CountingSource(bytes)
+        val zim = ZimArchive.open(src, TestDecompressor)
+        assertEquals(ZimTitleIndex.LISTING_V1, zim.titleIndexMode)
+        val hits = zim.titlesWithPrefix('C', "Zeta", 5)
+        assertEquals(1, hits.size)
+        assertTrue(String(zim.content(hits[0])!!).contains("valore 42"))
+        val fraction = src.bytesRead.get().toDouble() / bytes.size
+        assertTrue(fraction < 0.12, "read ${src.bytesRead.get()} of ${bytes.size} (${"%.3f".format(fraction)}) — the archive must not be loaded")
+        assertTrue(src.reads.get() < 400, "reads=${src.reads.get()}")
+    }
 }
 
 /**

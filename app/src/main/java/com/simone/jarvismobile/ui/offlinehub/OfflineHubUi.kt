@@ -153,6 +153,7 @@ fun OfflineLibraryScreen(
                                 if (it.ok) "«${it.title}» · ${it.date} · ${it.language} · ${it.entries} voci" else it.detail,
                                 style = MaterialTheme.typography.bodySmall, color = if (it.ok) Good else Warn,
                             )
+                            if (it.diagnostics.isNotEmpty()) Text(it.diagnostics, style = MaterialTheme.typography.labelSmall)
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             OutlinedButton(

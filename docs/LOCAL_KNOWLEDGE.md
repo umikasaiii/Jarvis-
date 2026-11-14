@@ -58,3 +58,5 @@ the LLM context window.
   answer locally.
 - Personal memories never appear as wiki sources, and wiki text is never written
   into `Memoria.md`.
+
+> Aggiornamento 2026-11-14: la lettura diretta dei ZIM (titoli storici e moderni `X/listing/titleOrdered/v1`) è descritta in `docs/KNOWLEDGE_ENGINE_ZIM.md`.

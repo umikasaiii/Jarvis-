@@ -52,6 +52,9 @@ class FileSource(file: File) : ByteSource {
 }
 
 /** Minimal ZIM (v6.1, modern 'C' layout) writer for tests. Written from the public format spec, not from libzim. */
+/** How the title order is stored: the historical header list, the modern `X/listing/titleOrdered/v1` listing, both, or neither. */
+enum class TitleLayout { LEGACY, MODERN, BOTH, NONE, MODERN_COMPRESSED_LISTING }
+
 class TestZimBuilder {
     class E(val ns: Char, val path: String, val title: String, val mime: String, val data: ByteArray?, val redirectTo: Pair<Char, String>? = null)
 
@@ -61,6 +64,9 @@ class TestZimBuilder {
     var entriesPerCluster = 8
     var compression = 5 // 1 none, 4 xz, 5 zstd
     var uuidSeed = 1
+    var titleLayout = TitleLayout.LEGACY
+    /** Test hook: deliberately corrupt the header's title pointer (to prove a really invalid pointer is still rejected). */
+    var corruptTitlePtr: Long? = null
 
     fun article(path: String, title: String, html: String) = apply { entries += E('C', path, title, "text/html", html.toByteArray()) }
     fun redirect(path: String, title: String, to: String) = apply { entries += E('C', path, title, "", null, 'C' to to) }
@@ -68,6 +74,16 @@ class TestZimBuilder {
 
     fun build(): ByteArray {
         meta.forEach { (k, v) -> entries += E('M', k, "", "text/plain", v.toByteArray()) }
+        val wantsListing = titleLayout != TitleLayout.LEGACY && titleLayout != TitleLayout.NONE
+        val writeLegacy = titleLayout == TitleLayout.LEGACY || titleLayout == TitleLayout.BOTH
+        if (wantsListing) {
+            // 'C' < 'M' < 'X': the indexes of the C entries do not depend on the listing entry itself.
+            val cSorted = entries.filter { it.ns == 'C' }.sortedWith { a, b -> cmp(a.ns, a.path, b.ns, b.path) }
+            // like real modern writers: front articles only — redirects are NOT listed
+            val byTitle = cSorted.indices.filter { cSorted[it].redirectTo == null }.sortedWith { a, b -> cmp('C', cSorted[a].title.ifEmpty { cSorted[a].path }, 'C', cSorted[b].title.ifEmpty { cSorted[b].path }) }
+            val buf = ByteBuffer.allocate(4 * byTitle.size).order(ByteOrder.LITTLE_ENDIAN); byTitle.forEach { buf.putInt(it) }
+            entries += E('X', "listing/titleOrdered/v1", "", "application/octet-stream", buf.array())
+        }
         val sorted = entries.sortedWith { a, b -> cmp(a.ns, a.path, b.ns, b.path) }
         val mimes = (sorted.mapNotNull { it.mime.takeIf { m -> m.isNotEmpty() } }).distinct()
         val index = HashMap<Pair<Char, String>, Int>(); sorted.forEachIndexed { i, e -> index[e.ns to e.path] = i }
@@ -76,7 +92,13 @@ class TestZimBuilder {
         val content = sorted.filter { it.redirectTo == null }
         val clusterOf = HashMap<E, Pair<Int, Int>>()
         val clusters = ArrayList<List<E>>()
-        content.chunked(entriesPerCluster).forEachIndexed { ci, group -> clusters += group; group.forEachIndexed { bi, e -> clusterOf[e] = ci to bi } }
+        val clusterComp = ArrayList<Int>()
+        content.filter { it.ns != 'X' }.chunked(entriesPerCluster).forEachIndexed { ci, group -> clusters += group; clusterComp += compression; group.forEachIndexed { bi, e -> clusterOf[e] = ci to bi } }
+        content.filter { it.ns == 'X' }.forEach { e ->
+            // the listing lives alone in its own cluster; libzim requires it to be UNCOMPRESSED (the compressed variant is the broken case)
+            clusters += listOf(e); clusterComp += if (titleLayout == TitleLayout.MODERN_COMPRESSED_LISTING) compression else 1
+            clusterOf[e] = (clusters.size - 1) to 0
+        }
 
         val mimeList = ByteArrayOutputStream().also { o -> mimes.forEach { o.write(it.toByteArray()); o.write(0) }; o.write(0) }.toByteArray()
         val n = sorted.size
@@ -84,7 +106,7 @@ class TestZimBuilder {
         val mimePos = headerEnd
         val urlPtrPos = mimePos + mimeList.size
         val titlePtrPos = urlPtrPos + 8 * n
-        val clusterPtrPos = titlePtrPos + 4 * n
+        val clusterPtrPos = titlePtrPos + if (writeLegacy) 4 * n else 0
         val direntsPos = clusterPtrPos + 8 * clusters.size
 
         val dirents = ArrayList<ByteArray>()
@@ -104,7 +126,7 @@ class TestZimBuilder {
         val direntOffsets = LongArray(n); var pos = direntsPos.toLong()
         dirents.forEachIndexed { i, d -> direntOffsets[i] = pos; pos += d.size }
         val clusterStart = pos
-        val clusterBytes = clusters.map { group ->
+        val clusterBytes = clusters.mapIndexed { ci, group ->
             val o = ByteArrayOutputStream()
             val blobs = group.map { it.data!! }
             var off = 4L * (blobs.size + 1)
@@ -113,7 +135,7 @@ class TestZimBuilder {
             table.putInt(off.toInt())
             o.write(table.array()); blobs.forEach { o.write(it) }
             val raw = o.toByteArray()
-            when (compression) {
+            when (clusterComp[ci]) {
                 4 -> byteArrayOf(4) + ByteArrayOutputStream().also { bo -> XZOutputStream(bo, LZMA2Options()).use { it.write(raw) } }.toByteArray()
                 5 -> byteArrayOf(5) + Zstd.compress(raw)
                 else -> byteArrayOf(1) + raw
@@ -128,12 +150,12 @@ class TestZimBuilder {
         h.putInt(72173914); h.putShort(6); h.putShort(1)
         h.put(ByteArray(16) { (it + uuidSeed).toByte() })
         h.putInt(n); h.putInt(clusters.size)
-        h.putLong(urlPtrPos.toLong()); h.putLong(titlePtrPos.toLong()); h.putLong(clusterPtrPos.toLong()); h.putLong(mimePos.toLong())
+        h.putLong(urlPtrPos.toLong()); h.putLong(corruptTitlePtr ?: if (writeLegacy) titlePtrPos.toLong() else -1L); h.putLong(clusterPtrPos.toLong()); h.putLong(mimePos.toLong())
         h.putInt(mainPath?.let { index[('C') to it] } ?: -1); h.putInt(-1); h.putLong(checksumPos)
         out.write(h.array()); out.write(mimeList)
         val up = ByteBuffer.allocate(8 * n).order(ByteOrder.LITTLE_ENDIAN); direntOffsets.forEach { up.putLong(it) }; out.write(up.array())
         val titleOrder = sorted.indices.sortedWith { a, b -> cmp(sorted[a].ns, sorted[a].title.ifEmpty { sorted[a].path }, sorted[b].ns, sorted[b].title.ifEmpty { sorted[b].path }) }
-        val tp = ByteBuffer.allocate(4 * n).order(ByteOrder.LITTLE_ENDIAN); titleOrder.forEach { tp.putInt(it) }; out.write(tp.array())
+        if (writeLegacy) { val tp = ByteBuffer.allocate(4 * n).order(ByteOrder.LITTLE_ENDIAN); titleOrder.forEach { tp.putInt(it) }; out.write(tp.array()) }
         val cp = ByteBuffer.allocate(8 * clusters.size).order(ByteOrder.LITTLE_ENDIAN); clusterOffsets.forEach { cp.putLong(it) }; out.write(cp.array())
         dirents.forEach { out.write(it) }; clusterBytes.forEach { out.write(it) }
         out.write(ByteArray(16))

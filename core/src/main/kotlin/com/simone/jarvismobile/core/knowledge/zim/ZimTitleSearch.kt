@@ -48,6 +48,14 @@ class ZimTitleSearch(
             for (k in listOf(1, 2, words).distinct().filter { it <= words }) {
                 probes += caseVariants(seq.take(k).joinToString(" ") { it.original })
             }
+            // Modern archives list only real articles in the title index, so a REDIRECT title ("USA", "Berlin") is invisible to a
+            // prefix scan. The URL index does hold it: probe the exact path (underscored) in a few case shapes, bounded.
+            if (zim.titleIndexMode == ZimTitleIndex.LISTING_V1 && words <= 4) {
+                for (v in caseVariants(text).take(3)) {
+                    val hit = runCatching { zim.findByPath(ns, v.replace(' ', '_')) }.getOrNull() ?: continue
+                    if (hit.isRedirect) offer(hit, text, 0.95 * specificity, Kind.EXACT)
+                }
+            }
             val seenPaths = HashSet<String>()
             for (probe in probes) {
                 val limit = if (probe.contains(' ') && probe.split(' ').size >= words) perPhraseLimit else PROBE_POOL

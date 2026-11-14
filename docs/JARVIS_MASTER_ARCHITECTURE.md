@@ -7389,3 +7389,12 @@ Aggiunta datata: **non modifica né sostituisce** §65.1–§65.10; i 30 macro-s
   stesso `LlmRouter`/`InferenceSlot`, stesso `KnowledgeRepository`. Cronologia al motore come turni reali (`initialMessages`), campionamento via `SamplerConfig` (API documentata v0.14.0).
 - **Grounding:** nessuna conoscenza hardcoded e nessun router per parole chiave: decisioni basate sull'evidenza recuperata e sulla forma dell'output. Dipendenza dichiarata e non operativa: contenuti di conoscenza offline indicizzabili (i Kiwix ZIM non sono interrogabili direttamente).
 - **Stato:** CI VERIFIED a run completata; **non DEVICE VERIFIED**; nessuna misura di qualità del modello reale eseguita. Dettaglio, misure (solo prompt) e prove Honor 200: `docs/BETA_STEP08_HOTFIX5_QUALITY_ENGINE.md`.
+
+## 65.12 ADDENDUM 2026-11-14 — Knowledge Engine (lettura ZIM) + ZIM HOTFIX (indice titoli moderno)
+
+Aggiunta datata: **non modifica** §65.1–§65.11; i 30 macro-step sono invariati. A0–A4 **non avviate**.
+
+- **Knowledge Engine (Beta `e9ddd5a`):** lettore OpenZIM in puro Kotlin (`core/knowledge/zim`), lettura per titolo con accesso casuale, evidenza/provenienza nel percorso di conoscenza esistente (`KnowledgeRepository.gather`, `EvidenceAssembler`, `SourceFooter`); nessun nuovo orchestratore, vault o memoria. Scelta di licenza: niente libzim/libkiwix (GPLv3).
+- **Problema reale su Honor 200:** «Verifica lettura» falliva con `pointer_lists_out_of_bounds` su Wikipedia/Wiktionary/Wikibooks IT 2026. **Causa confermata:** i ZIM moderni possono omettere la lista titoli storica (`titlePtrPos` = sentinella `-1`) e usare `X/listing/titleOrdered/v1`; il lettore pretendeva la lista storica.
+- **Correzione:** assenza distinta da puntatore invalido (controlli di integrità invariati), ricerca per titolo tramite listing v1 (letture di 4 byte per passo, nessun caricamento in RAM), compatibilità storica mantenuta, redirect raggiunti dall'indice URL, diagnostica dell'header senza dati personali. Dettaglio, versioni supportate e procedura: `docs/KNOWLEDGE_ENGINE_ZIM.md`.
+- **Stato:** CI VERIFIED a run completata; **non DEVICE VERIFIED**. L'indice SQLite FTS persistente resta una fase separata, non realizzata.
