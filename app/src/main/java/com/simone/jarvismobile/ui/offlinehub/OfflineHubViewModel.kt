@@ -39,7 +39,26 @@ class OfflineHubViewModel @Inject constructor(
     private val settings: SettingsRepository,
     private val knowledge: KnowledgeRepository,
     private val zimKnowledge: com.simone.jarvismobile.knowledge.zim.ZimKnowledge,
+    private val indexManager: com.simone.jarvismobile.knowledge.index.KnowledgeIndexManager,
 ) : ViewModel() {
+
+    // KNOWLEDGE ENGINE 2.0 — the persistent full-text index: opt-in per archive, bounded, resumable, removable.
+    val indexProgress = indexManager.progress
+    val indexSources = indexManager.sources
+    private val _budgetMb = MutableStateFlow(com.simone.jarvismobile.data.SettingsRepository.DEFAULT_KNOWLEDGE_INDEX_BUDGET_MB)
+    val budgetMb: StateFlow<Int> = _budgetMb.asStateFlow()
+    private val _indexFileMb = MutableStateFlow(0.0)
+    val indexFileMb: StateFlow<Double> = _indexFileMb.asStateFlow()
+
+    fun refreshIndex() = viewModelScope.launch {
+        _budgetMb.value = settings.knowledgeIndexBudgetMb.first()
+        indexManager.refresh()
+        _indexFileMb.value = indexManager.fileBytes() / 1_048_576.0
+    }
+    fun indexZim(e: ZimEntry) { indexManager.startZim(e.uri, e.name) }
+    fun pauseIndex() { indexManager.pause() }
+    fun clearIndex() = viewModelScope.launch { indexManager.clear(); _indexFileMb.value = indexManager.fileBytes() / 1_048_576.0 }
+    fun setBudgetMb(mb: Int) = viewModelScope.launch { settings.setKnowledgeIndexBudgetMb(mb); _budgetMb.value = mb }
 
     // KNOWLEDGE ENGINE — on-device verification of DIRECT ZIM reading, per archive, and a probe search.
     private val _zimReports = MutableStateFlow<Map<String, com.simone.jarvismobile.knowledge.zim.ZimKnowledge.Report>>(emptyMap())
@@ -66,10 +85,17 @@ class OfflineHubViewModel @Inject constructor(
         val ms = System.currentTimeMillis() - t0
         _probe.value = when (ev) {
             is com.simone.jarvismobile.core.knowledge.Evidence.Grounded ->
-                "Evidenza (${ev.strength.name.lowercase()}${if (ev.conflict) ", fonti discordanti" else ""}) in $ms ms:\n" +
-                    ev.passages.joinToString("\n") { "• " + it.chunk.reference + (if (it.chunk.section.isNotBlank()) ", " + it.chunk.section else "") + ": " + it.chunk.text.replace('\n', ' ').take(180) } +
+                (if (ev.supportEstablished) "Passaggi di supporto" else "Solo passaggi CORRELATI (non provano la risposta)") +
+                    " (${ev.strength.name.lowercase()}${if (ev.conflict) ", fonti discordanti" else ""}) in $ms ms:\n" +
+                    ev.passages.joinToString("\n") {
+                        (if (it.related) "~ " else "• ") + it.chunk.reference + (if (it.chunk.section.isNotBlank()) ", " + it.chunk.section else "") + ": " +
+                            it.supportWindow.ifBlank { it.chunk.text }.replace('\n', ' ').take(180)
+                    } +
                     (if (ev.uncovered.isNotEmpty()) "\nNessuna fonte per: " + ev.uncovered.joinToString(", ") else "")
-            else -> "Nessuna evidenza adeguata nelle fonti verificate ($ms ms): JARVIS dichiarerebbe che il dato non è verificabile offline."
+            is com.simone.jarvismobile.core.knowledge.Evidence.Insufficient ->
+                "Fonti pertinenti ma INSUFFICIENTI ($ms ms): " + ev.consulted.joinToString("; ") { it.reference } +
+                    ". Nessun passaggio contiene la risposta (mancano: " + ev.missing.joinToString(", ") + "): JARVIS non le citerebbe come prova."
+            else -> "Nessuna evidenza nelle fonti verificate o indicizzate ($ms ms): JARVIS dichiarerebbe che il dato non è verificabile offline."
         }
     }
 
@@ -120,7 +146,11 @@ class OfflineHubViewModel @Inject constructor(
 
     fun addZimFolder(uri: Uri) = viewModelScope.launch { zim.addFolder(uri); refresh(); _message.value = "Cartella collegata in sola lettura. " + com.simone.jarvismobile.core.offlinehub.ZimPolicy.NO_COPY }
     fun addZimFile(uri: Uri) = viewModelScope.launch { zim.addFile(uri); refresh(); _message.value = "Archivio aggiunto. " + com.simone.jarvismobile.core.offlinehub.ZimPolicy.NO_COPY }
-    fun removeZim(e: ZimEntry) = viewModelScope.launch { zimKnowledge.forget(e.uri); zim.removeFile(e.uri); refresh() }
+    fun removeZim(e: ZimEntry) = viewModelScope.launch {
+        // the archive's entries in the index go with it (the file itself is never touched)
+        runCatching { zimKnowledge.sourceFor(e.uri)?.first?.zim?.uuid?.let { indexManager.removeZim("zim:$it") } }
+        zimKnowledge.forget(e.uri); zim.removeFile(e.uri); refresh()
+    }
     fun removeZimFolder() = viewModelScope.launch { zim.removeFolder(); refresh() }
 
     fun setKnowledgeFolder(uri: Uri) = viewModelScope.launch { knowledge.setLibrary(uri); refresh() }

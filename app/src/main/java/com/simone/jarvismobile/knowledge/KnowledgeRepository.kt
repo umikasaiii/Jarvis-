@@ -7,9 +7,12 @@ import android.util.Log
 import androidx.documentfile.provider.DocumentFile
 import com.simone.jarvismobile.core.knowledge.Evidence
 import com.simone.jarvismobile.core.knowledge.KnowledgeChunk
+import com.simone.jarvismobile.core.knowledge.KnowledgeGatherer
 import com.simone.jarvismobile.core.knowledge.KnowledgeIndexer
 import com.simone.jarvismobile.core.knowledge.KnowledgeSearch
+import com.simone.jarvismobile.core.knowledge.fts.PassageIn
 import com.simone.jarvismobile.data.SettingsRepository
+import com.simone.jarvismobile.knowledge.index.KnowledgeIndexManager
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -39,6 +42,7 @@ class KnowledgeRepository @Inject constructor(
     @ApplicationContext private val context: Context,
     private val settings: SettingsRepository,
     private val zim: com.simone.jarvismobile.knowledge.zim.ZimKnowledge,
+    private val indexManager: KnowledgeIndexManager,
 ) {
     /** Observable state of the library, for the UI. */
     data class Status(
@@ -52,26 +56,26 @@ class KnowledgeRepository @Inject constructor(
     private val _status = MutableStateFlow(Status())
     val status = _status.asStateFlow()
 
-    @Volatile private var chunks: List<KnowledgeChunk> = emptyList()
     private val search = KnowledgeSearch()
+    private val gatherer = KnowledgeGatherer()
     private val mutex = Mutex()
+    @Volatile private var synced = false
 
     suspend fun isConfigured(): Boolean = settings.knowledgeUri.first().isNotBlank()
 
-    /** Something to search: a text library folder and/or at least one ZIM archive verified on this device. */
-    suspend fun isAvailable(): Boolean = isConfigured() || zim.hasVerified()
-
-    private val assembler = com.simone.jarvismobile.core.knowledge.EvidenceAssembler()
+    /** Something to search: a text library folder, an archive verified on this device, or anything already indexed. */
+    suspend fun isAvailable(): Boolean = isConfigured() || zim.hasVerified() || withContext(Dispatchers.IO) { runCatching { indexManager.index.passageCount() > 0 }.getOrDefault(false) }
 
     /**
-     * KNOWLEDGE ENGINE — the one retrieval entry point for general knowledge: ZIM archives (articles whose TITLE the question
-     * names, read on demand) and the text library, merged and judged by the SAME [EvidenceAssembler] gate. Personal memory
-     * and the user's imported documents are NOT sources here: they have their own paths and never mix with encyclopaedic text.
+     * KNOWLEDGE ENGINE 2.0 — the one retrieval entry point for general knowledge: ZIM archives (articles whose TITLE the question
+     * names, read on demand) plus the persistent full-text index (library files and the leads of archives the user chose to
+     * index), judged by the SAME [com.simone.jarvismobile.core.knowledge.EvidenceAssembler] gate: relevance is not sufficiency.
+     * Personal memory and the user's imported documents are NOT sources here: they have their own paths and never mix with
+     * encyclopaedic text.
      */
     suspend fun gather(question: String, limit: Int = 3): Evidence = withContext(Dispatchers.Default) {
-        val zimHits = zim.sources().flatMap { src -> runCatching { src.articles(question, 3) }.getOrDefault(emptyList()) }
-        val docChunks = (find(question, 6) as? Evidence.Grounded)?.passages?.map { it.chunk }.orEmpty()
-        assembler.assemble(question, zimHits, docChunks, limit)
+        val index = runCatching { indexManager.index }.getOrNull()
+        gatherer.gather(question, zim.sources(), index, emptyList(), limit)
     }
 
     /** Persists the picked folder and takes a durable READ permission only. */
@@ -97,7 +101,11 @@ class KnowledgeRepository @Inject constructor(
             }
         }
         settings.setKnowledgeUri("")
-        chunks = emptyList()
+        withContext(Dispatchers.IO) {
+            runCatching { indexManager.index.sources().filter { it.kind == "doc" }.forEach { indexManager.index.removeSource(it.key) } }
+        }
+        synced = false
+        indexManager.refresh()
         _status.value = Status(configured = false)
     }
 
@@ -107,9 +115,9 @@ class KnowledgeRepository @Inject constructor(
         return runCatching { DocumentFile.fromTreeUri(context, Uri.parse(uri))?.name }.getOrNull()
     }
 
-    /** Indexes only if a library is set and nothing has been indexed yet. */
+    /** Syncs the library into the index once per process (incrementally: unchanged files cost nothing). */
     suspend fun ensureBuilt() {
-        if (chunks.isNotEmpty() || _status.value.indexing) return
+        if (synced || _status.value.indexing) return
         if (!isConfigured()) {
             _status.value = _status.value.copy(configured = false)
             return
@@ -117,42 +125,54 @@ class KnowledgeRepository @Inject constructor(
         rebuild()
     }
 
-    /** Re-reads the whole library folder. */
-    suspend fun rebuild() = withContext(Dispatchers.Default) {
+    /**
+     * Brings the index in line with the library folder: new/changed files are (re)indexed, vanished files are removed,
+     * unchanged files are skipped (signature = size + modification time). Nothing is held in memory afterwards and an
+     * interruption resumes: a half-indexed file is redone, finished ones are kept.
+     */
+    suspend fun rebuild() = withContext(Dispatchers.IO) {
         mutex.withLock {
             _status.value = _status.value.copy(configured = true, indexing = true, lastError = null)
             try {
                 val uri = settings.knowledgeUri.first()
-                val tree = DocumentFile.fromTreeUri(context, Uri.parse(uri))
-                    ?: throw IllegalStateException("no_tree")
-                val docs = ArrayList<Pair<String, String>>()
-                collect(tree, "", docs)
-                val built = docs.flatMap { (path, text) ->
-                    KnowledgeIndexer.chunk(
-                        sourceId = path,
-                        sourceTitle = path.substringAfterLast('/').substringBeforeLast('.'),
-                        content = text,
-                    )
+                val tree = DocumentFile.fromTreeUri(context, Uri.parse(uri)) ?: throw IllegalStateException("no_tree")
+                val files = ArrayList<Pair<String, DocumentFile>>()
+                collect(tree, "", files)
+                val index = indexManager.index
+                val budget = indexManager.budgetBytes()
+                val seen = HashSet<String>()
+                for ((path, f) in files) {
+                    seen += path
+                    val signature = "${f.length()}|${f.lastModified()}"
+                    if (!index.begin(path, "doc", path.substringAfterLast('/').substringBeforeLast('.'), "", "", signature)) continue
+                    val text = runCatching { context.contentResolver.openInputStream(f.uri)?.bufferedReader()?.use { it.readText() } }.getOrNull()
+                    if (text == null) { index.removeSource(path); continue }
+                    val title = path.substringAfterLast('/').substringBeforeLast('.')
+                    val passages = KnowledgeIndexer.chunk(path, title, text).mapIndexed { i, c -> PassageIn(path, title, c.section, c.text, lead = i == 0) }
+                    val stored = index.addBatch(path, passages, "done", budget)
+                    if (stored >= passages.size) index.finish(path)
                 }
-                chunks = built
-                _status.value = Status(
-                    configured = true,
-                    indexing = false,
-                    documentCount = docs.size,
-                    passageCount = built.size,
-                )
-                Log.i(TAG, "knowledge_indexed docs=${docs.size} passages=${built.size}")
+                // files that vanished from the folder
+                index.sources().filter { it.kind == "doc" && it.key !in seen }.forEach { index.removeSource(it.key) }
+                val docs = index.sources().filter { it.kind == "doc" }
+                synced = true
+                _status.value = Status(configured = true, indexing = false, documentCount = docs.size, passageCount = docs.sumOf { it.passages })
+                Log.i(TAG, "knowledge_synced docs=${docs.size} passages=${docs.sumOf { it.passages }}")
             } catch (t: Throwable) {
                 Log.w(TAG, "knowledge_index_failed ${t.javaClass.simpleName}")
                 _status.value = _status.value.copy(indexing = false, lastError = t.javaClass.simpleName)
             }
+            indexManager.refresh()
         }
     }
 
-    /** Passages that actually support [question], or [Evidence.NoEvidence]. */
-    fun find(question: String, limit: Int = 3): Evidence = search.search(question, chunks, limit)
+    /** Passages from the TEXT LIBRARY that support [question], or [Evidence.NoEvidence] (lexical gate only; see [gather] for the full judge). */
+    fun find(question: String, limit: Int = 3): Evidence {
+        val candidates = runCatching { indexManager.index.search(question, 24, setOf("doc")) }.getOrDefault(emptyList())
+        return search.search(question, candidates, limit)
+    }
 
-    private fun collect(dir: DocumentFile, prefix: String, out: MutableList<Pair<String, String>>) {
+    private fun collect(dir: DocumentFile, prefix: String, out: MutableList<Pair<String, DocumentFile>>) {
         if (out.size >= MAX_DOCUMENTS) return
         for (f in dir.listFiles()) {
             if (out.size >= MAX_DOCUMENTS) return
@@ -163,10 +183,7 @@ class KnowledgeRepository @Inject constructor(
             }
             if (!SUPPORTED.any { name.endsWith(it, ignoreCase = true) }) continue
             if (f.length() > MAX_FILE_BYTES) continue
-            val text = runCatching {
-                context.contentResolver.openInputStream(f.uri)?.bufferedReader()?.use { it.readText() }
-            }.getOrNull() ?: continue
-            out += "$prefix$name" to text
+            out += "$prefix$name" to f
         }
     }
 
@@ -174,14 +191,12 @@ class KnowledgeRepository @Inject constructor(
         const val TAG = "JarvisKnowledge"
 
         /**
-         * Plain-text formats only for now. PDF/EPUB need text extraction and a
-         * full Wikipedia dump should be read as ZIM through a dedicated reader
-         * rather than expanded into files — both are described in
-         * docs/LOCAL_KNOWLEDGE.md and slot in behind this same interface.
+         * Plain-text formats only for now. PDF/EPUB need text extraction; a full Wikipedia dump stays a ZIM, read directly by
+         * title and, opt-in, indexed by its article leads (docs/KNOWLEDGE_ENGINE_ZIM.md).
          */
         val SUPPORTED = listOf(".md", ".markdown", ".txt", ".text")
 
-        /** Bounds so importing a huge folder cannot exhaust memory. */
+        /** Bounds so importing a huge folder cannot exhaust memory or space. */
         const val MAX_DOCUMENTS = 4_000
         const val MAX_FILE_BYTES = 4L * 1024 * 1024
     }

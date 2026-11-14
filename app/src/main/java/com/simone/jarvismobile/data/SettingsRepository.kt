@@ -60,6 +60,7 @@ class SettingsRepository @Inject constructor(
         val ZIM_TREE_URI = stringPreferencesKey("hub_zim_tree_uri")
         val ZIM_DOC_URIS = stringPreferencesKey("hub_zim_doc_uris")
         val ZIM_VERIFIED = stringPreferencesKey("knowledge_zim_verified")
+        val KNOWLEDGE_INDEX_BUDGET_MB = intPreferencesKey("knowledge_index_budget_mb")
         val KIWIX_PREFERRED = stringPreferencesKey("hub_kiwix_preferred_pkg")
         val OM_PREFERRED = stringPreferencesKey("hub_organic_preferred_pkg")
         val EMBEDDING_MODEL_PATH = stringPreferencesKey("embedding_model_path")
@@ -252,6 +253,10 @@ class SettingsRepository @Inject constructor(
             if (value.isEmpty()) it.remove(Keys.ZIM_VERIFIED) else it[Keys.ZIM_VERIFIED] = value.joinToString("\u001F")
         }
     }
+
+    /** Space budget of the persistent knowledge index (MB). Indexing stops, honestly "partial", when it is reached. */
+    val knowledgeIndexBudgetMb: Flow<Int> = context.settingsDataStore.data.map { it[Keys.KNOWLEDGE_INDEX_BUDGET_MB] ?: DEFAULT_KNOWLEDGE_INDEX_BUDGET_MB }
+    suspend fun setKnowledgeIndexBudgetMb(mb: Int) { context.settingsDataStore.edit { it[Keys.KNOWLEDGE_INDEX_BUDGET_MB] = mb.coerceIn(10, 2000) } }
 
     /** SAF document URIs of individually selected ZIM files. */
     val hubZimDocUris: Flow<List<String>> =
@@ -1463,6 +1468,7 @@ class SettingsRepository @Inject constructor(
                 "Dai del tu, vai dritto al punto, niente frasi di circostanza o servili. " +
                 "Sei competente e leale; se qualcosa non si può fare lo dici con garbo, senza girarci intorno."
         const val DEFAULT_RECORD_SECONDS = 3
+        const val DEFAULT_KNOWLEDGE_INDEX_BUDGET_MB = 150
         const val DEFAULT_TTS_VOLUME = 1.0f
         /** Engine the pre-Piper preference keys belonged to. */
         const val LEGACY_ENGINE = "kokoro"

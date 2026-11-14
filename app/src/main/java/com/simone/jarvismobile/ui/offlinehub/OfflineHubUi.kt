@@ -63,6 +63,11 @@ fun OfflineLibraryScreen(
     val zimReports by viewModel.zimReports.collectAsStateWithLifecycle()
     val verifying by viewModel.verifying.collectAsStateWithLifecycle()
     val probe by viewModel.probe.collectAsStateWithLifecycle()
+    val indexProgress by viewModel.indexProgress.collectAsStateWithLifecycle()
+    val indexSources by viewModel.indexSources.collectAsStateWithLifecycle()
+    val budgetMb by viewModel.budgetMb.collectAsStateWithLifecycle()
+    val indexFileMb by viewModel.indexFileMb.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) { viewModel.refreshIndex() }
     var probeQuery by remember { mutableStateOf("") }
     val folder by viewModel.folderName.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
@@ -160,6 +165,10 @@ fun OfflineLibraryScreen(
                                 onClick = { viewModel.verifyZim(z) },
                                 enabled = z.access == ZimAccess.READABLE && verifying == null,
                             ) { Text(if (verifying == z.uri) "Verifico…" else "Verifica lettura") }
+                            OutlinedButton(
+                                onClick = { viewModel.indexZim(z) },
+                                enabled = z.uri in verifiedUris && !indexProgress.running,
+                            ) { Text("Indicizza") }
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             OutlinedButton(onClick = { viewModel.openZim(z) }, enabled = kiwix.isInstalled && z.access == ZimAccess.READABLE) { Text("Apri in Kiwix") }
@@ -171,11 +180,48 @@ fun OfflineLibraryScreen(
             }
         }
 
+        // --- Persistent knowledge index (opt-in, bounded, resumable) ---------------
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Indice di ricerca (SQLite FTS)", fontWeight = FontWeight.SemiBold)
+                Text(
+                    "Facoltativo. Indicizza SOLO l'introduzione degli articoli degli archivi che scegli con «Indicizza», entro il limite di spazio: " +
+                        "permette di trovare un argomento anche quando la domanda non ne nomina il titolo. Gli archivi restano leggibili direttamente anche senza indice. " +
+                        "Non contiene memoria personale e può essere eliminato in qualsiasi momento.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Text("Limite di spazio", style = MaterialTheme.typography.labelMedium)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(50, 150, 300, 600).forEach { mb -> FilterChip(selected = budgetMb == mb, onClick = { viewModel.setBudgetMb(mb) }, label = { Text("$mb MB") }) }
+                }
+                val totalPassages = indexSources.sumOf { it.passages }
+                Text("Indicizzati: ${indexSources.size} fonti · $totalPassages passaggi · file su disco ${"%.1f".format(indexFileMb)} MB", style = MaterialTheme.typography.bodySmall)
+                indexSources.forEach { s ->
+                    Text(
+                        "• ${s.title} — ${s.passages} passaggi · " + when (s.state) {
+                            com.simone.jarvismobile.core.knowledge.fts.IndexedSource.State.COMPLETE -> "completo"
+                            com.simone.jarvismobile.core.knowledge.fts.IndexedSource.State.PARTIAL_BUDGET -> "parziale (limite raggiunto)"
+                            com.simone.jarvismobile.core.knowledge.fts.IndexedSource.State.INDEXING -> "in corso / interrotto: riprendibile"
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                }
+                if (indexProgress.running) {
+                    Text("Indicizzo «${indexProgress.label}»: ${indexProgress.done} / ${indexProgress.total} articoli", style = MaterialTheme.typography.bodySmall, color = Warn)
+                }
+                indexProgress.message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { viewModel.pauseIndex() }, enabled = indexProgress.running) { Text("Pausa") }
+                    OutlinedButton(onClick = { viewModel.clearIndex() }, enabled = !indexProgress.running && indexSources.isNotEmpty()) { Text("Elimina indice") }
+                }
+            }
+        }
+
         // --- Probe search over the verified archives ------------------------------
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Prova ricerca nelle fonti verificate", fontWeight = FontWeight.SemiBold)
-                Text("Cerca per titolo negli archivi ZIM verificati e nella biblioteca testuale, con lo stesso controllo di pertinenza della chat. Nessun modello coinvolto.", style = MaterialTheme.typography.bodySmall)
+                Text("Cerca negli archivi ZIM verificati (per titolo), nell'indice e nella biblioteca testuale, con lo stesso controllo di sufficienza della chat: «correlato» non è «prova». Nessun modello coinvolto.", style = MaterialTheme.typography.bodySmall)
                 OutlinedTextField(value = probeQuery, onValueChange = { probeQuery = it }, modifier = Modifier.fillMaxWidth(), singleLine = true, label = { Text("Domanda di prova") })
                 OutlinedButton(onClick = { viewModel.probeSearch(probeQuery) }, enabled = probeQuery.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text("Cerca") }
                 if (probe.isNotEmpty()) Text(probe, style = MaterialTheme.typography.bodySmall)

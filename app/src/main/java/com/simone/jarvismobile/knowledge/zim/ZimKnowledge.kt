@@ -97,6 +97,26 @@ class ZimKnowledge @Inject constructor(
         }
     }
 
+    /** One verified archive (opened lazily, as in [sources]) with the size that identifies the verified file, or null. */
+    suspend fun sourceFor(uri: String): Pair<ZimKnowledgeSource, Long>? = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            val size = verifiedEntries().firstOrNull { it.first == uri }?.second ?: return@withLock null
+            val src = opened[uri]?.takeIf { it.size == size }?.source ?: run {
+                closeLocked(uri)
+                runCatching {
+                    val b = SafByteSource(context, Uri.parse(uri))
+                    val s = ZimKnowledgeSource(ZimArchive.open(b, AndroidZimDecompressor))
+                    opened[uri] = Opened(b.size, b, s)
+                    s
+                }.getOrNull()
+            } ?: return@withLock null
+            src to size
+        }
+    }
+
+    /** URIs of the archives verified on this device and still the same file. */
+    suspend fun verifiedUris(): List<String> = verifiedEntries().map { it.first }
+
     suspend fun forget(uri: String) {
         mutex.withLock { closeLocked(uri) }
         settings.setZimVerified(settings.zimVerified.first().filterNot { it.substringBeforeLast('|') == uri }.toSet())

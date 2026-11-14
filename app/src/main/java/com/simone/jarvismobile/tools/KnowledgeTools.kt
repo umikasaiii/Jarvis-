@@ -53,6 +53,11 @@ class SearchKnowledgeTool(private val knowledge: KnowledgeRepository) : Tool {
                     "Preferisco dirtelo piuttosto che inventare una risposta.",
             )
 
+            is Evidence.Insufficient -> ok(
+                "found" to "false",
+                "spoken" to "Nelle mie guide offline ci sono contenuti correlati, ma nessuno risponde a questa domanda.",
+            )
+
             is Evidence.Grounded -> {
                 val first = evidence.passages.first()
                 val sources = evidence.passages.joinToString("; ") { it.chunk.citation }
