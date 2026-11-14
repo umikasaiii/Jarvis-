@@ -3583,6 +3583,10 @@ dedup, authorization, retry safety o completion.
 
 ## 65.7 ROADMAP PROGRESS INDEX — 30 FIXED MACRO-STEPS
 
+**AGGIORNAMENTO CANONICO 2026-11-14:** l'utente ha autorizzato il superamento del limite storico di 30 macro-step. La roadmap di progress tracking ora è [`docs/JARVIS_ROADMAP_MACRO_CATEGORIES.md`](JARVIS_ROADMAP_MACRO_CATEGORIES.md), con **50 macro-step in 10 categorie**, inclusi Knowledge Engine, Quality, Guardian, 64 capacità future, Coding Studio, Agente Live, Autonomous Agents, Geo-Select e Cyber Lab Pro. Il testo dei '30 fixed' che segue è conservato come **decisione storica, superata**: NON è più la regola numerica vigente. La numerazione originaria PASS 14/14B/15, BETA 1–8 e G1–G7 è preservata. La riconciliazione è docs-only: le specifiche Guardian/post-release restano sul ramo `claude/guardian-g1-g2` finché non si riconciliano i rami, senza merge automatico di codice.
+
+
+
 Convenzione di tracking scelta esplicitamente dal proprietario del progetto
 (2026-10-05). Esisteva nella conversazione di progetto ma **non** era mai stata
 resa canonica nel repository: questa sezione ne è la prima registrazione.
