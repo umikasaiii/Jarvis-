@@ -21,6 +21,9 @@ object KnowledgeText {
         "quante", "quanta", "dimmi", "parlami", "spiegami", "raccontami", "dammi", "cos", "perche", "chi", "fu", "era", "sono", "ha",
         "hanno", "si", "mi", "ti", "ci", "vi", "al", "alla", "allo", "alle", "ai", "dal", "dalla", "dai", "dalle", "col", "tutto",
         "tutti", "molto", "puo", "deve", "devo", "dire", "sapere", "the", "what", "is", "of", "and", "for", "about", "which",
+        // request frames ("mi sai dire…", "vorrei sapere…", "cosa significa…"): they ask, they do not name what is asked about
+        "sai", "saprebbe", "saresti", "potresti", "potrebbe", "vorrei", "dici", "dirmi", "indicami", "elencami", "dimmi", "significa",
+        "significato", "vuol", "vuole", "spiega", "spiegare", "sapete", "conosci", "esiste", "esistono",
     )
 
     fun isStopword(folded: String): Boolean = folded in KnowledgeSearch.STOPWORDS || folded in EXTRA_STOP

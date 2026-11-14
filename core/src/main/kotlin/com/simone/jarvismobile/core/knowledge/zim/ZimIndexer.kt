@@ -30,7 +30,7 @@ class ZimIndexer(private val zim: ZimArchive, private val index: KnowledgeIndex)
     ): IndexedSource.State {
         val title = zim.metadata("Title") ?: "ZIM"
         val date = zim.metadata("Date").orEmpty()
-        val needed = index.begin(sourceKey, "zim", title, title, date, signature)
+        val needed = index.begin(sourceKey, "zim", title, title, date, signature, lexical = ZimKnowledgeSource.isLexical(zim))
         if (!needed) return index.source(sourceKey)?.state ?: IndexedSource.State.COMPLETE
         val total = minOf(zim.titleOrderCount, maxArticles)
         var pos = index.cursor(sourceKey).toIntOrNull() ?: 0

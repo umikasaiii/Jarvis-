@@ -55,7 +55,7 @@ class KnowledgeIndex(private val db: FtsDb) {
             // derived cache only: dropping it loses no user data, the sources are re-read on demand
             for (t in listOf("kx_vocab", "kx_fts", "kx_passage", "kx_source", "kx_meta")) runCatching { db.exec("DROP TABLE IF EXISTS $t") }
             db.exec("CREATE TABLE kx_meta(key TEXT PRIMARY KEY, value TEXT)")
-            db.exec("CREATE TABLE kx_source(id INTEGER PRIMARY KEY, skey TEXT UNIQUE NOT NULL, kind TEXT, title TEXT, collection TEXT, date TEXT, signature TEXT, cursor TEXT, state TEXT, passages INTEGER DEFAULT 0, bytes INTEGER DEFAULT 0)")
+            db.exec("CREATE TABLE kx_source(id INTEGER PRIMARY KEY, skey TEXT UNIQUE NOT NULL, kind TEXT, title TEXT, collection TEXT, date TEXT, signature TEXT, cursor TEXT, state TEXT, passages INTEGER DEFAULT 0, bytes INTEGER DEFAULT 0, lexical INTEGER DEFAULT 0)")
             db.exec("CREATE TABLE kx_passage(id INTEGER PRIMARY KEY, sourceId INTEGER NOT NULL, docKey TEXT, title TEXT, section TEXT, text TEXT, lead INTEGER)")
             db.exec("CREATE INDEX kx_passage_source ON kx_passage(sourceId)")
             db.exec("CREATE INDEX kx_passage_doc ON kx_passage(sourceId, docKey)")
@@ -81,18 +81,18 @@ class KnowledgeIndex(private val db: FtsDb) {
      * Declares a source about to be indexed. Returns false when it is already COMPLETE (or budget-stopped) with the SAME
      * signature — nothing to do; true when indexing must run (new, changed, or interrupted: then [cursor] says where to resume).
      */
-    fun begin(key: String, kind: String, title: String, collection: String, date: String, signature: String): Boolean = db.transaction {
+    fun begin(key: String, kind: String, title: String, collection: String, date: String, signature: String, lexical: Boolean = false): Boolean = db.transaction {
         val cur = source(key)
         when {
-            cur == null -> { insertSource(key, kind, title, collection, date, signature); true }
-            cur.signature != signature -> { removeSourceRows(key); insertSource(key, kind, title, collection, date, signature); true }
+            cur == null -> { insertSource(key, kind, title, collection, date, signature, lexical); true }
+            cur.signature != signature -> { removeSourceRows(key); insertSource(key, kind, title, collection, date, signature, lexical); true }
             cur.state == IndexedSource.State.INDEXING -> true
             else -> false
         }
     }
 
-    private fun insertSource(key: String, kind: String, title: String, collection: String, date: String, signature: String) =
-        db.exec("INSERT INTO kx_source(skey, kind, title, collection, date, signature, cursor, state) VALUES(?,?,?,?,?,?,?,?)", key, kind, title, collection, date, signature, "", IndexedSource.State.INDEXING.name)
+    private fun insertSource(key: String, kind: String, title: String, collection: String, date: String, signature: String, lexical: Boolean) =
+        db.exec("INSERT INTO kx_source(skey, kind, title, collection, date, signature, cursor, state, lexical) VALUES(?,?,?,?,?,?,?,?,?)", key, kind, title, collection, date, signature, "", IndexedSource.State.INDEXING.name, if (lexical) 1 else 0)
 
     fun cursor(key: String): String = source(key)?.cursor.orEmpty()
 
@@ -197,37 +197,53 @@ class KnowledgeIndex(private val db: FtsDb) {
         val byRarity = known.distinctBy { it.first }.sortedBy { it.second }.map { it.first }
 
         val ids = LinkedHashSet<Long>()
-        var k = byRarity.size
-        while (k >= 1 && ids.size < CANDIDATES) {
-            val subset = byRarity.take(k)
-            // a single common word is not a query: it would drag in thousands of unrelated passages
-            if (k == 1 && known.first { it.first == subset[0] }.second > SINGLE_TERM_MAX_DF && raw.size > 1) break
-            val expr = subset.joinToString(" ") { it.filter { c -> c.isLetterOrDigit() } }.trim()
-            if (expr.isNotEmpty()) {
+        // AND of all terms first, then every subset that drops one, then two terms (a rare word in the question may simply not
+        // occur in the answer-bearing passage). A single common word is never a query: it would drag in unrelated passages.
+        var queries = 0
+        for (k in byRarity.size downTo maxOf(1, byRarity.size - 2)) {
+            for (subset in subsets(byRarity, k)) {
+                if (ids.size >= CANDIDATES || queries >= MAX_QUERIES) break
+                if (subset.size == 1 && known.first { it.first == subset[0] }.second > SINGLE_TERM_MAX_DF && raw.size > 1) continue
+                val expr = subset.joinToString(" ") { it.filter { c -> c.isLetterOrDigit() } }.trim()
+                if (expr.isEmpty()) continue
+                queries++
                 db.query("SELECT docid FROM kx_fts WHERE kx_fts MATCH ? LIMIT ?", expr, CANDIDATES) { it.long(0) }.forEach { ids += it }
             }
-            k--
+            if (ids.size >= limit * 2) break
         }
         if (ids.isEmpty()) return emptyList()
         val rows = ids.toList().take(CANDIDATES).chunked(400).flatMap { part ->
             db.query(
-                "SELECT p.docKey, p.title, p.section, p.text, p.lead, s.kind, s.collection, s.date FROM kx_passage p JOIN kx_source s ON s.id = p.sourceId WHERE p.id IN (${part.joinToString(",") { "?" }})",
+                "SELECT p.docKey, p.title, p.section, p.text, p.lead, s.kind, s.collection, s.date, s.lexical FROM kx_passage p JOIN kx_source s ON s.id = p.sourceId WHERE p.id IN (${part.joinToString(",") { "?" }})",
                 *part.toTypedArray(),
-            ) { Row(it.string(0), it.string(1), it.string(2), it.string(3), it.long(4) == 1L, it.string(5), it.string(6), it.string(7)) }
+            ) { Row(it.string(0), it.string(1), it.string(2), it.string(3), it.long(4) == 1L, it.string(5), it.string(6), it.string(7), it.long(8) == 1L) }
         }.filter { kinds == null || it.kind in kinds }
-        val chunks = rows.map { KnowledgeChunk(it.docKey, it.title, it.section, it.text, it.kind, it.collection, it.date, it.lead) }
+        val chunks = rows.map { KnowledgeChunk(it.docKey, it.title, it.section, it.text, it.kind, it.collection, it.date, it.lead, it.lexical) }
         val ranked = (KnowledgeSearch(minScore = 0.0).search(question, chunks, chunks.size) as? com.simone.jarvismobile.core.knowledge.Evidence.Grounded)?.passages.orEmpty()
         return ranked.map { it.chunk }.take(limit)
     }
 
-    private data class Row(val docKey: String, val title: String, val section: String, val text: String, val lead: Boolean, val kind: String, val collection: String, val date: String)
+    /** All k-element subsets of [items], keeping the original order (rarest first). */
+    private fun subsets(items: List<String>, k: Int): List<List<String>> {
+        if (k >= items.size) return listOf(items)
+        val out = ArrayList<List<String>>()
+        fun rec(start: Int, cur: ArrayList<String>) {
+            if (cur.size == k) { out += cur.toList(); return }
+            for (i in start until items.size) { cur += items[i]; rec(i + 1, cur); cur.removeAt(cur.size - 1) }
+        }
+        rec(0, ArrayList())
+        return out
+    }
+
+    private data class Row(val docKey: String, val title: String, val section: String, val text: String, val lead: Boolean, val kind: String, val collection: String, val date: String, val lexical: Boolean)
 
     companion object {
-        const val SCHEMA = "1"
+        const val SCHEMA = "2"
         private const val OVERHEAD = 64
         private const val OVERHEAD_FACTOR = 1.3
         private const val MAX_TERMS = 8
         private const val CANDIDATES = 150
+        private const val MAX_QUERIES = 40
         private const val SINGLE_TERM_MAX_DF = 300
     }
 }

@@ -55,7 +55,7 @@ object SupportJudge {
 
     fun stems(text: String): List<String> =
         KnowledgeSearch.NON_WORD.split(joinHyphens(KnowledgeText.fold(text)))
-            .filter { it.length >= 3 && !KnowledgeText.isStopword(it) }
+            .filter { (it.length >= 3 || (it.length == 2 && it.any(Char::isDigit))) && !KnowledgeText.isStopword(it) } // "K2", "A4"
             .map { KnowledgeSearch.stemWord(it) }
 
     /** "Wi-Fi" and "wifi" are one word ("wi", "fi" alone are too short to carry any meaning). */
@@ -113,20 +113,25 @@ object SupportJudge {
             return Result(Level.SUPPORTED, sents.take(2).joinToString(" ").take(MAX_WINDOW_CHARS), 1.0, emptyList(), true, true)
         }
 
-        // what a window must contain
-        val goal: List<String>
-        val needed: Int
-        if (attrs.isNotEmpty()) {
-            goal = attrs
-            needed = if (aboutSubject) kotlin.math.ceil(0.5 * attrs.size).toInt().coerceAtLeast(1)
-            else if (attrs.size <= 3) attrs.size else kotlin.math.ceil(0.75 * attrs.size).toInt()
-        } else {
-            goal = others // relational question ("capitale del Portogallo" with both entries retrieved): the relation must be stated
-            needed = 1
+        // What a window must contain. A DICTIONARY entry describes a word: any other term of the question must be stated in the
+        // same window ("capitale" + "Portogallo"), never merely half of them. An encyclopedia article about the subject needs
+        // only about half of the remaining terms (the question's verbs — "si parla", "si trova" — are often worded differently
+        // from the source); one that names none of the terms must contain them (nearly) all together.
+        // The terms that are other articles' subjects are not attributes this article must state — except when there is no
+        // attribute at all ("capitale del Portogallo" with both entries retrieved): then the relation itself must be stated.
+        // An article that is not ABOUT any asked term must contain every term, whatever other articles were retrieved.
+        val goal = if (aboutSubject && attrs.isNotEmpty()) attrs else rest
+        val needed = when {
+            chunk.lexical -> goal.size
+            aboutSubject -> kotlin.math.ceil(0.5 * goal.size).toInt().coerceAtLeast(1)
+            goal.size <= 2 -> goal.size
+            goal.size <= 4 -> goal.size - 1 // one term may be a category word ("quale ORGANO produce l'insulina?")
+            else -> kotlin.math.ceil(0.75 * goal.size).toInt()
         }
 
         val stemSets = sents.map { stems(it).toSet() }
-        var best: Result? = null
+        class Win(val text: String, val covered: Set<String>, val number: Boolean, val missing: List<String>, val coverage: Double)
+        val wins = ArrayList<Win>()
         var bestNumber: String? = null
         for (i in sents.indices) for (len in 1..2) {
             val end = i + len
@@ -134,20 +139,33 @@ object SupportJudge {
             val text = sents.subList(i, end).joinToString(" ")
             if (text.length > MAX_WINDOW_CHARS * 2) continue
             val pool = HashSet<String>().also { s -> for (k in i until end) s += stemSets[k] }
-            val covered = goal.filter { matches(it, pool, 6) }
-            val missing = rest - rest.filter { matches(it, pool, 6) }.toSet()
             val number = hasNumber(text)
             if (number && bestNumber == null) bestNumber = text.take(MAX_WINDOW_CHARS)
+            val coveredRest = rest.filter { matches(it, pool, 6) }
+            wins += Win(text, goal.filter { matches(it, pool, 6) }.toSet(), number, rest - coveredRest.toSet(), (own.size + coveredRest.size).toDouble() / terms.size)
+        }
+        // best single window: most goal terms, then most question terms, then shortest
+        val ranked = wins.sortedWith(compareByDescending<Win> { it.covered.size }.thenByDescending { it.coverage }.thenBy { it.text.length })
+        val top = ranked.firstOrNull()
+        var best: Result? = null
+        if (top != null) {
+            // a question with several attributes ("capitale e lingua") is answered by up to two windows that cover DIFFERENT terms
+            val chosen = arrayListOf(top)
+            var covered = top.covered
+            for (w in ranked.drop(1)) {
+                if (chosen.size >= 2 || covered.size >= goal.size) break
+                if ((w.covered - covered).isNotEmpty() && w.text != top.text && !top.text.contains(w.text) && !w.text.contains(top.text)) { chosen += w; covered = covered + w.covered }
+            }
+            val number = chosen.any { it.number }
             val ok = covered.size >= needed && (!quantity || number)
-            val coverage = (own.size + rest.count { matches(it, pool, 6) }).toDouble() / terms.size
-            val r = Result(if (ok) Level.SUPPORTED else Level.NONE, text.take(MAX_WINDOW_CHARS), coverage, missing, aboutSubject, missing.isEmpty())
-            val b = best
-            if (b == null || (r.supported && !b.supported) || (r.supported == b.supported && (r.coverage > b.coverage || (r.coverage == b.coverage && r.window.length < b.window.length)))) best = r
+            val joined = chosen.joinToString(" … ") { it.text }.take(MAX_WINDOW_CHARS * 2)
+            val missing = rest - rest.filter { r -> chosen.any { w -> r !in w.missing } }.toSet()
+            best = Result(if (ok) Level.SUPPORTED else Level.NONE, joined, chosen.maxOf { it.coverage }, missing, aboutSubject, missing.isEmpty())
         }
         val b = best ?: return NO_RESULT.copy(aboutSubject = aboutSubject, missing = rest)
         if (b.supported) return b
         // The article is ABOUT the subject but the asked attribute is worded differently from the source: a candidate, not proof.
-        if (aboutSubject && attrs.isNotEmpty() && isLead) {
+        if (aboutSubject && attrs.isNotEmpty() && isLead && !chunk.lexical) {
             val w = (if (quantity) bestNumber else null) ?: sents.take(2).joinToString(" ").take(MAX_WINDOW_CHARS)
             return b.copy(level = Level.RELATED, window = w)
         }

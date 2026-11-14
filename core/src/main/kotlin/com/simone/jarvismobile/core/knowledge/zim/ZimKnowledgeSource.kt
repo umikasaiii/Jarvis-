@@ -17,6 +17,13 @@ class ZimKnowledgeSource(
     val date: String = zim.metadata("Date").orEmpty()
     val language: String = zim.metadata("Language").orEmpty()
 
+    /**
+     * A dictionary archive (Wiktionary-like), recognised from the archive's OWN metadata (Name / Title / Tags / Description), not from
+     * its content. Its entries are about WORDS ("capitale: sostantivo…"): they can answer what a word means, never a question
+     * about the world, so the sufficiency judge demands that every term of the question be stated together in them.
+     */
+    val lexical: Boolean = isLexical(zim)
+
     data class ArticleHit(val candidate: ZimTitleSearch.Candidate, val chunks: List<KnowledgeChunk>)
 
     fun articles(question: String, limit: Int = 3): List<ArticleHit> =
@@ -27,13 +34,19 @@ class ZimKnowledgeSource(
             if (article.text.isBlank()) return@mapNotNull null
             val chunks = KnowledgeIndexer.chunk("zim:${zim.uuid}/${c.entry.path}", title, article.text.take(MAX_TEXT_CHARS))
                 .take(MAX_CHUNKS)
-                .map { it.copy(sourceKind = "zim", collection = label, date = date) }
+                .mapIndexed { i, c -> c.copy(sourceKind = "zim", collection = label, date = date, lead = i == 0, lexical = lexical) }
             if (chunks.isEmpty()) null else ArticleHit(c, chunks)
         }
 
-    private companion object {
-        const val MAX_HTML_CHARS = 600_000
-        const val MAX_TEXT_CHARS = 120_000
-        const val MAX_CHUNKS = 80
+    companion object {
+        fun isLexical(zim: ZimArchive): Boolean {
+            val meta = listOf("Name", "Title", "Tags", "Description", "Flavour").mapNotNull { zim.metadata(it) }.joinToString(" ").lowercase()
+            return LEXICAL_MARKERS.any { it in meta }
+        }
+
+        private val LEXICAL_MARKERS = listOf("wiktionary", "wikizionario", "dizionario", "dictionary", "vocabolario", "thesaurus", "glossar")
+        private const val MAX_HTML_CHARS = 600_000
+        private const val MAX_TEXT_CHARS = 120_000
+        private const val MAX_CHUNKS = 80
     }
 }

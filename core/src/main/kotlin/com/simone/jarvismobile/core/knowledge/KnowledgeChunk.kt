@@ -26,6 +26,8 @@ data class KnowledgeChunk(
     val date: String = "",
     /** True for the first passage of an article (its lead): the answer-bearing text of a definition question. */
     val lead: Boolean = false,
+    /** The source is a DICTIONARY (Wiktionary-like): its entries describe words, not facts about the world. Judged strictly. */
+    val lexical: Boolean = false,
 ) {
     /** How JARVIS names this passage out loud: "Manuale CB500, Cambio gomme". */
     val citation: String

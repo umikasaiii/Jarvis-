@@ -47,8 +47,10 @@ class EvidenceAssembler(private val search: KnowledgeSearch = KnowledgeSearch(mi
         val ranked = (search.search(question, pool, pool.size) as? Evidence.Grounded)?.passages.orEmpty()
         // which question terms each retrieved article's title names: another article's terms are candidate SUBJECTS, not attributes
         val ownBySource = HashMap<String, Set<String>>()
+        val lexicalSources = HashSet<String>() // a dictionary lemma ("anno", "superficie") is a word, not a competing subject
         for (h in zimHits) if (h.candidate.score >= TITLE_MATCH_MIN) {
             val lead = h.chunks.first()
+            if (lead.lexical) lexicalSources += lead.sourceId
             // the title AND the phrase of the question the title search matched (a redirect such as "Memoria ad accesso casuale" → RAM)
             ownBySource[lead.sourceId] = SupportJudge.ownTerms(qStems, lead.sourceTitle) + SupportJudge.stems(h.candidate.phrase).filter { it in qStems }
         }
@@ -57,7 +59,7 @@ class EvidenceAssembler(private val search: KnowledgeSearch = KnowledgeSearch(mi
         for (sc in ranked) {
             val isLead = sc.chunk.lead || leads[sc.chunk.sourceId] === sc.chunk
             val ownHere = ownBySource[sc.chunk.sourceId].orEmpty()
-            val others = ownBySource.filterKeys { it != sc.chunk.sourceId }.values.flatten().filter { it !in ownHere }.toSet()
+            val others = ownBySource.filterKeys { it != sc.chunk.sourceId && it !in lexicalSources }.values.flatten().filter { it !in ownHere }.toSet()
             val r = SupportJudge.judge(qStems, quantity, sc.chunk, isLead, others, ownHere)
             if (r.level == SupportJudge.Level.NONE) {
                 if (sc.chunk.sourceId in titleMatched && (bestUnsupported == null || r.coverage > bestUnsupported.coverage)) bestUnsupported = r
