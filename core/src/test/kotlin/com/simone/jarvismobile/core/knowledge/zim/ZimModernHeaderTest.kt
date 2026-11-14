@@ -68,6 +68,15 @@ class ZimModernHeaderTest {
         assertTrue(ZimTitleSearch().search(z, "quando fu eretto il muro di berlino").any { it.entry.displayTitle == "Muro di Berlino" })
     }
 
+    @Test fun `names separated by punctuation are a list, not one multi-word name`() {
+        val z = open(archive(TitleLayout.MODERN))
+        for (q in listOf("Qual è la capitale della Francia, Parigi?", "Confronta Roma, Parigi e Madrid", "Dimmi di Atene (Grecia), Roma")) {
+            val titles = ZimTitleSearch().search(z, q).map { it.entry.displayTitle }
+            assertTrue("Parigi" in titles || "Roma" in titles || "Atene" in titles, "$q -> $titles")
+        }
+        assertEquals(setOf("Roma", "Parigi", "Madrid"), ZimTitleSearch().search(z, "Confronta Roma, Parigi e Madrid", 6).map { it.entry.displayTitle }.toSet())
+    }
+
     @Test fun `redirects, absent from the v1 listing, are still reached through the path index`() {
         val z = open(archive(TitleLayout.MODERN))
         val hits = ZimTitleSearch().search(z, "dimmi di Berlin")

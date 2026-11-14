@@ -126,6 +126,11 @@ class ZimTitleSearch(
         var cur = ArrayList<String>()
         val ws = Regex("""\p{L}[\p{L}'’-]*""").findAll(question).toList()
         for ((i, m) in ws.withIndex()) {
+            // punctuation between two words ends a run: in "la Francia, Parigi" or "Roma, Madrid" the names are a LIST, not one name
+            if (i > 0 && cur.isNotEmpty() && question.substring(ws[i - 1].range.last + 1, m.range.first).any { !it.isWhitespace() }) {
+                if (cur.size >= 2) runs += cur
+                cur = ArrayList()
+            }
             var j = m.range.first - 1
             while (j >= 0 && question[j] == ' ') j--
             val initial = i == 0 || j < 0 || question[j] in ".!?:;"
