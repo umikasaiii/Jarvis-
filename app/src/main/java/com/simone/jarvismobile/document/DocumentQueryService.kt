@@ -22,7 +22,12 @@ sealed interface DocumentQueryOutcome {
     data class Reply(val text: String) : DocumentQueryOutcome
 
     /** A grounded prompt for the local model plus the exact blocks it contains (for the source footer). */
-    data class Prompt(val prompt: String, val blocks: List<EvidenceBlock>) : DocumentQueryOutcome
+    data class Prompt(
+        val prompt: String,
+        val blocks: List<EvidenceBlock>,
+        /** The evidence exactly as the prompt shows it; the answer is verified against THIS package. */
+        val pkg: com.simone.jarvismobile.core.reliability.EvidencePackage,
+    ) : DocumentQueryOutcome
 }
 
 /**
@@ -78,7 +83,8 @@ class DocumentQueryService @Inject constructor(
             }
             return DocumentQueryOutcome.Reply("Non ho trovato informazioni su «${i.topic}» $where. Non voglio tirare a indovinare.")
         }
-        return DocumentQueryOutcome.Prompt(GroundedPrompt.build(question, blocks, AnswerMode.ANSWER), blocks)
+        val pkg = GroundedPrompt.packageFor(blocks)
+        return DocumentQueryOutcome.Prompt(GroundedPrompt.build(question, blocks, AnswerMode.ANSWER, "", pkg), blocks, pkg)
     }
 
     // --- summary -------------------------------------------------------------
@@ -91,9 +97,11 @@ class DocumentQueryService @Inject constructor(
             ?: return DocumentQueryOutcome.Reply("«${record.displayName}» è pronto ma non ha passaggi indicizzati (l'indicizzazione automatica potrebbe essere disattivata).")
         val note = if (sample.complete) "" else
             "Attenzione: i brani coprono solo una parte del documento (${sample.chunks.size} passaggi su ${sample.total}). Dillo all'inizio del riassunto."
+        val pkg = GroundedPrompt.packageFor(blocks)
         return DocumentQueryOutcome.Prompt(
-            GroundedPrompt.build("Riassumi il documento «${record.displayName}».", blocks, AnswerMode.SUMMARY, note),
+            GroundedPrompt.build("Riassumi il documento «${record.displayName}».", blocks, AnswerMode.SUMMARY, note, pkg),
             blocks,
+            pkg,
         )
     }
 
@@ -109,9 +117,11 @@ class DocumentQueryService @Inject constructor(
             if (part.isEmpty()) return DocumentQueryOutcome.Reply("Non ho trovato passaggi utili in «${doc.displayName}» per il confronto.")
             blocks += part
         }
+        val pkg = GroundedPrompt.packageFor(blocks)
         return DocumentQueryOutcome.Prompt(
-            GroundedPrompt.build("Confronta «${a.displayName}» e «${b.displayName}».", blocks, AnswerMode.COMPARE),
+            GroundedPrompt.build("Confronta «${a.displayName}» e «${b.displayName}».", blocks, AnswerMode.COMPARE, "", pkg),
             blocks,
+            pkg,
         )
     }
 

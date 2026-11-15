@@ -30,6 +30,25 @@ object SourceFooter {
         GroundingState.NO_EVIDENCE -> ""
     }
 
+    /**
+     * Numbered source lines whose numbers match the `[n]` markers of the published text ([chunks] are in marker order, one per
+     * source). [supporting] distinguishes "Fonti a supporto" from sources merely consulted.
+     */
+    fun numbered(chunks: List<KnowledgeChunk>, supporting: Boolean, conflict: Boolean, currentYear: Int): String {
+        if (chunks.isEmpty()) return ""
+        val header = if (supporting) "Fonti a supporto:" else "Fonti consultate (non confermano la risposta):"
+        val lines = chunks.mapIndexed { i, c ->
+            val sec = if (c.section.isNotBlank() && c.sourceKind == "document") ", ${c.section}" else ""
+            "[${i + 1}] " + c.reference + sec
+        }
+        val stale = chunks.mapNotNull { yearOf(it.date) }.filter { currentYear - it >= STALE_AFTER_YEARS }.maxOrNull()
+        return buildString {
+            append(header).append('\n').append(lines.joinToString("\n"))
+            if (conflict) append("\nAttenzione: le fonti non concordano; la più recente è indicata per prima.")
+            if (stale != null) append("\nNota: una fonte è del ").append(stale).append(" e potrebbe essere superata.")
+        }
+    }
+
     private fun forPassages(prefix: String, chunks: List<KnowledgeChunk>, conflict: Boolean, currentYear: Int): String {
         val refs = chunks.distinctBy { it.sourceId }
         if (refs.isEmpty()) return ""

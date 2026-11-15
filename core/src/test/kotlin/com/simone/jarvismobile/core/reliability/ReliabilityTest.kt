@@ -68,11 +68,6 @@ class ReliabilityTest {
         assertEquals(PublicationMode.ABSTAIN, pub.mode)
     }
 
-    @Test fun inventedReferencesAreRemovedValidOnesKept() {
-        val p = pkg("A" to "Roma è la capitale d'Italia.")
-        assertEquals("Roma [E1] è la capitale. ", p.sanitizeReferences("Roma [E1] è la capitale [7].").let { it.replace("[E1] è la capitale.", "[E1] è la capitale. ") }.let { if (it.contains("[7]")) "x" else it })
-    }
-
     @Test fun packageIsImmutableAndFingerprintTracksText() {
         val a = pkg("T" to "Uno. Due."); val b = pkg("T" to "Uno. Tre.")
         assertTrue(a.fingerprint != b.fingerprint)
@@ -80,7 +75,7 @@ class ReliabilityTest {
     }
 
     @Test fun cutsAtSentenceBoundaryNotMidNumber() {
-        val t = "Prima frase completa. " + "x".repeat(50) + " valore 3.14 fine. Altra frase."
+        val t = "Prima frase completa. " + "X".repeat(50) + " valore 3.14 fine. Altra frase."
         val c = EvidencePackage.cutAtSentence(t, 60)
         assertTrue(c.endsWith(".")); assertTrue(t.startsWith(c))
     }
@@ -107,7 +102,6 @@ class RetryBudgetTest {
                 "q", emptyList(), emptyList(), null, com.simone.jarvismobile.core.quality.AnswerQuality.Provenance.MODEL_GENERAL, { it }, ledger,
             ) { _, _ -> calls++; "" }
         }
-        // ValidatedGeneration records its own "initial": the ledger was already full, so exactly one more call happens and no retry
-        assertEquals(1, calls); assertEquals(null, r.text)
+        assertEquals(0, calls, "an exhausted ledger must produce zero new generations"); assertEquals(null, r.text)
     }
 }

@@ -5,18 +5,19 @@ import com.simone.jarvismobile.core.knowledge.SupportJudge
 import com.simone.jarvismobile.core.quality.AnswerQuality
 
 enum class ClaimStatus {
-    /** The claim's content, numbers and polarity are in ONE evidence sentence. */
+    /** One evidence sentence matches the claim's words AND passes every consistency check (numbers, units, sign, polarity, names, qualifiers). */
     EXPLICITLY_SUPPORTED,
-    /** Supported by two adjacent sentences of one item, or by an explicit unit conversion. */
+    /** Supported through an explicit, checkable transformation (a unit conversion). Two nearby sentences are NOT a derivation. */
     DERIVED,
-    /** Nothing in the evidence confirms it (or the attribution of a number/name cannot be confirmed). */
+    /** Nothing in the evidence confirms it, or one consistency check could not be passed. */
     UNVERIFIED,
     /** The evidence states the opposite (polarity) or a different value for the same thing. */
     CONTRADICTED,
-    /** Not a factual statement (connective, hedge, declared limit): neither supported nor rejected. */
+    /** Not a factual proposition: a connective or a declared limit. Neither supported nor rejected. */
     UNKNOWN,
 }
 
+/** [text] is the clause as written (used to rebuild the published text); [evidenceIds] are the items it was checked against. */
 data class Claim(val text: String, val status: ClaimStatus, val evidenceIds: List<String>, val reason: String)
 
 data class ClaimReport(val claims: List<Claim>) {
@@ -25,134 +26,160 @@ data class ClaimReport(val claims: List<Claim>) {
 }
 
 /**
- * RELIABILITY — checks each sentence of a candidate answer against the [EvidencePackage] with explicit, inspectable
- * procedures. The answering model is never consulted and lexical relevance ([SupportJudge]) is only used to pick the evidence
- * sentence to compare against; what is compared is:
- *  - numbers + units + decimals in Italian notation ([Quantities]); a different value for the same thing → CONTRADICTED; the same
- *    value attributed to another thing (its neighbouring words share nothing) → UNVERIFIED;
- *  - polarity (negation) of the claim vs the evidence sentence;
- *  - named entities (every one must occur; two entities in reversed order → UNVERIFIED, never "supported");
- *  - content-word coverage (≥ [COVER_SUPPORTED] of the claim in one sentence, or in two adjacent ones for DERIVED).
- * A very short answer ("Lisbona.") is judged together with the question: the evidence sentence must contain it AND speak about
- * what was asked, so a valid-but-irrelevant mention does not support it.
- * Limit, stated plainly: an undecidable paraphrase (different words, same meaning) is UNVERIFIED, not guessed.
+ * RELIABILITY — checks each proposition of a candidate answer against the [EvidencePackage] with explicit, inspectable
+ * procedures. Roles, stated precisely:
+ *  - lexical overlap ([SupportJudge] stems) only SELECTS the evidence sentence to compare against and flags anomalies; it is NOT
+ *    proof of implication;
+ *  - what decides is a set of consistency checks on that sentence: numbers+units+sign+decimals in Italian notation
+ *    ([Quantities]), value↔thing attribution, polarity (negation), named entities and their order, qualifiers ("circa",
+ *    "solo", "può", "se"…) preserved, universal quantifiers not added, and file/page references that exist in the evidence;
+ *  - "secondo le fonti, X" is checked as X: the attribution phrase does not make X non-factual;
+ *  - a short answer ("Lisbona.") must sit in a sentence that speaks about what was asked;
+ *  - DERIVED requires a transformation that is itself checked (unit conversion), never mere proximity of two sentences.
+ * Limit, stated plainly: this is not natural-language inference. A correct paraphrase with different words, or a claim whose
+ * support needs reasoning, is UNVERIFIED — the policy then publishes supported parts or a verbatim extract, never a guess.
  */
 object ClaimVerifier {
     const val COVER_SUPPORTED = 0.7
     private const val QUESTION_RELEVANCE = 0.5
     private const val SHORT = 3
+    private const val CONTEXT_WORDS = 3
 
-    private val NEG = setOf("non", "ne", "mai", "nessun", "nessuna", "nessuno", "senza", "niente", "nulla", "neppure", "nemmeno", "no")
-    private val META = Regex("\\b(non (?:ho trovato|trovo|so|ne so|sono in grado|posso confermare|e indicat|risulta|ci sono informazioni)|non (?:e|sono) (?:riportat|present|indicat)|nelle fonti|le fonti|dalle fonti|secondo (?:le|i) )")
-    private val CONTEXT_WORDS = 4
+    private val NEG = setOf("non", "mai", "nessun", "nessuna", "nessuno", "senza", "niente", "nulla", "neppure", "nemmeno", "no")
+    private val HEDGES = setOf(
+        "circa", "quasi", "almeno", "oltre", "fino", "soltanto", "solo", "tranne", "eccetto", "spesso", "talvolta", "generalmente",
+        "solitamente", "puo", "possono", "potrebbe", "probabilmente", "forse", "alcuni", "alcune", "se", "qualora",
+    )
+    private val UNIVERSALS = setOf("sempre", "tutti", "tutte", "mai", "ogni", "esclusivamente", "unico", "unica", "unicamente")
+    private val LIMIT = Regex("\\b(non (?:ho trovato|trovo|so|ne so|sono in grado|posso (?:confermare|verificare)|ci sono informazioni|e possibile verificare)|nelle fonti non|le fonti non|non e (?:indicat|riportat|present|specificat)\\w* nelle fonti|non risulta nelle fonti)")
+    private val ATTRIBUTION = Regex("^(?:secondo|stando a|in base a|come (?:indicato|riportato|scritto) (?:da|nel|nei|nelle|dalle|dai))\\s+(?:le|i|gli|il|la|dalle|nelle)?\\s*(?:fonti|font[ei]|document\\w*|brani|test[oi]|passagg\\w+|font\\w*|appunti)\\s*[,:]?\\s*|^(?:dalle|nelle|dai|nei) (?:fonti|document\\w*|brani|passagg\\w+) (?:risulta|emerge|si legge|si ricava|e scritto|e indicato)\\s*(?:che)?\\s*[,:]?\\s*|^le fonti (?:dicono|indicano|riportano|affermano|segnalano)\\s*(?:che)?\\s*[,:]?\\s*", RegexOption.IGNORE_CASE)
+    private val FILE_REF = Regex("\\b[\\p{L}\\p{N}_()\\-]+(?:\\.[\\p{L}\\p{N}_()\\-]+)*\\.(?:pdf|docx?|epub|xlsx?|txt|md|markdown|html?|csv|json)\\b", RegexOption.IGNORE_CASE)
+    private val PAGE_REF = Regex("\\b(?:pagina|pag\\.|p\\.)\\s*(\\d{1,5})\\b", RegexOption.IGNORE_CASE)
 
-    internal class Sent(val title: Set<String>, val itemId: String, val text: String, val folded: String, val stems: Set<String>, val quantities: List<Quantity>, val neg: Boolean, val words: List<String>)
+    internal class Sent(
+        val title: Set<String>, val itemId: String, val text: String, val folded: String, val stems: Set<String>,
+        val quantities: List<Quantity>, val neg: Boolean, val words: List<String>,
+    )
 
     /** Content stems with the quantities removed: numbers are compared by [Quantities], not by token overlap. */
     internal fun contentStems(text: String): List<String> {
         val q = Quantities.extract(text)
         if (q.isEmpty()) return SupportJudge.stems(text)
         val sb = StringBuilder(text)
-        for (x in q) for (i in x.start until minOf(x.end, sb.length)) sb.setCharAt(i, ' ')
+        for (x in q) for (i in x.start until minOf(x.numEnd, sb.length)) sb.setCharAt(i, ' ')
         return SupportJudge.stems(sb.toString())
     }
 
-    fun sentences(text: String): List<String> =
-        text.split(Regex("(?<=[.!?])\\s+|\\n+")).map { it.trim().trimStart('-', '•', '*', '·', ' ').trim() }.filter { it.isNotEmpty() }
+    fun sentences(text: String): List<String> = Sentences.split(text)
 
     internal fun negated(folded: String): Boolean {
-        val w = folded.split(Regex("[^a-z0-9]+")).filter { it.isNotEmpty() }
-        return w.indices.any { i -> w[i] in NEG && !(w[i] == "non" && w.getOrNull(i + 1) == "solo") && !(w[i] == "ne" && true) }
+        val w = words(folded)
+        return w.indices.any { i -> w[i] in NEG && !(w[i] == "non" && w.getOrNull(i + 1) == "solo") }
     }
+
+    private fun words(folded: String) = folded.split(Regex("[^a-z0-9]+")).filter { it.isNotEmpty() }
 
     private fun toSent(item: EvidenceItem, text: String): Sent {
         val folded = KnowledgeText.fold(text)
         val titleStems = SupportJudge.stems(item.title + " " + item.section)
-        return Sent(titleStems.toSet(), item.id, text, folded, (contentStems(text) + titleStems).toSet(), Quantities.extract(text), negated(folded),
-            folded.split(Regex("[^a-z0-9]+")).filter { it.isNotEmpty() })
+        return Sent(titleStems.toSet(), item.id, text, folded, (contentStems(text) + titleStems).toSet(), Quantities.extract(text), negated(folded), words(folded))
     }
 
-    fun verify(question: String, answer: String, pkg: EvidencePackage): ClaimReport {
-        val perItem = pkg.items.map { it to sentences(it.text).map { s -> toSent(it, s) } }
-        val units = ArrayList<Pair<Sent, Boolean>>() // (window, isPair)
-        val windows = ArrayList<Sent>()
-        val pairs = ArrayList<Sent>()
-        for ((item, ss) in perItem) {
-            windows += ss
-            for (i in 0 until ss.size - 1) pairs += toSent(item, ss[i].text + " " + ss[i + 1].text)
-        }
+    /** The clauses of one sentence: attribution removed, then split at ';' and at "e/ma/mentre" when a new quantity starts. */
+    fun clauses(sentence: String): List<String> {
+        val parts = sentence.split(Regex(";\\s+|,\\s+(?:ma|mentre|però)\\s+|\\s+e\\s+(?=[^,.;]*\\d)")).map { it.trim() }.filter { it.isNotEmpty() }
+        return parts.ifEmpty { listOf(sentence) }
+    }
+
+    fun verify(question: String, answer: String, pkg: EvidencePackage, askRelevance: Boolean = true): ClaimReport {
+        val windows = pkg.items.flatMap { item -> Sentences.split(item.text).map { toSent(item, it) } }
         val qStems = contentStems(question).toSet()
-        val qQuant = Quantities.extract(question)
-        val claims = sentences(AnswerQuality.stripPresentationNotes(answer)).map { checkClaim(it, qStems, qQuant, windows, pairs, units) }
+        val known = pkg.items.joinToString(" ") { it.title + " " + it.section + " " + it.text }
+        val claims = ArrayList<Claim>()
+        for (sentence in sentences(AnswerQuality.stripPresentationNotes(answer))) for (clause in clauses(sentence)) {
+            claims += checkClaim(clause, if (askRelevance) qStems else emptySet(), windows, known)
+        }
         return ClaimReport(claims)
     }
 
-    private fun checkClaim(text: String, qStems: Set<String>, qQuant: List<Quantity>, windows: List<Sent>, pairs: List<Sent>, @Suppress("UNUSED_PARAMETER") u: Any): Claim {
+    private fun checkClaim(piece: String, qStems: Set<String>, windows: List<Sent>, evidenceText: String): Claim {
+        // file names and page numbers are citations, checked by [invented]; they are not claims about quantities or words
+        val text = PAGE_REF.replace(FILE_REF.replace(ATTRIBUTION.replaceFirst(piece, ""), " "), " ").replace(Regex("\\(\\s*[,;]?\\s*\\)"), " ").replace(Regex("\\s+"), " ").trim().trimEnd('.', '!', '?').trim()
         val folded = KnowledgeText.fold(text)
         val stems = contentStems(text).distinct()
-        val quants = Quantities.extract(text).filter { q -> qQuant.none { Quantities.compare(it, q) != Quantities.Match.DIFFERENT } }
-        if (META.containsMatchIn(folded) || (stems.isEmpty() && quants.isEmpty())) return Claim(text, ClaimStatus.UNKNOWN, emptyList(), "non fattuale")
+        val quants = Quantities.extract(text)
+        if (text.isEmpty() || LIMIT.containsMatchIn(folded) || (stems.isEmpty() && quants.isEmpty())) return Claim(piece, ClaimStatus.UNKNOWN, emptyList(), "non fattuale")
+        invented(piece, evidenceText)?.let { return Claim(piece, ClaimStatus.UNVERIFIED, emptyList(), "riferimento inventato: $it") }
         val short = stems.size < SHORT
         val negC = negated(folded)
 
         fun cover(s: Sent) = if (stems.isEmpty()) 1.0 else stems.count { it in s.stems }.toDouble() / stems.size
-        // a short answer must sit in a sentence that speaks about what was asked; the article's own title is implied, so
-        // only the OTHER question terms can show relevance
         fun relevant(s: Sent): Boolean {
             val asked = qStems.filter { it !in s.title }
             return asked.isEmpty() || asked.count { it in s.stems }.toDouble() / asked.size >= QUESTION_RELEVANCE
         }
-        // best single sentence: highest claim coverage; for short answers it must also be about the question
-        val single = windows.filter { !short || relevant(it) }.maxByOrNull { cover(it) }
-        val pair = if (short) null else pairs.maxByOrNull { cover(it) }
-        val best = single
+        // lexical overlap SELECTS the candidate sentence; the checks below decide
+        val best = windows.filter { !short || relevant(it) }.maxByOrNull { cover(it) }
         val bestCover = best?.let(::cover) ?: 0.0
-        val pairCover = pair?.let(::cover) ?: 0.0
-        val explicit = best != null && bestCover >= COVER_SUPPORTED && (!short || bestCover >= 1.0)
-        val derived = !explicit && pair != null && pairCover >= COVER_SUPPORTED && (!short || pairCover >= 1.0)
-        if (!explicit && !derived) {
-            // contradiction with a near-identical sentence: same words, opposite polarity or a different value
-            val near = (windows + pairs).maxByOrNull { cover(it) }
-            if (near != null && cover(near) >= COVER_SUPPORTED) judge(text, negC, quants, near, true)?.let { return it }
-            return Claim(text, ClaimStatus.UNVERIFIED, emptyList(), if ((near?.let(::cover) ?: 0.0) < 0.4) "nessun passaggio lo conferma" else "supporto parziale")
+        if (best == null || bestCover < COVER_SUPPORTED || (short && bestCover < 1.0)) {
+            val near = windows.maxByOrNull { cover(it) }
+            if (near != null && cover(near) >= COVER_SUPPORTED) judge(piece, negC, quants, near)?.let { return it }
+            return Claim(piece, ClaimStatus.UNVERIFIED, emptyList(), if ((near?.let(::cover) ?: 0.0) < 0.4) "nessun passaggio lo conferma" else "supporto parziale")
         }
-        val win = if (explicit) best!! else pair!!
-        judge(text, negC, quants, win, false)?.let { return it }
+        judge(piece, negC, quants, best)?.let { return it }
 
-        // entities: each must occur in the evidence window; two entities must keep their order
+        // names: each must occur in the sentence; two names must keep their order
         val allEntities = capitalised(text).map { KnowledgeText.fold(it) }.filter { SupportJudge.stems(it).isNotEmpty() }.distinct()
-        val entities = allEntities
-        for (e in allEntities.filter { e -> SupportJudge.stems(e).first() !in qStems }) if (e !in win.folded) return Claim(text, ClaimStatus.UNVERIFIED, emptyList(), "nome non presente nel passaggio: $e")
-        if (entities.size >= 2) {
-            val orderC = entities.map { folded.indexOf(it) }
-            val orderS = entities.map { win.folded.indexOf(it) }
-            if (orderC.zipWithNext().all { (a, b) -> a < b } != orderS.zipWithNext().all { (a, b) -> a < b }) {
-                return Claim(text, ClaimStatus.UNVERIFIED, emptyList(), "attribuzione invertita rispetto al passaggio")
+        for (e in allEntities.filter { e -> SupportJudge.stems(e).first() !in qStems }) {
+            if (e !in best.folded) return Claim(piece, ClaimStatus.UNVERIFIED, listOf(best.itemId), "nome non presente nel passaggio: $e")
+        }
+        if (allEntities.size >= 2) {
+            val orderC = allEntities.map { folded.indexOf(it) }
+            val orderS = allEntities.map { best.folded.indexOf(it) }
+            if (orderS.any { it < 0 } || orderC.zipWithNext().all { (a, b) -> a < b } != orderS.zipWithNext().all { (a, b) -> a < b }) {
+                return Claim(piece, ClaimStatus.UNVERIFIED, listOf(best.itemId), "attribuzione invertita rispetto al passaggio")
             }
         }
-        val converted = quants.any { q -> win.quantities.none { Quantities.compare(q, it) == Quantities.Match.EXACT } }
-        return Claim(text, if (explicit && !converted) ClaimStatus.EXPLICITLY_SUPPORTED else ClaimStatus.DERIVED, listOf(win.itemId), if (converted) "conversione di unità" else "")
+        // qualifiers of the evidence must survive; a universal the evidence does not state must not appear
+        val claimWords = words(folded).toSet()
+        HEDGES.firstOrNull { it in best.words && it !in claimWords }?.let {
+            if (!(it == "se" && "quando" in claimWords)) return Claim(piece, ClaimStatus.UNVERIFIED, listOf(best.itemId), "qualificatore omesso: $it")
+        }
+        UNIVERSALS.firstOrNull { it in claimWords && it !in best.words }?.let {
+            return Claim(piece, ClaimStatus.UNVERIFIED, listOf(best.itemId), "quantificatore non nel passaggio: $it")
+        }
+        val converted = quants.any { q -> best.quantities.none { Quantities.compare(q, it) == Quantities.Match.EXACT } }
+        return Claim(piece, if (converted) ClaimStatus.DERIVED else ClaimStatus.EXPLICITLY_SUPPORTED, listOf(best.itemId), if (converted) "conversione di unità" else "")
     }
 
-    /** CONTRADICTED / UNVERIFIED verdicts on the numbers and polarity of [win], or null when they raise nothing. */
-    private fun judge(text: String, negC: Boolean, quants: List<Quantity>, win: Sent, nearOnly: Boolean): Claim? {
+    /** A file name or page number the evidence does not contain. */
+    private fun invented(piece: String, evidenceText: String): String? {
+        val ev = evidenceText.lowercase()
+        for (m in FILE_REF.findAll(piece)) if (m.value.lowercase() !in ev) return m.value
+        for (m in PAGE_REF.findAll(piece)) {
+            val n = m.groupValues[1]
+            if (!Regex("(?:pagina|pag\\.|p\\.)\\s*$n\\b|\\b$n\\b").containsMatchIn(ev)) return m.value
+        }
+        return null
+    }
+
+    /** CONTRADICTED / UNVERIFIED verdicts on polarity and numbers of [win], or null when they raise nothing. */
+    private fun judge(text: String, negC: Boolean, quants: List<Quantity>, win: Sent): Claim? {
         if (negC != win.neg) return Claim(text, ClaimStatus.CONTRADICTED, listOf(win.itemId), "polarità opposta al passaggio")
-        if (nearOnly) { /* a near sentence is only used to find contradictions; numbers still checked below */ }
         for (q in quants) {
-            val hits = win.quantities.map { it to Quantities.compare(q, it) }
-            val ok = hits.filter { it.second != Quantities.Match.DIFFERENT }
+            val ok = win.quantities.filter { Quantities.compare(q, it) != Quantities.Match.DIFFERENT }
             val ctxC = context(text, q.start, q.end)
             if (ok.isNotEmpty()) {
-                if (win.quantities.size > 1 && misattributed(ctxC, ok.map { it.first }, win)) {
+                if (win.quantities.size > 1 && misattributed(ctxC, ok, win)) {
                     return Claim(text, ClaimStatus.UNVERIFIED, listOf(win.itemId), "numero ${q.raw} attribuito a un altro elemento")
                 }
                 continue
             }
-            val sameKind = win.quantities.filter { it.dimension == q.dimension && (q.dimension != null || context(win.text, it.start, it.end).any { w -> w in ctxC }) }
+            val sameKind = win.quantities.filter { (q.dimension != null && it.dimension == q.dimension) || context(win.text, it.start, it.end).any { w -> w in ctxC } }
             if (sameKind.isNotEmpty()) return Claim(text, ClaimStatus.CONTRADICTED, listOf(win.itemId), "valore diverso: ${q.raw} vs ${sameKind.first().raw}")
             return Claim(text, ClaimStatus.UNVERIFIED, listOf(win.itemId), "numero ${q.raw} non nel passaggio")
         }
-        return if (nearOnly) null else null
+        return null
     }
 
     /** True when the claim's words around the number sit, in the evidence, next to a DIFFERENT quantity and never next to the matched one. */
@@ -172,7 +199,8 @@ object ClaimVerifier {
 
     private fun context(text: String, start: Int, end: Int): Set<String> {
         val before = SupportJudge.stems(text.substring(0, start).takeLast(60)).takeLast(CONTEXT_WORDS)
-        val after = SupportJudge.stems(text.substring(end).take(60)).take(CONTEXT_WORDS)
-        return (before + after).toSet()
+        val after = SupportJudge.stems(text.substring(minOf(end, text.length)).take(60)).take(CONTEXT_WORDS)
+        val own = SupportJudge.stems(text.substring(start, minOf(end, text.length)).filterNot { it.isDigit() })
+        return (before + after + own).toSet()
     }
 }

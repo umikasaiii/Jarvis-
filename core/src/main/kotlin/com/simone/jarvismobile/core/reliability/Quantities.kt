@@ -4,7 +4,7 @@ import java.math.BigDecimal
 import java.math.MathContext
 
 /** A number with its optional unit, read with explicit Italian notation rules (1.234,5 = 1234.5; 3,5 milioni = 3 500 000). */
-data class Quantity(val value: BigDecimal, val unit: String?, val raw: String, val start: Int, val end: Int) {
+data class Quantity(val value: BigDecimal, val unit: String?, val raw: String, val start: Int, val end: Int, val numEnd: Int = end) {
     val dimension: String? get() = Quantities.UNITS[unit]?.first
     /** The value in the dimension's base unit, or the plain value when the unit is unknown/absent. */
     val base: BigDecimal get() = Quantities.UNITS[unit]?.let { value.multiply(it.second, MathContext.DECIMAL64) } ?: value
@@ -22,6 +22,7 @@ object Quantities {
         "anni" to ("years" to BigDecimal.ONE), "secoli" to ("years" to BigDecimal("100")),
         "eur" to ("eur" to BigDecimal.ONE), "ab" to ("pop" to BigDecimal.ONE), "mmHg" to ("mmHg" to BigDecimal.ONE),
         "bpm" to ("bpm" to BigDecimal.ONE), "mg/dl" to ("mgdl" to BigDecimal.ONE),
+        "km/h" to ("speed" to BigDecimal("0.2777777777777778")), "m/s" to ("speed" to BigDecimal.ONE),
     )
 
     private val ALIAS = mapOf(
@@ -30,13 +31,13 @@ object Quantities {
         "mg" to "mg", "milligrammi" to "mg", "t" to "t", "tonnellate" to "t", "l" to "l", "litri" to "l", "litro" to "l", "ml" to "ml", "millilitri" to "ml",
         "h" to "h", "ore" to "h", "ora" to "h", "min" to "min", "minuti" to "min", "minuto" to "min", "s" to "s", "secondi" to "s", "secondo" to "s",
         "anni" to "anni", "anno" to "anni", "secoli" to "secoli", "secolo" to "secoli", "euro" to "eur", "€" to "eur", "abitanti" to "ab",
-        "mmhg" to "mmHg", "bpm" to "bpm", "ha" to "ha", "ettari" to "ha", "km2" to "km²", "km²" to "km²", "m2" to "m²", "m²" to "m²",
+        "mmhg" to "mmHg", "km/h" to "km/h", "m/s" to "m/s", "mg/dl" to "mg/dl", "bpm" to "bpm", "ha" to "ha", "ettari" to "ha", "km2" to "km²", "km²" to "km²", "m2" to "m²", "m²" to "m²",
     )
     private val SCALE = mapOf(
         "milione" to BigDecimal("1000000"), "milioni" to BigDecimal("1000000"), "miliardo" to BigDecimal("1000000000"),
         "miliardi" to BigDecimal("1000000000"), "mila" to BigDecimal("1000"), "mille" to BigDecimal("1000"),
     )
-    private val NUMBER = Regex("(?<![\\p{L}\\d.,])(\\d{1,3}(?:\\.\\d{3})+(?:,\\d+)?|\\d+(?:[.,]\\d+)?)(?:\\s*(%|°\\s?[CcFf]|€)|\\s+([\\p{L}²]+)(?:\\s+(quadrat[io]))?)?")
+    private val NUMBER = Regex("(?<![\\p{L}\\d.,])(?:([-−–+])(?=\\d))?(\\d{1,3}(?:\\.\\d{3})+(?:,\\d+)?|\\d+(?:[.,]\\d+)?)(?:\\s*(%|°\\s?[CcFf]|€)|\\s*([\\p{L}²]+(?:/[\\p{L}²]+)?)(?:\\s+(quadrat[io]))?)?")
 
     private val SCALE_UNIT = Regex("\\s+di\\s+([\\p{L}²\\d]+)")
 
@@ -48,27 +49,32 @@ object Quantities {
     fun extract(text: String): List<Quantity> {
         val out = ArrayList<Quantity>()
         for (m in NUMBER.findAll(text)) {
-            var v = parse(m.groupValues[1]) ?: continue
+            var v = parse(m.groupValues[2]) ?: continue
+            if (m.groupValues[1] == "-" || m.groupValues[1] == "−" || m.groupValues[1] == "–") v = v.negate()
             var unit: String? = null
-            val sym = m.groupValues[2]
-            val word = m.groupValues[3].lowercase()
-            val sq = m.groupValues[4].isNotEmpty()
-            var end = m.range.last + 1
+            val sym = m.groupValues[3]
+            val word = m.groupValues[4].lowercase()
+            val sq = m.groupValues[5].isNotEmpty()
+            val numberEnd = m.groups[2]!!.range.last + 1
+            var end = numberEnd
             when {
-                sym.isNotEmpty() -> unit = when { sym == "%" -> "%"; sym == "€" -> "eur"; sym.last().lowercaseChar() == 'c' -> "°C"; else -> "°F" }
+                sym.isNotEmpty() -> {
+                    unit = when { sym == "%" -> "%"; sym == "€" -> "eur"; sym.last().lowercaseChar() == 'c' -> "°C"; else -> "°F" }
+                    end = m.range.last + 1
+                }
                 word in SCALE -> {
-                    v = v.multiply(SCALE.getValue(word)); end = m.range.last + 1
+                    v = v.multiply(SCALE.getValue(word)); end = m.groups[4]!!.range.last + 1
                     SCALE_UNIT.matchAt(text, end)?.let { u -> ALIAS[u.groupValues[1].lowercase()]?.let { c -> unit = c; end = u.range.last + 1 } }
                 }
                 word.isNotEmpty() -> {
                     val canon = ALIAS[word]
                     if (canon != null) {
                         unit = if (sq && (canon == "km" || canon == "m")) "$canon²" else canon
-                    } else end = m.groupValues[1].length + m.range.first // the following word is not a unit: leave it out of the quantity
+                        end = m.range.last + 1
+                    }
                 }
             }
-            if (unit == null && word !in SCALE) end = m.range.first + m.groupValues[1].length
-            out += Quantity(v, unit, text.substring(m.range.first, end), m.range.first, end)
+            out += Quantity(v, unit, text.substring(m.range.first, end), m.range.first, end, numberEnd)
         }
         return out
     }

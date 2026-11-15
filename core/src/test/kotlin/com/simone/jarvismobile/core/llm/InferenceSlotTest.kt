@@ -353,4 +353,40 @@ class InferenceSlotTest {
         r.slot.cancel()
         assertFailsWith<CancellationException> { job.await().getOrThrow() }
     }
+
+    // ---- per-request attempt budget, counted at the NATIVE boundary --------------------------------------
+
+    @Test fun `native degenerate retry and an external retry share one budget of two`() = runBlocking {
+        val r = Rig()
+        val ledger = com.simone.jarvismobile.core.reliability.AttemptLedger(max = 2, nativeCounting = true)
+        r.engine.script = { conv, _ -> if (conv.id == 1) "212121" else "Parigi" }
+        kotlinx.coroutines.withContext(com.simone.jarvismobile.core.reliability.AttemptBudget(ledger)) {
+            assertEquals("Parigi", r.slot.chat("capitale della Francia?", "sys", 90_000)) // native attempt 1 + degenerate retry = 2
+            assertNull(r.slot.chat("ancora", "sys", 90_000)) // an external retry now would be a 3rd generation
+        }
+        assertEquals(2, r.engine.sends.size, "exactly two native generations, counted at the engine")
+        assertEquals("initial,degenerate,!initial", ledger.summary())
+    }
+
+    @Test fun `an exhausted ledger yields zero new native generations`() = runBlocking {
+        val r = Rig()
+        val ledger = com.simone.jarvismobile.core.reliability.AttemptLedger(max = 2, nativeCounting = true)
+        ledger.request("initial"); ledger.request("degenerate")
+        kotlinx.coroutines.withContext(com.simone.jarvismobile.core.reliability.AttemptBudget(ledger)) {
+            assertNull(r.slot.chat("domanda", "sys", 90_000))
+            assertNull(r.slot.once("domanda", "sys", 90_000))
+        }
+        assertEquals(0, r.engine.sends.size)
+        assertEquals(0, r.engine.conversations.size, "no conversation is even opened")
+    }
+
+    @Test fun `degenerate retry is refused when the budget allows a single generation`() = runBlocking {
+        val r = Rig()
+        val ledger = com.simone.jarvismobile.core.reliability.AttemptLedger(max = 1, nativeCounting = true)
+        r.engine.script = { _, _ -> "212121" }
+        kotlinx.coroutines.withContext(com.simone.jarvismobile.core.reliability.AttemptBudget(ledger)) {
+            assertNull(r.slot.chat("domanda", "sys", 90_000))
+        }
+        assertEquals(1, r.engine.sends.size)
+    }
 }

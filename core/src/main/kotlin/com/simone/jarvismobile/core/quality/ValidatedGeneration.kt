@@ -34,7 +34,10 @@ object ValidatedGeneration {
         ledger: com.simone.jarvismobile.core.reliability.AttemptLedger = com.simone.jarvismobile.core.reliability.AttemptLedger(),
         generate: suspend (retry: Boolean, firstFlags: Set<AnswerQuality.Flag>) -> String?,
     ): Result {
-        ledger.request("initial")
+        if (!ledger.grant("initial")) {
+            // the request's budget was already spent: no generation at all, the caller reports it honestly
+            return Result(null, AnswerQuality.evaluate(question, "", earlierAnswers, earlierQuestions, evidence), false, emptySet(), 0, 0, null)
+        }
         val raw1 = generate(false, emptySet())
         val c1 = raw1?.let(clean)?.trim().orEmpty()
         val a1 = AnswerQuality.evaluate(question, c1, earlierAnswers, earlierQuestions, evidence)
@@ -42,7 +45,7 @@ object ValidatedGeneration {
             return Result(AnswerQuality.present(c1, provenance, a1), a1, false, a1.flags, raw1?.length ?: 0, c1.length, raw1)
         }
 
-        if (!ledger.request("quality:" + a1.flags.joinToString("+") { it.name.lowercase() })) {
+        if (!ledger.grant("quality:" + a1.flags.joinToString("+") { it.name.lowercase() })) {
             // budget spent by an earlier layer: show the first attempt only if it is usable, never loop
             val usable = c1.isNotEmpty() && AnswerQuality.Flag.ECHO_OF_EARLIER_ANSWER !in a1.flags
             return Result(if (usable) AnswerQuality.present(c1, provenance, a1) else null, a1, false, a1.flags, raw1?.length ?: 0, c1.length, raw1)

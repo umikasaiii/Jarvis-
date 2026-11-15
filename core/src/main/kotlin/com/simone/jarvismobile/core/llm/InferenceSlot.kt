@@ -76,6 +76,7 @@ class InferenceSlot(
             noteDegenerate("chat", verdict)
             discardConversation("degenerate")
             if (!config.retryDegenerateChat) return@gated null
+            com.simone.jarvismobile.core.reliability.currentAttemptLedger()?.plan("degenerate")
             record(InferenceEventType.DEGENERATE_RETRY)
             val second = turnOnPersistent(userText, systemPrompt, timeoutMs, seed)
             val v2 = second?.let { DegenerateOutput.analyze(it) } ?: DegenerateOutput.Verdict.OK
@@ -91,6 +92,7 @@ class InferenceSlot(
     /** One stateless turn on a brand-new conversation that is closed before the lane is released. */
     suspend fun once(userText: String, systemPrompt: String?, timeoutMs: Long, kind: String = "once"): String? =
         gated(config.onceLockWaitMs, kind) {
+            if (budgetDenied(kind)) return@gated null
             val start = now()
             record(InferenceEventType.ONCE_START, tag = kind)
             var conv: NativeConversation? = null
@@ -189,7 +191,19 @@ class InferenceSlot(
         }
     }
 
+    /**
+     * The per-request attempt budget, checked at the native boundary (before a conversation is opened or a message is sent).
+     * A request without a ledger is unaffected; an exhausted ledger means no generation happens at all.
+     */
+    private suspend fun budgetDenied(kind: String): Boolean {
+        val ledger = com.simone.jarvismobile.core.reliability.currentAttemptLedger() ?: return false
+        val denied = !ledger.request()
+        if (denied) record(InferenceEventType.BUSY, tag = "budget_$kind")
+        return denied
+    }
+
     private suspend fun turnOnPersistent(userText: String, systemPrompt: String, timeoutMs: Long, seed: ChatSeed): String? {
+        if (budgetDenied("chat")) return null
         val start = now()
         record(InferenceEventType.CHAT_START, n1 = conversationTurns.toLong(), tag = conversationOrigin)
         var conv = conversation
