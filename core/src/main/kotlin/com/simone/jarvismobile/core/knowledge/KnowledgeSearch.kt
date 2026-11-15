@@ -81,7 +81,7 @@ class KnowledgeSearch(private val minScore: Double = MIN_SCORE) {
 
     companion object {
         /** Crude suffix stripping shared by retrieval and the support judge (same stems on both sides). */
-        internal fun stemWord(w: String): String {
+        fun stemWord(w: String): String {
             if (w.length <= 4) return w
             for (s in SUFFIXES) {
                 if (w.length - s.length >= 3 && w.endsWith(s)) return w.dropLast(s.length)

@@ -23,7 +23,7 @@ class SafByteSource(context: Context, uri: Uri) : ByteSource, AutoCloseable {
         close(); throw IOException("size_unavailable")
     }.also { if (it <= 0L) { close(); throw IOException("not_seekable_or_empty") } }
 
-    @Synchronized
+    // Positional FileChannel reads are safe from several threads at once (the indexing pipeline's workers read in parallel).
     override fun read(offset: Long, length: Int): ByteArray {
         if (offset < 0 || length < 0) throw IOException("bad_range")
         val n = minOf(length.toLong(), size - offset).toInt().coerceAtLeast(0)

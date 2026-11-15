@@ -210,6 +210,8 @@ fun OfflineLibraryScreen(
                     Text("Indicizzo «${indexProgress.label}»: ${indexProgress.done} / ${indexProgress.total} articoli", style = MaterialTheme.typography.bodySmall, color = Warn)
                 }
                 indexProgress.message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                indexProgress.report?.let { Text("Ultima indicizzazione: $it", style = MaterialTheme.typography.labelSmall) }
+                Text("L'indicizzazione rallenta o si ferma da sola con batteria scarica, risparmio energetico, telefono caldo o poca memoria, e riprende dove si era fermata.", style = MaterialTheme.typography.labelSmall)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = { viewModel.pauseIndex() }, enabled = indexProgress.running) { Text("Pausa") }
                     OutlinedButton(onClick = { viewModel.clearIndex() }, enabled = !indexProgress.running && indexSources.isNotEmpty()) { Text("Elimina indice") }

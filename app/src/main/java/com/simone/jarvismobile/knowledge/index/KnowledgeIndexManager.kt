@@ -1,6 +1,7 @@
 package com.simone.jarvismobile.knowledge.index
 
 import android.content.Context
+import android.os.Process
 import android.util.Log
 import com.simone.jarvismobile.core.knowledge.fts.IndexedSource
 import com.simone.jarvismobile.core.knowledge.fts.KnowledgeIndex
@@ -20,6 +21,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.concurrent.ThreadFactory
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -34,7 +36,7 @@ class KnowledgeIndexManager @Inject constructor(
     private val settings: SettingsRepository,
     private val zim: ZimKnowledge,
 ) {
-    data class Progress(val running: Boolean = false, val label: String = "", val done: Int = 0, val total: Int = 0, val message: String? = null)
+    data class Progress(val running: Boolean = false, val label: String = "", val done: Int = 0, val total: Int = 0, val message: String? = null, val report: String? = null)
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var job: Job? = null
@@ -61,23 +63,33 @@ class KnowledgeIndexManager @Inject constructor(
         if (job?.isActive == true) return
         job = scope.launch {
             _progress.value = Progress(true, label, 0, 0)
+            var session: ZimKnowledge.IndexSession? = null
             try {
-                val (source, size) = zim.sourceFor(uri) ?: run {
+                session = zim.openForIndexing(uri) ?: run {
                     _progress.value = Progress(false, label, message = "Archivio non verificato: premi prima «Verifica lettura».")
                     return@launch
                 }
+                val workers = ZimIndexer.defaultWorkers()
+                val governor = DeviceIndexGovernor(context, workers)
+                governor.decide().stopReason?.let { why -> _progress.value = Progress(false, label, message = why); return@launch }
                 val budget = budgetBytes()
-                val state = ZimIndexer(source.zim, index).run(
-                    signature = size.toString(), maxArticles = ARTICLE_CAP, budgetBytes = budget,
+                val indexer = ZimIndexer(session.zim, index, workers)
+                val state = indexer.run(
+                    signature = session.size.toString(), maxArticles = ARTICLE_CAP, budgetBytes = budget,
                     shouldContinue = { isActive },
                     onProgress = { p -> _progress.value = Progress(true, label, p.position, p.total) },
+                    governor = governor,
+                    // background priority: the indexer yields the CPU to whatever the user is actually doing
+                    threadFactory = ThreadFactory { r -> Thread { Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND); r.run() }.apply { isDaemon = true } },
                 )
+                val report = indexer.profiler.snapshot().report(indexer.lastArticles, indexer.lastPassages)
+                Log.i(TAG, "index_run state=$state articles=${indexer.lastArticles} passages=${indexer.lastPassages} $report")
                 val msg = when (state) {
                     IndexedSource.State.COMPLETE -> "Indicizzazione completata."
                     IndexedSource.State.PARTIAL_BUDGET -> "Indice parziale: raggiunto il limite di spazio o di articoli. Quanto indicizzato resta utilizzabile."
-                    IndexedSource.State.INDEXING -> "Indicizzazione in pausa: riprende da dove si è fermata."
+                    IndexedSource.State.INDEXING -> indexer.stopReason?.let { "$it Riprende da dove si è fermata." } ?: "Indicizzazione in pausa: riprende da dove si è fermata."
                 }
-                _progress.value = Progress(false, label, message = msg)
+                _progress.value = Progress(false, label, message = msg, report = report)
             } catch (t: Throwable) {
                 if (t is kotlinx.coroutines.CancellationException) {
                     _progress.value = Progress(false, label, message = "Indicizzazione in pausa: riprende da dove si è fermata.")
@@ -86,7 +98,8 @@ class KnowledgeIndexManager @Inject constructor(
                 Log.w(TAG, "index_failed ${t.javaClass.simpleName}")
                 _progress.value = Progress(false, label, message = "Indicizzazione interrotta (${t.javaClass.simpleName}). Si può riprendere.")
             } finally {
-                refresh()
+                session?.close()
+                withContext(kotlinx.coroutines.NonCancellable) { refresh() }
             }
         }
     }

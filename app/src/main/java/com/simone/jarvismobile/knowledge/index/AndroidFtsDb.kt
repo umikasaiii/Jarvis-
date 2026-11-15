@@ -11,13 +11,35 @@ import com.simone.jarvismobile.core.knowledge.fts.FtsRow
  * (or can corrupt, or be restored over) `jarvis.db`, and no migration of user data is ever involved. The schema is created and
  * versioned by [com.simone.jarvismobile.core.knowledge.fts.KnowledgeIndex] itself (FTS4 + fts4aux, both in Android's SQLite).
  */
-class AndroidFtsDb(context: Context) : SQLiteOpenHelper(context.applicationContext, FILE, null, 1), FtsDb {
+class AndroidFtsDb(context: Context, name: String = FILE) : SQLiteOpenHelper(context.applicationContext, name, null, 1), FtsDb {
     override fun onCreate(db: SQLiteDatabase) = Unit
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
 
     override fun exec(sql: String, vararg args: Any?) {
         // execSQL binds by TYPE (Long/Int/String), which FTS docid inserts need
         writableDatabase.execSQL(sql, arrayOf(*args))
+    }
+
+    override fun execMany(sql: String, rows: List<Array<Any?>>) {
+        if (rows.isEmpty()) return
+        // ONE compiled statement for the whole batch (bound and executed per row), inside the caller's transaction
+        val st = writableDatabase.compileStatement(sql)
+        try {
+            for (r in rows) {
+                st.clearBindings()
+                r.forEachIndexed { i, a ->
+                    when (a) {
+                        null -> st.bindNull(i + 1)
+                        is Long -> st.bindLong(i + 1, a)
+                        is Int -> st.bindLong(i + 1, a.toLong())
+                        else -> st.bindString(i + 1, a.toString())
+                    }
+                }
+                st.execute()
+            }
+        } finally {
+            st.close()
+        }
     }
 
     override fun <T> query(sql: String, vararg args: Any?, map: (FtsRow) -> T): List<T> {

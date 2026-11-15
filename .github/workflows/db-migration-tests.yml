@@ -52,7 +52,9 @@ jobs:
           api-level: 34
           arch: x86_64
           target: google_apis
-          script: ./gradlew --no-daemon :app:connectedDebugAndroidTest -Pjarvis.emulatorAbi=x86_64 -Pandroid.testInstrumentationRunnerArguments.class=com.simone.jarvismobile.background.JarvisMigrationInstrumentedTest,com.simone.jarvismobile.archive.NotesStoreInstrumentedTest,com.simone.jarvismobile.document.DocumentPipelineInstrumentedTest,com.simone.jarvismobile.offlinehub.OfflineHubIntentInstrumentedTest,com.simone.jarvismobile.reliability.DailyReliabilityInstrumentedTest,com.simone.jarvismobile.reliability.CrossModuleInstrumentedTest,com.simone.jarvismobile.regex.ParserInitInstrumentedTest,com.simone.jarvismobile.regex.ConversationRoutingInstrumentedTest,com.simone.jarvismobile.background.AssistantQueueRecoveryInstrumentedTest,com.simone.jarvismobile.quality.QualityAssetInstrumentedTest,com.simone.jarvismobile.knowledge.ZimModernArchiveInstrumentedTest,com.simone.jarvismobile.knowledge.KnowledgeIndexInstrumentedTest
+          script: |
+            ./gradlew --no-daemon :app:connectedDebugAndroidTest -Pjarvis.emulatorAbi=x86_64 -Pandroid.testInstrumentationRunnerArguments.class=com.simone.jarvismobile.background.JarvisMigrationInstrumentedTest,com.simone.jarvismobile.archive.NotesStoreInstrumentedTest,com.simone.jarvismobile.document.DocumentPipelineInstrumentedTest,com.simone.jarvismobile.offlinehub.OfflineHubIntentInstrumentedTest,com.simone.jarvismobile.reliability.DailyReliabilityInstrumentedTest,com.simone.jarvismobile.reliability.CrossModuleInstrumentedTest,com.simone.jarvismobile.regex.ParserInitInstrumentedTest,com.simone.jarvismobile.regex.ConversationRoutingInstrumentedTest,com.simone.jarvismobile.background.AssistantQueueRecoveryInstrumentedTest,com.simone.jarvismobile.quality.QualityAssetInstrumentedTest,com.simone.jarvismobile.knowledge.ZimModernArchiveInstrumentedTest,com.simone.jarvismobile.knowledge.KnowledgeIndexInstrumentedTest,com.simone.jarvismobile.knowledge.KnowledgeIndexBenchInstrumentedTest
+            adb logcat -d -s JarvisBench:I > app/build/jarvis_bench_emulator.txt || true
       - name: Test results summary (failures with their messages)
         if: always()
         run: |
@@ -73,6 +75,9 @@ jobs:
                       print("passed:" if sk is None else "skipped:", tc.get("name"))
           print(f"SUMMARY tests={tot} failed={fail} skipped={skip}")
           PY
+      - name: Emulator benchmark figures (indicative: CI emulator, NOT the Honor 200)
+        if: always()
+        run: cat app/build/jarvis_bench_emulator.txt 2>/dev/null || echo "no benchmark output"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -80,4 +85,5 @@ jobs:
           path: |
             app/build/reports/androidTests/
             app/build/outputs/androidTest-results/
+            app/build/jarvis_bench_emulator.txt
           if-no-files-found: warn

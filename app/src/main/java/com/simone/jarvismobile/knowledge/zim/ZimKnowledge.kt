@@ -114,6 +114,20 @@ class ZimKnowledge @Inject constructor(
         }
     }
 
+    /**
+     * A DEDICATED reader of one verified archive for the indexing pipeline: its own file descriptor and archive object, so the bulk
+     * reads never share (or evict) the small query-time cluster cache and the workers can read in parallel. Close it when done.
+     */
+    class IndexSession internal constructor(val zim: ZimArchive, val size: Long, private val bytes: SafByteSource) : AutoCloseable {
+        override fun close() { runCatching { bytes.close() } }
+    }
+
+    suspend fun openForIndexing(uri: String): IndexSession? = withContext(Dispatchers.IO) {
+        val size = mutex.withLock { verifiedEntries().firstOrNull { it.first == uri }?.second } ?: return@withContext null
+        val b = runCatching { SafByteSource(context, Uri.parse(uri)) }.getOrNull() ?: return@withContext null
+        runCatching { IndexSession(ZimArchive.open(b, AndroidZimDecompressor), size, b) }.getOrElse { runCatching { b.close() }; null }
+    }
+
     /** URIs of the archives verified on this device and still the same file. */
     suspend fun verifiedUris(): List<String> = verifiedEntries().map { it.first }
 
