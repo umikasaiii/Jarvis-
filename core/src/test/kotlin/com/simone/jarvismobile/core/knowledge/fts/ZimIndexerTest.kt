@@ -43,12 +43,12 @@ class ZimIndexerTest {
         val f = tmp()
         JdbcFtsDb(f).use { db ->
             val ix = KnowledgeIndex(db)
-            var calls = 0
-            // interrupted after a few batches
-            val s1 = ZimIndexer(z, ix).run("sig1", 10_000, 50_000_000, shouldContinue = { calls++ < 3 })
+            var checkpoints = 0
+            // interrupted after two checkpoints (small checkpoints so the run has several)
+            val s1 = ZimIndexer(z, ix, workers = 2).run("sig1", 10_000, 50_000_000, shouldContinue = { checkpoints < 2 }, onProgress = { checkpoints++ }, checkpointPassages = 30)
             assertEquals(IndexedSource.State.INDEXING, s1)
-            val done = ix.cursor("zim:${z.uuid}").toInt()
-            assertTrue(done in 1 until z.titleOrderCount, "cursor=$done")
+            val done = ix.cursor("zim:${z.uuid}").removePrefix("c:").toInt()
+            assertTrue(done in 1..z.clusterCount, "cursor=$done")
         }
         JdbcFtsDb(f).use { db ->
             val ix = KnowledgeIndex(db)

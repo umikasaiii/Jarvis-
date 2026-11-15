@@ -25,6 +25,10 @@ interface ByteSource {
 /** Decompresses one ZIM cluster body. [type] is the ZIM compression id (4 = xz, 5 = zstd). */
 interface ZimDecompressor {
     fun decompress(type: Int, data: ByteArray, maxOutputBytes: Int): ByteArray
+
+    /** Same, for the [length] bytes of [data] starting at [offset]; implementations should avoid copying the compressed body. */
+    fun decompress(type: Int, data: ByteArray, offset: Int, length: Int, maxOutputBytes: Int): ByteArray =
+        decompress(type, data.copyOfRange(offset, offset + length), maxOutputBytes)
 }
 
 /** [diagnostics] is a technical, content-free description of the header (versions, counts, index mode) — never a path or a title. */
@@ -297,10 +301,9 @@ class ZimArchive private constructor(
         val info = raw[0].toInt() and 0xFF
         val type = info and 0x0F
         val extended = (info and 0x10) != 0
-        val body = raw.copyOfRange(1, raw.size)
         val data = when (type) {
-            0, 1 -> body
-            4, 5 -> decompressor.decompress(type, body, MAX_UNCOMPRESSED_CLUSTER_BYTES)
+            0, 1 -> raw.copyOfRange(1, raw.size)
+            4, 5 -> decompressor.decompress(type, raw, 1, raw.size - 1, MAX_UNCOMPRESSED_CLUSTER_BYTES)
             else -> throw ZimFormatException("compression_unsupported_$type")
         }
         synchronized(clusterCache) {
@@ -309,6 +312,117 @@ class ZimArchive private constructor(
         }
         return Cluster(data, extended)
     }
+
+    // ---- bulk reading (indexing) -----------------------------------------------------------------------------
+
+    /** Wall time spent in the two halves of loading a cluster; filled by [readClusterOnce] when a caller wants the split. */
+    class ClusterTiming { var readNanos = 0L; var decompressNanos = 0L; var compressedBytes = 0L; var decompressedBytes = 0L }
+
+    /** One cluster, decompressed for a bulk reader. NOT retained by the archive (no cache entry, no duplicate in RAM). */
+    class ClusterBlobs internal constructor(val data: ByteArray, private val extended: Boolean) {
+        private val offSize = if (extended) 8 else 4
+        val blobCount: Int = if (data.size < offSize) 0 else {
+            val first = if (extended) ByteBuffer.wrap(data, 0, 8).order(ByteOrder.LITTLE_ENDIAN).long else ByteBuffer.wrap(data, 0, 4).order(ByteOrder.LITTLE_ENDIAN).int.toLong() and 0xFFFFFFFFL
+            (first / offSize).toInt() - 1
+        }
+
+        /** (start shl 32) or end of blob [n] inside [data], or -1 when it does not exist or is not sane. */
+        fun range(n: Int): Long {
+            if (n < 0 || n >= blobCount) return -1
+            val s = off(n); val e = off(n + 1)
+            if (s < 0 || e < s || e > data.size || e - s > MAX_BLOB_BYTES) return -1
+            return (s shl 32) or e
+        }
+
+        private fun off(i: Int): Long {
+            val pos = i * offSize
+            if (pos + offSize > data.size) return -1
+            val bb = ByteBuffer.wrap(data, pos, offSize).order(ByteOrder.LITTLE_ENDIAN)
+            return if (extended) bb.long else bb.int.toLong() and 0xFFFFFFFFL
+        }
+    }
+
+    /** Reads and decompresses ONE cluster for a one-pass reader. Thread-safe (no shared mutable state is touched). */
+    fun readClusterOnce(number: Int, timing: ClusterTiming? = null): ClusterBlobs {
+        if (number < 0 || number >= clusterCount) throw ZimFormatException("cluster_index_out_of_range")
+        val t0 = System.nanoTime()
+        val ptr = source.read(clusterPtrPos + 8L * number, if (number + 1 < clusterCount) 16 else 8)
+        val start = u64(ptr, 0)
+        val end = if (number + 1 < clusterCount) u64(ptr, 8) else checksumPos
+        if (start <= 0 || end <= start || end > source.size) throw ZimFormatException("cluster_range_invalid")
+        val total = end - start
+        if (total > MAX_COMPRESSED_CLUSTER_BYTES) throw ZimFormatException("cluster_too_large")
+        val raw = source.read(start, total.toInt())
+        val t1 = System.nanoTime()
+        if (raw.isEmpty()) throw ZimFormatException("cluster_empty")
+        val info = raw[0].toInt() and 0xFF
+        val type = info and 0x0F
+        val data = when (type) {
+            0, 1 -> raw.copyOfRange(1, raw.size)
+            4, 5 -> decompressor.decompress(type, raw, 1, raw.size - 1, MAX_UNCOMPRESSED_CLUSTER_BYTES)
+            else -> throw ZimFormatException("compression_unsupported_$type")
+        }
+        if (timing != null) {
+            timing.readNanos += t1 - t0; timing.decompressNanos += System.nanoTime() - t1
+            timing.compressedBytes += raw.size; timing.decompressedBytes += data.size
+        }
+        return ClusterBlobs(data, (info and 0x10) != 0)
+    }
+
+    /** Receives the cheap fixed fields of each directory entry during [scanEntries]. */
+    fun interface EntryScan { fun entry(index: Int, namespace: Char, redirect: Boolean, mimeIndex: Int, cluster: Int, blob: Int) }
+
+    /**
+     * One sequential pass over the directory entries in URL order, reading the pointer list and the entries themselves in large
+     * blocks (instead of two small reads per entry) and parsing only the fixed header fields — no strings. This is how a bulk
+     * reader learns "which entries live in which cluster" without a random read per article.
+     */
+    fun scanEntries(from: Int = 0, to: Int = entryCount, visitor: EntryScan) {
+        var buf = ByteArray(0); var bufStart = -1L
+        var i = from
+        while (i < to) {
+            val n = minOf(PTR_BLOCK, to - i)
+            val ptrs = source.read(urlPtrPos + 8L * i, n * 8)
+            if (ptrs.size < n * 8) throw ZimFormatException("pointer_list_truncated")
+            for (k in 0 until n) {
+                val off = u64(ptrs, k * 8)
+                if (off <= 0 || off >= source.size) throw ZimFormatException("dirent_offset_invalid")
+                if (bufStart < 0 || off < bufStart || off + DIRENT_FIXED > bufStart + buf.size) {
+                    buf = source.read(off, minOf(SCAN_WINDOW.toLong(), source.size - off).toInt()); bufStart = off
+                    if (buf.size < DIRENT_FIXED) throw ZimFormatException("dirent_truncated")
+                }
+                val p = (off - bufStart).toInt()
+                val mime = u16(buf, p)
+                val ns = (buf[p + 3].toInt() and 0xFF).toChar()
+                when {
+                    mime == 0xFFFF -> visitor.entry(i + k, ns, true, mime, -1, -1)
+                    mime == 0xFFFD || mime == 0xFFFE -> Unit // deleted
+                    else -> visitor.entry(i + k, ns, false, mime, u32(buf, p + 8).toInt(), u32(buf, p + 12).toInt())
+                }
+            }
+            i += n
+        }
+    }
+
+    /** Entry indexes of the title-ordered list, in blocks (a modern archive lists real articles only). */
+    fun forEachTitleEntryIndex(block: (IntArray, Int) -> Unit) {
+        val buf = IntArray(TITLE_BLOCK)
+        var pos = 0
+        while (pos < titleCount) {
+            val n = minOf(TITLE_BLOCK, titleCount - pos)
+            val raw = source.read(titleIndexPos + 4L * pos, n * 4)
+            if (raw.size < n * 4) throw ZimFormatException("title_list_truncated")
+            for (k in 0 until n) buf[k] = ByteBuffer.wrap(raw, k * 4, 4).order(ByteOrder.LITTLE_ENDIAN).int
+            block(buf, n)
+            pos += n
+        }
+    }
+
+    /** True when the title-ordered list names real articles only (modern listing) — no per-entry mime/redirect filtering is implied by it. */
+    val titleListIsArticlesOnly: Boolean get() = titleIndexMode == ZimTitleIndex.LISTING_V1
+
+    /** MIME types of the archive, by index (as stored in directory entries). */
+    fun mimeType(index: Int): String? = mimeTypes.getOrNull(index)
 
     private fun readOffset(data: ByteArray, i: Int, extended: Boolean): Long {
         val pos = i * if (extended) 8 else 4
@@ -328,6 +442,10 @@ class ZimArchive private constructor(
         private const val HEADER_BYTES = 80
         private const val MAX_REDIRECTS = 8
         private const val MAX_DIRENT_BYTES = 64 * 1024
+        private const val PTR_BLOCK = 8192
+        private const val SCAN_WINDOW = 1 shl 20
+        private const val DIRENT_FIXED = 16
+        private const val TITLE_BLOCK = 65536
         private const val MAX_CACHED_CLUSTERS = 3
         private const val MAX_CACHED_BYTES = 24L * 1024 * 1024
         const val MAX_COMPRESSED_CLUSTER_BYTES = 256L * 1024 * 1024

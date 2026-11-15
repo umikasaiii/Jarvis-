@@ -11,6 +11,9 @@ interface FtsDb {
     fun exec(sql: String, vararg args: Any?)
     fun <T> query(sql: String, vararg args: Any?, map: (FtsRow) -> T): List<T>
     fun <T> transaction(body: () -> T): T
+
+    /** Runs [sql] once per row of [rows] with ONE prepared statement (compiled once, bound and executed per row). */
+    fun execMany(sql: String, rows: List<Array<Any?>>) { for (r in rows) exec(sql, *r) }
 }
 
 /** One text document or archive known to the index. */
@@ -29,7 +32,15 @@ data class IndexedSource(
 }
 
 /** A passage to store. [docKey] identifies the document inside the source (a file path, "zim:<uuid>/<path>"). */
-data class PassageIn(val docKey: String, val title: String, val section: String, val text: String, val lead: Boolean)
+data class PassageIn(
+    val docKey: String, val title: String, val section: String, val text: String, val lead: Boolean,
+    /** Space-joined search stems of title+section+text. Workers precompute it in parallel; null = computed by the index. */
+    val stems: String? = null,
+) {
+    companion object {
+        fun stemsOf(title: String, section: String, text: String): String = SupportJudge.stems("$title $section $text").joinToString(" ")
+    }
+}
 
 /**
  * KNOWLEDGE ENGINE 2.0 — the persistent, incremental full-text index (SQLite FTS4) over the textual knowledge the user chose
@@ -46,8 +57,11 @@ data class PassageIn(val docKey: String, val title: String, val section: String,
  * Search returns CANDIDATE passages only: whether they are sufficient evidence is decided downstream by the same
  * [com.simone.jarvismobile.core.knowledge.EvidenceAssembler] / [SupportJudge] — the index proves nothing by itself.
  */
-class KnowledgeIndex(private val db: FtsDb) {
+class KnowledgeIndex(private val db: FtsDb, var profiler: IndexProfiler? = null) {
     init { ensureSchema() }
+
+    /** Next free passage id (single writer: [addBatch] is serialised). Avoids a `last_insert_rowid()` query per row. */
+    private var nextPassageId = -1L
 
     private fun ensureSchema() {
         val have = runCatching { db.query("SELECT value FROM kx_meta WHERE key='schema'") { it.string(0) }.firstOrNull() }.getOrNull()
@@ -100,21 +114,44 @@ class KnowledgeIndex(private val db: FtsDb) {
      * Stores [passages] and the new [cursor] atomically. Returns how many were stored; fewer than given (or 0) means the
      * budget was reached — the source is then marked PARTIAL_BUDGET and the caller must stop.
      */
-    fun addBatch(key: String, passages: List<PassageIn>, cursor: String, budgetBytes: Long): Int = db.transaction {
-        val sid = sourceId(key) ?: return@transaction 0
-        var used = totalBytes()
-        var stored = 0
-        var added = 0L
-        for (p in passages) {
-            val stems = SupportJudge.stems(p.title + " " + p.section + " " + p.text).joinToString(" ")
-            val size = cost(p.text.length + p.title.length + p.section.length, stems.length)
-            if (used + size > budgetBytes) { db.exec("UPDATE kx_source SET state=? WHERE id=?", IndexedSource.State.PARTIAL_BUDGET.name, sid); break }
-            db.exec("INSERT INTO kx_passage(sourceId, docKey, title, section, text, lead) VALUES(?,?,?,?,?,?)", sid, p.docKey, p.title, p.section, p.text, if (p.lead) 1 else 0)
-            val id = db.query("SELECT last_insert_rowid()") { it.long(0) }.first()
-            db.exec("INSERT INTO kx_fts(docid, stems) VALUES(?,?)", id, stems)
-            used += size; added += size; stored++
+    fun addBatch(key: String, passages: List<PassageIn>, cursor: String, budgetBytes: Long): Int = synchronized(this) {
+        val wall0 = System.nanoTime()
+        var tokenizeNs = 0L
+        val stored = db.transaction {
+            val sid = sourceId(key) ?: return@transaction 0
+            var used = totalBytes()
+            // tokenisation outside SQLite's critical path when the caller did not precompute it
+            val prof = profiler
+            val rows = ArrayList<PassageIn>(passages.size)
+            val stems = ArrayList<String>(passages.size)
+            val sizes = ArrayList<Long>(passages.size)
+            var stored = 0
+            var added = 0L
+            var budgetHit = false
+            for (p in passages) {
+                val st = p.stems ?: run {
+                    val t = System.nanoTime(); val s = PassageIn.stemsOf(p.title, p.section, p.text); tokenizeNs += System.nanoTime() - t; s
+                }
+                val size = cost(p.text.length + p.title.length + p.section.length, st.length)
+                if (used + size > budgetBytes) { budgetHit = true; break }
+                rows += p; stems += st; sizes += size; used += size; added += size; stored++
+            }
+            if (rows.isNotEmpty()) {
+                if (nextPassageId < 0) nextPassageId = (db.query("SELECT COALESCE(MAX(id),0) FROM kx_passage") { it.long(0) }.first()) + 1
+                val first = nextPassageId
+                nextPassageId += rows.size
+                db.execMany(
+                    "INSERT INTO kx_passage(id, sourceId, docKey, title, section, text, lead) VALUES(?,?,?,?,?,?,?)",
+                    rows.mapIndexed { i, p -> arrayOf<Any?>(first + i, sid, p.docKey, p.title, p.section, p.text, if (p.lead) 1 else 0) },
+                )
+                db.execMany("INSERT INTO kx_fts(docid, stems) VALUES(?,?)", stems.mapIndexed { i, s -> arrayOf<Any?>(first + i, s) })
+            }
+            if (budgetHit) db.exec("UPDATE kx_source SET state=? WHERE id=?", IndexedSource.State.PARTIAL_BUDGET.name, sid)
+            db.exec("UPDATE kx_source SET passages = passages + ?, bytes = bytes + ?, cursor = ? WHERE id = ?", stored, added, cursor, sid)
+            stored
         }
-        db.exec("UPDATE kx_source SET passages = passages + ?, bytes = bytes + ?, cursor = ? WHERE id = ?", stored, added, cursor, sid)
+        // SQLITE = the whole transaction (statements AND the durable commit), minus the tokenisation done inside it
+        profiler?.let { it.add(IndexProfiler.Phase.TOKENIZE, tokenizeNs); it.add(IndexProfiler.Phase.SQLITE, System.nanoTime() - wall0 - tokenizeNs) }
         stored
     }
 

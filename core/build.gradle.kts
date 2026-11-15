@@ -49,6 +49,7 @@ java {
 
 tasks.test {
     useJUnitPlatform()
+    maxHeapSize = "3g" // the indexing benchmark builds a ~100 MB synthetic archive in memory
     testLogging {
         events("passed", "skipped", "failed")
     }

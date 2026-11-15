@@ -27,6 +27,16 @@ class JdbcFtsDb(val file: File, private val failOnExecNumber: Int = -1) : FtsDb,
         conn.prepareStatement(sql).use { ps -> bind(ps, args); ps.execute() }
     }
 
+    override fun execMany(sql: String, rows: List<Array<Any?>>) {
+        if (rows.isEmpty()) return
+        execs++
+        if (failOnExecNumber in 1..execs && execs == failOnExecNumber) throw IllegalStateException("simulated crash at exec #$execs")
+        conn.prepareStatement(sql).use { ps ->
+            for (r in rows) { bind(ps, r); ps.addBatch() }
+            ps.executeBatch()
+        }
+    }
+
     override fun <T> query(sql: String, vararg args: Any?, map: (FtsRow) -> T): List<T> =
         conn.prepareStatement(sql).use { ps ->
             bind(ps, args)

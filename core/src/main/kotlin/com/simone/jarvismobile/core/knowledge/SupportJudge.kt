@@ -53,13 +53,40 @@ object SupportJudge {
         "sessanta", "settanta", "ottanta", "novanta", "cento", "mille", "milione", "milioni", "miliardo", "miliardi",
     )
 
-    fun stems(text: String): List<String> =
-        KnowledgeSearch.NON_WORD.split(joinHyphens(KnowledgeText.fold(text)))
-            .filter { (it.length >= 3 || (it.length == 2 && it.any(Char::isDigit))) && !KnowledgeText.isStopword(it) } // "K2", "A4"
-            .map { KnowledgeSearch.stemWord(it) }
-
-    /** "Wi-Fi" and "wifi" are one word ("wi", "fi" alone are too short to carry any meaning). */
-    private fun joinHyphens(s: String): String = s.replace(Regex("""(?<=\p{L})[-\u2010\u2011](?=\p{L})"""), "")
+    /**
+     * Content terms of [text], stemmed. One pass over the folded text, no regex and no intermediate lists: this runs once per
+     * indexed passage and once per question. Equivalent to splitting on non-letter/digit runs after joining "Wi-Fi"-style
+     * hyphens, dropping stop words and 1–2-letter tokens (a 2-character token is kept only when it holds a digit: "K2").
+     */
+    fun stems(text: String): List<String> {
+        val s = KnowledgeText.fold(text)
+        val out = ArrayList<String>(s.length / 7 + 1)
+        val tok = StringBuilder()
+        var hasDigit = false
+        var i = 0
+        val n = s.length
+        fun flush() {
+            if (tok.isNotEmpty()) {
+                val w = tok.toString()
+                if ((w.length >= 3 || (w.length == 2 && hasDigit)) && !KnowledgeText.isStopword(w)) out += KnowledgeSearch.stemWord(w)
+                tok.setLength(0); hasDigit = false
+            }
+        }
+        while (i < n) {
+            val cp = s.codePointAt(i)
+            val len = Character.charCount(cp)
+            val letter = Character.isLetter(cp)
+            if (letter || Character.getType(cp) == Character.DECIMAL_DIGIT_NUMBER.toInt()) {
+                tok.appendCodePoint(cp); if (!letter) hasDigit = true
+            } else if ((cp == '-'.code || cp == 0x2010 || cp == 0x2011) && tok.isNotEmpty() && i + len < n &&
+                Character.isLetter(s[i - 1]) && Character.isLetter(s.codePointAt(i + len))) {
+                // "Wi-Fi" and "wifi" are one word
+            } else flush()
+            i += len
+        }
+        flush()
+        return out
+    }
 
     /** Grammar of the question, not its subject: "quanti/quante/quanto…", "in che anno", "a che anno". */
     fun asksQuantity(question: String): Boolean {

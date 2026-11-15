@@ -14,6 +14,20 @@ import java.util.concurrent.atomic.AtomicLong
 
 /** Test-side decompressor backed by zstd-jni / xz-java (the same libraries the Android adapter uses). */
 object TestDecompressor : ZimDecompressor {
+    /** Like the Android adapter: decompress straight from the cluster buffer (no copy of the compressed body). */
+    override fun decompress(type: Int, data: ByteArray, offset: Int, length: Int, maxOutputBytes: Int): ByteArray = when (type) {
+        5 -> {
+            val size = Zstd.decompressedSize(data, offset, length)
+            if (size in 1..maxOutputBytes.toLong()) {
+                ByteArray(size.toInt()).also { Zstd.decompressByteArray(it, 0, it.size, data, offset, length) }
+            } else {
+                com.github.luben.zstd.ZstdInputStream(ByteArrayInputStream(data, offset, length)).use { s -> s.readNBytes(maxOutputBytes + 1).also { if (it.size > maxOutputBytes) error("too_big") } }
+            }
+        }
+        4 -> XZInputStream(ByteArrayInputStream(data, offset, length)).use { it.readNBytes(maxOutputBytes + 1).also { b -> if (b.size > maxOutputBytes) error("too_big") } }
+        else -> error("unsupported_$type")
+    }
+
     override fun decompress(type: Int, data: ByteArray, maxOutputBytes: Int): ByteArray = when (type) {
         5 -> {
             val size = Zstd.decompressedSize(data)
@@ -65,6 +79,8 @@ class TestZimBuilder {
     var compression = 5 // 1 none, 4 xz, 5 zstd
     var uuidSeed = 1
     var titleLayout = TitleLayout.LEGACY
+    /** Benchmark realism: real archives (mwoffliner) do NOT put consecutive titles in the same cluster. A seed shuffles the cluster assignment. */
+    var shuffleSeed: Long? = null
     /** Test hook: deliberately corrupt the header's title pointer (to prove a really invalid pointer is still rejected). */
     var corruptTitlePtr: Long? = null
 
@@ -89,7 +105,7 @@ class TestZimBuilder {
         val index = HashMap<Pair<Char, String>, Int>(); sorted.forEachIndexed { i, e -> index[e.ns to e.path] = i }
 
         // clusters: content entries in url order, entriesPerCluster blobs each
-        val content = sorted.filter { it.redirectTo == null }
+        val content = sorted.filter { it.redirectTo == null }.let { c -> shuffleSeed?.let { s -> c.shuffled(java.util.Random(s)) } ?: c }
         val clusterOf = HashMap<E, Pair<Int, Int>>()
         val clusters = ArrayList<List<E>>()
         val clusterComp = ArrayList<Int>()

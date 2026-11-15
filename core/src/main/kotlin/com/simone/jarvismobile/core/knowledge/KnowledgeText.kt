@@ -7,8 +7,13 @@ object KnowledgeText {
     data class Word(val original: String, val folded: String)
 
     /** Lower-case, accent-free form used for matching only (never shown). */
-    fun fold(s: String): String =
-        Normalizer.normalize(s.lowercase(), Normalizer.Form.NFD).filter { Character.getType(it) != Character.NON_SPACING_MARK.toInt() }
+    fun fold(s: String): String {
+        // ASCII needs no normalisation (the common case for English/Italian text without accents)
+        var ascii = true
+        for (c in s) if (c.code >= 0x80) { ascii = false; break }
+        if (ascii) return s.lowercase()
+        return Normalizer.normalize(s.lowercase(), Normalizer.Form.NFD).filter { Character.getType(it) != Character.NON_SPACING_MARK.toInt() }
+    }
 
     /** Folded form with every non-alphanumeric removed ("Wi-Fi" and "Wi Fi" both become "wifi"). */
     fun squash(s: String): String = fold(s).filter { it.isLetterOrDigit() }
