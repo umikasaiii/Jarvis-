@@ -113,15 +113,12 @@ object AnswerQuality {
             if (!header && !numbered) inFooter = false
             header || numbered ||
                 l == NOTE_UNVERIFIED || l == NOTE_NOT_IN_SOURCES || l == NOTE_NOT_CONFIRMED || l.startsWith(NOTE_NO_SOURCE_FOR) || l.startsWith(FOOTER_PREFIX) ||
-                l.startsWith(NOTE_INSUFFICIENT) || l.startsWith("Fonti consultate (") || l.startsWith("Fonti offline consultate,") ||
-                l.startsWith(NOTE_UNVERIFIED_PREFIX)
+                l.startsWith(NOTE_INSUFFICIENT) || l.startsWith("Fonti consultate (") || l.startsWith("Fonti offline consultate,")
         }.joinToString("\n").trimEnd()
     }
 
     const val FOOTER_SUPPORT = "Fonti a supporto:"
     const val FOOTER_CONSULTED = "Fonti consultate:"
-    /** Prefix of the qualifier placed BEFORE a general-knowledge answer when the sources hold no answer. */
-    const val NOTE_UNVERIFIED_PREFIX = "Nelle fonti offline non c'è la risposta"
     private val NUMBERED_SOURCE = Regex("""\[\d{1,3}] .*""")
 
     const val NOTE_UNVERIFIED = "Nota: non ho trovato fonti offline per verificare questo dato; viene dalla memoria del modello."

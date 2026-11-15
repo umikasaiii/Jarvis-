@@ -50,6 +50,17 @@ class EvidencePackage private constructor(val items: List<EvidenceItem>, val omi
         }
     } + (if (omitted.isEmpty()) "" else "\n\n(Altri ${omitted.size} passaggi non inclusi per spazio: non usarli.)")
 
+    /** The rendering of only some kinds of evidence (the prompt shows documents, knowledge and tool results in separate blocks). */
+    fun render(kinds: Set<EvidenceKind>): String = items.filter { it.kind in kinds }.joinToString("\n\n") { i ->
+        buildString {
+            append('[').append(i.id).append("] ").append(i.title)
+            if (i.section.isNotBlank()) append(" — ").append(i.section)
+            append('\n').append(i.text)
+        }
+    }
+
+    fun has(kind: EvidenceKind): Boolean = items.any { it.kind == kind }
+
     /** Same package, plus [more] items appended (ids continue); used to add tool results to knowledge evidence BEFORE generation. */
     fun plus(more: EvidencePackage): EvidencePackage {
         var n = items.size

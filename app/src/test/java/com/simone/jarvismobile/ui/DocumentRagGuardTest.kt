@@ -40,11 +40,13 @@ class DocumentRagGuardTest {
         listOf("tools.", "ToolRunner", "agenda.", "chatStore", "documents.remove", "documents.rename", "memory.remember", "memory.delete").forEach {
             assertFalse("documentAnswer must be read-only, found '$it'", it in body)
         }
-        // sources come from metadata: the answer is published through the shared policy, whose citation line is built from block citations
-        assertTrue("publishDocuments(" in body)
-        val pub = c.substringAfter("private fun publishDocuments").substringBefore("private fun publishGrounded")
-        assertTrue("blocks[it].citation" in pub)
-        listOf("tools.", "ToolRunner", "agenda.", "chatStore", "memory.remember").forEach { assertFalse("publishDocuments must be read-only, found '$it'", it in pub) }
+        // the answer is published through the shared policy over the package built BEFORE generation (the one the prompt shows)
+        assertTrue("generateAndPublish(" in body)
+        assertTrue("outcome.pkg" in body)
+        assertFalse("SourceCitations.withFooter" in body) // the old unverified footer path is gone
+        val gen = c.substringAfter("private suspend fun generateAndPublish").substringBefore("private fun plainFooter")
+        listOf("tools.", "ToolRunner", "agenda.", "chatStore", "memory.remember").forEach { assertFalse("generateAndPublish must be read-only, found '$it'", it in gen) }
+        assertTrue("PublicationOrchestrator" in gen)
     }
 
     @Test fun theModelOnlySeesFencedSanitisedPassages() {

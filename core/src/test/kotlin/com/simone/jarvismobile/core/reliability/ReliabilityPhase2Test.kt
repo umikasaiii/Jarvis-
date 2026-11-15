@@ -143,4 +143,28 @@ class ReliabilityPhase2Test {
         val text = "Lisbona [1].\nFonti a supporto:\n[1] Portogallo\nFonti consultate:\n[1] A.pdf\n[2] B.pdf"
         assertEquals("Lisbona [1].", com.simone.jarvismobile.core.quality.AnswerQuality.stripPresentationNotes(text))
     }
+
+    // A — insufficient evidence / read error: the qualifier precedes the content; no trailing note after a claim
+    @Test fun insufficientEvidenceIsDeclaredBeforeTheContentNeverAfter() {
+        val out = AnswerFraming.frame(RequestKind.FACTUAL, RetrievalState.INSUFFICIENT, "La capitale è Lisbona.")
+        assertTrue(out.startsWith(AnswerFraming.NO_ANSWER_IN_SOURCES)); assertTrue(out.endsWith("La capitale è Lisbona."))
+    }
+
+    @Test fun aReadErrorIsNotReportedAsMissingInformation() {
+        val err = AnswerFraming.frame(RequestKind.FACTUAL, RetrievalState.ERROR, "x")
+        val absent = AnswerFraming.frame(RequestKind.FACTUAL, RetrievalState.ABSENT, "x")
+        assertTrue("errore di lettura" in err); assertEquals("x", absent)
+    }
+
+    @Test fun conversationAndReasoningGetNoQualifierAndNoCitations() {
+        for (k in listOf(RequestKind.CONVERSATION, RequestKind.TRANSFORM, RequestKind.CALCULATION, RequestKind.HYPOTHETICAL))
+            assertEquals("ok", AnswerFraming.frame(k, RetrievalState.INSUFFICIENT, "ok"))
+    }
+
+    // H — the uncertainty qualifier stays in the history the next turn is rebuilt from; only footers/notes of the presentation layer go
+    @Test fun historyKeepsTheUncertaintyQualifier() {
+        val published = AnswerFraming.frame(RequestKind.FACTUAL, RetrievalState.INSUFFICIENT, "Dovrebbe essere Lisbona.") + "\nFonti a supporto:\n[1] X"
+        val seed = com.simone.jarvismobile.core.quality.AnswerQuality.stripPresentationNotes(published)
+        assertTrue(seed.startsWith(AnswerFraming.NO_ANSWER_IN_SOURCES)); assertFalse("Fonti a supporto" in seed)
+    }
 }

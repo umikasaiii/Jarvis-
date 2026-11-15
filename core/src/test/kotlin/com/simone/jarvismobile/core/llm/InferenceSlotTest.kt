@@ -389,4 +389,51 @@ class InferenceSlotTest {
         }
         assertEquals(1, r.engine.sends.size)
     }
+
+    // ---- the real orchestration chain: slot (native boundary) + policy + one revision + conversation invalidation ----------
+
+    private fun evidence() = com.simone.jarvismobile.core.reliability.EvidencePackage.of(
+        listOf(com.simone.jarvismobile.core.reliability.EvidencePackage.Companion.Raw("Portogallo", "", "Il Portogallo è uno Stato dell'Europa. La capitale è Lisbona.", "0")),
+    )
+
+    @Test fun `a rejected draft is revised once, invalidated, and cannot be recalled by the next question`() = runBlocking {
+        val r = Rig()
+        val ledger = com.simone.jarvismobile.core.reliability.AttemptLedger(nativeCounting = true)
+        r.engine.script = { conv, _ -> if (conv.id == 1) "La capitale è Madrid." else "La capitale è Lisbona." }
+        val question = "Qual è la capitale del Portogallo?"
+        val outcome = kotlinx.coroutines.withContext(com.simone.jarvismobile.core.reliability.AttemptBudget(ledger)) {
+            val first = r.slot.chat(question, "sys", 90_000)!!
+            com.simone.jarvismobile.core.reliability.PublicationOrchestrator(
+                regenerate = { note, cause -> ledger.plan(cause); r.slot.chat("$note\n$question", "sys", 90_000) },
+                invalidate = { r.slot.reset("rejected_draft") },
+            ).finish(question, first, evidence(), com.simone.jarvismobile.core.reliability.PublicationKind.ANSWER, ledger)
+        }
+        assertTrue(outcome.revised)
+        assertTrue("Lisbona" in outcome.publication.text && "Madrid" !in outcome.publication.text, outcome.publication.text)
+        assertEquals(2, r.engine.sends.size, "first attempt + exactly one revision, counted at the native boundary")
+        assertTrue(r.engine.sends[1].contains("NON presenti nei passaggi"), "the revision knows why the draft was rejected")
+        assertTrue(r.engine.conversations[0].closed, "the rejected draft's conversation is gone")
+        // the budget is spent: any further generation of the same request is refused at the engine
+        kotlinx.coroutines.withContext(com.simone.jarvismobile.core.reliability.AttemptBudget(ledger)) { assertNull(r.slot.chat("ancora", "sys", 90_000)) }
+        assertEquals(2, r.engine.sends.size)
+        // next turn, new request: a fresh conversation that never saw the discarded candidate
+        r.engine.script = { _, text -> if ("Madrid" in text) "ricordo Madrid" else "ok" }
+        assertEquals("ok", r.slot.chat("Come si chiamava la città di prima?", "sys", 90_000))
+        assertTrue(r.engine.conversations.last().id > 2)
+    }
+
+    @Test fun `an exhausted request budget skips the revision and still never publishes the rejected claim`() = runBlocking {
+        val r = Rig()
+        val ledger = com.simone.jarvismobile.core.reliability.AttemptLedger(max = 1, nativeCounting = true)
+        r.engine.script = { _, _ -> "La capitale è Madrid." }
+        val outcome = kotlinx.coroutines.withContext(com.simone.jarvismobile.core.reliability.AttemptBudget(ledger)) {
+            val first = r.slot.chat("Qual è la capitale del Portogallo?", "sys", 90_000)!!
+            com.simone.jarvismobile.core.reliability.PublicationOrchestrator(
+                regenerate = { _, _ -> r.slot.chat("x", "sys", 90_000) }, invalidate = { r.slot.reset("rejected_draft") },
+            ).finish("Qual è la capitale del Portogallo?", first, evidence(), com.simone.jarvismobile.core.reliability.PublicationKind.ANSWER, ledger)
+        }
+        assertEquals(1, r.engine.sends.size)
+        assertFalse(outcome.revised)
+        assertTrue("Madrid" !in outcome.publication.text && "Lisbona" in outcome.publication.text, outcome.publication.text)
+    }
 }
