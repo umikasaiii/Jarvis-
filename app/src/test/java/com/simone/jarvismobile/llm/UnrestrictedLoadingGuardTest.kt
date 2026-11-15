@@ -32,7 +32,7 @@ class UnrestrictedLoadingGuardTest {
         assertTrue("marker must precede the native call", begin in 1 until init)
         assertEquals("finish after success and after a caught failure", 2, Regex("""loadGuard\.guard\.finish\(""").findAll(e).count())
         val g = src("llm/ModelLoadGuard.kt")
-        assertTrue("e.commit()" in g, "synchronous, durable write")
+        assertTrue("synchronous, durable write", "e.commit()" in g)
         assertFalse("apply()" in g)
     }
 
@@ -42,7 +42,7 @@ class UnrestrictedLoadingGuardTest {
         assertTrue("direct engine loads outside ModelLoader: $offenders", offenders.isEmpty())
         val l = src("llm/ModelLoader.kt")
         assertTrue("Mutex()" in l && "gate.withLock" in l)
-        assertTrue("unloadAndAwait" in l, "the previous model is released and awaited before the next")
+        assertTrue("the previous model is released and awaited before the next", "unloadAndAwait" in l)
     }
 
     @Test fun startupNeverReloadsAnInterruptedModelAndNeverAutoLoadsInsufficientUnlessExperimental() {
@@ -56,7 +56,7 @@ class UnrestrictedLoadingGuardTest {
         assertTrue("Carica comunque" in src("ui/models/ModelsScreen.kt"))
         assertTrue("Consenti caricamento sperimentale di modelli pesanti" in src("ui/models/ModelsScreen.kt"))
         assertTrue("experimentalHeavyModels" in src("data/SettingsRepository.kt"))
-        assertFalse("sealed interface Result" in src("llm/ModelLoader.kt") && "Refused" in src("llm/ModelLoader.kt"), "no refusal outcome exists")
+        assertFalse("no refusal outcome exists", "sealed interface Result" in src("llm/ModelLoader.kt") && "Refused" in src("llm/ModelLoader.kt"))
     }
 
     @Test fun aFailedLoadNeverDeletesAnything() {
