@@ -65,17 +65,18 @@ class KnowledgeIndexManager @Inject constructor(
             _progress.value = Progress(true, label, 0, 0)
             var session: ZimKnowledge.IndexSession? = null
             try {
-                session = zim.openForIndexing(uri) ?: run {
+                val opened = zim.openForIndexing(uri) ?: run {
                     _progress.value = Progress(false, label, message = "Archivio non verificato: premi prima «Verifica lettura».")
                     return@launch
                 }
+                session = opened
                 val workers = ZimIndexer.defaultWorkers()
                 val governor = DeviceIndexGovernor(context, workers)
                 governor.decide().stopReason?.let { why -> _progress.value = Progress(false, label, message = why); return@launch }
                 val budget = budgetBytes()
-                val indexer = ZimIndexer(session.zim, index, workers)
+                val indexer = ZimIndexer(opened.zim, index, workers)
                 val state = indexer.run(
-                    signature = session.size.toString(), maxArticles = ARTICLE_CAP, budgetBytes = budget,
+                    signature = opened.size.toString(), maxArticles = ARTICLE_CAP, budgetBytes = budget,
                     shouldContinue = { isActive },
                     onProgress = { p -> _progress.value = Progress(true, label, p.position, p.total) },
                     governor = governor,

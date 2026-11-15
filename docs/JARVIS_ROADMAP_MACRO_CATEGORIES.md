@@ -44,7 +44,7 @@ Su autorizzazione dell'utente, il limite storico **30 macro-step** (§65.7 del M
 
 | ID | Macro-step | Stato comprovato / prudenziale | Ambito e riferimento |
 |---|---|---|---|
-| `B01` | Indice offline persistente e ricerca FTS/semantica sui contenuti | FTS CI VERIFIED; DEVICE PENDING; SEMANTICA PLANNED | SQLite FTS4 incrementale e opt-in (biblioteca testuale + introduzioni di archivi scelti, tetto di spazio, ripresa), ricerca oltre titoli; semantica/embedding non realizzata; nessun secondo knowledge store (§65.13) |
+| `B01` | Indice offline persistente e ricerca FTS/semantica sui contenuti | FTS CI VERIFIED; DEVICE PENDING; SEMANTICA PLANNED | SQLite FTS4 incrementale e opt-in (biblioteca testuale + introduzioni di archivi scelti, tetto di spazio, ripresa), indicizzazione veloce 2.1 (6–13× su JVM, da verificare su Honor 200), ricerca oltre titoli; semantica/embedding non realizzata; nessun secondo knowledge store (§65.13–65.14) |
 | `B02` | Grounding fattuale, controllo evidenze e benchmark con modelli reali | PARTIAL; JVM/SIMULATED CI VERIFIED; DEVICE PENDING | Sufficienza ≠ pertinenza, 4 stati (NO_EVIDENCE/INSUFFICIENT/SOURCE_FOUND/CLAIM_SUPPORTED), citazioni solo di supporto; 121 domande simulate; benchmark con modelli reali ancora da fare (§65.13) |
 | `B03` | Modelli FAST/ADVANCED locali e confronto prestazioni reali | CANDIDATE / DEVICE PENDING | Qwen 3.5 4B solo se formato/runtime/risorse Honor compatibili; Gemma 1B fallback rapido |
 | `B04` | Semantic Pass 14B reale e learned head | PAUSED; PC TOOLING REQUIRED | Tooling PC dell'utente per qualifica del modello, non Core come dipendenza Android |

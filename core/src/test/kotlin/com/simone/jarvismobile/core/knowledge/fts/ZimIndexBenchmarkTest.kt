@@ -44,9 +44,12 @@ class ZimIndexBenchmarkTest {
             var peak = base
             val heap = Thread({ try { while (true) { val u = Runtime.getRuntime().let { it.totalMemory() - it.freeMemory() }; if (u > peak) peak = u; Thread.sleep(25) } } catch (_: InterruptedException) {} }, "bench-heap").also { it.isDaemon = true; it.start() }
             val sampler = StackSampler { it.name.startsWith("Test worker") || it.name.startsWith("kx-") }.also { it.start() }
+            val osBean = java.lang.management.ManagementFactory.getOperatingSystemMXBean() as com.sun.management.OperatingSystemMXBean
+            val cpu0 = osBean.processCpuTime
             val t0 = System.nanoTime()
             val state = ZimIndexer(zim, index).run(signature = "bench", maxArticles = Int.MAX_VALUE, budgetBytes = 2_000_000_000L)
             val wall = (System.nanoTime() - t0) / 1e6
+            val cpuMs = (osBean.processCpuTime - cpu0) / 1e6
             val phases = sampler.stop(); heap.interrupt()
             val passages = index.passageCount()
             val total = phases.values.sum().coerceAtLeast(1)
@@ -58,6 +61,7 @@ class ZimIndexBenchmarkTest {
             sb.appendLine("decompress_ms=%.0f decompress_calls=%d in_MB=%.1f out_MB=%.1f".format(timingDec.nanos.get() / 1e6, timingDec.calls.get(), timingDec.inBytes.get() / 1048576.0, timingDec.outBytes.get() / 1048576.0))
             sb.appendLine("sqlite_ms=%.0f statements=%d commits=%d".format(timingDb.nanos.get() / 1e6, timingDb.statements.get(), timingDb.commits.get()))
             sb.appendLine("sampled_share=" + phases.entries.sortedByDescending { it.value }.joinToString(",") { "${it.key}:%.0f%%".format(100.0 * it.value / total) })
+            sb.appendLine("cpu_ms=%.0f cpu_per_wall=%.2f".format(cpuMs, cpuMs / wall))
             sb.appendLine("heap_peak_delta_MB=%.0f db_MB=%.1f".format((peak - base) / 1048576.0, dbFile.length() / 1048576.0))
             sb.appendLine("fingerprint=${fingerprint(JdbcFtsDb(dbFile))}")
             File(out, "${label}_${name}_run$run.txt").writeText(sb.toString())

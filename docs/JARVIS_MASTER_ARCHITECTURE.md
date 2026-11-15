@@ -7413,3 +7413,12 @@ Aggiunta datata: **non modifica** §65.1–§65.12 né i macro-step della roadma
 - **Limiti dichiarati:** co-occorrenza lessicale, non implicazione; nessun thesaurus; il percorso documentale chiede ancora la citazione al modello (non modificato). Dettaglio, cifre (fonti simulate/JVM), limiti e cinque prove Honor 200: `docs/KNOWLEDGE_ENGINE_ZIM.md` § Knowledge Engine 2.0.
 - **Stato:** CI VERIFIED a run completata; **non DEVICE VERIFIED**; nessuna accuratezza del modello reale dichiarata.
 
+## 65.14 ADDENDUM 2026-11-15 — KNOWLEDGE ENGINE 2.1 (indicizzazione veloce)
+
+Aggiunta datata: **non modifica** §65.1–§65.13 né i 50 macro-step della roadmap consolidata; aggiorna lo stato di B01 **senza duplicarlo**. A0–A4 **non avviate**.
+
+- **Problema:** l'indicizzazione opt-in (2.0) era lenta. **Misura (JVM, baseline `3b5b61d`):** decompressione ripetuta dello stesso cluster (ordine per titolo ⇒ 5,8 GB decompressi per un archivio da 9 MB), conversione HTML dell'intera pagina, 3 istruzioni SQLite per passaggio e un commit ogni 40 articoli.
+- **Ownership (nessun nuovo indice/store/orchestratore):** stesso `KnowledgeIndex` (FTS4) e stesso `ZimIndexer`; cambia come si legge (ordine per cluster, decompressione unica, pipeline a concorrenza limitata con unico writer SQLite), come si converte (prefisso HTML, passata unica, tokenizzatore a passata unica), come si scrive (checkpoint da ~1.500 passaggi, istruzioni preparate) e quando si rallenta (`IndexPolicy` pura + `DeviceIndexGovernor`). Durabilità SQLite invariata (nessun PRAGMA). Contenuto dell'indice **identico** (impronta SHA-256) prima e dopo.
+- **Risultato misurato (JVM, mediana di 3):** 6,3×–13× più veloce, CPU totale 3,5–6× inferiore; emulatore CI: tokenizzatore 2,4×, scrittura SQLite 3,2× (indicativi). Dettagli, limiti e procedura Honor 200: `docs/KNOWLEDGE_ENGINE_ZIM.md` § Knowledge Engine 2.1.
+- **Non misurato:** velocità, consumo batteria e temperatura sull'Honor 200. **Stato:** CI VERIFIED a run completata; **non DEVICE VERIFIED**.
+

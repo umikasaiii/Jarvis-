@@ -113,3 +113,64 @@ Caso segnalato: «capitale del Portogallo» ⇒ passaggi di Wikizionario classif
 3. **Contenuto senza titolo:** «Indicizza» su Wikimed (limite 150 MB), poi «quale organo produce l'insulina?» ⇒ passaggio del Pancreas con la frase di supporto; verificare spazio occupato, avanzamento, **Pausa**/ripresa (chiudi l'app durante l'indicizzazione e riprendi) ed **Elimina indice**.
 4. **Voce di dizionario legittima:** «Che cosa significa capitale?» ⇒ risposta con «Fonte: Wikizionario…».
 5. **Risposta non confermata:** una domanda su un dato che compare nelle fonti solo in forma vicina (es. un valore diverso) ⇒ la risposta deve riportare «non è confermata dai passaggi trovati» e «Fonti consultate (non confermano la risposta)». Annota anche tempi e consumo percepiti durante l'indicizzazione.
+
+---
+
+# Knowledge Engine 2.1 — indicizzazione veloce (2026-11-15)
+
+Stato: **CI VERIFIED** a run completata; **non DEVICE VERIFIED**. Tutti i numeri sotto sono **JVM** (4 core, SQLite di sqlite-jdbc) o **emulatore CI** (x86_64, indicativi). **Nessun numero è dell'Honor 200**: il rapporto tra le fasi dipende da CPU, flash e SQLite del telefono; la procedura per misurarlo è in fondo e l'app mostra le fasi dopo ogni indicizzazione.
+
+## 1. Colli di bottiglia misurati (baseline 2.0, `3b5b61d`)
+
+Stesso harness (`ZimIndexBenchmarkTest`) sul commit di base e sul codice nuovo: tempi esatti di lettura/decompressione/SQLite da wrapper delle tre interfacce, ripartizione del resto da un campionatore di stack. 3 esecuzioni per archivio, mediana.
+
+| Archivio | Tempo 2.0 | Quota delle fasi (campionata) |
+|---|---|---|
+| Wikipedia en «mini» reale (9 MB, 3.821 articoli) | 11,3 s | **decompressione 64%**, HTML 18%, SQLite 8%, tokenizzazione 4% |
+| sintetico 5.000 articoli (≈ 20 KB HTML) | 14,6 s | HTML 48%, **decompressione 29%**, SQLite 11% |
+| sintetico «lungo» 1.200 articoli (≈ 90 KB HTML) | 10,6 s | **HTML 65%**, decompressione 25% |
+
+1. **Decompressione ripetuta.** 2.0 percorreva gli articoli in ordine di *titolo*: titoli consecutivi stanno in cluster diversi, quindi quasi ogni articolo decompresse un intero cluster per tenerne un blob (2.942 decompressioni per 3.821 articoli; **5,8 GB** decompressi per indicizzare un archivio di 9 MB — la cache da 3 cluster non può reggere un accesso in ordine casuale).
+2. **HTML convertito per intero** (pagina fino a 300 KB, ~10 regex) per tenere i primi ~1,8 KB di testo.
+3. **SQLite:** 97–126 commit (batch da 40 articoli), 3 istruzioni per passaggio (INSERT, `last_insert_rowid()`, INSERT FTS) + 5 query per batch per il progresso.
+4. Memoria: il picco heap dell'archivio reale era 1,1 GB (cluster decompressi di continuo).
+
+## 2. Ottimizzazioni
+
+- **Ordine per cluster** (`ZimIndexer.plan`): una passata sequenziale su elenco titoli (bitset degli articoli veri) e directory (letture a blocchi da 1 MB, solo i campi fissi, nessuna stringa), articoli raggruppati per cluster, ogni cluster decompresso **una volta** (`ZimArchive.readClusterOnce`: non entra nella cache di query, nessun duplicato in RAM; decompressione diretta dal buffer del cluster, senza copia del corpo compresso). Decompressioni: 2.942 → 15 (reale), 4.890 → 129, 1.133 → 52; MB decompressi: 5.801 → 30.
+- **Pipeline produttore/consumatore a concorrenza limitata:** 1–3 worker (`min(3, core/2)`, a priorità background su Android) leggono, decomprimono, convertono e tokenizzano; **solo il thread chiamante scrive su SQLite**, in ordine di cluster attraverso una finestra di riordino con semafori (`2·worker+2` risultati in volo ⇒ memoria limitata, cursore monotono). Il numero di worker non cambia il contenuto dell'indice (testato con 1, 2, 3).
+- **Solo l'introduzione:** `ZimHtml.leadText` converte un *prefisso* della pagina (24 KB, poi ×4 fino a trovare 3.600+800 caratteri), tagliato in un punto che non cade dentro blocchi che il convertitore elimina. `ZimHtml.toText` ora usa una passata unica (regioni, tag) al posto di 9 regex: **testo identico** a quello della pipeline a regex su tutte le pagine dei corpora reali, su 4.000 markup casuali e su casi limite (`ZimHtmlEquivalenceTest`); l'unica divergenza nota è una pagina patologica con l'inizio di un commento dentro un blocco script; markup con `<` dentro un tag ricade sulle regex. Il tokenizzatore (`SupportJudge.stems`, `KnowledgeText.fold`) è a passata unica con via rapida ASCII, **identico** al precedente su 5.000 stringhe casuali (`StemsEquivalenceTest`).
+- **SQLite:** checkpoint da ~1.500 passaggi o 1,5 s (un solo `commit` durevole ciascuno), `execMany` con **un'istruzione preparata** per batch, id espliciti (niente `last_insert_rowid()`), progresso e budget contati in memoria. **Nessun PRAGMA toccato**: `synchronous`/`journal_mode` restano quelli di Android, quindi la durabilità è invariata. Commit: 97 → 5 (reale), 126 → 8.
+- **Checkpoint atomici e ripresa:** passaggi + cursore (`c:<prossimo cluster>`) in una transazione; Stop/Pausa riprende dall'ultimo checkpoint; un cursore 2.0 (ordine per titolo) non è riprendibile ⇒ quell'archivio riparte da zero (un indice 2.0 COMPLETO resta valido); firma file diversa ⇒ ricostruzione; errore in un worker ⇒ arresto pulito, nessun thread orfano, indice coerente e riprendibile.
+- **Limiti adattivi (`IndexPolicy`, funzione pura testata + `DeviceIndexGovernor`):** batteria < 15% non in carica ⇒ pausa, < 30% ⇒ 1 worker; risparmio energetico ⇒ 1 worker e pausa 150 ms/cluster; temperatura `MODERATE` ⇒ 1 worker e 400 ms, `LIGHT` ⇒ −1 worker, `SEVERE`+ ⇒ pausa; memoria di sistema < 120 MB ⇒ pausa, < 300 MB o heap residuo < 96 MB ⇒ 1 worker. Android non espone il carico CPU alle app: la CPU è limitata in modo strutturale (pochi worker a priorità background, ridotti o fermati dai segnali sopra). Letture non disponibili = «nessun vincolo», mai motivo di stop.
+- **Profilatore** (`IndexProfiler`): tempo per fase (piano, lettura, decompressione, estrazione, tokenizzazione, SQLite, avanzamento, attesa) e contatori; dopo ogni indicizzazione l'Hub mostra articoli/s, passaggi/s e le fasi, e li scrive nel log tecnico (solo conteggi e tempi).
+
+## 3. Benchmark prima/dopo (JVM, mediana di 3 esecuzioni, stesso budget, stesso limite articoli, stesso contenuto dell'indice)
+
+| Archivio | Tempo prima → dopo | Articoli/s | Passaggi/s | Accelerazione |
+|---|---|---|---|---|
+| Wikipedia mini reale | 11,3 s → 0,87 s | 337 → 4.392 | 564 → 7.342 | **13×** |
+| sintetico 5.000 | 14,6 s → 2,3 s | 343 → 2.177 | 686 → 4.354 | **6,3×** |
+| sintetico lungo 1.200 | 10,6 s → 1,34 s | 114 → 899 | 228 → 1.798 | **7,9×** |
+
+- **Stesso indice:** l'impronta SHA-256 dei passaggi (docKey, sezione, testo, lead) è identica prima e dopo, su tutte le esecuzioni.
+- **CPU totale del processo** (JVM incl. JIT/GC, 1 esecuzione calda): 12,0 s → 2,0 s (reale), 10,1 s → 2,9 s (lungo), 13,2 s → 4,8 s (sintetico). Il lavoro complessivo cala di **3,5–6×** anche se usa più core insieme.
+- **Memoria (JVM, picco heap sopra la base):** 1.148 → 117 MB (reale), 187 → 106 MB (lungo), 95 → 166 MB (sintetico: garbage di cluster in volo, non dati trattenuti). Limite teorico su telefono: `worker × cluster decompresso` (tipicamente ~2 MB, tetto 96 MB per cluster) + 20 byte per articolo del piano (200.000 articoli ≈ 4 MB). Dimensione del DB: invariata (12,1 → 11,9 MB; 16,3 → 16,1; 4,1 → 3,9).
+- **Emulatore CI (indicativo, x86_64 su runner condiviso, 12.000 passaggi):** tokenizzatore 9.979 ms → 4.146 ms (2,4×); scrittura SQLite 3.456 ms → 1.094 ms (3,2×).
+- **Batteria: NON misurata.** Non esiste una misura di consumo in questo ambiente; la CPU totale ridotta è solo un indizio. Va misurata sull'Honor 200 (procedura sotto).
+- Limiti dell'ottimizzazione: dopo la correzione resta circa metà del tempo nella conversione HTML (pagine lunghe) e il resto in attesa/SQLite; su archivi reali con cluster di ~2 MB e decine di articoli per cluster l'effetto dell'ordine per cluster è tipicamente maggiore che sul sintetico, ma **va verificato** su Wikizionario/Wikimed reali.
+
+## 4. Limiti residui
+
+- Il piano è ricalcolato a ogni ripresa (una passata sequenziale sulla directory: pochi secondi per archivi piccoli, più per Wikipedia completa); memoria del piano 20 byte/articolo (archivio da 2 M articoli ≈ 40 MB).
+- Con il tetto articoli il «primo N» è in ordine di cluster, non alfabetico.
+- L'indicizzazione resta un'attività del processo dell'app (non un servizio in primo piano): se Android termina il processo, riprende dall'ultimo checkpoint al riavvio manuale.
+- Nessun controllo CPU per carico: solo strutturale (vedi sopra). Soglie termiche/batteria sono prudenziali e non tarate sull'Honor 200.
+
+## 5. Verifica sull'Honor 200
+
+1. Installa la Beta; Biblioteca offline → «Verifica lettura» su Wikimed (o Wikizionario), poi limite 150 MB.
+2. Collega il telefono a un PC e azzera le statistiche batteria (`adb shell dumpsys batterystats --reset`), oppure annota livello batteria e temperatura. Premi **Indicizza** e **cronometra** fino a «Indicizzazione completata».
+3. Leggi nell'Hub la riga «Ultima indicizzazione»: articoli/s, passaggi/s e fasi (ms): confrontala con la tua stima di 2.0 (stesso archivio) o chiedimi di ricostruirla dal log (`adb logcat -s JarvisKnowledgeIndex`).
+4. Durante l'indicizzazione: usa il telefono (la UI deve restare fluida), attiva il risparmio energetico (deve ridurre a 1 worker), poi premi **Pausa**, chiudi l'app e riprendi: il conteggio deve ripartire dall'ultimo checkpoint, senza duplicati (`passaggi` finali uguali a una corsa ininterrotta).
+5. A fine corsa: «quale organo produce l'insulina?» deve restituire il Pancreas; confronta il consumo batteria (`dumpsys batterystats --charged | grep -i jarvis`) e la temperatura con una corsa 2.0 se disponibile (`3bd8140`).
