@@ -30,8 +30,11 @@ object ValidatedGeneration {
         provenance: AnswerQuality.Provenance,
         clean: (String) -> String,
         /** [firstFlags] is empty on the first call and carries the first attempt's defects on the retry. */
+        /** One ledger per user request: at most two generative attempts, every retry with its recorded cause. */
+        ledger: com.simone.jarvismobile.core.reliability.AttemptLedger = com.simone.jarvismobile.core.reliability.AttemptLedger(),
         generate: suspend (retry: Boolean, firstFlags: Set<AnswerQuality.Flag>) -> String?,
     ): Result {
+        ledger.request("initial")
         val raw1 = generate(false, emptySet())
         val c1 = raw1?.let(clean)?.trim().orEmpty()
         val a1 = AnswerQuality.evaluate(question, c1, earlierAnswers, earlierQuestions, evidence)
@@ -39,6 +42,11 @@ object ValidatedGeneration {
             return Result(AnswerQuality.present(c1, provenance, a1), a1, false, a1.flags, raw1?.length ?: 0, c1.length, raw1)
         }
 
+        if (!ledger.request("quality:" + a1.flags.joinToString("+") { it.name.lowercase() })) {
+            // budget spent by an earlier layer: show the first attempt only if it is usable, never loop
+            val usable = c1.isNotEmpty() && AnswerQuality.Flag.ECHO_OF_EARLIER_ANSWER !in a1.flags
+            return Result(if (usable) AnswerQuality.present(c1, provenance, a1) else null, a1, false, a1.flags, raw1?.length ?: 0, c1.length, raw1)
+        }
         val raw2 = generate(true, a1.flags)
         val c2 = raw2?.let(clean)?.trim().orEmpty()
         val a2 = AnswerQuality.evaluate(question, c2, earlierAnswers, earlierQuestions, evidence)
