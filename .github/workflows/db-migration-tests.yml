@@ -75,9 +75,9 @@ jobs:
                       print("passed:" if sk is None else "skipped:", tc.get("name"))
           print(f"SUMMARY tests={tot} failed={fail} skipped={skip}")
           PY
-      - name: Emulator benchmark figures (indicative: CI emulator, NOT the Honor 200)
+      - name: "Emulator benchmark figures (indicative, CI emulator, NOT the Honor 200)"
         if: always()
-        run: cat app/build/jarvis_bench_emulator.txt 2>/dev/null || echo "no benchmark output"
+        run: 'cat app/build/jarvis_bench_emulator.txt 2>/dev/null || echo "no benchmark output"'
       - uses: actions/upload-artifact@v4
         if: always()
         with:
