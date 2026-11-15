@@ -13,8 +13,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.Switch
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -52,6 +55,29 @@ fun ModelsScreen(
     val semanticName by viewModel.semanticClassifierModelName.collectAsStateWithLifecycle()
     val status by viewModel.status.collectAsStateWithLifecycle()
     val busy by viewModel.busy.collectAsStateWithLifecycle()
+    val heavyPrompt by viewModel.heavyPrompt.collectAsStateWithLifecycle()
+    val experimental by viewModel.experimentalHeavy.collectAsStateWithLifecycle(initialValue = false)
+    val reports by viewModel.loadReports.collectAsStateWithLifecycle()
+    val parked by viewModel.parkedSlots.collectAsStateWithLifecycle()
+    val autoNote by viewModel.autoLoadNote.collectAsStateWithLifecycle()
+    val interrupted by viewModel.interruptedLoads.collectAsStateWithLifecycle()
+    val memory by viewModel.memory.collectAsStateWithLifecycle()
+    androidx.compose.runtime.LaunchedEffect(Unit) { viewModel.refreshMemory() }
+
+    heavyPrompt?.let { p ->
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissHeavy() },
+            title = { Text("Memoria libera insufficiente (stima)") },
+            text = {
+                Text(
+                    p.message + "\n\nPuoi tentare comunque: se il modello è compatibile potrebbe funzionare; altrimenti potrebbe essere lento, " +
+                        "fallire con un errore o far chiudere l'app. Il modello non viene mai eliminato.",
+                )
+            },
+            confirmButton = { TextButton(onClick = { viewModel.confirmHeavy() }) { Text("Carica comunque") } },
+            dismissButton = { TextButton(onClick = { viewModel.dismissHeavy() }) { Text("Annulla") } },
+        )
+    }
 
     // § FASE 2A.11 — EmbeddingGemma needs TWO files at once (`.tflite` +
     // SentencePiece tokenizer); this two-step pick mirrors the existing
@@ -93,6 +119,56 @@ fun ModelsScreen(
                 if (status.isNotEmpty()) {
                     Text(status, style = MaterialTheme.typography.bodyMedium)
                 }
+            }
+        }
+
+        // --- experimental heavy-model loading + what happened to the last loads -------------------------------
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Consenti caricamento sperimentale di modelli pesanti", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            "Acceso: JARVIS tenta sempre il caricamento, anche se la RAM libera stimata è inferiore al consigliato, senza richiedere conferma. " +
+                                "Il modello può risultare lento, fallire o far chiudere l'app. Spento (predefinito): con una stima insufficiente chiede «Carica comunque» ogni volta.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    Switch(checked = experimental, onCheckedChange = { viewModel.setExperimentalHeavy(it) })
+                }
+                autoNote?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                interrupted.forEach { i ->
+                    Text(
+                        "Caricamento interrotto: «${i.name}» (${i.fileBytes / (1024 * 1024)} MiB) non è terminato — Android potrebbe aver chiuso l'app. " +
+                            "Il modello è ancora installato e non viene ricaricato da solo.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    TextButton(onClick = { viewModel.dismissInterrupted(i.path) }) { Text("Ho capito, consenti di nuovo il caricamento automatico") }
+                }
+                if (parked.isNotEmpty()) {
+                    Text("In pausa per fare spazio (selezionati, non eliminati): ${parked.joinToString { it.name.lowercase() }}", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("Diagnostica memoria", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    "RAM fisica ${memory.totalBytes.mibOrNa()} · disponibile secondo Android ${memory.availBytes.mibOrNa()}" +
+                        (if (memory.lowMemory) " · Android segnala memoria bassa" else "") + " · memoria del processo (PSS) ${memory.pssBytes.mibOrNa()}",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Text(
+                    "«Disponibile» è un dato di sistema, non la quantità che l'app può allocare; la stima di consumo è un'euristica, non un limite hardware.",
+                    style = MaterialTheme.typography.labelSmall,
+                )
+                if (reports.isEmpty()) Text("Nessun caricamento in questa sessione.", style = MaterialTheme.typography.bodySmall)
+                reports.forEach { (slot, r) ->
+                    HorizontalDivider()
+                    r.describe().forEach { line -> Text(line, style = MaterialTheme.typography.bodySmall) }
+                }
+                OutlinedButton(onClick = { viewModel.refreshMemory() }) { Text("Aggiorna misure") }
             }
         }
 
@@ -269,3 +345,5 @@ private fun semanticLoadStateLabel(s: EmbeddingLoadState): String = when (s) {
     EmbeddingLoadState.LOADED -> "pronta"
     EmbeddingLoadState.ERROR -> "errore"
 }
+
+private fun Long.mibOrNa(): String = if (this < 0) "n/d" else "${this / (1024 * 1024)} MiB"

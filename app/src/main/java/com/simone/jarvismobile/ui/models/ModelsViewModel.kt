@@ -32,6 +32,7 @@ class ModelsViewModel @Inject constructor(
     private val modelManager: ModelManager,
     private val llm: LlmEngine,
     private val router: LlmRouter,
+    private val loader: com.simone.jarvismobile.llm.ModelLoader,
     private val settings: SettingsRepository,
     private val semanticEmbeddingEngine: SemanticEmbeddingEngine,
     private val semanticClassifier: EmbeddingSemanticClassifier,
@@ -49,6 +50,62 @@ class ModelsViewModel @Inject constructor(
     /** § FASE 2A.11 — EmbeddingGemma (Semantic Understanding Layer), a DIFFERENT model from the three above. */
     val semanticClassifierLoadState: StateFlow<EmbeddingLoadState> = semanticEmbeddingEngine.loadState
     val semanticClassifierModelName: StateFlow<String?> = semanticEmbeddingEngine.loadedModelName
+
+    // ---- memory-aware loading: the estimate informs, the user decides (see ModelLoadPolicy) ----------------------
+    data class HeavyPrompt(val slot: com.simone.jarvismobile.core.llm.SlotId, val model: LocalModel, val message: String)
+
+    private val _heavyPrompt = MutableStateFlow<HeavyPrompt?>(null)
+    /** Set when the default (cautious) mode meets an insufficient estimate: «Carica comunque» / «Annulla». */
+    val heavyPrompt: StateFlow<HeavyPrompt?> = _heavyPrompt.asStateFlow()
+    val experimentalHeavy = settings.experimentalHeavyModels
+    fun setExperimentalHeavy(on: Boolean) { viewModelScope.launch { settings.setExperimentalHeavyModels(on) } }
+    val loadReports = loader.reports
+    val parkedSlots = loader.parked
+    val autoLoadNote = loader.autoLoadNote
+    val interruptedLoads = loader.interrupted
+    fun dismissInterrupted(path: String) = loader.dismissInterrupted(path)
+    private val _memory = MutableStateFlow(loader.memory())
+    val memory: StateFlow<com.simone.jarvismobile.llm.MemorySnapshot> = _memory.asStateFlow()
+    fun refreshMemory() { _memory.value = loader.memory() }
+    fun dismissHeavy() { _heavyPrompt.value = null; _status.value = "Caricamento annullato: nessun modello è stato modificato." }
+    fun confirmHeavy() {
+        val p = _heavyPrompt.value ?: return
+        _heavyPrompt.value = null
+        attempt(p.slot, p.model, confirmed = true)
+    }
+
+    /** One attempt in one slot, through the single serialised loader. Never deletes or replaces anything on failure. */
+    private fun attempt(slot: com.simone.jarvismobile.core.llm.SlotId, model: LocalModel, confirmed: Boolean) {
+        if (_busy.value) return
+        _busy.value = true
+        _status.value = when (slot) {
+            com.simone.jarvismobile.core.llm.SlotId.FAST -> "Caricamento del modello in memoria… (un modello pesante può richiedere minuti e l'interfaccia resta utilizzabile)"
+            com.simone.jarvismobile.core.llm.SlotId.ADVANCED -> "Caricamento del modello avanzato… (può richiedere più tempo)"
+            com.simone.jarvismobile.core.llm.SlotId.CLASSIFIER -> "Caricamento del modello classificatore…"
+        }
+        viewModelScope.launch {
+            val r = loader.load(slot, model.path, model.name, confirmed)
+            _status.value = when (r) {
+                is com.simone.jarvismobile.llm.ModelLoader.Result.NeedsConfirmation -> {
+                    _heavyPrompt.value = HeavyPrompt(slot, model, r.message)
+                    "Serve una conferma per caricare ${model.name}."
+                }
+                is com.simone.jarvismobile.llm.ModelLoader.Result.Loaded -> buildString {
+                    append(when (slot) {
+                        com.simone.jarvismobile.core.llm.SlotId.FAST -> "Modello caricato: ${model.name}"
+                        com.simone.jarvismobile.core.llm.SlotId.ADVANCED -> "Modello avanzato pronto: ${model.name}. Verrà usato per le domande che richiedono ragionamento."
+                        com.simone.jarvismobile.core.llm.SlotId.CLASSIFIER -> "Modello classificatore pronto: ${model.name}. Verrà usato solo per capire quale comando intendi, mai per rispondere."
+                    })
+                    if (r.parked.isNotEmpty()) append(". Per fare spazio ho messo in pausa: ${r.parked.joinToString { it.name.lowercase() }} (resta selezionato, non è stato eliminato)")
+                    r.warning?.let { append(". Avviso: $it") }
+                }
+                is com.simone.jarvismobile.llm.ModelLoader.Result.Failed ->
+                    "Caricamento fallito. Errore del runtime: ${r.detail}. Il modello è ancora installato: puoi riprovare o scegliere un modello più piccolo."
+            }
+            refreshMemory()
+            _busy.value = false
+        }
+    }
 
     private val _models = MutableStateFlow<List<LocalModel>>(emptyList())
     val models: StateFlow<List<LocalModel>> = _models.asStateFlow()
@@ -125,46 +182,20 @@ class ModelsViewModel @Inject constructor(
         }
     }
 
-    fun load(model: LocalModel) {
-        if (_busy.value) return
-        _busy.value = true
-        _status.value = "Caricamento del modello in memoria…"
-        viewModelScope.launch {
-            val ok = llm.load(model.path, model.name)
-            if (ok) settings.setActiveModel(model.path, model.name)
-            _status.value = if (ok) {
-                "Modello caricato: ${model.name}"
-            } else {
-                "Caricamento fallito. Dettaglio: ${llm.lastLoadDetail.value.ifBlank { "errore sconosciuto" }}"
-            }
-            _busy.value = false
-        }
-    }
+    fun load(model: LocalModel) = attempt(com.simone.jarvismobile.core.llm.SlotId.FAST, model, confirmed = false)
 
     /** Assigns a model to the optional "advanced" slot used for reasoning. */
     fun loadAdvanced(model: LocalModel) {
         if (_busy.value) return
-        _busy.value = true
-        _status.value = "Caricamento del modello avanzato… (può richiedere più tempo)"
         viewModelScope.launch {
             if (model.path == settings.modelPath.first()) {
                 router.advanced.unload()
                 settings.clearAdvancedModel()
                 _status.value = "È già il modello rapido: JARVIS userà una sola copia " +
                     "anche per le richieste complesse, risparmiando RAM e tempo."
-                _busy.value = false
                 return@launch
             }
-            val ok = router.advanced.load(model.path, model.name)
-            if (ok) settings.setAdvancedModel(model.path, model.name)
-            _status.value = if (ok) {
-                "Modello avanzato pronto: ${model.name}. Verrà usato per le domande " +
-                    "che richiedono ragionamento."
-            } else {
-                "Caricamento avanzato fallito. Dettaglio: " +
-                    router.advanced.lastLoadDetail.value.ifBlank { "errore sconosciuto" }
-            }
-            _busy.value = false
+            attempt(com.simone.jarvismobile.core.llm.SlotId.ADVANCED, model, confirmed = false)
         }
     }
 
@@ -184,27 +215,15 @@ class ModelsViewModel @Inject constructor(
      */
     fun loadClassifier(model: LocalModel) {
         if (_busy.value) return
-        _busy.value = true
-        _status.value = "Caricamento del modello classificatore…"
         viewModelScope.launch {
             if (model.path == settings.modelPath.first()) {
                 router.classifier.unload()
                 settings.clearClassifierModel()
                 _status.value = "È già il modello rapido: JARVIS lo userà anche per " +
                     "la classificazione, senza caricarlo due volte."
-                _busy.value = false
                 return@launch
             }
-            val ok = router.classifier.load(model.path, model.name)
-            if (ok) settings.setClassifierModel(model.path, model.name)
-            _status.value = if (ok) {
-                "Modello classificatore pronto: ${model.name}. Verrà usato solo per capire " +
-                    "quale comando intendi quando gli alias rapidi non bastano, mai per rispondere."
-            } else {
-                "Caricamento del classificatore fallito. Dettaglio: " +
-                    router.classifier.lastLoadDetail.value.ifBlank { "errore sconosciuto" }
-            }
-            _busy.value = false
+            attempt(com.simone.jarvismobile.core.llm.SlotId.CLASSIFIER, model, confirmed = false)
         }
     }
 

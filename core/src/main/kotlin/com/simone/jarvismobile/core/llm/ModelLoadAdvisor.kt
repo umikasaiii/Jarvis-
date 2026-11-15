@@ -5,9 +5,11 @@ enum class LoadAdviceLevel { OK, TIGHT, INSUFFICIENT }
 data class LoadAdvice(val level: LoadAdviceLevel, val message: String?)
 
 /**
- * BETA 2/8 — a native out-of-memory while initialising a model kills the whole process and cannot be
- * caught. This estimate refuses only the cases that are very unlikely to succeed and warns on tight ones.
- * The thresholds are heuristics, not measurements: the real figure must be read on the device.
+ * ADVISORY ONLY (since the "unrestricted loading" change). A native out-of-memory while initialising a model can kill the
+ * whole process and cannot be caught, so JARVIS tells the user what the numbers suggest — but the estimate NEVER decides
+ * whether an attempt may be made: [ModelLoadPolicy] turns it into a warning or a request for confirmation, never a refusal.
+ * The thresholds are heuristics over SYSTEM-WIDE available memory (which Android can grow by reclaiming caches, and which
+ * is not what the process can actually allocate); they are not hardware limits and not measurements of the model.
  */
 object ModelLoadAdvisor {
     /** Weights plus runtime/KV-cache overhead, as a multiple of the model file size. */
@@ -20,8 +22,9 @@ object ModelLoadAdvisor {
         return when {
             availableBytes < need / 2 -> LoadAdvice(
                 LoadAdviceLevel.INSUFFICIENT,
-                "Memoria libera insufficiente per questo modello (circa ${mib(availableBytes)} MiB disponibili, " +
-                    "ne servono circa ${mib(need)} MiB). Chiudi le altre app e riprova, oppure usa un modello più piccolo.",
+                "Memoria libera insufficiente secondo la stima (circa ${mib(availableBytes)} MiB disponibili, " +
+                    "stima del modello circa ${mib(need)} MiB). È un'indicazione prudenziale, non un limite: Android può liberare memoria " +
+                    "e il caricamento può riuscire, ma potrebbe essere molto lento, fallire o far chiudere l'app.",
             )
             availableBytes < need || lowMemoryFlag -> LoadAdvice(
                 LoadAdviceLevel.TIGHT,

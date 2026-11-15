@@ -61,6 +61,7 @@ class SettingsRepository @Inject constructor(
         val ZIM_DOC_URIS = stringPreferencesKey("hub_zim_doc_uris")
         val ZIM_VERIFIED = stringPreferencesKey("knowledge_zim_verified")
         val KNOWLEDGE_INDEX_BUDGET_MB = intPreferencesKey("knowledge_index_budget_mb")
+        val EXPERIMENTAL_HEAVY_MODELS = booleanPreferencesKey("experimental_heavy_models")
         val KIWIX_PREFERRED = stringPreferencesKey("hub_kiwix_preferred_pkg")
         val OM_PREFERRED = stringPreferencesKey("hub_organic_preferred_pkg")
         val EMBEDDING_MODEL_PATH = stringPreferencesKey("embedding_model_path")
@@ -253,6 +254,14 @@ class SettingsRepository @Inject constructor(
             if (value.isEmpty()) it.remove(Keys.ZIM_VERIFIED) else it[Keys.ZIM_VERIFIED] = value.joinToString("\u001F")
         }
     }
+
+    /**
+     * "Consenti caricamento sperimentale di modelli pesanti": when on, an insufficient memory ESTIMATE never blocks or re-asks —
+     * JARVIS attempts the load (and accepts that it may be slow, fail or end the process). Off by default: the default asks once
+     * per attempt ("Carica comunque").
+     */
+    val experimentalHeavyModels: Flow<Boolean> = context.settingsDataStore.data.map { it[Keys.EXPERIMENTAL_HEAVY_MODELS] ?: false }
+    suspend fun setExperimentalHeavyModels(on: Boolean) { context.settingsDataStore.edit { it[Keys.EXPERIMENTAL_HEAVY_MODELS] = on } }
 
     /** Space budget of the persistent knowledge index (MB). Indexing stops, honestly "partial", when it is reached. */
     val knowledgeIndexBudgetMb: Flow<Int> = context.settingsDataStore.data.map { it[Keys.KNOWLEDGE_INDEX_BUDGET_MB] ?: DEFAULT_KNOWLEDGE_INDEX_BUDGET_MB }

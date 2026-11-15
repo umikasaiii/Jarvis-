@@ -145,6 +145,7 @@ class SessionCoordinator @Inject constructor(
     private val chatStore: ChatStore,
     private val knowledge: KnowledgeRepository,
     private val zimKnowledge: com.simone.jarvismobile.knowledge.zim.ZimKnowledge,
+    private val modelLoader: com.simone.jarvismobile.llm.ModelLoader,
     private val agenda: com.simone.jarvismobile.agenda.AgendaRepository,
     private val automations: AutomationRepository,
     private val conversationMemory: ConversationMemoryStore,
@@ -1890,8 +1891,10 @@ class SessionCoordinator @Inject constructor(
             LlmLoadState.UNLOADED -> ModelRuntimeState.UNLOADED
         }
         val exists = path.isNotBlank() && runCatching { File(path).isFile }.getOrDefault(false)
-        return (ModelAvailabilityResolver.resolve(state, path, exists, llm.lastLoadDetail.value) as? ModelAvailability.Unavailable)
+        val base = (ModelAvailabilityResolver.resolve(state, path, exists, llm.lastLoadDetail.value) as? ModelAvailability.Unavailable)
             ?.message ?: "Il modello non risponde."
+        // why the start-up load did not happen (interrupted before / insufficient estimate), when that is the reason
+        return modelLoader.autoLoadNote.value?.takeIf { state != ModelRuntimeState.LOADED }?.let { "$base $it" } ?: base
     }
 
     private suspend fun processText(text: String, taskId: String?, orderKey: Long): com.simone.jarvismobile.core.chat.TurnResult? {
@@ -2478,7 +2481,9 @@ class SessionCoordinator @Inject constructor(
         if (!file.exists()) return
         val name = settings.modelName.first().ifBlank { file.name }
         _diagnostic.value = "carico modello…"
-        llm.load(path, name)
+        // Start-up loads go through the ONE loader: serialised, never a model whose previous attempt was interrupted, and an
+        // insufficient memory estimate only in the experimental mode (a person is not in front of the screen).
+        modelLoader.autoLoad(com.simone.jarvismobile.core.llm.SlotId.FAST, path, name)
         loadAdvancedIfConfigured()
         loadClassifierIfConfigured()
     }
@@ -2505,7 +2510,7 @@ class SessionCoordinator @Inject constructor(
         if (!file.exists()) return
         val name = settings.advancedModelName.first().ifBlank { file.name }
         _diagnostic.value = "carico modello avanzato…"
-        router.advanced.load(path, name)
+        modelLoader.autoLoad(com.simone.jarvismobile.core.llm.SlotId.ADVANCED, path, name)
     }
 
     /**
@@ -2530,7 +2535,7 @@ class SessionCoordinator @Inject constructor(
         if (!file.exists()) return
         val name = settings.classifierModelName.first().ifBlank { file.name }
         _diagnostic.value = "carico modello classificatore…"
-        router.classifier.load(path, name)
+        modelLoader.autoLoad(com.simone.jarvismobile.core.llm.SlotId.CLASSIFIER, path, name)
     }
 
     fun newConversation() {

@@ -28,6 +28,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -54,6 +55,8 @@ import javax.inject.Inject
 class LitertLmEngine @Inject constructor(
     @ApplicationContext private val context: Context,
     private val diagnostics: InferenceDiagnostics,
+    private val loadGuard: ModelLoadGuard,
+    private val settings: com.simone.jarvismobile.data.SettingsRepository,
 ) : LlmEngine {
 
     /** The shared, content-free event trail (also used by the turn ledger). */
@@ -70,6 +73,10 @@ class LitertLmEngine @Inject constructor(
 
     private val _lastLoadDetail = MutableStateFlow("")
     override val lastLoadDetail = _lastLoadDetail.asStateFlow()
+
+    private val _lastLoadReport = MutableStateFlow<com.simone.jarvismobile.core.llm.LoadReport?>(null)
+    /** What the last load attempt of THIS engine looked like (memory before/after, estimate, backend, time, outcome, real error). */
+    val lastLoadReport = _lastLoadReport.asStateFlow()
 
     private val _generating = MutableStateFlow(false)
     override val generating = _generating.asStateFlow()
@@ -135,16 +142,34 @@ class LitertLmEngine @Inject constructor(
             }
         }
         loadedPath = null
+        var before = MemorySnapshot(-1, -1, false, -1)
+        var advice = com.simone.jarvismobile.core.llm.LoadAdvice(LoadAdviceLevel.OK, null)
+        var guarded = false
+        val experimental = runCatching { settings.experimentalHeavyModels.first() }.getOrDefault(false)
+        fun report(ok: Boolean, error: String?, sizeBytes: Long) {
+            val after = DeviceMemory.read(context)
+            _lastLoadReport.value = com.simone.jarvismobile.core.llm.LoadReport(
+                slot = label, modelName = modelName, backend = "CPU", fileBytes = sizeBytes,
+                estimateBytes = (sizeBytes * ModelLoadAdvisor.OVERHEAD_FACTOR).toLong(),
+                totalRamBytes = before.totalBytes, availBeforeBytes = before.availBytes, lowMemoryBefore = before.lowMemory,
+                availAfterBytes = after.availBytes, processPssBeforeBytes = before.pssBytes, processPssAfterBytes = after.pssBytes,
+                adviceLevel = advice.level.name, durationMs = System.currentTimeMillis() - started,
+                outcome = if (ok) com.simone.jarvismobile.core.llm.LoadReport.Outcome.LOADED else com.simone.jarvismobile.core.llm.LoadReport.Outcome.FAILED,
+                error = error, experimentalMode = experimental,
+            )
+        }
         return try {
             val file = File(modelPath)
             if (!file.isFile) error("model_file_missing")
-            // A native out-of-memory while initialising kills the whole process and cannot be caught:
-            // refuse only the cases that cannot realistically succeed, warn on the tight ones.
-            val mi = ActivityManager.MemoryInfo()
-            (context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager)?.getMemoryInfo(mi)
-            val advice = ModelLoadAdvisor.assess(file.length(), mi.availMem, mi.lowMemory)
-            if (advice.level == LoadAdviceLevel.INSUFFICIENT) throw InsufficientMemoryException(advice.message.orEmpty())
-            if (advice.level == LoadAdviceLevel.TIGHT) Log.w(TAG, "llm_load_tight_memory")
+            // The memory estimate is ADVISORY ONLY: it never stops an attempt (the caller — ModelLoader, after the user's
+            // confirmation or the experimental preference — decides). Native out-of-memory during initialisation can end the whole
+            // process and cannot be caught, so a durable marker is written first: after a kill the next start knows the load was
+            // interrupted and does not repeat it by itself.
+            before = DeviceMemory.read(context)
+            advice = ModelLoadAdvisor.assess(file.length(), before.availBytes, before.lowMemory)
+            if (advice.level != LoadAdviceLevel.OK) Log.w(TAG, "llm_load_advice level=${advice.level}")
+            loadGuard.guard.begin(com.simone.jarvismobile.core.llm.LoadGuard.Attempt(label, modelPath, modelName, file.length(), started, advice.level.name))
+            guarded = true
             val config = EngineConfig(
                 modelPath = modelPath,
                 backend = Backend.CPU(),
@@ -169,16 +194,18 @@ class LitertLmEngine @Inject constructor(
             _loadedModelName.value = modelName
             _lastLoadDetail.value = advice.message.orEmpty()
             _loadState.value = LlmLoadState.LOADED
+            if (guarded) loadGuard.guard.finish(modelPath, success = true)
+            report(true, null, file.length())
             Log.i(TAG, "llm_loaded")
             note(InferenceEventType.LOAD_OK, durationMs = System.currentTimeMillis() - started)
             true
         } catch (e: Throwable) {
             Log.w(TAG, "llm_load_failed ${e.javaClass.simpleName}")
-            _lastLoadDetail.value = if (e is InsufficientMemoryException) {
-                e.message.orEmpty()
-            } else {
-                "${e.javaClass.simpleName}: ${e.message?.take(220) ?: ""}"
-            }
+            // the REAL runtime error, as the runtime reported it (not a pre-computed verdict)
+            val detail = "${e.javaClass.simpleName}: ${e.message?.take(300) ?: ""}"
+            _lastLoadDetail.value = detail
+            if (guarded) loadGuard.guard.finish(modelPath, success = false) // the process survived: not an interrupted load
+            report(false, detail, runCatching { File(modelPath).length() }.getOrDefault(-1L))
             _loadState.value = LlmLoadState.ERROR
             _loadedModelName.value = null
             slot = null
@@ -188,7 +215,12 @@ class LitertLmEngine @Inject constructor(
         }
     }
 
-    private class InsufficientMemoryException(message: String) : RuntimeException(message)
+    /** Unloads and WAITS (bounded) until the native engine is actually closed, so its memory is free before the next load. */
+    suspend fun unloadAndAwait(timeoutMs: Long = UNWIND_TIMEOUT_MS): Boolean {
+        val old = slot
+        unload()
+        return old == null || old.wedged || old.awaitClosed(timeoutMs)
+    }
 
     /** Native code ignored a stop request past the grace period: replace the engine instead of hanging forever. */
     private suspend fun recoverFromWedge(wedgedSlot: InferenceSlot) {

@@ -7422,3 +7422,11 @@ Aggiunta datata: **non modifica** §65.1–§65.13 né i 50 macro-step della roa
 - **Risultato misurato (JVM, mediana di 3):** 6,3×–13× più veloce, CPU totale 3,5–6× inferiore; emulatore CI: tokenizzatore 2,4×, scrittura SQLite 3,2× (indicativi). Dettagli, limiti e procedura Honor 200: `docs/KNOWLEDGE_ENGINE_ZIM.md` § Knowledge Engine 2.1.
 - **Non misurato:** velocità, consumo batteria e temperatura sull'Honor 200. **Stato:** CI VERIFIED a run completata; **non DEVICE VERIFIED**.
 
+## 65.15 ADDENDUM 2026-11-16 — Caricamento libero dei modelli locali
+
+Aggiunta datata: **non modifica** §65.1–§65.14 né la roadmap consolidata. A0–A4 **non avviate**.
+
+- **Problema:** `ModelLoadAdvisor` (BETA 2/8, `072698a`) bloccava `Engine.initialize()` quando la RAM libera stimata era inferiore a metà della stima (Gemma 4 E4B: 1.410 MiB < 2.006 MiB). Runtime, configurazione e slot sono identici a `550ca02`, dove il modello si caricava.
+- **Ownership (nessun secondo percorso):** `ModelLoader` è l'unico punto di caricamento (manuale e all'avvio), serializzato; `ModelLoadAdvisor` è consultivo; `ModelLoadPolicy` decide solo avviso/conferma (nessun «rifiuta»); `LoadGuard` (marcatore durevole prima di `initialize()`) evita cicli di chiusure; `InferenceSlot`/Hotfix 3-5 invariati.
+- **Stato:** CI VERIFIED a run completata; **non DEVICE VERIFIED**. Dettaglio, limiti (OOM nativo non intercettabile) e procedura Honor 200: `docs/UNRESTRICTED_MODEL_LOADING.md`.
+
