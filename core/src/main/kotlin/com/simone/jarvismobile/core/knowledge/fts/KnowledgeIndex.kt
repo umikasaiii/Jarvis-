@@ -1,5 +1,6 @@
 package com.simone.jarvismobile.core.knowledge.fts
 
+import com.simone.jarvismobile.core.knowledge.catchingKeepCancel
 import com.simone.jarvismobile.core.knowledge.KnowledgeChunk
 import com.simone.jarvismobile.core.knowledge.KnowledgeSearch
 import com.simone.jarvismobile.core.knowledge.KnowledgeText
@@ -70,7 +71,7 @@ class KnowledgeIndex(private val db: FtsDb, var profiler: IndexProfiler? = null,
     private var nextPassageId = -1L
 
     private fun ensureSchema() {
-        val have = runCatching { db.query("SELECT value FROM kx_meta WHERE key='schema'") { it.string(0) }.firstOrNull() }.getOrNull()
+        val have = catchingKeepCancel { db.query("SELECT value FROM kx_meta WHERE key='schema'") { it.string(0) }.firstOrNull() }.getOrNull()
         if (have != SCHEMA) {
             // derived cache only: dropping it loses no user data, the sources are re-read on demand
             for (t in listOf("kx_vocab", "kx_fts", "kx_passage", "kx_source", "kx_meta")) runCatching { db.exec("DROP TABLE IF EXISTS $t") }
@@ -254,7 +255,7 @@ class KnowledgeIndex(private val db: FtsDb, var profiler: IndexProfiler? = null,
                 if (expr.isEmpty()) continue
                 queries++
                 if (bm25Works) {
-                    val hits = runCatching { bm25Scan(expr, options.scanCap) }.getOrNull()
+                    val hits = catchingKeepCancel { bm25Scan(expr, options.scanCap) }.getOrNull()
                     if (hits != null) { for ((id, sc) in hits) scored.merge(id, sc, ::maxOf); continue }
                     bm25Works = false // matchinfo not usable on this build/adapter: legacy selection from here on
                 }
@@ -268,7 +269,7 @@ class KnowledgeIndex(private val db: FtsDb, var profiler: IndexProfiler? = null,
             // scores of different expressions are not comparable: the union is re-scored by ONE disjunctive expression over exactly those rows
             val pool = scored.entries.sortedByDescending { it.value }.take(RESCORE_POOL).map { it.key }
             val any = byRarity.joinToString(" OR ") { it.filter { c -> c.isLetterOrDigit() } }
-            val uniform = runCatching { bm25Rescore(any, pool) }.getOrNull()
+            val uniform = catchingKeepCancel { bm25Rescore(any, pool) }.getOrNull()
             val finalScores = uniform?.takeIf { it.isNotEmpty() } ?: scored.entries.map { it.key to it.value }
             finalScores.sortedByDescending { it.second }.take(options.rerank).forEach { ids += it.first }
         }
@@ -290,7 +291,11 @@ class KnowledgeIndex(private val db: FtsDb, var profiler: IndexProfiler? = null,
             val id = idOf[sc.chunk.sourceId + "\u0000" + sc.chunk.section + "\u0000" + sc.chunk.text.take(80)]
             val bm = id?.let { bmRank[it] } ?: ids.size
             sc.chunk to (1.0 / (RRF_K + i) + 1.0 / (RRF_K + bm))
-        }.sortedByDescending { it.second }.map { it.first }.take(limit)
+        }.sortedByDescending { it.second }.map { it.first }.let { fused ->
+            // the head of the BM25 order is always kept: near-identical passages cannot crowd out the best-matching one in the final cut
+            val head = ranked.map { it.chunk }.sortedBy { c -> idOf[c.sourceId + "\u0000" + c.section + "\u0000" + c.text.take(80)]?.let { bmRank[it] } ?: Int.MAX_VALUE }.take(BM25_HEAD)
+            (head + fused).distinct().take(limit)
+        }
     }
 
     /**
@@ -352,6 +357,7 @@ class KnowledgeIndex(private val db: FtsDb, var profiler: IndexProfiler? = null,
         private const val MAX_QUERIES = 40
         private const val RESCORE_POOL = 800
         private const val RRF_K = 20
+        private const val BM25_HEAD = 3
         private const val SINGLE_TERM_MAX_DF = 300
         private const val K1 = 1.2
         private const val B = 0.75

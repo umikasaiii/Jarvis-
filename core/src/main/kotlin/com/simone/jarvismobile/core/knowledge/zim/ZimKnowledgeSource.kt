@@ -43,11 +43,19 @@ class ZimKnowledgeSource(
     private var cachedChars = 0
     @Volatile var cacheHits = 0; private set
 
+    @Volatile var cacheMisses = 0; private set
+    /** Articles read and used but NOT kept because one article alone exceeds the quota. */
+    @Volatile var cacheNotStored = 0; private set
+    val cachedCharsNow: Int @Synchronized get() = cachedChars
+
     @Synchronized private fun cached(path: String, load: () -> Pair<String?, String>?): Pair<String?, String>? {
         cache[path]?.let { cacheHits++; return it }
+        cacheMisses++
         val v = load() ?: return null
+        // the quota is a hard limit: an article larger than the whole quota is used for this read and never kept
+        if (v.second.length > options.articleCacheChars) { cacheNotStored++; return v }
         cache[path] = v; cachedChars += v.second.length
-        while (cachedChars > options.articleCacheChars && cache.size > 1) {
+        while (cachedChars > options.articleCacheChars && cache.isNotEmpty()) {
             val eldest = cache.entries.first(); cachedChars -= eldest.value.second.length; cache.remove(eldest.key)
         }
         return v
@@ -113,7 +121,9 @@ class ZimKnowledgeSource(
         if (q.isEmpty()) return all.take(MAX_CHUNKS)
         val scored = all.mapIndexed { i, c ->
             val body = SupportJudge.stems(c.text).toSet(); val head = SupportJudge.stems(c.section).toSet()
-            i to (q.count { it in body } + 2 * q.count { it in head })
+            val bodyRoots = body.map(SupportJudge::dimensionRoot).toSet()
+            // a stem also counts through its quality-noun root (alto ↔ altezza): a CANDIDATE signal only, sufficiency is judged elsewhere
+            i to (q.count { it in body || SupportJudge.dimensionRoot(it) in bodyRoots } + 2 * q.count { it in head })
         }
         val keep = HashSet<Int>().apply { add(0) }
         scored.drop(1).sortedWith(compareByDescending<Pair<Int, Int>> { it.second }.thenBy { it.first }).take(MAX_CHUNKS - 1).forEach { keep += it.first }

@@ -36,6 +36,14 @@ object KnowledgeText {
     /** Words of the question that can name something: not function words, not interrogatives. */
     fun contentWords(text: String): List<Word> = words(text).filter { it.folded.length >= 2 && !isStopword(it.folded) }
 
+    /** Does [text] mention the name [name] (accent/case-blind, tolerant of one typo, two for long names)? */
+    fun mentions(name: String, text: String): Boolean {
+        val n = squash(name)
+        if (n.length < 3) return true
+        val tol = if (n.length >= 7) 2 else 1
+        return words(text).any { w -> val f = squash(w.original); f == n || (kotlin.math.abs(f.length - n.length) <= tol && editDistance(n, f, tol) <= tol) }
+    }
+
     /** Optimal-string-alignment (Damerau-Levenshtein without repeated transposition) distance, bounded. */
     fun editDistance(a: String, b: String, max: Int = Int.MAX_VALUE): Int {
         if (a == b) return 0

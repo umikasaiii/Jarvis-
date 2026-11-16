@@ -14,6 +14,7 @@ import com.simone.jarvismobile.core.knowledge.fts.PassageIn
 import com.simone.jarvismobile.data.SettingsRepository
 import com.simone.jarvismobile.knowledge.index.KnowledgeIndexManager
 import dagger.hilt.android.qualifiers.ApplicationContext
+import com.simone.jarvismobile.core.knowledge.Gathered
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -73,24 +74,28 @@ class KnowledgeRepository @Inject constructor(
      * Personal memory and the user's imported documents are NOT sources here: they have their own paths and never mix with
      * encyclopaedic text.
      */
-    suspend fun gather(question: String, limit: Int = 3): Evidence = withContext(Dispatchers.Default) {
+    suspend fun gather(question: String, limit: Int = 3): Evidence = gatherWithReport(question, limit).evidence
+
+    /**
+     * The evidence AND what the search of THIS request could not consult, as one immutable result: the pair is never stored in a shared field, so a
+     * concurrent, cancelled or failed request can neither overwrite nor inherit another request's report. A cancelled request returns nothing.
+     */
+    suspend fun gatherWithReport(question: String, limit: Int = 3): Gathered = withContext(Dispatchers.Default) {
         val opened = runCatching { indexManager.index }
         opened.exceptionOrNull()?.let { if (it is kotlin.coroutines.cancellation.CancellationException) throw it }
         val job = kotlin.coroutines.coroutineContext[kotlinx.coroutines.Job]
-        val found = gatherer.gatherDetailed(question, zim.sources(), opened.getOrNull(), emptyList(), limit) { job?.isActive != false }
+        val (sources, unopened) = zim.sourcesChecked()
+        val found = gatherer.gatherDetailed(question, sources, opened.getOrNull(), emptyList(), limit) { job?.isActive != false }
         // M2: what the search could NOT consult is kept (counts and stage names only, never text) so "no result" and "search was partial" differ.
-        val report = if (opened.isFailure) found.report.copy(indexFailed = true, indexAvailable = false, issues = found.report.issues + "index_open") else found.report
-        lastReport = report
+        var report = found.report
+        if (unopened > 0) report = report.copy(sources = report.sources + unopened, sourcesFailed = report.sourcesFailed + unopened, issues = report.issues + "zim_open")
+        if (opened.isFailure) report = report.copy(indexFailed = true, indexAvailable = false, issues = report.issues + "index_open")
         // An index that cannot be opened is a READ ERROR, not "no information": unless the archives alone found support, the caller
         // must be able to tell the user the sources could not be read (the exception is handled by the caller's retrieval guard).
         if (opened.isFailure && found.evidence !is Evidence.Grounded) throw opened.exceptionOrNull()!!
         if (report.unreadable && found.evidence !is Evidence.Grounded) throw java.io.IOException("knowledge_sources_unreadable")
-        found.evidence
+        Gathered(found.evidence, report)
     }
-
-    /** Report of the LAST [gather]: lets the caller declare a partial search (some source unreadable / index incomplete) instead of "nothing found". */
-    @Volatile var lastReport: com.simone.jarvismobile.core.knowledge.RetrievalReport = com.simone.jarvismobile.core.knowledge.RetrievalReport.EMPTY
-        private set
 
     /** Persists the picked folder and takes a durable READ permission only. */
     suspend fun setLibrary(treeUri: Uri) {
@@ -182,15 +187,8 @@ class KnowledgeRepository @Inject constructor(
 
     /** Passages from the TEXT LIBRARY that support [question], or [Evidence.NoEvidence] (lexical gate only; see [gather] for the full judge). */
     fun find(question: String, limit: Int = 3): Evidence {
-        val candidates = try {
-            indexManager.index.search(question, 24, setOf("doc"))
-        } catch (e: kotlin.coroutines.cancellation.CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            // not "no result": recorded as a failed search stage (the caller still gets an empty list but lastReport says the search was not complete)
-            lastReport = lastReport.copy(indexFailed = true, issues = lastReport.issues + "find_index")
-            emptyList()
-        }
+        // a read error is NOT "no result": it propagates to the caller (cancellation included)
+        val candidates = indexManager.index.search(question, 24, setOf("doc"))
         return search.search(question, candidates, limit)
     }
 

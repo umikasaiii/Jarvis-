@@ -159,6 +159,28 @@ class M2RetrievalTest {
         src.options = RetrievalOptions()
     }
 
+    @Test fun cancellationInsideTheBm25StageIsNotTurnedIntoALegacyFallback() {
+        val cancelling = FailingDb(db) { sql -> if ("matchinfo" in sql) CancellationException("c") else null }
+        assertFailsWith<CancellationException> { KnowledgeIndex(cancelling).search("Quando fu costruito il ponte romano antico?", 12) }
+    }
+
+    @Test fun anArticleLargerThanTheWholeQuotaIsUsedButNeverKept() {
+        val src = corpus.source
+        src.clearCache()
+        src.options = RetrievalOptions(articleCacheChars = 50)
+        val before = src.cacheNotStored
+        val r = src.articlesChecked("Qual è la capitale di Valdoria?", 1)
+        assertTrue(r.value.isNotEmpty(), "the article is still read and usable")
+        assertTrue(src.cacheNotStored > before, "and reported as not stored")
+        assertEquals(0, src.cachedCharsNow, "the quota is a hard limit")
+        src.options = RetrievalOptions(articleCacheChars = 60_000)
+        src.clearCache()
+        repeat(6) { i -> src.articlesChecked(listOf("Valdoria", "Karnelia", "Ostrovia", "Quillandia", "Zeferia", "Brontavia")[i], 1) }
+        assertTrue(src.cachedCharsNow <= 60_000, "never above the quota: ${src.cachedCharsNow}")
+        assertTrue(src.cacheMisses >= 1)
+        src.options = RetrievalOptions(); src.clearCache()
+    }
+
     // ---- an older index stays usable ------------------------------------------------------------------------------------------
     @Test fun legacyOptionsStillAnswerOverTheSameIndex() {
         val g = KnowledgeGatherer(options = RetrievalOptions.LEGACY).gather("Quale uccello migra ogni anno verso le isole del nord?", listOf(corpus.source), KnowledgeIndex(db), emptyList(), 5)

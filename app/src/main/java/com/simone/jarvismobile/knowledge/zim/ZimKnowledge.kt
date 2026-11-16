@@ -81,19 +81,34 @@ class ZimKnowledge @Inject constructor(
     }
 
     /** Sources of every verified archive (opened lazily and kept; closed on [forget]). */
-    suspend fun sources(): List<ZimKnowledgeSource> = withContext(Dispatchers.IO) {
+    suspend fun sources(): List<ZimKnowledgeSource> = sourcesChecked().first
+
+    /** Test seam: replaces the verified-archive lookup (fixtures and injected open failures only); production leaves it null. */
+    @Volatile internal var sourcesOverride: (suspend () -> Pair<List<ZimKnowledgeSource>, Int>)? = null
+
+    /**
+     * Like [sources], plus how many verified archives could NOT be opened (moved, removed, unreadable): an archive that cannot be opened is a failed
+     * source of the search, not an archive that happens to contain nothing.
+     */
+    suspend fun sourcesChecked(): Pair<List<ZimKnowledgeSource>, Int> = sourcesOverride?.invoke() ?: withContext(Dispatchers.IO) {
         mutex.withLock {
-            verifiedEntries().mapNotNull { (uri, size) ->
+            var failed = 0
+            val list = verifiedEntries().mapNotNull { (uri, size) ->
                 opened[uri]?.takeIf { it.size == size }?.source ?: run {
-                    closeLocked(uri)
-                    runCatching {
+                    closeLocked(uri) // a replaced file (other size) is reopened with a NEW source, hence an empty article cache
+                    try {
                         val b = SafByteSource(context, Uri.parse(uri))
                         val s = ZimKnowledgeSource(ZimArchive.open(b, AndroidZimDecompressor))
                         opened[uri] = Opened(b.size, b, s)
                         s
-                    }.onFailure { Log.w(TAG, "zim_open_failed ${it.javaClass.simpleName}") }.getOrNull()
+                    } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Log.w(TAG, "zim_open_failed ${e.javaClass.simpleName}"); failed++; null
+                    }
                 }
             }
+            list to failed
         }
     }
 

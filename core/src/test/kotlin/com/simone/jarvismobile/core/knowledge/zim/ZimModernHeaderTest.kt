@@ -191,5 +191,23 @@ class ZimFixtureGenerator {
         File(out, "modern_listing_v1_zstd.zim").writeBytes(build(TitleLayout.MODERN, 5))
         File(out, "modern_listing_v1_xz.zim").writeBytes(build(TitleLayout.MODERN, 4))
         File(out, "legacy_v0_zstd.zim").writeBytes(build(TitleLayout.LEGACY, 5))
+        File(out, "m2_retrieval_zstd.zim").writeBytes(buildM2())
     }
+
+    /** M2 fixture: a long article (the answer is a section far beyond the chunk cap), an index-found article whose answer is a section, a lead that denies knowing a value. */
+    private fun buildM2() = TestZimBuilder().apply {
+        compression = 5; titleLayout = TitleLayout.MODERN; entriesPerCluster = 4
+        fun page(t: String, lead: String, secs: List<Pair<String, String>> = emptyList()) = article(t.replace(' ', '_'), t,
+            "<html><body><h1>$t</h1><p>$lead</p>" + secs.joinToString("") { "<h2>${it.first}</h2><p>${it.second}</p>" } + "</body></html>")
+        page("Catena Selmira", "La Catena Selmira è un elemento geografico immaginario molto esteso.",
+            (0 until 100).map { "Sezione $it" to "Questa sezione numero $it descrive aspetti generici e ripetitivi senza dati notevoli, con parole comuni." } +
+                listOf("Dati principali" to "Il dato fondamentale riportato dalle misurazioni è la vetta più alta, il monte Aldara."))
+        page("Pancrelia", "La pancrelia è un organo ghiandolare dell'addome legato alla teloxina.",
+            listOf("Anatomia" to "Si trova in una cavità profonda e protetta.", "Funzione" to "In condizioni normali produce la teloxina nelle isole centrali."))
+        page("Ponte di Calvera", "Il Ponte di Calvera è un ponte medievale di pietra. Non si conosce l'anno della sua costruzione.",
+            listOf("Storia" to "Il ponte di Calvera fu costruito nel 1388 dai mercanti del luogo."))
+        page("Torre di Milvana", "La Torre di Milvana è una torre di guardia. L'anno di costruzione della Torre di Milvana è sconosciuto.")
+        page("Valdoria", "Valdoria è uno Stato immaginario. La capitale è Merenza. Il fiume principale è il Lisara.")
+        metadata("Title", "Fixture M2").metadata("Language", "ita").metadata("Date", "2026-07-02"); mainPath = "Valdoria"
+    }.build()
 }

@@ -31,8 +31,10 @@ class KnowledgeIndexInstrumentedTest {
     private val ctx = InstrumentationRegistry.getInstrumentation().targetContext
     private lateinit var db: AndroidFtsDb
 
-    @Before fun setUp() { ctx.deleteDatabase("knowledge_fts.db"); db = AndroidFtsDb(ctx) }
-    @After fun tearDown() { db.close() }
+    // a UNIQUE database: the user's real knowledge index ("knowledge_fts.db") is never opened, cleared or deleted by a test
+    private val dbName = "kx_test_" + java.util.UUID.randomUUID().toString().take(8) + ".db"
+    @Before fun setUp() { db = AndroidFtsDb(ctx, dbName) }
+    @After fun tearDown() { db.close(); ctx.deleteDatabase(dbName) }
 
     @Test fun contentSearchTypoRepairIncrementalAndBudgetOnRealSqlite() {
         val ix = KnowledgeIndex(db)

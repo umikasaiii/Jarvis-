@@ -55,10 +55,12 @@ class SessionCoordinatorPublicationInstrumentedTest {
 
     @After fun tearDown() { coordinator.testSeam = null; coordinator.newConversation() }
 
-    private fun seam(evidence: Evidence? = this.evidence, answer: suspend (String) -> String?) {
+    private fun seam(evidence: Evidence? = this.evidence, report: com.simone.jarvismobile.core.knowledge.RetrievalReport? = null, answer: suspend (String) -> String?) {
         modelCalls.clear()
-        coordinator.testSeam = ChatTestSeam(chat = { m -> modelCalls += m; answer(m) }, evidence = evidence)
+        coordinator.testSeam = ChatTestSeam(chat = { m -> modelCalls += m; answer(m) }, evidence = evidence, report = report)
     }
+
+    private val complete = com.simone.jarvismobile.core.knowledge.RetrievalReport(1, 0, true, false, false, false, 1, emptyList())
 
     private fun say(text: String): String = runBlocking {
         withTimeout(90_000) { coordinator.processQueuedText("m0-${System.nanoTime()}-${n++}", text) }
@@ -118,6 +120,28 @@ class SessionCoordinatorPublicationInstrumentedTest {
         release.complete(Unit)
         delay(1_500)
         assertFalse("a cancelled generation published its answer", coordinator.messages.value.any { !it.fromUser && "Madrid" in it.text })
+    }
+
+    @Test fun aSupportedAnswerFromAPartialSearchSaysSoAndACompleteOneDoesNot() {
+        seam(report = complete.copy(sourcesFailed = 1, sources = 2)) { "La capitale del Portogallo è Lisbona." }
+        val partial = say("Qual è la capitale del Portogallo?")
+        assertTrue(partial, "Lisbona" in partial && "[1]" in partial)
+        assertTrue("partial search must be declared: $partial", "Ricerca parziale" in partial)
+        assertFalse("no source was invented for the unread archive: $partial", "[2]" in partial)
+        seam(report = complete) { "La capitale del Portogallo è Lisbona." }
+        assertFalse("a complete search carries no warning", "Ricerca parziale" in say("Qual è la capitale del Portogallo?"))
+        seam(report = complete.copy(indexPartial = true)) { "La capitale del Portogallo è Lisbona." }
+        assertFalse("an incomplete index alone does not weaken an answer read from the archive", "Ricerca parziale" in say("Qual è la capitale del Portogallo?"))
+    }
+
+    @Test fun noResultIsNeverDeclaredAbsentWhilePartOfTheSearchDidNotRun() {
+        seam(evidence = Evidence.NoEvidence, report = complete.copy(sourcesFailed = 1, sources = 2)) { "La Tour Eiffel è alta 330 metri." }
+        val partial = say("Quanto è alta la Tour Eiffel?")
+        assertTrue(partial, "non posso dire che l'informazione sia assente" in partial)
+        seam(evidence = Evidence.NoEvidence, report = complete) { "La Tour Eiffel è alta 330 metri." }
+        val full = say("Quanto è alta la Tour Eiffel?")
+        assertTrue(full, "non ho trovato nulla di pertinente" in full)
+        assertFalse(full, "non posso dire che l'informazione sia assente" in full)
     }
 
     @Test fun withoutAnySourceAPreciseFactIsQualifiedAndSmallTalkIsNot() {

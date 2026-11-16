@@ -92,7 +92,7 @@ class KnowledgeGatherer(
             }
             if (deep.isNotEmpty()) {
                 deepened = true
-                val widened = assembler.assemble(question, zimHits, extraChunks + fresh + deep.filter { identity(it) !in readKeys }, limit)
+                val widened = assembler.assemble(question, zimHits, extraChunks + fresh + deep.filter { identity(it) !in readKeys && fresh.none { f -> identity(f) == identity(it) } }, limit)
                 // a deep result is accepted only if it is supported AND names every proper noun the question names (an article about another
                 // lake must not answer "il Lago Inesistente"); otherwise the first-pass evidence stands
                 if (supported(widened) && namesAllEntities(question, widened)) evidence = widened

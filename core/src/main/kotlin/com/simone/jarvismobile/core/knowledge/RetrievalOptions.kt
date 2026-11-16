@@ -51,3 +51,12 @@ data class RetrievalReport(
 }
 
 class Gathered(val evidence: Evidence, val report: RetrievalReport)
+
+/** `runCatching` that never swallows cancellation: a cancelled retrieval must stop, not fall back to a slower path or a partial answer. */
+inline fun <T> catchingKeepCancel(block: () -> T): Result<T> = try {
+    Result.success(block())
+} catch (e: kotlin.coroutines.cancellation.CancellationException) {
+    throw e
+} catch (e: Throwable) {
+    Result.failure(e)
+}

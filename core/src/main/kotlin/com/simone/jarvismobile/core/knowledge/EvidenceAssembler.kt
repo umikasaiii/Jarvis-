@@ -29,6 +29,7 @@ class EvidenceAssembler(private val search: KnowledgeSearch = KnowledgeSearch(mi
         val qStems = SupportJudge.stems(question).distinct()
         if (qStems.isEmpty()) return Evidence.NoEvidence
         val quantity = SupportJudge.asksQuantity(question)
+        val wantsYear = quantity && Regex("""\banno\b""").containsMatchIn(KnowledgeText.fold(question))
 
         val titleMatched = HashSet<String>()
         val approximate = HashSet<String>() // matched only by a typo-tolerant guess: never better than MODERATE
@@ -54,18 +55,22 @@ class EvidenceAssembler(private val search: KnowledgeSearch = KnowledgeSearch(mi
             // the title AND the phrase of the question the title search matched (a redirect such as "Memoria ad accesso casuale" → RAM)
             ownBySource[lead.sourceId] = SupportJudge.ownTerms(qStems, lead.sourceTitle) + SupportJudge.stems(h.candidate.phrase).filter { it in qStems }
         }
+        val nouns = properNouns(question)
         val accepted = ArrayList<Triple<ScoredChunk, EvidenceStrength, SupportJudge.Result>>()
         var bestUnsupported: SupportJudge.Result? = null
         for (sc in ranked) {
             val isLead = sc.chunk.lead || leads[sc.chunk.sourceId] === sc.chunk
             val ownHere = ownBySource[sc.chunk.sourceId].orEmpty()
             val others = ownBySource.filterKeys { it != sc.chunk.sourceId && it !in lexicalSources }.values.flatten().filter { it !in ownHere }.toSet()
-            val r = SupportJudge.judge(qStems, quantity, sc.chunk, isLead, others, ownHere)
+            val r = SupportJudge.judge(qStems, quantity, sc.chunk, isLead, others, ownHere, wantsYear)
             if (r.level == SupportJudge.Level.NONE) {
                 if (sc.chunk.sourceId in titleMatched && (bestUnsupported == null || r.coverage > bestUnsupported.coverage)) bestUnsupported = r
                 continue
             }
             val named = sc.chunk.sourceId in titleMatched
+            // a passage found only by its words (not by a title the question names) must itself name every proper noun of the question: a passage
+            // about another lighthouse that shares "faro", "costruito" and "anno" is not evidence about the one asked
+            if (!named && nouns.isNotEmpty() && !nouns.all { KnowledgeText.mentions(it, sc.chunk.sourceTitle + " " + sc.chunk.section + " " + sc.chunk.text) }) continue
             val related = r.level == SupportJudge.Level.RELATED
             val strength = if (!related && named && r.aboutSubject && r.complete && sc.chunk.sourceId !in approximate) EvidenceStrength.STRONG else EvidenceStrength.MODERATE
             accepted += Triple(ScoredChunk(sc.chunk, sc.score, r.window, related), strength, r)
@@ -85,9 +90,21 @@ class EvidenceAssembler(private val search: KnowledgeSearch = KnowledgeSearch(mi
         }
         if (accepted.isEmpty()) return insufficient()
 
+        // An accepted passage that lacks some question terms ("regola" in "quale organo regola il ritmo…") is COMPLETED by the passage of the SAME article
+        // that states them (its section): both are then evidence, each citing its own text. Nothing outside the article is borrowed.
+        for (t in accepted.toList()) {
+            val (sc, _, r) = t
+            if (r.level != SupportJudge.Level.SUPPORTED || r.complete || r.missing.isEmpty()) continue
+            val other = ranked.filter { it.chunk.sourceId == sc.chunk.sourceId && it.chunk !== sc.chunk && accepted.none { a -> a.first.chunk === it.chunk } }
+                .map { o -> o to SupportJudge.stems(o.chunk.text).toSet() }
+                .filter { (_, st) -> r.missing.all { m -> m in st } }
+                .maxByOrNull { (_, st) -> qStems.count { it in st } } ?: continue
+            val win = SupportJudge.sentences(other.first.chunk.text).filter { s -> SupportJudge.stems(s).toSet().let { st -> r.missing.any { it in st } } }.take(2).joinToString(" ").take(SupportJudge.MAX_WINDOW_CHARS)
+            if (win.isNotBlank()) accepted += Triple(ScoredChunk(other.first.chunk, other.first.score, win, false), EvidenceStrength.MODERATE, r.copy(missing = emptyList(), complete = true))
+        }
+
         // Entity coverage: a PROPER NOUN of the question that no supporting passage covers means the question's subject is
         // missing from the sources — a generic-word article that merely shares a word with it is not evidence about it.
-        val nouns = properNouns(question)
         val covered = StringBuilder()
         for (h in zimHits) if (h.candidate.score >= TITLE_MATCH_MIN) covered.append(h.candidate.phrase).append(' ')
         for ((sc, _, _) in accepted) covered.append(sc.chunk.sourceTitle).append(' ').append(sc.supportWindow).append(' ')

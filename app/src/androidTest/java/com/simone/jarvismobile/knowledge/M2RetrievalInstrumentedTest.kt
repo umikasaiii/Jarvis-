@@ -34,13 +34,14 @@ class M2RetrievalInstrumentedTest {
     private val ctx = InstrumentationRegistry.getInstrumentation().targetContext
     private lateinit var db: AndroidFtsDb
     private lateinit var file: File
+    private val dbName = "kx_m2_" + java.util.UUID.randomUUID().toString().take(8) + ".db" // never the user's real index
 
     @Before fun setUp() {
-        ctx.deleteDatabase("knowledge_fts.db"); db = AndroidFtsDb(ctx)
+        db = AndroidFtsDb(ctx, dbName)
         file = File(ctx.cacheDir, "modern_listing_v1_zstd.zim")
         InstrumentationRegistry.getInstrumentation().context.assets.open("zim/modern_listing_v1_zstd.zim").use { i -> file.outputStream().use { o -> i.copyTo(o) } }
     }
-    @After fun tearDown() { db.close() }
+    @After fun tearDown() { db.close(); ctx.deleteDatabase(dbName) }
 
     private inline fun <T> withArchive(body: (ZimKnowledgeSource, KnowledgeIndex) -> T): T = SafByteSource(ctx, Uri.fromFile(file)).use { src ->
         val zim = ZimArchive.open(src, AndroidZimDecompressor)

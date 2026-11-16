@@ -1,5 +1,6 @@
 package com.simone.jarvismobile.core.knowledge.zim
 
+import com.simone.jarvismobile.core.knowledge.catchingKeepCancel
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
@@ -213,7 +214,7 @@ class ZimArchive private constructor(
     }
 
     internal fun chooseTitleIndex() {
-        val v1 = runCatching { locateListingV1() }.getOrNull()
+        val v1 = catchingKeepCancel { locateListingV1() }.getOrNull()
         if (v1 != null) {
             titleIndexPos = v1.first; titleCount = v1.second; titleIndexMode = ZimTitleIndex.LISTING_V1
             return

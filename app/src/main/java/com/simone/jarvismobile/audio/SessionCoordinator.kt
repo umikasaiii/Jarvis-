@@ -146,6 +146,8 @@ internal class ChatTestSeam(
     val evidence: com.simone.jarvismobile.core.knowledge.Evidence? = null,
     /** Forces the brain slot of the next turns (FAST/ADVANCED switching tests); null = production routing. */
     val slot: (() -> com.simone.jarvismobile.llm.ModelSlot?)? = null,
+    /** What the injected [evidence]'s search could not consult (a partial/failed search), carried with that request like the real report. */
+    val report: com.simone.jarvismobile.core.knowledge.RetrievalReport? = null,
 )
 
 /**
@@ -1938,7 +1940,7 @@ class SessionCoordinator @Inject constructor(
             val pub = outcome.publication
             recordContext(c, pub.mode.name.lowercase())
             _diagnostic.value = pub.diagnostic() + " attempts=" + c.ledger.summary() + " " + lastContextDiag
-            return pub.text + sourceFooter(pub, kctx, c.pkg).let { if (it.isBlank()) "" else "\n$it" } + uncoveredNote(kctx)
+            return pub.text + sourceFooter(pub, kctx, c.pkg).let { if (it.isBlank()) "" else "\n$it" } + uncoveredNote(kctx) + partialSearchNote(kctx, pub.supportive)
         }
         // Tool receipts (no knowledge/document evidence): the model may restate the structured result, but any number or name the
         // receipt does not contain is replaced by the receipt itself, rendered verbatim (no extra generation, no second engine).
@@ -1953,6 +1955,7 @@ class SessionCoordinator @Inject constructor(
             c.excludedByBudget -> RetrievalState.EXCLUDED_BY_BUDGET
             c.retrievalFailed -> RetrievalState.ERROR
             kctx?.evidence is Evidence.Insufficient || kctx?.evidence is Evidence.Grounded -> RetrievalState.INSUFFICIENT
+            kctx?.evidence is Evidence.NoEvidence && kctx.report.partial -> RetrievalState.NO_RESULT_PARTIAL // absence is not established
             kctx?.evidence is Evidence.NoEvidence -> RetrievalState.NO_RESULT
             else -> RetrievalState.UNAVAILABLE
         }
@@ -1962,7 +1965,20 @@ class SessionCoordinator @Inject constructor(
             else -> ""
         }
         recordContext(c, "unverified:" + state.name.lowercase())
-        return AnswerFraming.frame(c.kind, state, AnswerQuality.stripPresentationNotes(text), c.question) + (if (consulted.isNotBlank()) "\n$consulted" else "") + (if (c.excludedByBudget) "" else uncoveredNote(kctx))
+        return AnswerFraming.frame(c.kind, state, AnswerQuality.stripPresentationNotes(text), c.question) + (if (consulted.isNotBlank()) "\n$consulted" else "") + (if (c.excludedByBudget) "" else uncoveredNote(kctx)) +
+            (if (c.excludedByBudget || c.kind != RequestKind.FACTUAL || state != RetrievalState.INSUFFICIENT) "" else partialSearchNote(kctx, false))
+    }
+
+    /**
+     * A short qualification when part of the search of THIS request did not run (an archive unreadable, the index incomplete or failed) and the
+     * published result rests on the rest. Adds no claim and cites no source; absent when the search was complete (no redundant warning).
+     */
+    private fun partialSearchNote(kctx: KnowledgeContext?, supportive: Boolean): String {
+        val r = kctx?.report ?: return ""
+        if (!r.partial) return ""
+        // an incomplete INDEX alone does not weaken a supported answer (the archives were read directly); a failed source or index does
+        if (supportive && r.sourcesFailed == 0 && !r.indexFailed) return ""
+        return "\n" + (if (supportive) AnswerFraming.PARTIAL_SEARCH_NOTE else AnswerFraming.PARTIAL_INSUFFICIENT_NOTE)
     }
 
     private fun recordContext(c: ChatPublicationContext, outcome: String) {
@@ -2457,6 +2473,8 @@ class SessionCoordinator @Inject constructor(
         val evidence: Evidence,
         val raws: List<EvidencePackage.Companion.Raw> = emptyList(),
         val passages: List<com.simone.jarvismobile.core.knowledge.ScoredChunk> = emptyList(),
+        /** What the search of THIS request could not consult (immutable, travels with the evidence of the same request). */
+        val report: com.simone.jarvismobile.core.knowledge.RetrievalReport = com.simone.jarvismobile.core.knowledge.RetrievalReport.EMPTY,
     )
 
     private suspend fun knowledgeContext(question: String): KnowledgeContext? {
@@ -2465,8 +2483,10 @@ class SessionCoordinator @Inject constructor(
             if (!knowledge.isAvailable()) return null
             if (knowledge.isConfigured()) knowledge.ensureBuilt()
         }
-        val found = seamEvidence ?: knowledge.gather(question, KNOWLEDGE_TOP_K)
-        val partialTag = if (seamEvidence == null && knowledge.lastReport.partial) " · ricerca parziale (fonti non consultabili o indice incompleto)" else ""
+        val gathered = if (seamEvidence != null) com.simone.jarvismobile.core.knowledge.Gathered(seamEvidence, testSeam?.report ?: com.simone.jarvismobile.core.knowledge.RetrievalReport.EMPTY) else knowledge.gatherWithReport(question, KNOWLEDGE_TOP_K)
+        val found = gathered.evidence
+        val report = gathered.report
+        val partialTag = if (report.partial) " · ricerca parziale (fonti non consultabili o indice incompleto)" else ""
         return when (found) {
             is Evidence.Grounded -> {
                 _diagnostic.value = "fonti: ${found.passages.size} passaggi (${if (found.supportEstablished) found.strength.name.lowercase() else "correlati"})$partialTag"
@@ -2475,14 +2495,14 @@ class SessionCoordinator @Inject constructor(
                 val raws = if (!found.supportEstablished) emptyList() else found.passages.mapIndexed { i, p ->
                     EvidencePackage.Companion.Raw(p.chunk.reference, p.chunk.section, p.supportWindow.ifBlank { p.chunk.text }.replace('\n', ' '), i.toString())
                 }
-                KnowledgeContext(found, raws, found.passages)
+                KnowledgeContext(found, raws, found.passages, report)
             }
             // Relevant sources, none of which contains an answer: reported, NOT injected as if they answered.
             is Evidence.Insufficient -> {
                 _diagnostic.value = "fonti pertinenti ma insufficienti (${found.consulted.size})$partialTag"
-                KnowledgeContext(found)
+                KnowledgeContext(found, report = report)
             }
-            Evidence.NoEvidence -> KnowledgeContext(found)
+            Evidence.NoEvidence -> KnowledgeContext(found, report = report)
         }
     }
 

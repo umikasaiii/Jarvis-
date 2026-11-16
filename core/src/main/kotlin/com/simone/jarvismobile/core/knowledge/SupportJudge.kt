@@ -97,12 +97,68 @@ object SupportJudge {
     fun sentences(text: String): List<String> =
         text.replace('\n', ' ').split(Regex("""(?<=[.!?])\s+(?=[\p{Lu}\d«"'(])""")).map { it.trim() }.filter { it.isNotEmpty() }
 
-    private fun hasNumber(text: String): Boolean =
-        text.any { it.isDigit() } || KnowledgeSearch.NON_WORD.split(KnowledgeText.fold(text)).any { it in NUMBER_WORDS }
+    /** A numeric token standing alone: "27", "2.140", "3,2" — NOT the digits inside a name or code ("Frazione000", "K2", "A4"). */
+    private val NUM = Regex("""(?<![\p{L}\p{N}])\d[\d.,]*(?![\p{L}\p{N}])""")
+    private val UNIT_AFTER = Regex("""^\s*(m\b|km|cm|mm|kg|g\b|%|per\s*cento|metri|metro|chilometri|centimetri|gradi|abitanti|persone|euro|ettari|litri|tonnellate|miglia|kmq|mq)""")
+    private val YEAR_BEFORE = Regex("""(?:\bnel|\bnell|\banno|\bdal|\bdall|\bnei|\bfino al)\W*$""")
+    private val NEG_BEFORE = Regex("""\bnon\b[^.;]{0,24}$""")
+
+    /**
+     * An epistemic denial: the passage says the value is NOT known / documented / determinable ("non si conosce l'anno", "data sconosciuta",
+     * "non è noto"). It names the property but states no value, so it can never be the proof of one. Deliberately a small closed family of
+     * grammatical cues (negation + knowing/documenting verb or adjective, "sconosciuto/ignoto/incerto"), not a list of sentences.
+     */
+    private val WITHHOLDS = Regex(
+        """\bnon\s+(?:si\s+|ne\s+)?(?:conosc\w*|sa\b|sap\w*|e\s+(?:ancora\s+|mai\s+)?(?:not[oaie]|chiar\w*|cert\w*|documentat\w*|accertat\w*|indicat\w*|specificat\w*|riportat\w*|determinabil\w*)|sono\s+(?:ancora\s+)?(?:not\w*|documentat\w*|accertat\w*)|e\s+stat\w+\s+(?:possibile|accertat\w*|documentat\w*|determinat\w*)|puo\s+(?:stabilire|determinare|sapere)|si\s+puo\s+\w+)|\b(?:sconosciut\w*|ignot\w*|incert\w*|imprecisat\w*|indeterminat\w*|rimane\s+un\s+mistero)\b""")
+
+    fun withholdsValue(sentence: String): Boolean = WITHHOLDS.containsMatchIn(KnowledgeText.fold(sentence))
+
+    /**
+     * Does [sentence] state a number that can answer the question? A standalone numeric token only (never digits inside an identifier), not one the
+     * sentence itself negates ("non nel 1500"), and of the right kind: a YEAR question needs a year-sized number that is not a measure ("82 metri");
+     * any other quantity question ignores a number that is introduced as a year ("nel 1347").
+     */
+    private fun statesNumber(sentence: String, wantsYear: Boolean): Boolean {
+        val f = KnowledgeText.fold(sentence)
+        for (m in NUM.findAll(f)) {
+            val before = f.substring(maxOf(0, m.range.first - 28), m.range.first)
+            if (NEG_BEFORE.containsMatchIn(before)) continue
+            val digits = m.value.trimEnd('.', ',')
+            val after = f.substring(m.range.last + 1).take(14)
+            val measure = UNIT_AFTER.containsMatchIn(after)
+            if (wantsYear) { if (digits.length in 3..4 && digits.all { it.isDigit() } && !measure) return true }
+            else if (!(digits.length in 3..4 && YEAR_BEFORE.containsMatchIn(before))) return true
+        }
+        return KnowledgeSearch.NON_WORD.split(f).any { isNumberWord(it) } && !wantsYear
+    }
+
+    /** "ottantadue", "centoventi", "milleduecento": a number word, possibly a compound of the simple ones (tens/hundreds + units). */
+    private val COMPOUND_NUMBER = Regex("""^(?:(?:due|tre|quattro|cinque|sei|sette|otto|nove)?cento)?(?:(?:venti|trenta|quaranta|cinquanta|sessanta|settanta|ottanta|novanta)(?:uno|due|tre|quattro|cinque|sei|sette|otto|nove)?|dici\w*|undici|dodici|tredici)?(?:(?:due|tre|quattro|cinque|sei|sette|otto|nove)?mil[al]?\w*)?$""")
+    private fun isNumberWord(w: String): Boolean = w in NUMBER_WORDS || (w.length >= 6 && w.any { it in "cdqstv" } && COMPOUND_NUMBER.matches(w) && NUMBER_WORDS.any { w.contains(it) })
+
+    /**
+     * Light derivational root of the quality-noun family "alto → altezza", "lungo → lunghezza", "largo → larghezza": the adjective stem and the stem of
+     * the noun in -ezza reduce to the same root. Only this ONE suffix family is related (it is regular and the pair keeps the same relation: the
+     * measure of the property); "-ità" is deliberately not (università/universo, qualità/quale) and needs no rule where the stemmer already agrees.
+     */
+    fun dimensionRoot(stem: String): String {
+        var r = stem.removeSuffix("ezz")
+        if (r.endsWith("gh")) r = r.dropLast(1)
+        if (r.length >= 4 && r.last() in "oaie") r = r.dropLast(1)
+        return r
+    }
+
+    private fun derived(q: String, pool: Set<String>): Boolean {
+        if (q.length < 3 || (!q.endsWith("ezz") && pool.none { it.endsWith("ezz") })) return false
+        val rq = dimensionRoot(q)
+        if (rq.length < 3) return false
+        return pool.any { d -> d != q && (d.endsWith("ezz") || q.endsWith("ezz")) && dimensionRoot(d) == rq }
+    }
 
     /** Exact stem, or — for longer terms only — one edit away (typo / inflection). [minLen] is the shortest word allowed to be fuzzy. */
-    private fun matches(q: String, pool: Set<String>, minLen: Int): Boolean {
+    private fun matches(q: String, pool: Set<String>, minLen: Int, derive: Boolean = false): Boolean {
         if (q in pool) return true
+        if (derive && derived(q, pool)) return true
         if (q.length < minLen) return false
         return pool.any { d -> d.length >= minLen && kotlin.math.abs(d.length - q.length) <= 1 && KnowledgeText.editDistance(q, d, 1) <= 1 }
     }
@@ -122,6 +178,8 @@ object SupportJudge {
         otherEntityTerms: Set<String> = emptySet(),
         /** Question terms already known to be named by this source (the title phrase the search matched, redirect names included). */
         namedTerms: Set<String> = emptySet(),
+        /** The question asks for a year ("in che anno…"): then only a year-sized number that is not a measure is a value. */
+        wantsYear: Boolean = false,
     ): Result {
         if (qStems.isEmpty()) return NO_RESULT
         val terms = qStems.distinct()
@@ -157,6 +215,9 @@ object SupportJudge {
         }
 
         val stemSets = sents.map { stems(it).toSet() }
+        // a sentence that denies knowing the value is no proof of it; a number is judged per sentence (never from digits inside a name)
+        val withheld = sents.map { withholdsValue(it) }
+        val numeric = sents.map { !withholdsValue(it) && statesNumber(it, wantsYear) }
         class Win(val text: String, val covered: Set<String>, val number: Boolean, val missing: List<String>, val coverage: Double)
         val wins = ArrayList<Win>()
         var bestNumber: String? = null
@@ -165,8 +226,9 @@ object SupportJudge {
             if (end > sents.size) continue
             val text = sents.subList(i, end).joinToString(" ")
             if (text.length > MAX_WINDOW_CHARS * 2) continue
+            if ((i until end).any { withheld[it] }) continue
             val pool = HashSet<String>().also { s -> for (k in i until end) s += stemSets[k] }
-            val number = hasNumber(text)
+            val number = (i until end).any { numeric[it] }
             if (number && bestNumber == null) bestNumber = text.take(MAX_WINDOW_CHARS)
             val coveredRest = rest.filter { matches(it, pool, 6) }
             wins += Win(text, goal.filter { matches(it, pool, 6) }.toSet(), number, rest - coveredRest.toSet(), (own.size + coveredRest.size).toDouble() / terms.size)
@@ -191,6 +253,12 @@ object SupportJudge {
         }
         val b = best ?: return NO_RESULT.copy(aboutSubject = aboutSubject, missing = rest)
         if (b.supported) return b
+        // A quality noun of the same family as the asked adjective ("alto" → "altezza") next to a number, in an article about the subject: a CANDIDATE
+        // (RELATED), never proof — the property is worded differently and no thesaurus/NLI decides they are the same relation (documented product rule).
+        if (aboutSubject && attrs.isNotEmpty() && quantity && !chunk.lexical) {
+            val i = sents.indices.firstOrNull { numeric[it] && !withheld[it] && attrs.any { a -> derived(a, stemSets[it]) } }
+            if (i != null) return b.copy(level = Level.RELATED, window = sents[i].take(MAX_WINDOW_CHARS))
+        }
         // The article is ABOUT the subject but the asked attribute is worded differently from the source: a candidate, not proof.
         if (aboutSubject && attrs.isNotEmpty() && isLead && !chunk.lexical) {
             val w = (if (quantity) bestNumber else null) ?: sents.take(2).joinToString(" ").take(MAX_WINDOW_CHARS)

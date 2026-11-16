@@ -1,5 +1,6 @@
 package com.simone.jarvismobile.core.knowledge.zim
 
+import com.simone.jarvismobile.core.knowledge.catchingKeepCancel
 import com.simone.jarvismobile.core.knowledge.KnowledgeText
 
 /**
@@ -52,7 +53,7 @@ class ZimTitleSearch(
             // prefix scan. The URL index does hold it: probe the exact path (underscored) in a few case shapes, bounded.
             if (zim.titleIndexMode == ZimTitleIndex.LISTING_V1 && words <= 4) {
                 for (v in caseVariants(text).take(3)) {
-                    val hit = runCatching { zim.findByPath(ns, v.replace(' ', '_')) }.getOrNull() ?: continue
+                    val hit = catchingKeepCancel { zim.findByPath(ns, v.replace(' ', '_')) }.getOrNull() ?: continue
                     if (hit.isRedirect) offer(hit, text, 0.95 * specificity, Kind.EXACT)
                 }
             }

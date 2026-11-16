@@ -46,7 +46,15 @@ class SearchKnowledgeTool(private val knowledge: KnowledgeRepository) : Tool {
         }
         knowledge.ensureBuilt()
 
-        return when (val evidence = knowledge.find(query)) {
+        val found = try {
+            knowledge.find(query)
+        } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // a read error is not "nothing found"
+            return ToolResult.Failure("knowledge_read_error")
+        }
+        return when (val evidence = found) {
             is Evidence.NoEvidence -> ok(
                 "found" to "false",
                 "spoken" to "Nelle mie guide offline non trovo niente su questo. " +

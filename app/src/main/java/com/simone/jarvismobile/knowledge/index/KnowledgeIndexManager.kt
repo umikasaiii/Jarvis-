@@ -45,7 +45,9 @@ class KnowledgeIndexManager @Inject constructor(
     private val _sources = MutableStateFlow<List<IndexedSource>>(emptyList())
     val sources: StateFlow<List<IndexedSource>> = _sources.asStateFlow()
 
-    private val db by lazy { AndroidFtsDb(context) }
+    /** Test seam: the database file name, set BEFORE first use so instrumented tests never open (or delete) the user's real knowledge index. */
+    @Volatile internal var dbName: String = AndroidFtsDb.FILE
+    private val db by lazy { AndroidFtsDb(context, dbName) }
 
     /** The index; touching it opens (and, first time, creates) the database, so call from a background dispatcher. */
     val index: KnowledgeIndex by lazy { KnowledgeIndex(db) }

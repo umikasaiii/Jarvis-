@@ -20,9 +20,9 @@ import java.io.File
  * holdout set was written before any M2 code and is not used to choose parameters.
  */
 object RetrievalBench {
-    enum class Cat { LEAD_TITLE, SECTION_TITLE, LONG_ARTICLE_SECTION, INDEX_LEAD, DEEP_SECTION, TYPO_TITLE, TYPO_CONTENT, SIMILAR, CANDIDATE_LIMIT, NUMBER, ABSENT }
+    enum class Cat { LEAD_TITLE, SECTION_TITLE, LONG_ARTICLE_SECTION, INDEX_LEAD, DEEP_SECTION, TYPO_TITLE, TYPO_CONTENT, SIMILAR, CANDIDATE_LIMIT, NUMBER, ABSENT, UNKNOWN_VALUE, IDENTIFIER_NUMBER, OTHER_PROPERTY, NEGATED_VALUE }
 
-    class Q(val cat: Cat, val text: String, val fact: String?, val holdout: Boolean)
+    class Q(val cat: Cat, val text: String, val fact: String?, val holdout: Boolean, val blind: Boolean = false)
 
     /** counts every statement the index runs, delegating to a real SQLite */
     class CountingDb(private val inner: JdbcFtsDb) : FtsDb, AutoCloseable {
@@ -53,7 +53,7 @@ object RetrievalBench {
         val b = TestZimBuilder().apply { titleLayout = TitleLayout.MODERN; entriesPerCluster = 20; compression = 5; uuidSeed = 7 }
         b.metadata("Title", "Enciclopedia sintetica").metadata("Date", "2026-01-01").metadata("Language", "ita")
         val qs = ArrayList<Q>()
-        fun q(cat: Cat, text: String, fact: String?, holdout: Boolean = false) { qs += Q(cat, text, fact?.let(KnowledgeText::fold), holdout) }
+        fun q(cat: Cat, text: String, fact: String?, holdout: Boolean = false, blind: Boolean = false) { qs += Q(cat, text, fact?.let(KnowledgeText::fold), holdout, blind) }
 
         // 1. LEAD_TITLE — the lead holds the fact and the title is named
         countries.forEachIndexed { i, (name, capital, pop, river) ->
@@ -142,6 +142,22 @@ object RetrievalBench {
         q(Cat.CANDIDATE_LIMIT, "In che anno fu costruito il ponte romano antico del comune?", "27 a.c")
         q(Cat.CANDIDATE_LIMIT, "Quando fu costruito il ponte romano antico?", "27 a.c", true)
 
+        // 8b. BLIND2 — written BEFORE the sufficiency rules were chosen and not used to choose them: pertinent-but-insufficient passages
+        b.article("Ponte_di_Calvera", "Ponte di Calvera", html("Ponte di Calvera", "Il Ponte di Calvera è un ponte medievale di pietra. Non si conosce l'anno della sua costruzione.", listOf("Storia" to "Il ponte di Calvera fu costruito nel 1388 dai mercanti del luogo.")))
+        q(Cat.UNKNOWN_VALUE, "In che anno fu costruito il Ponte di Calvera?", "1388", blind = true)
+        b.article("Torre_di_Milvana", "Torre di Milvana", html("Torre di Milvana", "La Torre di Milvana è una torre di guardia. L'anno di costruzione della Torre di Milvana è sconosciuto."))
+        q(Cat.UNKNOWN_VALUE, "In che anno fu costruita la Torre di Milvana?", null, blind = true)
+        b.article("Stazione_Linea4412", "Stazione Linea4412", html("Stazione Linea4412", "La stazione Linea4412 è una piccola fermata ferroviaria."))
+        q(Cat.IDENTIFIER_NUMBER, "In che anno fu aperta la stazione Linea4412?", null, blind = true)
+        b.article("Torre_di_Sarvena", "Torre di Sarvena", html("Torre di Sarvena", "La Torre di Sarvena è alta 82 metri."))
+        q(Cat.OTHER_PROPERTY, "In che anno fu costruita la Torre di Sarvena?", null, blind = true)
+        b.article("Faro_di_Ostrena", "Faro di Ostrena", html("Faro di Ostrena", "Il Faro di Ostrena non fu costruito nel 1500, ma nel 1632."))
+        q(Cat.NEGATED_VALUE, "In che anno fu costruito il Faro di Ostrena?", "1632", blind = true)
+        b.article("Faro_di_Brenda", "Faro di Brenda", html("Faro di Brenda", "Il Faro di Brenda non fu costruito nel 1500."))
+        q(Cat.NEGATED_VALUE, "In che anno fu costruito il Faro di Brenda?", null, blind = true)
+        b.article("Mulino_di_Tarena", "Mulino di Tarena", html("Mulino di Tarena", "Il Mulino di Tarena è un mulino ad acqua. La data di fondazione è incerta.", listOf("Storia" to "Il mulino di Tarena fu fondato nel 1455.")))
+        q(Cat.UNKNOWN_VALUE, "In che anno fu fondato il Mulino di Tarena?", "1455", blind = true)
+
         // 9. ABSENT — nothing in the corpus answers
         q(Cat.ABSENT, "Qual è la capitale di Nemoria?", null); q(Cat.ABSENT, "Quale organo produce l'ormone vexorina?", null, true)
         q(Cat.ABSENT, "Quanti abitanti ha la città di Pietrafalsa?", null); q(Cat.ABSENT, "Qual è la profondità del Lago Inesistente?", null, true)
@@ -154,7 +170,7 @@ object RetrievalBench {
 
     class Result(
         val name: String, val recall3: Double, val recall5: Double, val precisionAt3: Double, val mrr: Double, val sectionRecall5: Double,
-        val falseSupportOnAbsent: Int, val absent: Int, val relatedPromotions: Int, val p50ms: Double, val p95ms: Double,
+        val falseSupportOnAbsent: Int, val absent: Int, val falseSupportAnswerable: Int, val supportedRecall5: Double, val relatedPromotions: Int, val p50ms: Double, val p95ms: Double,
         val sqlitePerQuery: Double, val zimReadsPerQuery: Double, val failures: List<String>, val byCat: Map<Cat, Pair<Int, Int>>,
     )
 
@@ -167,7 +183,7 @@ object RetrievalBench {
         val answerable = qs.filter { it.fact != null }
         var r3 = 0; var r5 = 0; var rr = 0.0; var p3 = 0.0; var sec = 0; var secTotal = 0
         val lat = ArrayList<Double>(); val failures = ArrayList<String>()
-        var absentFalse = 0; var related = 0
+        var absentFalse = 0; var related = 0; var falseAnswerable = 0; var supp5 = 0
         val cats = HashMap<Cat, IntArray>()
         val q0 = db.queries; val z0 = corpus.reads.reads.get()
         for (q in qs) {
@@ -182,7 +198,9 @@ object RetrievalBench {
                 cats.getOrPut(q.cat) { IntArray(2) }.also { it[1]++; if (!supported) it[0]++ }
                 continue
             }
+            if (ev is Evidence.Grounded && ev.supportEstablished && passages.none { KnowledgeText.fold(it.chunk.text + " " + it.supportWindow).contains(q.fact) }) { falseAnswerable++; failures += "FALSE SUPPORT (answerable) [${q.cat}] ${q.text}" }
             val rank = passages.indexOfFirst { KnowledgeText.fold(it.chunk.text + " " + it.supportWindow).contains(q.fact) } + 1
+            if (rank in 1..5 && ev is Evidence.Grounded && ev.supportEstablished) supp5++
             if (rank in 1..3) r3++
             if (rank in 1..5) r5++
             if (rank > 0) rr += 1.0 / rank
@@ -196,7 +214,7 @@ object RetrievalBench {
         val n = answerable.size.coerceAtLeast(1)
         return Result(
             name, r3.toDouble() / n, r5.toDouble() / n, p3 / n, rr / n, if (secTotal == 0) 0.0 else sec.toDouble() / secTotal,
-            absentFalse, qs.count { it.fact == null }, related, pct(0.5), pct(0.95),
+            absentFalse, qs.count { it.fact == null }, falseAnswerable, supp5.toDouble() / n, related, pct(0.5), pct(0.95),
             (db.queries - q0).toDouble() / qs.size.coerceAtLeast(1), (corpus.reads.reads.get() - z0).toDouble() / qs.size.coerceAtLeast(1),
             failures, cats.mapValues { it.value[0] to it.value[1] },
         )
