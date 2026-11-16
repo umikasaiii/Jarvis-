@@ -67,6 +67,8 @@ class M1ClosureInstrumentedTest {
         created.forEach { runCatching { entry.memoryIndex().delete(it) } }
         // leave the archive exactly as the test found it
         File(memoryFile.path + ".aside").takeIf { it.exists() }?.let { memoryFile.deleteRecursively(); it.renameTo(memoryFile) }
+        // put the archive back exactly as the test found it
+        savedArchive?.let { memoryFile.writeText(it) } ?: memoryFile.delete()
         Unit
     }
 
@@ -86,6 +88,31 @@ class M1ClosureInstrumentedTest {
         val ids = mem.listRecords().map { it.id }
         assertTrue(good.id in ids && added.id in ids)
         assertTrue("a previous good copy exists for recovery", File(memoryFile.path + ".bak").isFile)
+    }
+
+    @Test fun aMixedArchiveKeepsEveryUnderstoodRecordAndEveryUnknownLineThroughARealRewrite() = runBlocking {
+        val mem = entry.memoryIndex()
+        fun rec(id: String, text: String) = com.simone.jarvismobile.core.memory.MemoryRecordCodec.render(
+            listOf(com.simone.jarvismobile.core.memory.MemoryRecord(id = id, text = text, createdAt = 1)),
+        ).lines().first { it.startsWith("<!--") }
+        val padded = """   <!-- jarvis-memory-v2:{"id":"p","text":"con spazi","createdAt": -->   """
+        val truncated = """<!-- jarvis-memory-v2:{"id":"t","text":"troncato","kind":"PERMANENT","createdAt":3"""
+        val stranger = "Appunto scritto a mano: non toccare"
+        val sameIdOther = rec("m1-dup", "Stesso id, contenuto diverso")
+        val future = """<!-- jarvis-memory-v2:{"id":"m1-fut","text":"Ho un gatto","kind":"PERMANENT","createdAt":6,"source":"FROM_THE_FUTURE","novitaFutura":{"a":1}} -->"""
+        val original = listOf("# Memoria di JARVIS", "", rec("m1-dup", "Primo con questo id"), padded, truncated, stranger, sameIdOther, future, "").joinToString("\n")
+        memoryFile.writeText(original)
+        val added = mem.remember("Ho anche una bicicletta", autoCategorize = false)!!.also { created += it.id }
+        val lines = memoryFile.readText().lines()
+        listOf(padded, truncated, stranger, sameIdOther).forEach { assertTrue("kept byte for byte: [$it]", it in lines) }
+        assertTrue("unknown enum value and key written back", memoryFile.readText().let { "FROM_THE_FUTURE" in it && "novitaFutura" in it })
+        // a FRESH reader of the real file (not a process restart) finds the same records, the new one included
+        val fresh = com.simone.jarvismobile.core.memory.MemoryRecordCodec.parseDetailed(
+            com.simone.jarvismobile.core.storage.AtomicTextFile(memoryFile).readOrNull().orEmpty(),
+        )
+        assertTrue(fresh.records.any { it.id == added.id } && fresh.records.any { it.id == "m1-fut" } && fresh.records.any { it.text == "Primo con questo id" })
+        assertEquals(4, fresh.damaged.size)
+        assertTrue("the original was kept as the previous good version", File(memoryFile.path + ".bak").readText().contains("Primo con questo id"))
     }
 
     @Test fun anUnreadableArchiveBlocksTheWriteInsteadOfOverwritingIt() = runBlocking {

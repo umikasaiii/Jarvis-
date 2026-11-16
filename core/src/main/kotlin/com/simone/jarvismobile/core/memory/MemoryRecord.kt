@@ -2,6 +2,7 @@ package com.simone.jarvismobile.core.memory
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -209,61 +210,103 @@ object MemoryRecordCodec {
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true; coerceInputValues = true }
 
     /** [preserved] are structured lines that could not be decoded: they are written back VERBATIM so a rewrite never deletes data the app failed to understand. */
-    fun render(records: List<MemoryRecord>, preserved: List<String> = emptyList()): String = buildString {
+    fun render(records: List<MemoryRecord>, preserved: List<String> = emptyList(), origins: Map<String, Origin> = emptyMap()): String = buildString {
         append(HEADER).append("\n\n")
         records.sortedWith(compareBy<MemoryRecord> { it.createdAt }.thenBy { it.id }).forEach { record ->
             append(PREFIX)
-            append(json.encodeToString(MemoryRecord.serializer(), record.normalized()))
+            append(encode(record, origins[record.id]))
             append(SUFFIX).append("\n\n")
         }
         preserved.forEach { append(it).append("\n\n") }
     }
 
     /**
-     * What a read of the archive found. [damaged] holds the structured lines (`<!-- jarvis-memory-v2:… -->`) that could NOT be decoded, verbatim:
-     * they are user data the app failed to understand, never to be dropped by a rewrite. A legacy bullet or a record with an unknown FUTURE
-     * enum value is NOT damaged (it loads, with the documented default).
+     * What a read of the archive found.
+     *
+     * FORMAT CONTRACT. An archive is lines separated by "\n" ("\r\n" is accepted; line terminators are the only thing not preserved). Known lines:
+     * blank lines; the header `# Memoria di JARVIS`; structured records `<!-- jarvis-memory-v2:{json} -->` (one per line); legacy bullets `- text`
+     * (alone, or following a structured record as its redundant echo). EVERYTHING ELSE is user-visible content the app does not understand, and so is
+     * any structured line that cannot be decoded (corrupt JSON, truncated, damaged prefix) and any later record whose id repeats an earlier one with
+     * DIFFERENT content. Those lines are returned in [damaged] exactly as they appear (leading/trailing spaces included) and every rewrite emits them
+     * back unchanged; nothing is dropped, repaired or reinterpreted as a fact.
+     *
+     * A record with a future unknown field or enum value loads (known fields; unknown enum → default) and keeps its original JSON in [origins], so a
+     * rewrite writes the unknown parts back instead of flattening them.
      */
-    data class ParseResult(val records: List<MemoryRecord>, val damaged: List<String>) {
+    data class Origin(val json: JsonObject, val decoded: MemoryRecord)
+
+    data class ParseResult(val records: List<MemoryRecord>, val damaged: List<String>, val origins: Map<String, Origin> = emptyMap()) {
         val isIntact: Boolean get() = damaged.isEmpty()
     }
 
     fun parse(raw: String): List<MemoryRecord> = parseDetailed(raw).records
 
+    private class Entry(val record: MemoryRecord, val line: String, val origin: Origin?)
+
     fun parseDetailed(raw: String): ParseResult {
         if (raw.isBlank()) return ParseResult(emptyList(), emptyList())
-        val lines = raw.replace("\r\n", "\n").lines()
-        val out = ArrayList<MemoryRecord>()
+        val lines = raw.replace("\r\n", "\n").split('\n')
+        val out = ArrayList<Entry>()
         val damaged = ArrayList<String>()
-        var pending: MemoryRecord? = null
+        var pending: Entry? = null
         for (line in lines) {
             val trimmed = line.trim()
+            if (trimmed.isEmpty() || trimmed == HEADER) continue
             if (trimmed.startsWith(PREFIX)) {
-                // A JSON record can be immediately followed by another JSON
-                // record with no bullet in between (the new, bullet-less
-                // format) — flush whatever was pending first.
+                // A JSON record can be immediately followed by another JSON record with no bullet in between (the new, bullet-less format).
                 pending?.let { out += it }
                 pending = null
-                if (!trimmed.endsWith(SUFFIX)) { damaged += trimmed; continue } // truncated line
+                if (!trimmed.endsWith(SUFFIX)) { damaged += line; continue } // truncated line, kept as written
                 val payload = trimmed.removePrefix(PREFIX).removeSuffix(SUFFIX)
-                val decoded = runCatching { json.decodeFromString(MemoryRecord.serializer(), payload) }.getOrNull()?.normalized()
-                if (decoded == null) damaged += trimmed else pending = decoded
+                val obj = runCatching { json.parseToJsonElement(payload) as? JsonObject }.getOrNull()
+                val decoded = obj?.let { runCatching { json.decodeFromJsonElement(MemoryRecord.serializer(), it) }.getOrNull() }
+                if (obj == null || decoded == null) damaged += line
+                else pending = Entry(decoded.normalized(), line, Origin(obj, decoded))
                 continue
             }
-            if (!trimmed.startsWith("- ")) continue
+            if (!trimmed.startsWith("- ")) { damaged += line; continue } // not part of the format: keep it, do not guess
             val text = trimmed.removePrefix("- ").trim()
             val structured = pending
             if (structured != null) {
-                // Old paired format: the JSON is authoritative, the echoed
-                // bullet is redundant now — consume and discard it.
-                if (text.isNotBlank()) out += structured
+                // Old paired format: the JSON is authoritative, the bullet right after it is its echo and is never trusted (hand-editing it has no
+                // effect on the record). If it only differs in formatting it is consumed; if it says something ELSE it is kept verbatim in [damaged]
+                // (not parsed, not merged, not dropped).
+                out += structured
                 pending = null
+                if (text.isNotBlank() && !isEcho(text, structured.record.text)) damaged += line
             } else if (text.isNotBlank()) {
-                out += legacy(text)
+                out += Entry(legacy(text), line, null)
             }
         }
         pending?.let { out += it }
-        return ParseResult(out.distinctBy { it.id }, damaged)
+        // Two records with the same id: identical content is a harmless duplicate; DIFFERENT content is data, so the later line is preserved verbatim.
+        val seen = LinkedHashMap<String, Entry>()
+        for (e in out) {
+            val first = seen[e.record.id]
+            when {
+                first == null -> seen[e.record.id] = e
+                first.record == e.record -> Unit
+                else -> damaged += e.line
+            }
+        }
+        val origins = seen.values.mapNotNull { e -> e.origin?.let { e.record.id to it } }.toMap()
+        return ParseResult(seen.values.map { it.record }, damaged, origins)
+    }
+
+    /** Rewrites the record keeping what the app did not understand: unknown keys and unknown enum values of the original line survive unless the field itself was changed. */
+    private fun encode(record: MemoryRecord, origin: Origin?): String {
+        val enc = json.encodeToJsonElement(MemoryRecord.serializer(), record.normalized()) as JsonObject
+        if (origin == null) return enc.toString()
+        val before = json.encodeToJsonElement(MemoryRecord.serializer(), origin.decoded.normalized()) as JsonObject
+        val merged = LinkedHashMap<String, kotlinx.serialization.json.JsonElement>()
+        for ((k, v) in enc) merged[k] = if (origin.json.containsKey(k) && before[k] == v) origin.json.getValue(k) else v
+        for ((k, v) in origin.json) if (k !in merged) merged[k] = v
+        return JsonObject(merged).toString()
+    }
+
+    private fun isEcho(bullet: String, recordText: String): Boolean {
+        fun norm(v: String) = v.replace(LEGACY_STAMP, "").dropWhile { !it.isLetterOrDigit() }.replace(Regex("\\s+"), " ").trim().lowercase()
+        return norm(bullet) == norm(recordText)
     }
 
     private fun MemoryRecord.normalized(): MemoryRecord = copy(

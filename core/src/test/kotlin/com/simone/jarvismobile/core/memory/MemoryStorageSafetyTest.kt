@@ -80,7 +80,7 @@ class MemoryStorageSafetyTest {
     @Test fun anInterruptedWriteLeavesTheOldArchiveIntact() {
         val target = file("b.md")
         AtomicTextFile(target).write("originale completo")
-        val crashing = AtomicTextFile(target) { throw IOException("process killed before the rename") }
+        val crashing = AtomicTextFile(target, beforeCommit = { throw IOException("process killed before the rename") })
         assertFailsWith<IOException> { crashing.write("nuovo contenuto") }
         assertEquals("originale completo", AtomicTextFile(target).readOrNull(), "recovery after restart: the archive is the old one, complete")
     }

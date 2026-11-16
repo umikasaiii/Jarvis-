@@ -177,7 +177,7 @@ class VaultRepository @Inject constructor(
                 else -> Unit
             }
             val stored = applied.stored ?: return@withLock null
-            if (!writeMemory(applied.records, read.damaged)) return@withLock null
+            if (!writeMemory(applied.records, read.damaged, read.origins)) return@withLock null
             // Verify the write actually landed before reporting success.
             if (readMemoryRecordsUnlocked().any { it.id == stored.id }) stored else null
         }
@@ -207,7 +207,7 @@ class VaultRepository @Inject constructor(
                 spacing = spacing ?: current.spacing,
             )
             val next = records.map { if (it.id == id) updated else it }
-            if (writeMemory(next, read.damaged)) updated else null
+            if (writeMemory(next, read.damaged, read.origins)) updated else null
         }
 
     /** Sets just the macro-category on one record (AI re-classification). */
@@ -218,14 +218,14 @@ class VaultRepository @Inject constructor(
             val current = records.firstOrNull { it.id == id } ?: return@withLock null
             val updated = current.copy(category = category)
             val next = records.map { if (it.id == id) updated else it }
-            if (writeMemory(next, read.damaged)) updated else null
+            if (writeMemory(next, read.damaged, read.origins)) updated else null
         }
 
     suspend fun deleteMemory(id: String): MemoryRecord? = memoryMutex.withLock {
         val read = readMemoryRecordsStrict() ?: return@withLock null
         val records = read.records
         val removed = records.firstOrNull { it.id == id } ?: return@withLock null
-        if (writeMemory(records.filterNot { it.id == id }, read.damaged)) removed else null
+        if (writeMemory(records.filterNot { it.id == id }, read.damaged, read.origins)) removed else null
     }
 
     suspend fun readMemoryRecords(): List<MemoryRecord> = memoryMutex.withLock {
@@ -248,7 +248,7 @@ class VaultRepository @Inject constructor(
     suspend fun resolveMemoryConflict(keepId: String): Boolean = memoryMutex.withLock {
         val read = readMemoryRecordsStrict() ?: return@withLock false
         if (read.records.none { it.id == keepId }) return@withLock false
-        writeMemory(com.simone.jarvismobile.core.memory.MemoryLedger.resolve(read.records, keepId), read.damaged)
+        writeMemory(com.simone.jarvismobile.core.memory.MemoryLedger.resolve(read.records, keepId), read.damaged, read.origins)
     }
 
     /** For retrieval (index rebuild): throws on a read error so the caller records it instead of indexing "nothing". */
@@ -257,14 +257,21 @@ class VaultRepository @Inject constructor(
     }
 
     /** Writes the whole record set to the local archive only — no vault mirror. */
-    private suspend fun writeMemory(records: List<MemoryRecord>, preserved: List<String> = emptyList()): Boolean {
-        val rendered = MemoryRecordCodec.render(records, preserved)
+    private suspend fun writeMemory(
+        records: List<MemoryRecord>,
+        preserved: List<String> = emptyList(),
+        origins: Map<String, MemoryRecordCodec.Origin> = emptyMap(),
+    ): Boolean {
+        val rendered = MemoryRecordCodec.render(records, preserved, origins)
         return writeLocalMemory(rendered)
     }
 
     private suspend fun readLocalMemory(): String = withContext(Dispatchers.IO) {
         AtomicTextFile(localMemoryFile).readOrNull().orEmpty()
     }
+
+    /** The main file replaces the `.bak` only if it still holds at least one decodable record: a garbled or emptied archive never overwrites the last good copy. */
+    private fun worthBackingUp(raw: String): Boolean = MemoryRecordCodec.parseDetailed(raw).records.isNotEmpty()
 
     /** null = the file exists but could not be read; "" = there is no file yet (a genuinely empty archive). */
     private suspend fun readLocalMemoryStrict(): String? = withContext(Dispatchers.IO) {
@@ -273,7 +280,7 @@ class VaultRepository @Inject constructor(
 
     private suspend fun writeLocalMemory(content: String): Boolean = withContext(Dispatchers.IO) {
         // temp file + fsync + atomic replace, previous good version kept as .bak: an interrupted write cannot truncate the archive
-        runCatching { AtomicTextFile(localMemoryFile).write(content); true }.getOrDefault(false)
+        runCatching { AtomicTextFile(localMemoryFile, worthBackingUp = ::worthBackingUp).write(content); true }.getOrDefault(false)
     }
 
     /**

@@ -98,3 +98,17 @@ package), Documents / summaries / comparisons and Knowledge/Memory focus (`gener
   request", never as "nothing found"; they are never cited.
 - **Slots**: `tokenLedgers`, `activeSystems`, `activeEpochs`, `injectedContexts` are keyed by slot (FAST and ADVANCED never share a ledger); a slot/model/engine change and a rotation
   are recorded as reset reasons in the (local, voluntary-export) context diagnostics.
+
+## M1 storage-integrity gate (memory archive `memoria.md`)
+- **Format contract.** Known lines: blank, the header, structured records (`<!-- jarvis-memory-v2:{json} -->`), legacy bullets, and the bullet that directly follows
+  a structured record (its old "echo": never trusted, consumed if it only differs in formatting, kept verbatim if it says something else). Every other line, every structured
+  line that cannot be decoded (corrupt, truncated, damaged prefix, leading/trailing spaces included) and every later record that REUSES an id with different content is
+  returned as "damaged" exactly as written and re-emitted unchanged by every rewrite. Only the line terminator (`\r\n` → `\n`) is normalised. Preserved lines are never
+  interpreted as facts. Identical duplicates are dropped (nothing is lost).
+- **Future fields.** A record with an unknown key or enum value loads (unknown enum → default for the app's own use) and its original JSON is kept, so a rewrite
+  writes the unknown parts back unless the user changes that very field. Valid archives rewrite to the same content.
+- **`AtomicTextFile`.** temp file + fsync + `.bak` of the previous version + atomic rename. The `.bak` is refreshed only if the current main file still holds at least one
+  decodable record (a garbled or emptied main file cannot overwrite the last good copy); if the main file is missing the last good copy is read instead of an empty archive.
+  A stale `.tmp` is an unsaved write and is overwritten. NOT promised: protection from media corruption or from a power loss the storage does not honour after fsync —
+  JVM tests simulate an interrupted write, they cannot prove power-loss behaviour. The `.bak` is one generation, not a history.
+- **Restart.** A fresh reader of the real file is tested on the emulator; a real process restart is NOT exercised in the current workflow.
