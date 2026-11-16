@@ -221,10 +221,12 @@ object ClaimVerifier {
         for (e in allEntities.filter { e -> SupportJudge.stems(e).first() !in qStems }) {
             if (e !in best.folded) return Claim(piece, ClaimStatus.UNVERIFIED, listOf(best.itemId), "nome non presente nel passaggio: $e")
         }
-        if (allEntities.size >= 2) {
-            val orderC = allEntities.map { folded.indexOf(it) }
-            val orderS = allEntities.map { best.folded.indexOf(it) }
-            if (orderS.any { it < 0 } || orderC.zipWithNext().all { (a, b) -> a < b } != orderS.zipWithNext().all { (a, b) -> a < b }) {
+        // order matters only between names the sentence itself contains (the article's own title is implied, not repeated)
+        val present = allEntities.filter { it in best.folded }
+        if (present.size >= 2) {
+            val orderC = present.map { folded.indexOf(it) }
+            val orderS = present.map { best.folded.indexOf(it) }
+            if (orderC.zipWithNext().all { (a, b) -> a < b } != orderS.zipWithNext().all { (a, b) -> a < b }) {
                 return Claim(piece, ClaimStatus.UNVERIFIED, listOf(best.itemId), "attribuzione invertita rispetto al passaggio")
             }
         }

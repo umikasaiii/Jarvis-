@@ -204,4 +204,12 @@ class ReliabilityClosureTest {
         assertTrue("[1] A (2012)" in f && "[2] B" in f && "(" !in f.substringAfter("[2] B").substringBefore("\n"))
         assertFalse("più recente" in f)
     }
+
+    // found by the real-coordinator test: a claim that repeats the article's title (implied, not in the sentence) is not an inverted attribution
+    @Test fun aClaimRepeatingTheArticleTitleIsStillVerified() {
+        val pub = PublicationPolicy.decide("Qual è la capitale del Portogallo?", "La capitale del Portogallo è Lisbona.", portugal)
+        assertEquals(PublicationMode.VERIFIED, pub.mode, pub.report.claims.toString())
+        val inverted = EvidencePackage.of(listOf(raw("Pianeti", "Giove è più grande di Saturno.", "0")))
+        assertTrue(PublicationPolicy.decide("Chi è più grande?", "Saturno è più grande di Giove.", inverted).mode != PublicationMode.VERIFIED)
+    }
 }
