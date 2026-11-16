@@ -3,6 +3,7 @@ package com.simone.jarvismobile.llm
 import android.content.Context
 import android.os.Build
 import com.simone.jarvismobile.core.llm.ModelProfile
+import com.simone.jarvismobile.core.llm.ModelProfileFile
 import com.simone.jarvismobile.core.llm.ModelProfileRegistry
 import com.simone.jarvismobile.core.llm.ModelProfiles
 import com.simone.jarvismobile.core.llm.QualificationState
@@ -26,9 +27,12 @@ class ModelProfileStore @Inject constructor(
     /** Test seam: instrumented tests point a private instance at a temp file BEFORE first use, so they never touch the real registry. */
     internal var file: File = File(context.filesDir, "model_profiles.json")
     private val lock = Any()
-    private val registry: ModelProfileRegistry by lazy {
-        runCatching { if (file.isFile) ModelProfileRegistry.decode(file.readText()) else ModelProfileRegistry() }.getOrDefault(ModelProfileRegistry())
-    }
+    private val store: ModelProfileFile by lazy { ModelProfileFile(file) }
+    private val registry: ModelProfileRegistry by lazy { store.load().registry }
+
+    /** True while the last write failed: the in-memory profiles are the newest and are written again on the next change. Never silent. */
+    @Volatile var saveFailing: Boolean = false
+        private set
 
     fun all(): List<ModelProfile> = synchronized(lock) { registry.all() }
 
@@ -37,9 +41,29 @@ class ModelProfileStore @Inject constructor(
 
     private fun header(f: File): ByteArray = runCatching { FileInputStream(f).use { i -> ByteArray(8).also { i.read(it) } } }.getOrDefault(ByteArray(0))
 
+    private fun stamp(f: File) = ModelProfiles.fingerprint(f.length(), f.lastModified())
+
+    /**
+     * The profile of the file as it is NOW. Same name and size is not identity: the stamp (size + last-modified, no hashing) recorded when the profile
+     * was observed must still match, otherwise the file was replaced/modified and every proof (and any qualification) is dropped.
+     */
     private fun profileFor(f: File): ModelProfile = synchronized(lock) {
-        registry.findByNameSize(f.name, f.length()) ?: ModelProfiles.staticCheck(f.name, f.length(), header(f), LITERTLM_VERSION, System.currentTimeMillis()).also { registry.put(it) }
+        val now = stamp(f)
+        val known = registry.findByNameSize(f.name, f.length())
+        if (known == null) {
+            ModelProfiles.staticCheck(f.name, f.length(), header(f), LITERTLM_VERSION, System.currentTimeMillis()).copy(fingerprint = now).also { registry.put(it) }
+        } else {
+            val checked = ModelProfiles.checkArtifact(known, now)
+            if (checked != known) { registry.rekey(known.id, checked); persist() }
+            checked
+        }
     }
+
+    /** Whether the stored DEVICE_QUALIFIED still describes the file at [path] right now (stamp + hash + evidence); false when it cannot be verified. */
+    fun isQualifiedNow(path: String): Boolean = runCatching {
+        val f = File(path)
+        synchronized(lock) { registry.findByNameSize(f.name, f.length())?.let { ModelProfiles.qualifiedNow(it, stamp(f)) } ?: false }
+    }.getOrDefault(false)
 
     fun noteLoad(path: String, slot: String, ok: Boolean, error: String?, loadMs: Long, configuredWindow: Int?, pssBefore: Long, pssAfter: Long, totalRam: Long) {
         runCatching {
@@ -89,19 +113,18 @@ class ModelProfileStore @Inject constructor(
     /** On demand only (multi-GB read): computes the SHA-256 and re-keys the profile; the caller runs it off the main thread. */
     fun computeSha256(path: String, onProgress: ((Long) -> Unit)? = null): String? = runCatching {
         val f = File(path)
+        val before = stamp(f)
         val hash = FileInputStream(f).use { ModelProfiles.sha256(it, onProgress) }
+        if (stamp(f) != before) return@runCatching null // the file changed while it was being read: no identity is claimed
         synchronized(lock) {
             val p = profileFor(f)
-            registry.rekey(p.id, ModelProfiles.revalidate(ModelProfiles.withHash(p, hash), LITERTLM_VERSION, hash)); persist()
+            registry.rekey(p.id, ModelProfiles.revalidate(ModelProfiles.withHash(p, hash, before), LITERTLM_VERSION, hash)); persist()
         }
         hash
     }.getOrNull()
 
-    private fun persist() {
-        val tmp = File(file.parentFile, file.name + ".tmp")
-        tmp.writeText(ModelProfileRegistry.encode(registry))
-        if (!tmp.renameTo(file)) { file.delete(); tmp.renameTo(file) }
-    }
+    /** Non-destructive write through [ModelProfileFile] (temp + fsync + backup + atomic rename); a failure keeps the previous file and is reported by [saveFailing]. */
+    private fun persist() { saveFailing = !store.save(registry) }
 
     /** Counts per qualification level, for the diagnostics screen. */
     fun summary(): Map<QualificationState, Int> = all().groupingBy { it.state }.eachCount()

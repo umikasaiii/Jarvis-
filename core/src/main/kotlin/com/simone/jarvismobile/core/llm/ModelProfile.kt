@@ -39,6 +39,11 @@ data class ModelProfile(
     val name: String,
     val sizeBytes: Long,
     val sha256: String? = null,
+    /**
+     * Cheap identity stamp of the file the figures below were observed on (`size|lastModified`). It is checked on every use (no hashing): when it
+     * differs, the file is NOT the one that was tested and every proof is dropped. [sha256] is the exact identity, computed on demand.
+     */
+    val fingerprint: String? = null,
     val format: ArtifactFormat = ArtifactFormat.UNKNOWN,
     val runtime: String = "litertlm",
     val runtimeVersion: String = "",
@@ -77,6 +82,36 @@ object ModelProfiles {
         else -> ArtifactFormat.UNKNOWN
     }
 
+    fun fingerprint(sizeBytes: Long, lastModified: Long): String = "$sizeBytes|$lastModified"
+
+    /**
+     * Called every time the file behind a profile is looked at, with the stamp of the file as it is NOW (size + mtime: no hashing). A profile whose
+     * file changed since it was observed keeps its name/size/format but loses every proof and its hash (it describes another artifact now); a
+     * profile that never recorded a stamp (published before this check) cannot show that its proofs belong to THIS file, so they are lowered to
+     * STATICALLY_COMPATIBLE and the stamp is adopted. A qualification without a hash AND a stamp is never kept.
+     */
+    fun checkArtifact(p: ModelProfile, currentFingerprint: String): ModelProfile {
+        val fp = p.fingerprint
+        val proofs = p.state == QualificationState.RUNTIME_LOADED || p.state == QualificationState.INFERENCE_TESTED || p.state == QualificationState.DEVICE_QUALIFIED
+        return when {
+            fp == null && proofs -> p.copy(fingerprint = currentFingerprint, qualification = null, state = QualificationState.STATICALLY_COMPATIBLE, testedCapabilities = emptySet(), lastInferenceOk = null)
+            fp == null -> p.copy(fingerprint = currentFingerprint)
+            fp != currentFingerprint -> ModelProfile(
+                id = idOf(p.name, p.sizeBytes, null), name = p.name, sizeBytes = p.sizeBytes, format = p.format, runtime = p.runtime, runtimeVersion = p.runtimeVersion,
+                fingerprint = currentFingerprint, state = if (p.format == ArtifactFormat.LITERTLM) QualificationState.STATICALLY_COMPATIBLE else QualificationState.UNTESTED,
+            )
+            p.state == QualificationState.DEVICE_QUALIFIED && (p.sha256 == null || p.qualification == null) -> p.copy(qualification = null, state = QualificationState.INFERENCE_TESTED)
+            else -> p
+        }
+    }
+
+    /** True only when the stored qualification still describes THIS file: same stamp, a hash, and evidence for this exact hash/runtime/backend/device. */
+    fun qualifiedNow(p: ModelProfile, currentFingerprint: String): Boolean {
+        val q = p.qualification ?: return false
+        return p.state == QualificationState.DEVICE_QUALIFIED && p.fingerprint == currentFingerprint && p.sha256 != null && q.sha256 == p.sha256 &&
+            q.runtimeVersion == p.runtimeVersion && q.backend == p.backend && q.deviceKey == p.deviceKey
+    }
+
     fun idOf(name: String, sizeBytes: Long, sha256: String?): String = sha256?.take(16)?.let { "sha:$it" } ?: "$name:$sizeBytes"
 
     /**
@@ -108,7 +143,8 @@ object ModelProfiles {
         return md.digest().joinToString("") { "%02x".format(it) }
     }
 
-    fun withHash(p: ModelProfile, hash: String): ModelProfile = p.copy(sha256 = hash, id = idOf(p.name, p.sizeBytes, hash))
+    /** [fingerprint] is the stamp taken BEFORE hashing and re-checked AFTER: a file that changed while being read must not get a hash. */
+    fun withHash(p: ModelProfile, hash: String, fingerprint: String? = p.fingerprint): ModelProfile = p.copy(sha256 = hash, fingerprint = fingerprint, id = idOf(p.name, p.sizeBytes, hash))
 
     fun onLoad(
         p: ModelProfile, ok: Boolean, error: String?, nowMs: Long, loadMs: Long?, slot: String, configuredWindow: Int?, backend: String,
@@ -149,7 +185,7 @@ object ModelProfiles {
      */
     fun qualify(p: ModelProfile, e: QualificationEvidence): ModelProfile {
         val sameDevice = p.deviceKey != null && p.deviceKey == e.deviceKey
-        val ok = p.sha256 != null && e.sha256 == p.sha256 && e.runtimeVersion == p.runtimeVersion && e.backend == p.backend && sameDevice && p.state == QualificationState.INFERENCE_TESTED
+        val ok = p.sha256 != null && p.fingerprint != null && e.sha256 == p.sha256 && e.runtimeVersion == p.runtimeVersion && e.backend == p.backend && sameDevice && p.state == QualificationState.INFERENCE_TESTED
         return if (ok) p.copy(qualification = e, state = QualificationState.DEVICE_QUALIFIED) else p
     }
 
@@ -185,7 +221,7 @@ class ModelProfileRegistry(initial: Collection<ModelProfile> = emptyList()) {
             put("v", VERSION)
             put("profiles", JsonArray(r.all().map { p ->
                 buildJsonObject {
-                    put("id", p.id); put("name", p.name); put("size", p.sizeBytes); p.sha256?.let { put("sha", it) }
+                    put("id", p.id); put("name", p.name); put("size", p.sizeBytes); p.sha256?.let { put("sha", it) }; p.fingerprint?.let { put("fp", it) }
                     put("format", p.format.name); put("runtime", p.runtime); put("rv", p.runtimeVersion); put("backend", p.backend)
                     p.artifactWindow?.let { put("aw", it) }; p.configuredWindow?.let { put("cw", it) }; p.lastSlot?.let { put("slot", it) }
                     put("decl", JsonArray(p.declaredCapabilities.map(::JsonPrimitive))); put("tested", JsonArray(p.testedCapabilities.map(::JsonPrimitive)))
@@ -197,6 +233,10 @@ class ModelProfileRegistry(initial: Collection<ModelProfile> = emptyList()) {
                 }
             }))
         })
+
+        /** Null when [text] is not a registry at all (so a caller can fall back to the previous good copy instead of treating garbage as "no profiles"). */
+        fun decodeOrNull(text: String): ModelProfileRegistry? =
+            if (runCatching { (json.parseToJsonElement(text) as? JsonObject)?.get("profiles") is JsonArray }.getOrDefault(false)) decode(text) else null
 
         /** Tolerant decode: an unreadable entry is skipped (and counted by the caller through the size), never turned into a stronger state. */
         fun decode(text: String): ModelProfileRegistry {
@@ -211,17 +251,17 @@ class ModelProfileRegistry(initial: Collection<ModelProfile> = emptyList()) {
                     if (sha == null || dev == null || rt == null || rv == null || be == null) null else QualificationEvidence(dev, sha, rt, rv, be, qo.str("ref").orEmpty())
                 }
                 // a DEVICE_QUALIFIED row without complete evidence is demoted, never trusted
-                val safeState = if (state == QualificationState.DEVICE_QUALIFIED && q == null) QualificationState.INFERENCE_TESTED else state
+                val safeState = if (state == QualificationState.DEVICE_QUALIFIED && (q == null || o.str("sha") == null || o.str("fp") == null)) QualificationState.INFERENCE_TESTED else state
                 out.put(
                     ModelProfile(
-                        id = id, name = name, sizeBytes = o.lng("size") ?: 0L, sha256 = o.str("sha"),
+                        id = id, name = name, sizeBytes = o.lng("size") ?: 0L, sha256 = o.str("sha"), fingerprint = o.str("fp"),
                         format = runCatching { ArtifactFormat.valueOf(o.str("format") ?: "UNKNOWN") }.getOrDefault(ArtifactFormat.UNKNOWN),
                         runtime = o.str("runtime") ?: "litertlm", runtimeVersion = o.str("rv").orEmpty(), backend = o.str("backend") ?: "CPU",
                         artifactWindow = o.lng("aw")?.toInt(), configuredWindow = o.lng("cw")?.toInt(), lastSlot = o.str("slot"),
                         declaredCapabilities = o.set("decl"), testedCapabilities = o.set("tested"), deviceKey = o.str("dev"),
                         lastAttemptAt = o.lng("at"), lastLoadMs = o.lng("loadMs"), pssBeforeBytes = o.lng("pss0"), pssAfterBytes = o.lng("pss1"),
                         lastError = o.str("err"), lastInferenceAt = o.lng("iat"), lastInferenceOk = (o["iok"] as? JsonPrimitive)?.booleanOrNull,
-                        lastInferenceMs = o.lng("ims"), interruptedLoads = o.lng("interrupted")?.toInt() ?: 0, qualification = q, state = safeState,
+                        lastInferenceMs = o.lng("ims"), interruptedLoads = o.lng("interrupted")?.toInt() ?: 0, qualification = if (safeState == QualificationState.DEVICE_QUALIFIED) q else null, state = safeState,
                     ),
                 )
             }

@@ -51,7 +51,7 @@ class M3ModelProfileTest {
         assertEquals(4096, l.configuredWindow)
     }
 
-    private fun hashed(): ModelProfile = ModelProfiles.withHash(ModelProfiles.onInference(loaded(), true, 3L, 10), "ab".repeat(32))
+    private fun hashed(): ModelProfile = ModelProfiles.withHash(ModelProfiles.onInference(loaded(), true, 3L, 10), "ab".repeat(32), ModelProfiles.fingerprint(3_000_000_000, 111L))
     private val ev = QualificationEvidence("HONOR 200|15|8192", "ab".repeat(32), "litertlm", "0.14.0", "CPU", "M4-protocol-1")
 
     @Test fun deviceQualificationNeedsExactDeviceArtifactVersionAndBackend() {
@@ -61,7 +61,7 @@ class M3ModelProfileTest {
         assertEquals(h.state, ModelProfiles.qualify(h, ev.copy(sha256 = "cd".repeat(32))).state) // another file
         assertEquals(h.state, ModelProfiles.qualify(h, ev.copy(runtimeVersion = "0.15.0")).state) // another runtime
         assertEquals(h.state, ModelProfiles.qualify(h, ev.copy(backend = "GPU")).state)
-        assertEquals(QualificationState.RUNTIME_LOADED, ModelProfiles.qualify(loaded().let { ModelProfiles.withHash(it, "ab".repeat(32)) }, ev).state) // no proven inference
+        assertEquals(QualificationState.RUNTIME_LOADED, ModelProfiles.qualify(loaded().let { ModelProfiles.withHash(it, "ab".repeat(32), "fp") }, ev).state) // no proven inference
         assertEquals(QualificationState.INFERENCE_TESTED, ModelProfiles.qualify(ModelProfiles.onInference(loaded(), true, 3L, 1), ev).state) // no hash
     }
 

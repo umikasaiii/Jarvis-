@@ -16,6 +16,7 @@ import com.simone.jarvismobile.llm.ModelLoadGuard
 import com.simone.jarvismobile.llm.ModelProfileStore
 import com.simone.jarvismobile.net.OfflineGate
 import dagger.hilt.android.EntryPointAccessors
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.After
@@ -38,6 +39,7 @@ class M3RuntimeInstrumentedTest {
     private val ctx: Context = ApplicationProvider.getApplicationContext()
     private lateinit var coordinator: SessionCoordinator
     private val tmp = ArrayList<File>()
+    private lateinit var persistedMode: OfflineMode
 
     private val doc = KnowledgeChunk("zim:portogallo", "Portogallo", "", "Il Portogallo è uno Stato dell'Europa. La capitale è Lisbona.", sourceKind = "zim", collection = "Wikipedia (it)", lead = true)
     private val evidence = Evidence.Grounded(listOf(ScoredChunk(doc, 1.0, doc.text, false)), EvidenceStrength.STRONG, titleMatched = true)
@@ -45,10 +47,12 @@ class M3RuntimeInstrumentedTest {
     @Before fun setUp() {
         coordinator = EntryPointAccessors.fromApplication(ctx.applicationContext, AssistantTaskWorker.WorkerEntryPoint::class.java).coordinator()
         coordinator.newConversation(); OfflineGate.trace.clear()
+        // the persisted offline mode of THIS installation: tests only change the in-process gate, and put it back to what is persisted
+        persistedMode = runBlocking { EntryPointAccessors.fromApplication(ctx.applicationContext, com.simone.jarvismobile.net.OfflineEntryPoint::class.java).settings().offlineMode.first() }
     }
 
     @After fun tearDown() {
-        coordinator.testSeam = null; coordinator.newConversation(); OfflineGate.initialise(OfflineMode.EXPLICIT_ONLINE)
+        coordinator.testSeam = null; coordinator.newConversation(); OfflineGate.initialise(persistedMode)
         tmp.forEach { it.delete() }
     }
 
@@ -104,5 +108,39 @@ class M3RuntimeInstrumentedTest {
             assertTrue("the model file is untouched", f.isFile && f.length() > 0)
             assertFalse("automatic loading stays blocked after a crash", restarted.guard.autoLoadAllowed(f.absolutePath))
         } finally { guard.guard.dismiss(f.absolutePath) }
+    }
+
+    @Test fun aFileReplacedUnderTheSameNameAndSizeLosesItsProofsAndAQualificationNeedsTheExactFile() {
+        val s = store()
+        val f = fake("m3-same.litertlm", ByteArray(8) { 1 })
+        s.noteLoad(f.absolutePath, "fast", true, null, 5, 4096, -1, -1, -1); s.noteInference(f.absolutePath, true, 5)
+        assertEquals(QualificationState.INFERENCE_TESTED, s.all().single().state)
+        // same name, same size, different content (and a new modification time)
+        val size = f.length(); f.writeBytes(ByteArray(size.toInt()) { 7 }); f.setLastModified(f.lastModified() + 5_000)
+        s.noteInference(f.absolutePath, true, 5) // looks at the file again
+        val p = s.all().single()
+        assertEquals("a replaced file is not the tested artifact", QualificationState.STATICALLY_COMPATIBLE, p.state)
+        assertTrue(p.sha256 == null && p.qualification == null)
+        assertFalse(s.isQualifiedNow(f.absolutePath))
+        // hashing is on demand, and the hash is only claimed for a file that did not change while it was read
+        val h = s.computeSha256(f.absolutePath)
+        assertNotNull(h); assertEquals(64, h!!.length)
+        assertNotNull(s.all().single().sha256)
+    }
+
+    @Test fun theRegistryIsWrittenWithoutLosingTheLastGoodVersion() {
+        val s = store()
+        val f = fake("m3-p.litertlm", ByteArray(8) { 3 })
+        s.noteLoad(f.absolutePath, "fast", true, null, 5, 4096, -1, -1, -1)
+        val firstGood = s.file.readText()
+        s.noteInference(f.absolutePath, true, 5)
+        val second = s.file.readText()
+        assertTrue(second != firstGood)
+        assertEquals("the previous good version is kept as .bak", firstGood, File(s.file.path + ".bak").readText())
+        File(s.file.path + ".tmp").writeText("{torn") // leftover of an interrupted write
+        val reopened = ModelProfileStore(ctx, ModelLoadGuard(ctx)).also { it.file = s.file }
+        assertEquals(QualificationState.INFERENCE_TESTED, reopened.all().single().state)
+        assertFalse(reopened.saveFailing)
+        tmp += File(s.file.path + ".bak"); tmp += File(s.file.path + ".tmp")
     }
 }

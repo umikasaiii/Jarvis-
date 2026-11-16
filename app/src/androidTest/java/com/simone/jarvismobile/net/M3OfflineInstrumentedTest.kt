@@ -37,7 +37,7 @@ class M3OfflineInstrumentedTest {
     private val accepted = AtomicInteger()
     @Volatile private var running = true
     private lateinit var entry: OfflineEntryPoint
-    private var savedHost = ""; private var savedPort = 0; private var savedEnabled = false
+    private lateinit var prefs: OfflinePrefsSnapshot
 
     @Before fun setUp() {
         entry = EntryPointAccessors.fromApplication(ApplicationProvider.getApplicationContext(), OfflineEntryPoint::class.java)
@@ -53,19 +53,14 @@ class M3OfflineInstrumentedTest {
                 } catch (_: SocketTimeoutException) { } catch (_: Exception) { }
             }
         }
-        runBlocking {
-            savedHost = entry.settings().coreHost.first()
-            savedPort = entry.settings().corePort.first()
-            savedEnabled = entry.settings().coreEnabled.first()
-        }
+        prefs = OfflinePrefsSnapshot(entry)
+        runBlocking { prefs.capture() } // BEFORE anything is changed: the persisted mode of this installation, not an assumed default
         OfflineGate.trace.clear()
     }
 
     @After fun tearDown() = runBlocking {
-        entry.settings().setOfflineMode(OfflineMode.STRICT_OFFLINE) // no background probe may hit the closing server while settings are restored
-        running = false; runCatching { server.close() }
-        entry.settings().setCoreHost(savedHost); entry.settings().setCorePort(savedPort); entry.settings().setCoreEnabled(savedEnabled)
-        entry.settings().setOfflineMode(OfflineMode.EXPLICIT_ONLINE)
+        // the gate is closed first (inside restore) so no background probe can reach the closing server; then the ORIGINAL persisted state comes back
+        try { prefs.restore() } finally { running = false; runCatching { server.close() } }
     }
 
     private fun url() = "http://127.0.0.1:${server.localPort}/v1/health"
@@ -120,6 +115,23 @@ class M3OfflineInstrumentedTest {
         val online = entry.coreClient().healthCheck()
         assertTrue("explicit: the same client reaches it", online.reachable)
         assertTrue(accepted.get() >= 1)
+    }
+
+    @Test fun restoringAStrictInstallLeavesItStrictAndOpensNothing() = runBlocking {
+        // an installation that is STRICT_OFFLINE with Core configured at the loopback server
+        entry.settings().setOfflineMode(OfflineMode.STRICT_OFFLINE)
+        entry.settings().setCoreHost("127.0.0.1"); entry.settings().setCorePort(server.localPort); entry.settings().setCoreEnabled(true)
+        val snap = OfflinePrefsSnapshot(entry).also { it.capture() }
+        assertEquals(OfflineMode.STRICT_OFFLINE, snap.mode)
+        // a test that changes things (while closed: nothing may reach the server) …
+        entry.settings().setCoreHost("other.invalid"); entry.settings().setCorePort(1); entry.settings().setCoreEnabled(false)
+        // … and the restore, as an @After would run it
+        snap.restore()
+        Thread.sleep(400)
+        assertEquals(OfflineMode.STRICT_OFFLINE, entry.settings().offlineMode.first())
+        assertEquals(OfflineMode.STRICT_OFFLINE, OfflineGate.effectiveMode())
+        assertEquals("127.0.0.1", entry.settings().coreHost.first()); assertEquals(server.localPort, entry.settings().corePort.first()); assertTrue(entry.settings().coreEnabled.first())
+        assertEquals("restoring must not let a request through", 0, accepted.get())
     }
 
     @Test fun theTraceNamesNoHostPortOrUrl() {
