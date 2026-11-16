@@ -251,6 +251,13 @@ class MemoryIndex @Inject constructor(
         return update(match.id, clean, match.kind)
     }
 
+    /** The user decided which of two conflicting values is current. */
+    suspend fun resolveConflict(keepId: String): Boolean {
+        val ok = vault.resolveMemoryConflict(keepId)
+        if (ok) rebuild()
+        return ok
+    }
+
     /** Drops the index (e.g. after the vault is disconnected). */
     fun clear() {
         chunks = emptyList()

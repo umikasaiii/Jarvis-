@@ -8,6 +8,12 @@ enum class RetrievalState {
     INSUFFICIENT,
     /** Reading the sources FAILED: this is not the same as "the information does not exist". */
     ERROR,
+    /** No offline source is configured/available at all. (Same wording as [ABSENT]; kept apart so callers can tell the cases.) */
+    UNAVAILABLE,
+    /** Sources exist and were searched, nothing pertinent came back. */
+    NO_RESULT,
+    /** Pertinent sources WERE retrieved but did not fit the context window in this request: not "no information", "not used". */
+    EXCLUDED_BY_BUDGET,
 }
 
 /**
@@ -19,6 +25,8 @@ object AnswerFraming {
     const val NO_ANSWER_IN_SOURCES = "Nelle fonti offline non c'è la risposta: quanto segue viene dalla conoscenza generale del modello e non è verificato nelle fonti."
     const val SOURCES_UNREADABLE = "Non sono riuscito a leggere le fonti offline (errore di lettura): quanto segue viene dalla conoscenza generale del modello e non è verificato."
 
+    const val EXCLUDED = "Ho trovato fonti offline pertinenti ma in questa richiesta non ho potuto usarle (limite del contesto del modello): quanto segue viene dalla conoscenza generale e non è verificato. Prova a ripetere la domanda in modo più breve."
+    const val NO_RELEVANT_SOURCE = "Nelle fonti offline non ho trovato nulla di pertinente: quanto segue viene dalla conoscenza generale del modello e non è verificato."
     const val NO_SOURCES = "Non ho trovato fonti offline su questo: quanto segue viene dalla conoscenza generale del modello e non è verificato."
 
     /**
@@ -35,7 +43,9 @@ object AnswerFraming {
         kind != RequestKind.FACTUAL -> ""
         state == RetrievalState.ERROR -> SOURCES_UNREADABLE
         state == RetrievalState.INSUFFICIENT -> NO_ANSWER_IN_SOURCES
-        state == RetrievalState.ABSENT && preciseFacts -> NO_SOURCES
+        state == RetrievalState.EXCLUDED_BY_BUDGET -> EXCLUDED // always: the user must know the sources were not used, precise facts or not
+        (state == RetrievalState.ABSENT || state == RetrievalState.UNAVAILABLE) && preciseFacts -> NO_SOURCES
+        state == RetrievalState.NO_RESULT && preciseFacts -> NO_RELEVANT_SOURCE
         else -> ""
     }
 

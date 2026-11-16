@@ -228,6 +228,7 @@ class AssistantTaskWorker(
         fun taskDao(): AssistantTaskDao
         fun settings(): SettingsRepository
         fun memoryIndex(): com.simone.jarvismobile.memory.MemoryIndex
+        fun documents(): com.simone.jarvismobile.document.DocumentImportManager
     }
 
     companion object {

@@ -405,7 +405,7 @@ class DocumentImportManager @Inject constructor(
         } else {
             val ready = _documents.value.filter { it.id in onlyDocs && it.status == DocumentStatus.READY }.map { it.id }
             if (ready.isEmpty()) return emptyList()
-            val chunks = withContext(Dispatchers.IO) { readOrThrow("chunks", { Log.w(TAG, it) }) { dao.chunksFor(ready).map { it.toChunk() } } }
+            val chunks = withContext(Dispatchers.IO) { readOrThrow("chunks", { Log.w(TAG, it) }) { readHook?.invoke(); dao.chunksFor(ready).map { it.toChunk() } } }
             if (chunks.isEmpty()) return emptyList()
             DocumentRetrieval.select(question, HybridDocumentRetriever(chunks), maxContext = maxContext)
         }
@@ -414,7 +414,7 @@ class DocumentImportManager @Inject constructor(
 
     /** Evenly spaced passages of one document for a summary, plus whether they cover all of it. */
     suspend fun sampleBlocks(documentId: String, tokenBudget: Int): Pair<List<EvidenceBlock>, DocumentSampler.Sample>? {
-        val chunks = withContext(Dispatchers.IO) { readOrThrow("sample", { Log.w(TAG, it) }) { dao.chunksFor(listOf(documentId)).map { it.toChunk() } } }
+        val chunks = withContext(Dispatchers.IO) { readOrThrow("sample", { Log.w(TAG, it) }) { readHook?.invoke(); dao.chunksFor(listOf(documentId)).map { it.toChunk() } } }
         if (chunks.isEmpty()) return null
         val sample = DocumentSampler.sample(chunks, tokenBudget)
         return sample.chunks.map { toBlock(it) } to sample
@@ -511,9 +511,15 @@ class DocumentImportManager @Inject constructor(
         }
     }
 
+    /**
+     * Fault-injection seam for instrumented tests (null in production): runs just before every read that answers a question, and may suspend
+     * (to test cancellation during a read) or throw (to test a failing DAO).
+     */
+    @Volatile internal var readHook: (suspend () -> Unit)? = null
+
     /** Same as [rebuildRetriever] for the paths that ANSWER from documents: a database error surfaces instead of becoming an empty archive. */
     private suspend fun rebuildRetrieverOrThrow(): Unit = withContext(Dispatchers.Default) {
-        val chunks = readOrThrow("index", { Log.w(TAG, it) }) { dao.readyChunks().map { it.toChunk() } }
+        val chunks = readOrThrow("index", { Log.w(TAG, it) }) { readHook?.invoke(); dao.readyChunks().map { it.toChunk() } }
         retriever = if (chunks.isEmpty()) null else HybridDocumentRetriever(chunks)
     }
 

@@ -208,31 +208,46 @@ object MemoryRecordCodec {
     private const val SUFFIX = " -->"
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true; coerceInputValues = true }
 
-    fun render(records: List<MemoryRecord>): String = buildString {
+    /** [preserved] are structured lines that could not be decoded: they are written back VERBATIM so a rewrite never deletes data the app failed to understand. */
+    fun render(records: List<MemoryRecord>, preserved: List<String> = emptyList()): String = buildString {
         append(HEADER).append("\n\n")
         records.sortedWith(compareBy<MemoryRecord> { it.createdAt }.thenBy { it.id }).forEach { record ->
             append(PREFIX)
             append(json.encodeToString(MemoryRecord.serializer(), record.normalized()))
             append(SUFFIX).append("\n\n")
         }
+        preserved.forEach { append(it).append("\n\n") }
     }
 
-    fun parse(raw: String): List<MemoryRecord> {
-        if (raw.isBlank()) return emptyList()
+    /**
+     * What a read of the archive found. [damaged] holds the structured lines (`<!-- jarvis-memory-v2:… -->`) that could NOT be decoded, verbatim:
+     * they are user data the app failed to understand, never to be dropped by a rewrite. A legacy bullet or a record with an unknown FUTURE
+     * enum value is NOT damaged (it loads, with the documented default).
+     */
+    data class ParseResult(val records: List<MemoryRecord>, val damaged: List<String>) {
+        val isIntact: Boolean get() = damaged.isEmpty()
+    }
+
+    fun parse(raw: String): List<MemoryRecord> = parseDetailed(raw).records
+
+    fun parseDetailed(raw: String): ParseResult {
+        if (raw.isBlank()) return ParseResult(emptyList(), emptyList())
         val lines = raw.replace("\r\n", "\n").lines()
         val out = ArrayList<MemoryRecord>()
+        val damaged = ArrayList<String>()
         var pending: MemoryRecord? = null
         for (line in lines) {
             val trimmed = line.trim()
-            if (trimmed.startsWith(PREFIX) && trimmed.endsWith(SUFFIX)) {
+            if (trimmed.startsWith(PREFIX)) {
                 // A JSON record can be immediately followed by another JSON
                 // record with no bullet in between (the new, bullet-less
                 // format) — flush whatever was pending first.
                 pending?.let { out += it }
+                pending = null
+                if (!trimmed.endsWith(SUFFIX)) { damaged += trimmed; continue } // truncated line
                 val payload = trimmed.removePrefix(PREFIX).removeSuffix(SUFFIX)
-                pending = runCatching {
-                    json.decodeFromString(MemoryRecord.serializer(), payload)
-                }.getOrNull()?.normalized()
+                val decoded = runCatching { json.decodeFromString(MemoryRecord.serializer(), payload) }.getOrNull()?.normalized()
+                if (decoded == null) damaged += trimmed else pending = decoded
                 continue
             }
             if (!trimmed.startsWith("- ")) continue
@@ -248,7 +263,7 @@ object MemoryRecordCodec {
             }
         }
         pending?.let { out += it }
-        return out.distinctBy { it.id }
+        return ParseResult(out.distinctBy { it.id }, damaged)
     }
 
     private fun MemoryRecord.normalized(): MemoryRecord = copy(

@@ -53,8 +53,17 @@ jobs:
           arch: x86_64
           target: google_apis
           script: |
-            ./gradlew --no-daemon :app:connectedDebugAndroidTest -Pjarvis.emulatorAbi=x86_64 -Pandroid.testInstrumentationRunnerArguments.class=com.simone.jarvismobile.background.JarvisMigrationInstrumentedTest,com.simone.jarvismobile.archive.NotesStoreInstrumentedTest,com.simone.jarvismobile.document.DocumentPipelineInstrumentedTest,com.simone.jarvismobile.offlinehub.OfflineHubIntentInstrumentedTest,com.simone.jarvismobile.reliability.DailyReliabilityInstrumentedTest,com.simone.jarvismobile.reliability.CrossModuleInstrumentedTest,com.simone.jarvismobile.regex.ParserInitInstrumentedTest,com.simone.jarvismobile.regex.ConversationRoutingInstrumentedTest,com.simone.jarvismobile.background.AssistantQueueRecoveryInstrumentedTest,com.simone.jarvismobile.quality.QualityAssetInstrumentedTest,com.simone.jarvismobile.knowledge.ZimModernArchiveInstrumentedTest,com.simone.jarvismobile.knowledge.KnowledgeIndexInstrumentedTest,com.simone.jarvismobile.knowledge.KnowledgeIndexBenchInstrumentedTest,com.simone.jarvismobile.audio.SessionCoordinatorPublicationInstrumentedTest,com.simone.jarvismobile.audio.ConversationStateInstrumentedTest
+            ./gradlew --no-daemon :app:connectedDebugAndroidTest -Pjarvis.emulatorAbi=x86_64 -Pandroid.testInstrumentationRunnerArguments.class=com.simone.jarvismobile.background.JarvisMigrationInstrumentedTest,com.simone.jarvismobile.archive.NotesStoreInstrumentedTest,com.simone.jarvismobile.document.DocumentPipelineInstrumentedTest,com.simone.jarvismobile.offlinehub.OfflineHubIntentInstrumentedTest,com.simone.jarvismobile.reliability.DailyReliabilityInstrumentedTest,com.simone.jarvismobile.reliability.CrossModuleInstrumentedTest,com.simone.jarvismobile.regex.ParserInitInstrumentedTest,com.simone.jarvismobile.regex.ConversationRoutingInstrumentedTest,com.simone.jarvismobile.background.AssistantQueueRecoveryInstrumentedTest,com.simone.jarvismobile.quality.QualityAssetInstrumentedTest,com.simone.jarvismobile.knowledge.ZimModernArchiveInstrumentedTest,com.simone.jarvismobile.knowledge.KnowledgeIndexInstrumentedTest,com.simone.jarvismobile.knowledge.KnowledgeIndexBenchInstrumentedTest,com.simone.jarvismobile.audio.SessionCoordinatorPublicationInstrumentedTest,com.simone.jarvismobile.audio.ConversationStateInstrumentedTest,com.simone.jarvismobile.audio.M1ClosureInstrumentedTest
             adb logcat -d -s JarvisBench:I > app/build/jarvis_bench_emulator.txt || true
+      - name: LiteRT-LM API inspection (read-only; looks for a tokenizer / token counter)
+        if: always()
+        run: |
+          AAR=$(find ~/.gradle -name 'litertlm-android-*.aar' 2>/dev/null | head -1)
+          echo "artifact: ${AAR:-not found}"
+          if [ -n "$AAR" ]; then
+            mkdir -p /tmp/litertlm && cd /tmp/litertlm && unzip -oq "$AAR" classes.jar && unzip -l classes.jar | awk '{print $4}' | grep -i -E 'token|count' || echo "no class or file name containing token/count"
+            javap -cp classes.jar $(unzip -l classes.jar | awk '{print $4}' | grep -E '^com/google/ai/edge/litertlm/[A-Za-z]+\.class$' | sed 's/\.class$//;s#/#.#g') 2>/dev/null | grep -i -E 'token|count' || echo "no public member named token/count in the top-level litertlm classes"
+          fi
       - name: Test results summary (failures with their messages)
         if: always()
         run: |

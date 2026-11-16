@@ -7,6 +7,7 @@ import androidx.documentfile.provider.DocumentFile
 import com.simone.jarvismobile.core.memory.MemoryKind
 import com.simone.jarvismobile.core.memory.MemoryRecord
 import com.simone.jarvismobile.core.memory.MemoryRecordCodec
+import com.simone.jarvismobile.core.storage.AtomicTextFile
 import com.simone.jarvismobile.core.memory.MemoryStructure
 import com.simone.jarvismobile.data.SettingsRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -168,15 +169,15 @@ class VaultRepository @Inject constructor(
                 sourceRef = sourceRef,
             )
             // A read ERROR is not an empty archive: writing "records + new" on top of an unreadable file would erase the user's memory.
-            val records = readMemoryRecordsStrict() ?: return@withLock null
-            val applied = com.simone.jarvismobile.core.memory.MemoryLedger.apply(records, record)
+            val read = readMemoryRecordsStrict() ?: return@withLock null
+            val applied = com.simone.jarvismobile.core.memory.MemoryLedger.apply(read.records, record)
             when (applied.outcome) {
                 com.simone.jarvismobile.core.memory.MemoryLedger.Outcome.REJECTED -> return@withLock null
                 com.simone.jarvismobile.core.memory.MemoryLedger.Outcome.DUPLICATE -> return@withLock applied.stored // already there: nothing to write
                 else -> Unit
             }
             val stored = applied.stored ?: return@withLock null
-            if (!writeMemory(applied.records)) return@withLock null
+            if (!writeMemory(applied.records, read.damaged)) return@withLock null
             // Verify the write actually landed before reporting success.
             if (readMemoryRecordsUnlocked().any { it.id == stored.id }) stored else null
         }
@@ -191,7 +192,8 @@ class VaultRepository @Inject constructor(
         memoryMutex.withLock {
             val body = text.trim()
             if (body.isBlank() || MemoryStructure.containsCredential(body)) return@withLock null
-            val records = readMemoryRecordsStrict() ?: return@withLock null
+            val read = readMemoryRecordsStrict() ?: return@withLock null
+            val records = read.records
             val current = records.firstOrNull { it.id == id } ?: return@withLock null
             val fields = MemoryStructure.extract(body)
             val updated = current.copy(
@@ -205,23 +207,25 @@ class VaultRepository @Inject constructor(
                 spacing = spacing ?: current.spacing,
             )
             val next = records.map { if (it.id == id) updated else it }
-            if (writeMemory(next)) updated else null
+            if (writeMemory(next, read.damaged)) updated else null
         }
 
     /** Sets just the macro-category on one record (AI re-classification). */
     suspend fun setMemoryCategory(id: String, category: String): MemoryRecord? =
         memoryMutex.withLock {
-            val records = readMemoryRecordsStrict() ?: return@withLock null
+            val read = readMemoryRecordsStrict() ?: return@withLock null
+            val records = read.records
             val current = records.firstOrNull { it.id == id } ?: return@withLock null
             val updated = current.copy(category = category)
             val next = records.map { if (it.id == id) updated else it }
-            if (writeMemory(next)) updated else null
+            if (writeMemory(next, read.damaged)) updated else null
         }
 
     suspend fun deleteMemory(id: String): MemoryRecord? = memoryMutex.withLock {
-        val records = readMemoryRecordsStrict() ?: return@withLock null
+        val read = readMemoryRecordsStrict() ?: return@withLock null
+        val records = read.records
         val removed = records.firstOrNull { it.id == id } ?: return@withLock null
-        if (writeMemory(records.filterNot { it.id == id })) removed else null
+        if (writeMemory(records.filterNot { it.id == id }, read.damaged)) removed else null
     }
 
     suspend fun readMemoryRecords(): List<MemoryRecord> = memoryMutex.withLock {
@@ -232,33 +236,44 @@ class VaultRepository @Inject constructor(
         MemoryRecordCodec.parse(readLocalMemory())
 
     /** Like [readMemoryRecords] but a read failure is reported (null) instead of looking like an empty archive. Used before every rewrite. */
-    private suspend fun readMemoryRecordsStrict(): List<MemoryRecord>? {
+    private suspend fun readMemoryRecordsStrict(): MemoryRecordCodec.ParseResult? {
         val raw = readLocalMemoryStrict() ?: return null
-        return MemoryRecordCodec.parse(raw)
+        val parsed = MemoryRecordCodec.parseDetailed(raw)
+        // structured records the parser could not decode are KEPT (re-emitted verbatim by every rewrite); count only, never content
+        if (!parsed.isIntact) android.util.Log.w("JarvisVault", "memory_records_undecodable count=${parsed.damaged.size} (preserved)")
+        return parsed
+    }
+
+    /** Resolves an unresolved CONFLICT: [keepId] becomes the current value, the others stay as superseded (history is kept). */
+    suspend fun resolveMemoryConflict(keepId: String): Boolean = memoryMutex.withLock {
+        val read = readMemoryRecordsStrict() ?: return@withLock false
+        if (read.records.none { it.id == keepId }) return@withLock false
+        writeMemory(com.simone.jarvismobile.core.memory.MemoryLedger.resolve(read.records, keepId), read.damaged)
     }
 
     /** For retrieval (index rebuild): throws on a read error so the caller records it instead of indexing "nothing". */
     suspend fun readMemoryRecordsOrThrow(): List<MemoryRecord> = memoryMutex.withLock {
-        readMemoryRecordsStrict() ?: throw java.io.IOException("memory_read_failed")
+        (readMemoryRecordsStrict() ?: throw java.io.IOException("memory_read_failed")).records
     }
 
     /** Writes the whole record set to the local archive only — no vault mirror. */
-    private suspend fun writeMemory(records: List<MemoryRecord>): Boolean {
-        val rendered = MemoryRecordCodec.render(records)
+    private suspend fun writeMemory(records: List<MemoryRecord>, preserved: List<String> = emptyList()): Boolean {
+        val rendered = MemoryRecordCodec.render(records, preserved)
         return writeLocalMemory(rendered)
     }
 
     private suspend fun readLocalMemory(): String = withContext(Dispatchers.IO) {
-        runCatching { if (localMemoryFile.exists()) localMemoryFile.readText() else "" }.getOrDefault("")
+        AtomicTextFile(localMemoryFile).readOrNull().orEmpty()
     }
 
     /** null = the file exists but could not be read; "" = there is no file yet (a genuinely empty archive). */
     private suspend fun readLocalMemoryStrict(): String? = withContext(Dispatchers.IO) {
-        try { if (localMemoryFile.exists()) localMemoryFile.readText() else "" } catch (e: java.io.IOException) { null }
+        AtomicTextFile(localMemoryFile).readOrNull()
     }
 
     private suspend fun writeLocalMemory(content: String): Boolean = withContext(Dispatchers.IO) {
-        runCatching { localMemoryFile.writeText(content); true }.getOrDefault(false)
+        // temp file + fsync + atomic replace, previous good version kept as .bak: an interrupted write cannot truncate the archive
+        runCatching { AtomicTextFile(localMemoryFile).write(content); true }.getOrDefault(false)
     }
 
     /**

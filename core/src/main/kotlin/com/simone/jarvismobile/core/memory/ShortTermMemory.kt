@@ -56,6 +56,11 @@ object ShortTermMemorySummarizer {
 
         // a later correction REPLACES the earlier value of the same subject in this recap (the full history stays in the chat)
         val merged = ArrayList(previous.facts)
+        // ...also when the correction is still in the verbatim part of the conversation: the recap must not keep offering the rectified value
+        turns.takeLast(recentTurnsKeptVerbatim.coerceAtLeast(0)).filter { it.fromUser }.forEach { t ->
+            val k = FactKey.parse(normalize(t.text))
+            if (k != null && k.correction) merged.removeAll { FactKey.parse(it)?.key == k.key }
+        }
         for (c in candidates) {
             if (merged.any { it.equals(c, ignoreCase = true) }) continue
             val key = FactKey.parse(c)

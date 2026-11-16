@@ -17,6 +17,17 @@ object ContextFit {
 
     fun itemTokens(i: EvidenceItem) = TokenEstimator.estimate(i.text) + TokenEstimator.estimate(i.title) + 8
 
+    /**
+     * One more step of the same priority order: the package without its least useful droppable item, or null when only mandatory material (tool
+     * receipts) or nothing is left. Used to re-fit against the FINAL assembled prompt, measured after every addition.
+     */
+    fun dropOne(pkg: EvidencePackage): EvidencePackage? {
+        val victim = pkg.items.filter { it.kind == EvidenceKind.MEMORY }.lastOrNull()
+            ?: pkg.items.filter { it.kind == EvidenceKind.KNOWLEDGE || it.kind == EvidenceKind.DOCUMENT }.lastOrNull()
+            ?: return null
+        return pkg.without(victim.id, "budget del contesto")
+    }
+
     /** [fixedTokens]: system + history + question + framing + any revision note reserve; [ceiling]: prompt tokens available in total. */
     fun fit(pkg: EvidencePackage, fixedTokens: Int, ceiling: Int): Fit {
         var current = pkg

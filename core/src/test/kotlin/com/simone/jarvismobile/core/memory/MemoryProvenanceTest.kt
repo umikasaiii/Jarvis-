@@ -131,3 +131,59 @@ class MemoryProvenanceTest {
         assertFalse(ContextFit.fit(p, fixedTokens = 5000, ceiling = 3000).fits)
     }
 }
+
+class RecentCorrectionAndEstimatorTest {
+    @Test fun aRecentCorrectionRemovesTheOldValueFromThePreviousRecap() {
+        val previous = ShortTermMemorySnapshot(facts = listOf("Il mio peso è 78 kg", "Mi chiamo Simone"))
+        val recent = listOf(MemoryTurn(true, "Correggo: ora peso 80 kg"), MemoryTurn(false, "Ho preso nota."))
+        val snap = ShortTermMemorySummarizer.summarize(recent, previous)
+        assertTrue("Il mio peso è 78 kg" !in snap.facts, snap.facts.toString())
+        assertTrue("Mi chiamo Simone" in snap.facts)
+    }
+
+    @Test fun estimatorIsClassAwareAndLabelsItselfAnEstimate() {
+        val prose = com.simone.jarvismobile.core.quality.TokenEstimator.estimate("La capitale del Portogallo è una città molto bella")
+        val digits = com.simone.jarvismobile.core.quality.TokenEstimator.estimate("3141592653589793238462643383279502884197")
+        val code = com.simone.jarvismobile.core.quality.TokenEstimator.estimate("if(x>=0){y[i]=x*2;}//{}[]();;;")
+        val cjk = com.simone.jarvismobile.core.quality.TokenEstimator.estimate("日本語のテキストです。")
+        assertTrue(digits >= 40 && digits > prose)
+        assertTrue(code > "if(x>=0){y[i]=x*2;}//{}[]();;;".length / 3)
+        assertTrue(cjk >= 10)
+        assertEquals(0, com.simone.jarvismobile.core.quality.TokenEstimator.estimate(""))
+        assertTrue(com.simone.jarvismobile.core.quality.TokenEstimator.estimate("a".repeat(30_000)) in 9_000..11_000)
+    }
+
+    @Test fun diagnosticsAreBoundedAndCarryNoText() {
+        val d = com.simone.jarvismobile.core.quality.ContextDiagnostics(capacity = 3)
+        repeat(5) { d.record(com.simone.jarvismobile.core.quality.ContextEvent(it.toLong(), "FAST", 4096, 900 + it, false, it, "none", 1, "ok")) }
+        assertEquals(3, d.snapshot().size)
+        val out = d.export("abc1234", "gemma-3-1b")
+        assertTrue("(stima)" in out && "ESTIMATES" in out && "build=abc1234" in out)
+    }
+
+    @Test fun allFiveRetrievalStatesHaveDistinctWordingWhereTheUserMustKnow() {
+        val k = com.simone.jarvismobile.core.reliability.RequestKind.FACTUAL
+        val s = com.simone.jarvismobile.core.reliability.RetrievalState.values()
+        val q = s.associateWith { com.simone.jarvismobile.core.reliability.AnswerFraming.qualifier(k, it, preciseFacts = true) }
+        assertTrue(q.getValue(com.simone.jarvismobile.core.reliability.RetrievalState.EXCLUDED_BY_BUDGET).contains("non ho potuto usarle"))
+        assertFalse(q.getValue(com.simone.jarvismobile.core.reliability.RetrievalState.EXCLUDED_BY_BUDGET).contains("non ho trovato"))
+        assertTrue(q.getValue(com.simone.jarvismobile.core.reliability.RetrievalState.ERROR).contains("errore di lettura"))
+        assertTrue(q.getValue(com.simone.jarvismobile.core.reliability.RetrievalState.NO_RESULT).contains("nulla di pertinente"))
+        assertTrue(q.getValue(com.simone.jarvismobile.core.reliability.RetrievalState.UNAVAILABLE).contains("fonti offline"))
+        assertTrue(q.getValue(com.simone.jarvismobile.core.reliability.RetrievalState.INSUFFICIENT).contains("non c'è la risposta"))
+        // without precise facts only the budget case (the user must know) and the error/insufficient cases speak
+        assertEquals("", com.simone.jarvismobile.core.reliability.AnswerFraming.qualifier(k, com.simone.jarvismobile.core.reliability.RetrievalState.NO_RESULT, false))
+        assertTrue(com.simone.jarvismobile.core.reliability.AnswerFraming.qualifier(k, com.simone.jarvismobile.core.reliability.RetrievalState.EXCLUDED_BY_BUDGET, false).isNotBlank())
+    }
+
+    @Test fun contextFitCanDropOneStepAtATimeAndNeverTheReceipts() {
+        var p: EvidencePackage? = EvidencePackage.of(listOf(
+            EvidencePackage.Companion.Raw("K", "", "Una frase.", "0", EvidenceKind.KNOWLEDGE),
+            EvidencePackage.Companion.Raw("M", "", "Un ricordo.", "1", EvidenceKind.MEMORY),
+            EvidencePackage.Companion.Raw("Risultati del sistema", "t", "Batteria: 41%.", "2", EvidenceKind.TOOL),
+        ))
+        p = ContextFit.dropOne(p!!); assertTrue(p!!.items.none { it.kind == EvidenceKind.MEMORY })
+        p = ContextFit.dropOne(p); assertTrue(p!!.items.none { it.kind == EvidenceKind.KNOWLEDGE })
+        assertEquals(null, ContextFit.dropOne(p!!), "only the mandatory receipt is left: nothing more may be dropped")
+    }
+}
