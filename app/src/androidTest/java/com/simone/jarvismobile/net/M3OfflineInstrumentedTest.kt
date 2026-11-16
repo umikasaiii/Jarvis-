@@ -62,6 +62,7 @@ class M3OfflineInstrumentedTest {
     }
 
     @After fun tearDown() = runBlocking {
+        entry.settings().setOfflineMode(OfflineMode.STRICT_OFFLINE) // no background probe may hit the closing server while settings are restored
         running = false; runCatching { server.close() }
         entry.settings().setCoreHost(savedHost); entry.settings().setCorePort(savedPort); entry.settings().setCoreEnabled(savedEnabled)
         entry.settings().setOfflineMode(OfflineMode.EXPLICIT_ONLINE)
@@ -108,8 +109,9 @@ class M3OfflineInstrumentedTest {
     }
 
     @Test fun theProductionCoreClientReachesTheServerOnlyInExplicitOnline() = runBlocking {
-        entry.settings().setCoreHost("127.0.0.1"); entry.settings().setCorePort(server.localPort); entry.settings().setCoreEnabled(true)
+        // STRICT first: the app's own Core connection manager reacts to these settings by probing in the background, and that probe must meet the gate closed
         entry.settings().setOfflineMode(OfflineMode.STRICT_OFFLINE)
+        entry.settings().setCoreHost("127.0.0.1"); entry.settings().setCorePort(server.localPort); entry.settings().setCoreEnabled(true)
         val strict = entry.coreClient().healthCheck()
         Thread.sleep(400)
         assertFalse("strict: Core must look unreachable", strict.reachable)
