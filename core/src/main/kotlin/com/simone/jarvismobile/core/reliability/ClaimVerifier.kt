@@ -44,6 +44,7 @@ object ClaimVerifier {
     private const val QUESTION_RELEVANCE = 0.5
     private const val SHORT = 3
     private const val CONTEXT_WORDS = 3
+    private const val MAX_CANDIDATES = 6
 
     private val NEG = setOf("non", "mai", "nessun", "nessuna", "nessuno", "senza", "niente", "nulla", "neppure", "nemmeno", "no")
     private val HEDGES = setOf(
@@ -51,7 +52,7 @@ object ClaimVerifier {
         "solitamente", "puo", "possono", "potrebbe", "probabilmente", "forse", "alcuni", "alcune", "se", "qualora",
     )
     private val UNIVERSALS = setOf("sempre", "tutti", "tutte", "mai", "ogni", "esclusivamente", "unico", "unica", "unicamente")
-    private val LIMIT = Regex("\\b(non (?:ho trovato|trovo|so|ne so|sono in grado|posso (?:confermare|verificare)|ci sono informazioni|e possibile verificare)|nelle fonti non|le fonti non|non e (?:indicat|riportat|present|specificat)\\w* nelle fonti|non risulta nelle fonti)")
+    private val LIMIT = Regex("\\b(non (?:ho trovato|trovo|so|ne so|lo so|dispongo|ho (?:altre |ulteriori |piu )?(?:informazioni|dati|elementi|notizie)|sono in grado|posso (?:confermare|verificare|dirti|dire)|ci sono (?:altre )?informazioni|e possibile verificare)|nelle fonti non|le fonti non|non e (?:indicat|riportat|present|specificat)\\w* nelle fonti|non risulta nelle fonti)")
     private val ATTRIBUTION = Regex("^(?:secondo|stando a|in base a|come (?:indicato|riportato|scritto) (?:da|nel|nei|nelle|dalle|dai))\\s+(?:le|i|gli|il|la|dalle|nelle)?\\s*(?:fonti|font[ei]|document\\w*|brani|test[oi]|passagg\\w+|font\\w*|appunti)\\s*[,:]?\\s*|^(?:dalle|nelle|dai|nei) (?:fonti|document\\w*|brani|passagg\\w+) (?:risulta|emerge|si legge|si ricava|e scritto|e indicato)\\s*(?:che)?\\s*[,:]?\\s*|^le fonti (?:dicono|indicano|riportano|affermano|segnalano)\\s*(?:che)?\\s*[,:]?\\s*", RegexOption.IGNORE_CASE)
     private val FILE_REF = Regex("\\b[\\p{L}\\p{N}_()\\-]+(?:\\.[\\p{L}\\p{N}_()\\-]+)*\\.(?:pdf|docx?|epub|xlsx?|txt|md|markdown|html?|csv|json)\\b", RegexOption.IGNORE_CASE)
     private val PAGE_REF = Regex("\\b(?:pagina|pag\\.|p\\.)\\s*(\\d{1,5})\\b", RegexOption.IGNORE_CASE)
@@ -72,6 +73,30 @@ object ClaimVerifier {
 
     fun sentences(text: String): List<String> = Sentences.split(text)
 
+    /**
+     * Restatement check for a tool receipt: the model may rephrase a structured result, but every number and name it states must
+     * come from that result (no word-overlap requirement, no second verification engine). Clauses stating neither are neutral.
+     */
+    fun verifyFigures(question: String, answer: String, receipt: EvidencePackage): ClaimReport {
+        val qStems = contentStems(question).toSet()
+        val have = receipt.items.flatMap { Quantities.extract(it.text) }
+        val text = receipt.items.joinToString(" ") { KnowledgeText.fold(it.title + " " + it.text) }
+        val claims = ArrayList<Claim>()
+        for (sentence in sentences(AnswerQuality.stripPresentationNotes(answer))) for (clause in clauses(sentence)) {
+            val quants = Quantities.extract(clause)
+            val ents = innerCapitalised(clause).map { KnowledgeText.fold(it) }.filter { e -> SupportJudge.stems(e).firstOrNull()?.let { it !in qStems } ?: false }
+            val badQ = quants.firstOrNull { q -> have.none { Quantities.compare(q, it) != Quantities.Match.DIFFERENT } }
+            val badE = ents.firstOrNull { it !in text }
+            claims += when {
+                badQ != null -> Claim(clause, ClaimStatus.UNVERIFIED, emptyList(), "numero ${badQ.raw} non nel risultato dello strumento")
+                badE != null -> Claim(clause, ClaimStatus.UNVERIFIED, emptyList(), "nome non nel risultato dello strumento: $badE")
+                quants.isEmpty() && ents.isEmpty() -> Claim(clause, ClaimStatus.UNKNOWN, emptyList(), "nessun dato da controllare")
+                else -> Claim(clause, ClaimStatus.EXPLICITLY_SUPPORTED, receipt.items.map { it.id }, "dati presenti nel risultato")
+            }
+        }
+        return ClaimReport(claims)
+    }
+
     internal fun negated(folded: String): Boolean {
         val w = words(folded)
         return w.indices.any { i -> w[i] in NEG && !(w[i] == "non" && w.getOrNull(i + 1) == "solo") }
@@ -87,8 +112,32 @@ object ClaimVerifier {
 
     /** The clauses of one sentence: attribution removed, then split at ';' and at "e/ma/mentre" when a new quantity starts. */
     fun clauses(sentence: String): List<String> {
-        val parts = sentence.split(Regex(";\\s+|,\\s+(?:ma|mentre|però)\\s+|\\s+e\\s+(?=[^,.;]*\\d)")).map { it.trim() }.filter { it.isNotEmpty() }
-        return parts.ifEmpty { listOf(sentence) }
+        val parts = sentence.split(Regex(";\\s+|:\\s+|\\s+[—–]\\s+|,\\s+(?:ma|mentre|però|tuttavia|però)\\s+|\\s+e\\s+(?=[^,.;]*\\d)")).map { it.trim() }.filter { it.isNotEmpty() }
+        // "Non so con certezza, la capitale è Madrid": a declaration of limit ends at its comma; what follows is a proposition
+        val out = ArrayList<String>()
+        for (p in parts.ifEmpty { listOf(sentence) }) {
+            var rest = p
+            while (true) {
+                val cut = rest.indexOf(", ")
+                if (cut > 0 && LIMIT.containsMatchIn(KnowledgeText.fold(rest.substring(0, cut))) && cut + 2 < rest.length) {
+                    out += rest.substring(0, cut).trim(); rest = rest.substring(cut + 2).trim()
+                } else break
+            }
+            out += splitMainVerbClauses(rest)
+        }
+        return out.filter { it.isNotEmpty() }
+    }
+
+    private val MAIN_VERB = Regex("^(?:è|e'|sono|ha|hanno|può|possono|era|erano|viene|vengono|rappresenta|costituisce|serve|ospita|misura|pesa|dura)(?=\\s|$)", RegexOption.IGNORE_CASE)
+
+    /** "X fa A, è anche B": split only where a NEW main clause starts; subordinates and conditions stay attached to what they qualify. */
+    private fun splitMainVerbClauses(clause: String): List<String> {
+        val i = clause.indexOf(", ")
+        if (i <= 0) return listOf(clause)
+        val right = clause.substring(i + 2)
+        val left = clause.substring(0, i)
+        if (!MAIN_VERB.containsMatchIn(right) || contentStems(left).size < 2 || contentStems(right).size < 2) return listOf(clause)
+        return listOf(left.trim()) + splitMainVerbClauses(right.trim())
     }
 
     fun verify(question: String, answer: String, pkg: EvidencePackage, askRelevance: Boolean = true): ClaimReport {
@@ -108,7 +157,12 @@ object ClaimVerifier {
         val folded = KnowledgeText.fold(text)
         val stems = contentStems(text).distinct()
         val quants = Quantities.extract(text)
-        if (text.isEmpty() || LIMIT.containsMatchIn(folded) || (stems.isEmpty() && quants.isEmpty())) return Claim(piece, ClaimStatus.UNKNOWN, emptyList(), "non fattuale")
+        if (text.isEmpty() || (stems.isEmpty() && quants.isEmpty())) return Claim(piece, ClaimStatus.UNKNOWN, emptyList(), "non fattuale")
+        // A declaration of limit ("non so", "non posso verificare") is legitimate ONLY while it states no checkable value or name:
+        // a number or a proper name in the same clause makes it a proposition, and it is verified like any other.
+        if (LIMIT.containsMatchIn(folded) && quants.isEmpty() && capitalised(text).none { e -> SupportJudge.stems(e).firstOrNull()?.let { it !in qStems } ?: false }) {
+            return Claim(piece, ClaimStatus.UNKNOWN, emptyList(), "dichiarazione di limite")
+        }
         invented(piece, evidenceText)?.let { return Claim(piece, ClaimStatus.UNVERIFIED, emptyList(), "riferimento inventato: $it") }
         val short = stems.size < SHORT
         val negC = negated(folded)
@@ -118,14 +172,27 @@ object ClaimVerifier {
             val asked = qStems.filter { it !in s.title }
             return asked.isEmpty() || asked.count { it in s.stems }.toDouble() / asked.size >= QUESTION_RELEVANCE
         }
-        // lexical overlap SELECTS the candidate sentence; the checks below decide
-        val best = windows.filter { !short || relevant(it) }.maxByOrNull { cover(it) }
-        val bestCover = best?.let(::cover) ?: 0.0
-        if (best == null || bestCover < COVER_SUPPORTED || (short && bestCover < 1.0)) {
+        // lexical overlap SELECTS the candidate sentences; the checks below decide. Several sentences can match equally well (same
+        // title, different passages): the claim is supported if ANY of them passes every check, and rejected only if none does.
+        // a short answer WITHOUT a number must sit in a sentence about what was asked; a number is checked by value and context instead
+        val needRelevance = short && quants.isEmpty()
+        val candidates = windows.filter { !needRelevance || relevant(it) }.map { it to cover(it) }
+            .filter { (_, c) -> c >= COVER_SUPPORTED && (!short || c >= 1.0) }.sortedByDescending { it.second }.take(MAX_CANDIDATES)
+        if (candidates.isEmpty()) {
             val near = windows.maxByOrNull { cover(it) }
             if (near != null && cover(near) >= COVER_SUPPORTED) judge(piece, negC, quants, near)?.let { return it }
             return Claim(piece, ClaimStatus.UNVERIFIED, emptyList(), if ((near?.let(::cover) ?: 0.0) < 0.4) "nessun passaggio lo conferma" else "supporto parziale")
         }
+        var firstFailure: Claim? = null
+        for ((win, _) in candidates) {
+            val r = checkAgainst(piece, text, folded, quants, negC, qStems, win)
+            if (r.status == ClaimStatus.EXPLICITLY_SUPPORTED || r.status == ClaimStatus.DERIVED) return r
+            if (firstFailure == null) firstFailure = r
+        }
+        return firstFailure!!
+    }
+
+    private fun checkAgainst(piece: String, text: String, folded: String, quants: List<Quantity>, negC: Boolean, qStems: Set<String>, best: Sent): Claim {
         judge(piece, negC, quants, best)?.let { return it }
 
         // names: each must occur in the sentence; two names must keep their order
@@ -193,6 +260,11 @@ object ClaimVerifier {
         }
         return forOthers > 0 && forMatched == 0
     }
+
+    /** Proper names not at the start of the clause (a sentence-initial capital proves nothing). */
+    private fun innerCapitalised(text: String): List<String> =
+        Regex("\\p{Lu}[\\p{L}\\d'’-]{2,}").findAll(text).filter { it.range.first > 0 && !text.substring(0, it.range.first).trimEnd().let { p -> p.endsWith(".") || p.endsWith("!") || p.endsWith("?") } }
+            .map { it.value.substringAfter('\'').substringAfter('’') }.filter { it.length >= 3 }.toList()
 
     private fun capitalised(text: String): List<String> =
         Regex("\\p{Lu}[\\p{L}\\d'’-]{2,}").findAll(text).map { it.value.substringAfter('\'').substringAfter('’') }.filter { it.length >= 3 }.toList()

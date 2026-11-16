@@ -74,8 +74,12 @@ class KnowledgeRepository @Inject constructor(
      * encyclopaedic text.
      */
     suspend fun gather(question: String, limit: Int = 3): Evidence = withContext(Dispatchers.Default) {
-        val index = runCatching { indexManager.index }.getOrNull()
-        gatherer.gather(question, zim.sources(), index, emptyList(), limit)
+        val opened = runCatching { indexManager.index }
+        val found = gatherer.gather(question, zim.sources(), opened.getOrNull(), emptyList(), limit)
+        // An index that cannot be opened is a READ ERROR, not "no information": unless the archives alone found support, the caller
+        // must be able to tell the user the sources could not be read (the exception is handled by the caller's retrieval guard).
+        if (opened.isFailure && found !is Evidence.Grounded) throw opened.exceptionOrNull()!!
+        found
     }
 
     /** Persists the picked folder and takes a durable READ permission only. */

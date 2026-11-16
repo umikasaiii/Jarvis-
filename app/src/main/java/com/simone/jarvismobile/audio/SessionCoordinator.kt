@@ -1827,6 +1827,18 @@ class SessionCoordinator @Inject constructor(
             _diagnostic.value = pub.diagnostic() + " attempts=" + c.ledger.summary()
             return pub.text + sourceFooter(pub, kctx, c.pkg).let { if (it.isBlank()) "" else "\n$it" } + uncoveredNote(kctx)
         }
+        // Tool receipts (no knowledge/document evidence): the model may restate the structured result, but any number or name the
+        // receipt does not contain is replaced by the receipt itself, rendered verbatim (no extra generation, no second engine).
+        if (c.pkg.has(EvidenceKind.TOOL)) {
+            val receipt = EvidencePackage.of(
+                c.pkg.items.filter { it.kind == EvidenceKind.TOOL }.map { EvidencePackage.Companion.Raw(it.title, it.section, it.text, it.sourceKey, it.kind) },
+                COMPOUND_CONTEXT_CHARS,
+            )
+            val pub = PublicationPolicy.decideToolOnly(c.question, text, receipt)
+            _diagnostic.value = pub.diagnostic() + " attempts=" + c.ledger.summary()
+            if (pub.mode != PublicationMode.VERIFIED) invalidateSlot(c.slot) // the restated draft must not be continued
+            return pub.text
+        }
         val state = when {
             c.retrievalFailed -> RetrievalState.ERROR
             kctx?.evidence is Evidence.Insufficient || kctx?.evidence is Evidence.Grounded -> RetrievalState.INSUFFICIENT
@@ -1837,7 +1849,7 @@ class SessionCoordinator @Inject constructor(
             is Evidence.Grounded -> if (c.kind == RequestKind.FACTUAL) SourceFooter.build(GroundingVerifier.Verdict(GroundingState.SOURCE_FOUND, emptyList(), emptyList()), ev, LocalDate.now().year) else ""
             else -> ""
         }
-        return AnswerFraming.frame(c.kind, state, text) + (if (consulted.isNotBlank()) "\n$consulted" else "") + uncoveredNote(kctx)
+        return AnswerFraming.frame(c.kind, state, text, c.question) +(if (consulted.isNotBlank()) "\n$consulted" else "") + uncoveredNote(kctx)
     }
 
     private fun uncoveredNote(kctx: KnowledgeContext?): String =
@@ -1848,9 +1860,12 @@ class SessionCoordinator @Inject constructor(
     private fun sourceFooter(pub: Publication, kctx: KnowledgeContext?, pkg: EvidencePackage): String {
         if (pub.sources.isEmpty()) return ""
         val chunks = pub.sources.map { it to (if (it.kind == EvidenceKind.KNOWLEDGE) kctx?.passages?.getOrNull(it.sourceKey.toIntOrNull() ?: -1)?.chunk else null) }
-        val labels = chunks.map { (item, chunk) ->
-            if (chunk != null) chunk.reference + (if (chunk.section.isNotBlank() && chunk.sourceKind == "document") ", ${chunk.section}" else "") else item.title
-        }
+        val labels = PublicationPolicy.distinctLabels(
+            chunks.map { (item, chunk) ->
+                if (chunk != null) chunk.reference + (if (chunk.section.isNotBlank() && chunk.sourceKind == "document") ", ${chunk.section}" else "") else item.title
+            },
+            pub.sources,
+        )
         return SourceFooter.numbered(labels, chunks.mapNotNull { it.second }, pub.supportive, (kctx?.evidence as? Evidence.Grounded)?.conflict == true, LocalDate.now().year)
     }
 
@@ -1887,7 +1902,7 @@ class SessionCoordinator @Inject constructor(
 
     /** Numbered lines for sources that are not knowledge passages (documents, memory, tool results). */
     private fun plainFooter(pub: Publication): String =
-        SourceFooter.numbered(pub.sources.map { it.title }, emptyList(), pub.supportive, false, LocalDate.now().year)
+        SourceFooter.numbered(PublicationPolicy.distinctLabels(pub.sources.map { it.title }, pub.sources), emptyList(), pub.supportive, false, LocalDate.now().year)
 
     /** Earlier turns, oldest first, with the presentation notes removed (they are not the model's own speech). */
     private fun chatHistoryForSeed(): List<SeedTurn> =

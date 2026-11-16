@@ -31,3 +31,23 @@ package), Documents / summaries / comparisons and Knowledge/Memory focus (`gener
 - `KnowledgeRepository`/`DocumentImportManager` still swallow some internal read errors, so those surface as "absent".
 - BM25 ranking, real tokenizer budget, model profiles, offline guard/trace and the 150-request live benchmark remain open.
 - Verified: JVM tests in `core` (analysed cases, not blind). App wiring is compiled by CI only; nothing is DEVICE VERIFIED.
+
+## M0 closure round (residual P0 findings)
+- Limit formulas ("non so", "non posso verificare") are legitimate only while the clause states no number or proper name; a limit
+  declaration is split from what follows its comma, and "VERIFIED" needs every checkable clause supported.
+- Citations are per passage (`EvidenceItem.id`), never per title; same-title passages stay distinct in text and footer
+  (`distinctLabels`); a claim is supported if ANY equally matching passage passes every check and cites only that one.
+- Coverage extracts publish whole sentences only; a sentence over the budget is skipped and the omission is declared.
+- No sources at all + precise facts (number/date/new proper name) → qualified as unverified model knowledge; general explanations,
+  chit-chat, transforms, calculations and hypotheticals are never qualified. A read error is reported as a read error
+  (the index-open failure in `KnowledgeRepository.gather` is no longer swallowed). `RequestClassifier` treats a request that names a
+  specific thing as factual even without a recognised question formula.
+- Tool-only turns: the model's restatement may not contain a number/name absent from the receipt; otherwise the receipt is rendered verbatim.
+
+### Paths still outside the gate (known, not hidden)
+| Path | Why | Gate to close |
+|---|---|---|
+| `tryRemoteChat` (PC / Core PC) | remote answers are not verified; changing it belongs to the network policy (M3) | M3 |
+| Chat with no retrieved evidence | nothing to verify against; handled only by the unverified-knowledge qualifier for precise facts | M1/P2 |
+| Internal read errors inside `DocumentImportManager` (`runCatching … getOrDefault`) | surface as "no result" | M1 |
+| Semantic paraphrase / NLI | lexical selection + consistency checks only | P2 (disabled unless proven) |

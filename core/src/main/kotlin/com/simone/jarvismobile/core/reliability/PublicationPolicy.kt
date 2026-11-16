@@ -76,8 +76,12 @@ object PublicationPolicy {
                 return Publication(it, PublicationMode.FAITHFUL_EXTRACT, link.sources, true, report, rejected, if (rejected.isEmpty()) "nessuna affermazione verificabile" else "candidato non supportato")
             }
         }
-        return Publication(ABSTAIN_TEXT, PublicationMode.ABSTAIN, pkg.items.distinctBy { it.title }, false, report, rejected, "nessun passaggio pertinente")
+        return Publication(ABSTAIN_TEXT, PublicationMode.ABSTAIN, pkg.items, false, report, rejected, "nessun passaggio pertinente")
     }
+
+    /** Footer labels that stay distinguishable when several passages share a title: the passage id is appended to duplicates only. */
+    fun distinctLabels(labels: List<String>, items: List<EvidenceItem>): List<String> =
+        labels.mapIndexed { i, l -> if (labels.count { it == l } > 1) "$l (brano ${items[i].id})" else l }
 
     /** One revision, with the reason: the rejected propositions are named so the model does not repeat them. */
     fun revisionNote(pub: Publication): String? {
@@ -95,9 +99,10 @@ object PublicationPolicy {
         private val order = ArrayList<EvidenceItem>()
         val citedIds = HashSet<String>()
         val sources: List<EvidenceItem> get() = order.toList()
-        fun mark(ids: List<String>): String = ids.also { citedIds += it }.mapNotNull { pkg.item(it) }.map { it.title }.distinct().joinToString("") { t ->
-            var idx = order.indexOfFirst { it.title == t }
-            if (idx < 0) { order += pkg.items.first { it.title == t }; idx = order.size - 1 }
+        /** Markers are per PASSAGE: two passages that share a title (other section, other document, other version) stay distinct. */
+        fun mark(ids: List<String>): String = ids.also { citedIds += it }.distinct().mapNotNull { pkg.item(it) }.joinToString("") { item ->
+            var idx = order.indexOfFirst { it.id == item.id }
+            if (idx < 0) { order += item; idx = order.size - 1 }
             "[${idx + 1}]"
         }
     }
@@ -159,11 +164,31 @@ object PublicationPolicy {
         return "Dalle fonti: " + top.joinToString(" ") { withMarker(it.text, link.mark(listOf(it.itemId))) }
     }
 
-    /** Summaries/comparisons: the lead sentence of each passage, verbatim, so coverage survives when paraphrases were rejected. */
+    /**
+     * Summaries/comparisons: per passage, the first sentence that fits [COVERAGE_CHARS] COMPLETE, verbatim. A sentence is never cut:
+     * one that does not fit is skipped (a later whole sentence of the same passage may be used), and if a passage has none, its
+     * omission is declared so a partial extract is never read as the full statement.
+     */
     private fun coverageExtract(pkg: EvidencePackage, link: SourceLinks): String {
+        var skipped = 0
         val lines = pkg.items.filter { it.id !in link.citedIds }.take(COVERAGE_ITEMS).mapNotNull { item ->
-            Sentences.split(item.text).firstOrNull()?.take(COVERAGE_CHARS)?.let { withMarker("${item.title}: $it", link.mark(listOf(item.id))) }
+            val whole = Sentences.split(item.text).firstOrNull { it.length <= COVERAGE_CHARS }
+            if (whole == null) { skipped++; null } else withMarker("${item.title}: $whole", link.mark(listOf(item.id)))
         }
-        return if (lines.isEmpty()) "" else "Dai passaggi:\n" + lines.joinToString("\n") { "• $it" }
+        if (lines.isEmpty() && skipped == 0) return ""
+        val note = if (skipped > 0) "\n(Altri $skipped passaggi hanno frasi troppo lunghe per essere riportate per intero: non sono stati riassunti.)" else ""
+        return "Dai passaggi:\n" + lines.joinToString("\n") { "• $it" } + note
+    }
+
+    /**
+     * A tool receipt restated by the model: published as written unless it states a number or a name the receipt does not contain;
+     * then the receipt itself is rendered, verbatim. No new generation, no second verification engine.
+     */
+    fun decideToolOnly(question: String, candidate: String, receipt: EvidencePackage): Publication {
+        val clean = stripCitations(candidate)
+        val report = ClaimVerifier.verifyFigures(question, clean, receipt)
+        if (report.rejected.isEmpty()) return Publication(clean, PublicationMode.VERIFIED, emptyList(), true, report, emptyList(), "dati conformi alla ricevuta")
+        val rendered = receipt.items.joinToString("\n") { it.text }
+        return Publication(rendered, PublicationMode.FAITHFUL_EXTRACT, emptyList(), true, report, report.rejected, "dati non presenti nella ricevuta: reso il risultato dello strumento")
     }
 }
