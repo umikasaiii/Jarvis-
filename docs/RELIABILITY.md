@@ -84,3 +84,17 @@ package), Documents / summaries / comparisons and Knowledge/Memory focus (`gener
 - **Read errors**: personal-memory rewrites fail closed when the archive cannot be read (previously an unreadable file looked empty and was overwritten);
   document reads that answer questions throw `DocumentReadException` instead of returning an empty list (cancellation untouched).
 - Not done in M1: real tokenizer integration; DAO-level instrumented fault injection for documents; durable storage of tool receipts (nothing writes them to memory).
+
+## M1 closure — facts verified in CI (not assumed)
+- **LiteRT-LM 0.14.0 API inspection** (CI step "LiteRT-LM API inspection", `javap -public` on the real AAR): there is NO standalone tokenizer and no way to count the
+  tokens of a text BEFORE sending it. The only token-related public members are `Conversation.getTokenCount(): Int` (tokens of a live conversation),
+  `BenchmarkInfo.getLastPrefillTokenCount()/getLastDecodeTokenCount()` (measured after a turn), `EngineConfig.getMaxNumTokens()`. Consequence: pre-send budgeting stays an
+  ESTIMATE (`TokenEstimator`, class-aware, pessimistic per character class but not a proven bound); measured post-turn counts exist and are NOT yet wired into the ledger
+  (they would have to travel NativeConversation → InferenceSlot → LitertLmEngine → LlmRouter → coordinator; planned together with M3's runtime work). `ContextEvent.measured` is therefore always false today.
+- **Memory archive**: structured records that cannot be decoded are reported (`ParseResult.damaged`) and re-emitted verbatim by every rewrite; legacy bullets and unknown
+  future enum values load normally; writes go through `AtomicTextFile` (temp file + fsync + atomic rename, last good version kept as `.bak`); an unreadable archive blocks the write.
+- **Final prompt**: the assembled message is measured (system + history + whole message + a revision reserve) and evidence is dropped one item at a time (memory first, then later
+  passages; receipts never) until it fits; if the minimum does not fit, the request is refused BEFORE any generation. Sources retrieved but left out are announced as "not used in this
+  request", never as "nothing found"; they are never cited.
+- **Slots**: `tokenLedgers`, `activeSystems`, `activeEpochs`, `injectedContexts` are keyed by slot (FAST and ADVANCED never share a ledger); a slot/model/engine change and a rotation
+  are recorded as reset reasons in the (local, voluntary-export) context diagnostics.
