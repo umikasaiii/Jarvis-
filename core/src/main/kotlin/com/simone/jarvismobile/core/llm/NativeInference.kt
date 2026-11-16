@@ -21,7 +21,13 @@ interface NativeConversation {
      * none or the read failed. Not a prompt size and not a tokenizer: see [TokenMeasurement].
      */
     fun tokenCount(): Int? = null
+
+    /** The runtime's own benchmark of the LAST turn of this conversation (`Conversation.getBenchmarkInfo()`), or null when unavailable/failed. */
+    fun lastTurnBenchmark(): RuntimeBenchmark? = null
 }
+
+/** Figures the runtime reports for its last turn. Names follow the runtime (`getLastPrefillTokenCount`…); their exact semantics are verified only on a device. */
+data class RuntimeBenchmark(val prefillTokens: Int, val decodeTokens: Int, val timeToFirstTokenSeconds: Double, val prefillTokensPerSecond: Double, val decodeTokensPerSecond: Double)
 
 interface NativeEngine {
     /**

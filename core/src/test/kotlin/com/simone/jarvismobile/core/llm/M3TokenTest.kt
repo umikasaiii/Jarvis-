@@ -14,7 +14,8 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class M3TokenTest {
-    private class Conv(val count: () -> Int?) : NativeConversation {
+    private class Conv(val count: () -> Int?, val bench: RuntimeBenchmark? = null) : NativeConversation {
+        override fun lastTurnBenchmark(): RuntimeBenchmark? = bench
         @Volatile var closed = false; val countAfterClose = AtomicInteger()
         override fun send(text: String) = "risposta"
         override fun cancel() {}
@@ -38,6 +39,16 @@ class M3TokenTest {
         assertEquals(4096, m.configuredWindow); assertEquals(1, m.callIndex); assertTrue(m.measured)
         assertEquals(TokenMeasurement.Source.CONVERSATION_COUNT, m.source)
         assertEquals(0, e.convs.sumOf { it.countAfterClose.get() }, "never read after close")
+    }
+
+    @Test fun lastTurnBenchmarkFiguresAreKeptApartFromTheConversationCount() = runBlocking {
+        class E2 : NativeEngine { override fun open(systemPrompt: String?, seed: ChatSeed): NativeConversation = Conv({ 900 }, RuntimeBenchmark(850, 50, 0.4, 300.0, 12.0)); override fun close() {} }
+        val l = TokenLedger("rb")
+        withContext(TokenLedgerContext(l)) { InferenceSlot("fast", E2(), sched, InferenceEventLog(), configuredWindow = 4096).chat("a", "s", 5_000) }
+        assertEquals(900, l.latest()!!.tokens)
+        assertEquals(850, l.latest(TokenMeasurement.Source.LAST_PREFILL_COUNT)!!.tokens)
+        assertEquals(50, l.latest(TokenMeasurement.Source.LAST_DECODE_COUNT)!!.tokens)
+        assertEquals(1, l.all().map { it.callIndex }.distinct().size)
     }
 
     @Test fun aFailedOrMissingMeasurementLeavesTheRequestWithoutOne() = runBlocking {

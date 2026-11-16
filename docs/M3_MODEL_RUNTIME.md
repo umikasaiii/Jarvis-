@@ -6,7 +6,7 @@ Artifact `com.google.ai.edge.litertlm:litertlm-android:0.14.0` (CI step "LiteRT-
 - `BenchmarkInfo.getLastPrefillTokenCount(): int`, `getLastDecodeTokenCount(): int`
 - `EngineConfig.getMaxNumTokens(): Integer`
 - `LiteRtLmJni.nativeConversationGetTokenCount(long)`
-**No** public method pre-tokenises an arbitrary prompt. How a `BenchmarkInfo` instance is obtained was not visible in the filtered log; **it is not integrated** (no API invented). `Conversation.getTokenCount()` IS integrated (see below).
+**No** public method pre-tokenises an arbitrary prompt. The FULL public API dump (CI run 43921473716) shows how a `BenchmarkInfo` is obtained: `Conversation.getBenchmarkInfo()` (Kotlin data class: `getInitTimeInSecond`, `getTimeToFirstTokenInSecond`, `getLastPrefillTokenCount`, `getLastDecodeTokenCount`, `getLastPrefillTokensPerSecond`, `getLastDecodeTokensPerSecond`). `Engine` exposes `createConversation`, `createSession`, `initialize`, `isInitialized`, `getEngineConfig`; `Conversation` exposes `sendMessage*`, `cancelProcess`, `getTokenCount`, `getBenchmarkInfo`, `renderMessageIntoString`, `isAlive`. Both `getTokenCount()` and `getBenchmarkInfo()` are integrated by name lookup, each as its own source (`CONVERSATION_COUNT`, `LAST_PREFILL_COUNT`, `LAST_DECODE_COUNT`); whether the runtime returns usable values for every model/config (benchmark may need to be enabled) can only be seen on a device — a failed read simply leaves no measurement.
 
 ## Token measurements (M3-C) — what the figure is and is not
 - Read in `InferenceSlot.generateOn` right after `conv.send()` returned, on the lane, before anything may close the conversation (never after close; a read that throws → no measurement).

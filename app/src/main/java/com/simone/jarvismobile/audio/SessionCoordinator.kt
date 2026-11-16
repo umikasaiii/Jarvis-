@@ -1997,6 +1997,8 @@ class SessionCoordinator @Inject constructor(
         val nums = HashMap<String, Long>().apply {
             put("estimatedTokens", c.estimatedTokens.toLong()); put("plannedWindow", promptBudget.windowTokens.toLong()); put("attempts", c.ledger.attempts.toLong())
             m?.let { put("measuredTokens", it.tokens.toLong()); it.configuredWindow?.let { w -> put("configuredWindow", w.toLong()) } }
+            c.tokens?.latest(com.simone.jarvismobile.core.llm.TokenMeasurement.Source.LAST_PREFILL_COUNT)?.let { put("prefillTokens", it.tokens.toLong()) }
+            c.tokens?.latest(com.simone.jarvismobile.core.llm.TokenMeasurement.Source.LAST_DECODE_COUNT)?.let { put("decodeTokens", it.tokens.toLong()) }
         }
         com.simone.jarvismobile.net.OfflineGate.trace.llm(c.tokens?.requestId ?: "-", c.slot.name, "tokens", "ok", 0, nums)
     }

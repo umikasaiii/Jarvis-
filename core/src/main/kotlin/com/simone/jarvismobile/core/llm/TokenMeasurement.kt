@@ -26,21 +26,23 @@ data class TokenMeasurement(
     val configuredWindow: Int?,
     val at: Long,
 ) {
-    enum class Source { CONVERSATION_COUNT }
+    enum class Source { CONVERSATION_COUNT, LAST_PREFILL_COUNT, LAST_DECODE_COUNT }
     /** `measured` is true only for runtime-sourced figures; an estimate never reaches this type. */
     val measured: Boolean get() = true
 }
 
 /** Collects the measurements of ONE request (per-request object: no global "last value" that a concurrent request could overwrite). */
-class TokenLedger(val requestId: String, private val capacity: Int = 8) {
+class TokenLedger(val requestId: String, private val capacity: Int = 12) {
     private val items = ArrayList<TokenMeasurement>()
     private val calls = java.util.concurrent.atomic.AtomicInteger(0)
     @Synchronized fun record(m: TokenMeasurement) { if (items.size < capacity) items += m }
     fun nextCallIndex(): Int = calls.incrementAndGet()
     @Synchronized fun all(): List<TokenMeasurement> = items.toList()
     /** The latest figure of the request, or null (measurement missing: the caller keeps its estimate and says measured=false). */
-    @Synchronized fun latest(): TokenMeasurement? = items.lastOrNull()
+    @Synchronized fun latest(source: TokenMeasurement.Source = TokenMeasurement.Source.CONVERSATION_COUNT): TokenMeasurement? = items.lastOrNull { it.source == source }
 }
+
+/** `getLastPrefillTokenCount/getLastDecodeTokenCount` are per-turn figures of the runtime, kept apart from the conversation count; none of them is a tokenizer. */
 
 /** Compares the window JARVIS configured for the runtime with the one ContextBudget plans for, without changing either. */
 object ContextWindowCheck {

@@ -50,7 +50,7 @@ class OfflineTrace(private val capacity: Int = 200, private val now: () -> Long 
         val RESULTS = setOf("ok", "failed", "blocked", "cancelled", "timeout", "wedged", "oom", "missing_file", "unsupported_format", "unsupported_backend", "interrupted", "partial", "unknown", "-")
         val LLM_EVENTS = setOf("load", "unload", "reset", "cancel", "timeout", "generate", "wedged", "oom", "interrupted_load_marker", "residency_park", "tokens")
         val SLOTS = setOf("fast", "advanced", "classifier", "-")
-        val NUMBER_KEYS = setOf("estimatedTokens", "measuredTokens", "configuredWindow", "plannedWindow", "pssBeforeMb", "pssAfterMb", "availMb", "totalMb", "attempts", "turn")
+        val NUMBER_KEYS = setOf("estimatedTokens", "measuredTokens", "configuredWindow", "plannedWindow", "pssBeforeMb", "pssAfterMb", "availMb", "totalMb", "attempts", "turn", "prefillTokens", "decodeTokens")
 
         private fun pick(v: String, allowed: Set<String>) = v.lowercase().takeIf { it in allowed } ?: "other"
 

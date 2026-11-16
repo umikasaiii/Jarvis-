@@ -279,7 +279,11 @@ class InferenceSlot(
                     // to read the runtime's count. A failed read leaves the request without a measurement (the caller keeps its estimate).
                     if (ledger != null) {
                         val n = try { conv.tokenCount() } catch (_: Throwable) { null }
-                        if (n != null && n >= 0) ledger.record(TokenMeasurement(ledger.requestId, label, callEpoch, ledger.nextCallIndex(), kind, TokenMeasurement.Source.CONVERSATION_COUNT, n, configuredWindow, now()))
+                        val idx = ledger.nextCallIndex()
+                        if (n != null && n >= 0) ledger.record(TokenMeasurement(ledger.requestId, label, callEpoch, idx, kind, TokenMeasurement.Source.CONVERSATION_COUNT, n, configuredWindow, now()))
+                        val b = try { conv.lastTurnBenchmark() } catch (_: Throwable) { null }
+                        if (b != null && b.prefillTokens >= 0) ledger.record(TokenMeasurement(ledger.requestId, label, callEpoch, idx, kind, TokenMeasurement.Source.LAST_PREFILL_COUNT, b.prefillTokens, configuredWindow, now()))
+                        if (b != null && b.decodeTokens >= 0) ledger.record(TokenMeasurement(ledger.requestId, label, callEpoch, idx, kind, TokenMeasurement.Source.LAST_DECODE_COUNT, b.decodeTokens, configuredWindow, now()))
                     }
                     out
                 } finally {

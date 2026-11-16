@@ -333,6 +333,15 @@ class LitertLmEngine @Inject constructor(
          * change degrades to "no measurement" instead of a crash; the value's semantics are undocumented and it is never used to size a prompt.
          */
         override fun tokenCount(): Int? = runCatching { (conversation.javaClass.getMethod("getTokenCount").invoke(conversation) as? Int) }.getOrNull()
+
+        /** `Conversation.getBenchmarkInfo()` (public, in the exact AAR's full javap): last-turn prefill/decode counts and speeds; null if the runtime refuses it. */
+        override fun lastTurnBenchmark(): com.simone.jarvismobile.core.llm.RuntimeBenchmark? = runCatching {
+            val info = conversation.javaClass.getMethod("getBenchmarkInfo").invoke(conversation) ?: return@runCatching null
+            val c = info.javaClass
+            fun i(n: String) = c.getMethod(n).invoke(info) as Int
+            fun d(n: String) = c.getMethod(n).invoke(info) as Double
+            com.simone.jarvismobile.core.llm.RuntimeBenchmark(i("getLastPrefillTokenCount"), i("getLastDecodeTokenCount"), d("getTimeToFirstTokenInSecond"), d("getLastPrefillTokensPerSecond"), d("getLastDecodeTokensPerSecond"))
+        }.getOrNull()
         override fun cancel() {
             conversation.cancelProcess()
         }
