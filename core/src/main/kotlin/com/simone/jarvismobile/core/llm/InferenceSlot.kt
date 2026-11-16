@@ -41,6 +41,8 @@ class InferenceSlot(
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val onGenerating: (Boolean) -> Unit = {},
     private val onWedged: (InferenceSlot) -> Unit = {},
+    /** `maxNumTokens` the runtime engine of this slot was configured with (recorded with every measurement), or null if unknown. */
+    val configuredWindow: Int? = null,
 ) {
     private val lane = Mutex()
 
@@ -244,6 +246,8 @@ class InferenceSlot(
     /** The blocking native call, with the three stop paths wired to the native cancel. */
     private suspend fun generateOn(conv: NativeConversation, text: String, timeoutMs: Long, kind: String): String {
         val ticket = Ticket(conv)
+        val ledger = kotlin.coroutines.coroutineContext[TokenLedgerContext]?.ledger
+        val callEpoch = epoch
         active.set(ticket)
         onGenerating(true)
         val cancelTimer = scheduler.schedule(timeoutMs) { ticket.stop(StopReason.TIMEOUT) }
@@ -271,6 +275,12 @@ class InferenceSlot(
                         }
                     }
                     ticket.controller.throwIfStopped()
+                    // Same lane, the native call has returned and nothing can close `conv` before this function returns: the only safe moment
+                    // to read the runtime's count. A failed read leaves the request without a measurement (the caller keeps its estimate).
+                    if (ledger != null) {
+                        val n = try { conv.tokenCount() } catch (_: Throwable) { null }
+                        if (n != null && n >= 0) ledger.record(TokenMeasurement(ledger.requestId, label, callEpoch, ledger.nextCallIndex(), kind, TokenMeasurement.Source.CONVERSATION_COUNT, n, configuredWindow, now()))
+                    }
                     out
                 } finally {
                     watcher.cancel()
@@ -355,4 +365,9 @@ class InferenceSlot(
             }
         }
     }
+}
+
+/** Carries the request's [TokenLedger] into the inference slot (same mechanism as [com.simone.jarvismobile.core.reliability.AttemptBudget]). */
+class TokenLedgerContext(val ledger: TokenLedger) : kotlin.coroutines.AbstractCoroutineContextElement(Key) {
+    companion object Key : kotlin.coroutines.CoroutineContext.Key<TokenLedgerContext>
 }

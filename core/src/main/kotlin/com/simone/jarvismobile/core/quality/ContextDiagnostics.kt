@@ -6,12 +6,19 @@ data class ContextEvent(
     val slot: String,
     val windowTokens: Int,
     val estimatedTokens: Int,
-    /** True only if the figure came from a real tokenizer; with LiteRT-LM 0.14.0 this is always false. */
+    /**
+     * True only when [measuredTokens] holds a figure the RUNTIME reported for this request (LiteRT-LM `Conversation.getTokenCount()`, read after the turn).
+     * It is never a pre-tokenisation of the prompt: [estimatedTokens] stays the figure the context budget plans with, and the two are not mixed.
+     */
     val measured: Boolean,
     val droppedItems: Int,
     val reset: String,
     val generations: Int,
     val outcome: String,
+    /** The runtime's own post-turn conversation token count (semantics undocumented), or null when none was obtained. */
+    val measuredTokens: Int? = null,
+    /** `maxNumTokens` the runtime was configured with for that slot; null when unknown. */
+    val configuredWindow: Int? = null,
 )
 
 /** Bounded, in-memory, local: nothing leaves the device unless the user exports it. */

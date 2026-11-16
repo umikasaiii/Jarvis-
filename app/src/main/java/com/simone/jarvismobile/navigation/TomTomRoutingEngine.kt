@@ -1,5 +1,6 @@
 package com.simone.jarvismobile.navigation
 
+import com.simone.jarvismobile.net.guarded
 import android.util.Log
 import com.simone.jarvismobile.core.navigation.Geo
 import com.simone.jarvismobile.core.navigation.LatLng
@@ -50,7 +51,7 @@ class TomTomRoutingEngine @Inject constructor(
     private val keyStore: TrafficApiKeyStore,
 ) {
     private val client by lazy {
-        OkHttpClient.Builder()
+        OkHttpClient.Builder().guarded(com.simone.jarvismobile.core.net.NetOperation.MAP_ROUTING)
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(20, TimeUnit.SECONDS)
             .build()

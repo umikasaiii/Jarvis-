@@ -1,5 +1,6 @@
 package com.simone.jarvismobile.weather
 
+import com.simone.jarvismobile.net.guarded
 import android.util.Log
 import com.simone.jarvismobile.core.weather.ForecastFacts
 import com.simone.jarvismobile.core.weather.ForecastFactsBuilder
@@ -138,7 +139,7 @@ class OpenMeteoWeatherSource @Inject constructor() : WeatherSource {
     internal var baseUrl: String = DEFAULT_BASE_URL
 
     private val client: OkHttpClient by lazy {
-        OkHttpClient.Builder()
+        OkHttpClient.Builder().guarded(com.simone.jarvismobile.core.net.NetOperation.WEATHER)
             .connectTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .readTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .build()

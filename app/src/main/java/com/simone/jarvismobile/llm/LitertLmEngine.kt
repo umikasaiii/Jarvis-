@@ -57,6 +57,7 @@ class LitertLmEngine @Inject constructor(
     private val diagnostics: InferenceDiagnostics,
     private val loadGuard: ModelLoadGuard,
     private val settings: com.simone.jarvismobile.data.SettingsRepository,
+    private val profiles: ModelProfileStore,
 ) : LlmEngine {
 
     /** The shared, content-free event trail (also used by the turn ledger). */
@@ -123,6 +124,7 @@ class LitertLmEngine @Inject constructor(
             return true
         }
         val started = System.currentTimeMillis()
+        profiles.syncInterrupted() // loads the PREVIOUS process did not survive are recorded on their profiles (idempotent)
         note(InferenceEventType.LOAD_START)
         _loadState.value = LlmLoadState.LOADING
         // Retire the old engine WITHOUT closing it under a running generation: the slot closes it itself once
@@ -157,6 +159,13 @@ class LitertLmEngine @Inject constructor(
                 outcome = if (ok) com.simone.jarvismobile.core.llm.LoadReport.Outcome.LOADED else com.simone.jarvismobile.core.llm.LoadReport.Outcome.FAILED,
                 error = error, experimentalMode = experimental,
             )
+            // M3: the profile registry and the content-free trace learn what REALLY happened (no path, no text)
+            val ms = System.currentTimeMillis() - started
+            profiles.noteLoad(modelPath, label, ok, error, ms, MAX_CONTEXT_TOKENS, before.pssBytes, after.pssBytes, before.totalBytes)
+            com.simone.jarvismobile.net.OfflineGate.trace.llm(
+                "-", label, "load", if (ok) "ok" else loadFailureCategory(error), ms,
+                mapOf("pssBeforeMb" to maxOf(0L, before.pssBytes) / (1024 * 1024), "pssAfterMb" to maxOf(0L, after.pssBytes) / (1024 * 1024), "totalMb" to maxOf(0L, before.totalBytes) / (1024 * 1024), "configuredWindow" to MAX_CONTEXT_TOKENS.toLong()),
+            )
         }
         return try {
             val file = File(modelPath)
@@ -188,6 +197,7 @@ class LitertLmEngine @Inject constructor(
                 log = diagnostics.log,
                 onGenerating = { _generating.value = it },
                 onWedged = { wedgedSlot -> engineScope.launch { recoverFromWedge(wedgedSlot) } },
+                configuredWindow = MAX_CONTEXT_TOKENS,
             )
             loadedPath = modelPath
             loadedName = modelName
@@ -243,6 +253,7 @@ class LitertLmEngine @Inject constructor(
         loadedPath = null
         old?.shutdown()
         note(InferenceEventType.UNLOAD)
+        com.simone.jarvismobile.net.OfflineGate.trace.llm("-", label, "unload", "ok")
     }
 
     override suspend fun generate(prompt: String, timeoutSeconds: Long): String? =
@@ -258,18 +269,21 @@ class LitertLmEngine @Inject constructor(
         runOnSlot { it.chat(userText, systemPrompt, timeoutSeconds * 1000L, seed) }
 
     override fun resetConversation() {
+        com.simone.jarvismobile.net.OfflineGate.trace.llm("-", label, "reset", "ok")
         // Safe at any time: if a generation is running the slot defers the native close until it returned.
         slot?.reset("api")
     }
 
     override fun cancel() {
+        com.simone.jarvismobile.net.OfflineGate.trace.llm("-", label, "cancel", "cancelled")
         slot?.cancel()
     }
 
     private suspend fun runOnSlot(block: suspend (InferenceSlot) -> String?): String? {
         val s = slot ?: return null
+        val t0 = System.currentTimeMillis()
         return try {
-            block(s)
+            block(s).also { answer -> profiles.noteInference(loadedPath, answer != null, System.currentTimeMillis() - t0) }
         } catch (e: CancellationException) {
             throw e
         } catch (e: GenerationTimedOut) {
@@ -313,6 +327,12 @@ class LitertLmEngine @Inject constructor(
     private class LiteRtNativeConversation(private val conversation: Conversation) : NativeConversation {
         // sendMessage returns a Message; toString() concatenates its text Contents. Blocking JNI call.
         override fun send(text: String): String = conversation.sendMessage(text).toString()
+
+        /**
+         * `Conversation.getTokenCount()` — present in the exact AAR (litertlm-android 0.14.0, javap in CI). Called by reflection so a future signature
+         * change degrades to "no measurement" instead of a crash; the value's semantics are undocumented and it is never used to size a prompt.
+         */
+        override fun tokenCount(): Int? = runCatching { (conversation.javaClass.getMethod("getTokenCount").invoke(conversation) as? Int) }.getOrNull()
         override fun cancel() {
             conversation.cancelProcess()
         }
@@ -320,6 +340,15 @@ class LitertLmEngine @Inject constructor(
         override fun close() {
             conversation.close()
         }
+    }
+
+    /** Failure CATEGORY for the trace: the runtime message itself is never stored there. */
+    private fun loadFailureCategory(error: String?): String = when {
+        error == null -> "failed"
+        error.contains("model_file_missing") -> "missing_file"
+        error.contains("OutOfMemory", ignoreCase = true) -> "oom"
+        error.contains("busy") -> "timeout"
+        else -> "failed"
     }
 
     private companion object {

@@ -1,5 +1,6 @@
 package com.simone.jarvismobile.navigation
 
+import com.simone.jarvismobile.net.guarded
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
@@ -75,7 +76,7 @@ class RegionManager @Inject constructor(
     @Volatile private var downloadJob: Job? = null
     @Volatile private var currentCall: Call? = null
     private val httpClient: OkHttpClient by lazy {
-        OkHttpClient.Builder()
+        OkHttpClient.Builder().guarded(com.simone.jarvismobile.core.net.NetOperation.MAP_REGION_DOWNLOAD)
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .build()

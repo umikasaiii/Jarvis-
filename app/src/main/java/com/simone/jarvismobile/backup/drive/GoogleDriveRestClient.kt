@@ -1,5 +1,6 @@
 package com.simone.jarvismobile.backup.drive
 
+import com.simone.jarvismobile.net.guarded
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -55,7 +56,7 @@ sealed interface DriveResult<out T> {
 class GoogleDriveRestClient @Inject constructor() {
 
     private val client: OkHttpClient by lazy {
-        OkHttpClient.Builder()
+        OkHttpClient.Builder().guarded(com.simone.jarvismobile.core.net.NetOperation.BACKUP_DRIVE)
             .connectTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .readTimeout(UPLOAD_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .writeTimeout(UPLOAD_TIMEOUT_SECONDS, TimeUnit.SECONDS)

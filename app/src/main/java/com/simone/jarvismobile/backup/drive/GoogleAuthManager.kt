@@ -1,5 +1,6 @@
 package com.simone.jarvismobile.backup.drive
 
+import com.simone.jarvismobile.net.guarded
 import android.content.Context
 import android.content.Intent
 import android.util.Log
@@ -48,7 +49,7 @@ class GoogleAuthManager @Inject constructor(
     private val store: DriveCredentialStore,
 ) {
     private val client: OkHttpClient by lazy {
-        OkHttpClient.Builder()
+        OkHttpClient.Builder().guarded(com.simone.jarvismobile.core.net.NetOperation.AUTH)
             .connectTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .readTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .build()

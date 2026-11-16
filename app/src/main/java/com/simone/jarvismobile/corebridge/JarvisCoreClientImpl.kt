@@ -1,5 +1,6 @@
 package com.simone.jarvismobile.corebridge
 
+import com.simone.jarvismobile.net.guarded
 import android.util.Log
 import com.simone.jarvismobile.data.SettingsRepository
 import kotlinx.coroutines.CancellationException
@@ -73,7 +74,7 @@ class JarvisCoreClientImpl @Inject constructor(
 
     private suspend fun clientFor(timeoutMsOverride: Long? = null): OkHttpClient {
         val timeoutMs = timeoutMsOverride ?: settings.coreTimeoutMs.first().toLong()
-        return OkHttpClient.Builder()
+        return OkHttpClient.Builder().guarded(com.simone.jarvismobile.core.net.NetOperation.CORE_REMOTE_CHAT)
             .connectTimeout(timeoutMs, TimeUnit.MILLISECONDS)
             .readTimeout(timeoutMs, TimeUnit.MILLISECONDS)
             .writeTimeout(timeoutMs, TimeUnit.MILLISECONDS)

@@ -18,6 +18,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -29,6 +30,7 @@ import javax.inject.Inject
 class JarvisApplication : Application() {
 
     @Inject lateinit var widgetUpdater: JarvisWidgetUpdater
+    @Inject lateinit var settingsForOfflineGate: com.simone.jarvismobile.data.SettingsRepository
     @Inject lateinit var inferenceDiagnostics: com.simone.jarvismobile.llm.InferenceDiagnostics
     @Inject lateinit var backupScheduler: BackupScheduler
     @Inject lateinit var backupRepository: BackupRepository
@@ -66,6 +68,15 @@ class JarvisApplication : Application() {
         // above) — the one startup phase this recorder honestly cannot
         // observe if IT is what fails (§7).
         StartupDiagnostics.checkpoint(Checkpoint.HILT_READY)
+        // M3-D: the offline gate is FAIL-CLOSED until the persisted mode is known. Read it before anything that can touch the network starts
+        // (bounded: a slow store must not block start-up; on timeout the gate stays closed until the first emission below).
+        runCatching {
+            val m = kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) { kotlinx.coroutines.withTimeoutOrNull(1_500) { settingsForOfflineGate.offlineMode.first() } }
+            if (m != null) com.simone.jarvismobile.net.OfflineGate.initialise(m)
+        }
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO).launch {
+            settingsForOfflineGate.offlineMode.collect { com.simone.jarvismobile.net.OfflineGate.initialise(it) }
+        }
         // HOTFIX 3: content-free LLM/lifecycle trail (process start, boot counter, previous exit reason).
         runCatching { inferenceDiagnostics.install(this) }
         createListeningChannel()

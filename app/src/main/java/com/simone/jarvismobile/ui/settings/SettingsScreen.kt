@@ -1127,6 +1127,7 @@ private fun CoreSettingsSection(
     viewModel: CoreSettingsViewModel = hiltViewModel(),
 ) {
     val coreEnabled by viewModel.coreEnabled.collectAsStateWithLifecycle()
+    val strictOffline by viewModel.strictOffline.collectAsStateWithLifecycle()
     val coreHost by viewModel.coreHost.collectAsStateWithLifecycle()
     val corePort by viewModel.corePort.collectAsStateWithLifecycle()
     val coreHttps by viewModel.coreHttps.collectAsStateWithLifecycle()
@@ -1148,6 +1149,12 @@ private fun CoreSettingsSection(
 
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            SwitchRow("Solo offline (nessuna richiesta di rete)", strictOffline, viewModel::setStrictOffline)
+            Text(
+                "Acceso: JARVIS non fa NESSUNA richiesta di rete (Core PC, meteo, mappe online, backup su Drive, scarichi), qualunque cosa sia abilitata qui sotto. " +
+                    "Non controlla le app esterne avviate da JARVIS né i componenti di Google Play services.",
+                style = MaterialTheme.typography.bodySmall,
+            )
             SwitchRow("Abilita Core", coreEnabled, viewModel::setCoreEnabled)
             Text(
                 "Un JARVIS Core acceso sulla stessa rete locale può rispondere al posto del " +

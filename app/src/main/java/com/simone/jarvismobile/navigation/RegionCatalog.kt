@@ -1,5 +1,6 @@
 package com.simone.jarvismobile.navigation
 
+import com.simone.jarvismobile.net.guarded
 import android.util.Log
 import com.simone.jarvismobile.data.SettingsRepository
 import kotlinx.coroutines.Dispatchers
@@ -41,7 +42,7 @@ class RegionCatalogRepository @Inject constructor(
     private val settings: SettingsRepository,
 ) {
     private val client by lazy {
-        OkHttpClient.Builder().connectTimeout(20, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS).build()
+        OkHttpClient.Builder().guarded(com.simone.jarvismobile.core.net.NetOperation.MAP_CATALOG).connectTimeout(20, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS).build()
     }
 
     suspend fun manifestUrl(): String = settings.navManifestUrl.first()

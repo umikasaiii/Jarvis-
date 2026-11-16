@@ -202,6 +202,7 @@ class SettingsRepository @Inject constructor(
         // pairing futuro va in un EncryptedSharedPreferences dedicato (§ docs/SECURITY.md),
         // mai in questo DataStore in chiaro — vedi corebridge/CorePairingCredentialStore.kt.
         val CORE_ENABLED = booleanPreferencesKey("core_enabled")
+        val OFFLINE_MODE = stringPreferencesKey("offline_mode")
         val CORE_HOST = stringPreferencesKey("core_host")
         val CORE_PORT = intPreferencesKey("core_port")
         val CORE_HTTPS = booleanPreferencesKey("core_https")
@@ -1348,6 +1349,17 @@ class SettingsRepository @Inject constructor(
     // qui in chiaro.
 
     /** Interruttore principale: se spento, l'app non tenta mai di raggiungere il Core. */
+    /** M3-D: STRICT_OFFLINE = JARVIS makes no network request at all; EXPLICIT_ONLINE (default) = only the integrations the user switched on. */
+    val offlineMode: Flow<com.simone.jarvismobile.core.net.OfflineMode> =
+        context.settingsDataStore.data.map { p ->
+            runCatching { com.simone.jarvismobile.core.net.OfflineMode.valueOf(p[Keys.OFFLINE_MODE] ?: "") }.getOrDefault(com.simone.jarvismobile.core.net.OfflineMode.EXPLICIT_ONLINE)
+        }
+
+    suspend fun setOfflineMode(value: com.simone.jarvismobile.core.net.OfflineMode) {
+        context.settingsDataStore.edit { it[Keys.OFFLINE_MODE] = value.name }
+        com.simone.jarvismobile.net.OfflineGate.initialise(value) // the gate follows at once, not at the next start
+    }
+
     val coreEnabled: Flow<Boolean> =
         context.settingsDataStore.data.map { it[Keys.CORE_ENABLED] ?: false }
 

@@ -1791,9 +1791,11 @@ class SessionCoordinator @Inject constructor(
         var retried = false
         var attempts = 0
         val attemptLedger = AttemptLedger(nativeCounting = true)
+        // M3: one token ledger per request (runtime-reported counts of THIS request's generations; never a shared "last value")
+        val tokenLedger = com.simone.jarvismobile.core.llm.TokenLedger(java.util.UUID.randomUUID().toString())
         var lastSystemChars = system.length
         val outcome = try {
-            kotlinx.coroutines.withContext(AttemptBudget(attemptLedger)) { ValidatedGeneration.run(
+            kotlinx.coroutines.withContext(AttemptBudget(attemptLedger) + com.simone.jarvismobile.core.llm.TokenLedgerContext(tokenLedger)) { ValidatedGeneration.run(
                 question = transcript,
                 earlierAnswers = earlierAnswers,
                 earlierQuestions = earlierQuestions,
@@ -1859,7 +1861,7 @@ class SessionCoordinator @Inject constructor(
             return publishChatTurn(
                 ChatPublicationContext(
                     question = transcript, kind = requestKind, pkg = pkg, kctx = knowledgeCtx, docBlocks = docBlocks,
-                    retrievalFailed = retrievalFailed, ledger = attemptLedger, slot = slot, message = message, notes = notes, seed = seed,
+                    retrievalFailed = retrievalFailed, ledger = attemptLedger, tokens = tokenLedger, slot = slot, message = message, notes = notes, seed = seed,
                     receipts = receipts, excludedByBudget = excludedByBudget,
                     estimatedTokens = measured.estTotal, droppedItems = contextFit.droppedIds.size + finalDrops,
                     verify = pkg.has(EvidenceKind.KNOWLEDGE) || pkg.has(EvidenceKind.DOCUMENT) || (storedFact && pkg.has(EvidenceKind.MEMORY)),
@@ -1887,6 +1889,7 @@ class SessionCoordinator @Inject constructor(
         val docBlocks: List<com.simone.jarvismobile.core.document.EvidenceBlock>,
         val retrievalFailed: Boolean,
         val ledger: AttemptLedger,
+        val tokens: com.simone.jarvismobile.core.llm.TokenLedger?,
         val slot: ModelSlot,
         val message: String,
         val notes: List<String>,
@@ -1931,7 +1934,7 @@ class SessionCoordinator @Inject constructor(
                     val sys = buildSystem(c.notes).also { activeSystems[c.slot] = it; activeEpochs[c.slot] = router.conversationEpoch(c.slot) }
                     c.ledger.plan(cause)
                     try {
-                        kotlinx.coroutines.withContext(AttemptBudget(c.ledger)) { chatModel(note + "\n" + c.message, sys, c.slot, c.seed) }
+                        kotlinx.coroutines.withContext(AttemptBudget(c.ledger) + (c.tokens?.let { com.simone.jarvismobile.core.llm.TokenLedgerContext(it) } ?: kotlin.coroutines.EmptyCoroutineContext)) { chatModel(note + "\n" + c.message, sys, c.slot, c.seed) }
                             ?.let(AssistantReplyCleaner::clean)
                     } catch (_: LlmGenerationTimeoutException) { null }
                 },
@@ -1982,13 +1985,20 @@ class SessionCoordinator @Inject constructor(
     }
 
     private fun recordContext(c: ChatPublicationContext, outcome: String) {
+        val m = c.tokens?.latest()
         contextDiag.record(
             ContextEvent(
                 at = System.currentTimeMillis(), slot = c.slot.name, windowTokens = promptBudget.windowTokens, estimatedTokens = c.estimatedTokens,
-                measured = false, droppedItems = c.droppedItems, reset = turnResets.joinToString("+").ifEmpty { "none" },
-                generations = c.ledger.attempts, outcome = outcome,
+                measured = m != null, droppedItems = c.droppedItems, reset = turnResets.joinToString("+").ifEmpty { "none" },
+                generations = c.ledger.attempts, outcome = outcome, measuredTokens = m?.tokens, configuredWindow = m?.configuredWindow,
             ),
         )
+        // content-free trace: the ESTIMATE and the runtime MEASUREMENT side by side, never merged
+        val nums = HashMap<String, Long>().apply {
+            put("estimatedTokens", c.estimatedTokens.toLong()); put("plannedWindow", promptBudget.windowTokens.toLong()); put("attempts", c.ledger.attempts.toLong())
+            m?.let { put("measuredTokens", it.tokens.toLong()); it.configuredWindow?.let { w -> put("configuredWindow", w.toLong()) } }
+        }
+        com.simone.jarvismobile.net.OfflineGate.trace.llm(c.tokens?.requestId ?: "-", c.slot.name, "tokens", "ok", 0, nums)
     }
 
     private fun uncoveredNote(kctx: KnowledgeContext?): String =

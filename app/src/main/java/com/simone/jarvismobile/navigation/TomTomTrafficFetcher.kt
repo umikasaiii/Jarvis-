@@ -1,5 +1,6 @@
 package com.simone.jarvismobile.navigation
 
+import com.simone.jarvismobile.net.guarded
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -36,7 +37,7 @@ class TomTomTrafficFetcher @Inject constructor(
     private val keyStore: TrafficApiKeyStore,
 ) {
     private val client by lazy {
-        OkHttpClient.Builder()
+        OkHttpClient.Builder().guarded(com.simone.jarvismobile.core.net.NetOperation.MAP_TRAFFIC)
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(15, TimeUnit.SECONDS)
             .build()

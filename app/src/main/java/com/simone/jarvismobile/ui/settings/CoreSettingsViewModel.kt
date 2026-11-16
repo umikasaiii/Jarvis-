@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -35,6 +36,14 @@ class CoreSettingsViewModel @Inject constructor(
     private val connectionManager: CoreConnectionManager,
     private val routingContext: AiRoutingContextProvider,
 ) : ViewModel() {
+
+    /** M3-D: true = STRICT_OFFLINE (JARVIS makes no network request at all, whatever is enabled below). */
+    val strictOffline: StateFlow<Boolean> =
+        settings.offlineMode.map { it == com.simone.jarvismobile.core.net.OfflineMode.STRICT_OFFLINE }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    fun setStrictOffline(on: Boolean) {
+        viewModelScope.launch { settings.setOfflineMode(if (on) com.simone.jarvismobile.core.net.OfflineMode.STRICT_OFFLINE else com.simone.jarvismobile.core.net.OfflineMode.EXPLICIT_ONLINE) }
+    }
 
     val coreEnabled: StateFlow<Boolean> =
         settings.coreEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)

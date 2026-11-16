@@ -1,5 +1,6 @@
 package com.simone.jarvismobile.navigation
 
+import com.simone.jarvismobile.net.guarded
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -33,7 +34,7 @@ import javax.inject.Singleton
 @Singleton
 class OnlineMapStyleFetcher @Inject constructor() {
     private val client by lazy {
-        OkHttpClient.Builder()
+        OkHttpClient.Builder().guarded(com.simone.jarvismobile.core.net.NetOperation.MAP_STYLE_ONLINE)
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(15, TimeUnit.SECONDS)
             .build()

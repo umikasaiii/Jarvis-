@@ -15,6 +15,12 @@ interface NativeConversation {
     fun send(text: String): String
     fun cancel()
     fun close()
+
+    /**
+     * The runtime's own token count for THIS conversation, read right after a [send] returned (never after [close]); null when the runtime offers
+     * none or the read failed. Not a prompt size and not a tokenizer: see [TokenMeasurement].
+     */
+    fun tokenCount(): Int? = null
 }
 
 interface NativeEngine {

@@ -63,6 +63,11 @@ class TranslationModelManager @Inject constructor() {
         langs.all { isDownloaded(it) }
 
     suspend fun download(lang: TranslationLanguage, wifiOnly: Boolean): Boolean = withContext(Dispatchers.IO) {
+        // ML Kit performs this download inside Google Play services (outside JARVIS's HTTP clients), so the initiation is gated here
+        if (!com.simone.jarvismobile.net.OfflineGate.allows(com.simone.jarvismobile.core.net.NetOperation.TRANSLATION_MODEL_DOWNLOAD)) {
+            set(lang, ModelStatus.ERROR)
+            return@withContext false
+        }
         set(lang, ModelStatus.DOWNLOADING)
         val conditions = DownloadConditions.Builder().apply { if (wifiOnly) requireWifi() }.build()
         val ok = runCatching { manager.download(model(lang), conditions).awaitResult(); true }

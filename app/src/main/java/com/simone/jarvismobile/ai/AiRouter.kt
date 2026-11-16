@@ -158,7 +158,7 @@ class AiRouter @Inject constructor(
      */
     suspend fun attemptRemoteOnly(request: AiRequest): RemoteAttempt {
         val prefs = routingContext.preferencesFor(request.requestType)
-        val decision = AiRoutingHeuristic.decide(request.requestType, prefs)
+        val decision = strictOffline(AiRoutingHeuristic.decide(request.requestType, prefs))
         if (decision.target == AiExecutionTarget.LOCAL) {
             return RemoteAttempt(decision, prefs, RemoteAttemptOutcome.NOT_ATTEMPTED)
         }
@@ -236,7 +236,17 @@ class AiRouter @Inject constructor(
         if (target == AiExecutionTarget.REMOTE_BRAIN) copy(preferredModel = "brain") else this
 
     private suspend fun decide(requestType: AiRequestType): AiRouteDecision =
-        AiRoutingHeuristic.decide(requestType, routingContext.preferencesFor(requestType))
+        strictOffline(AiRoutingHeuristic.decide(requestType, routingContext.preferencesFor(requestType)))
+
+    /**
+     * M3-D: in STRICT_OFFLINE a remote target is replaced by LOCAL here (clean routing, traced) — and, independently, the OkHttp interceptor of the Core
+     * client would still refuse the call. Never a silent fallback in the other direction: LOCAL is the declared offline path.
+     */
+    private fun strictOffline(d: AiRouteDecision): AiRouteDecision {
+        if (d.target == AiExecutionTarget.LOCAL) return d
+        return if (com.simone.jarvismobile.net.OfflineGate.allows(com.simone.jarvismobile.core.net.NetOperation.CORE_REMOTE_CHAT)) d
+        else AiRouteDecision(AiExecutionTarget.LOCAL, "strict_offline")
+    }
 
     private companion object {
         const val TAG = "AiRouter"

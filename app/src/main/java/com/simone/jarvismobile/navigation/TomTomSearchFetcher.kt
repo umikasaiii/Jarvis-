@@ -1,5 +1,6 @@
 package com.simone.jarvismobile.navigation
 
+import com.simone.jarvismobile.net.guarded
 import android.util.Log
 import com.simone.jarvismobile.core.navigation.LatLng
 import com.simone.jarvismobile.core.navigation.Place
@@ -38,7 +39,7 @@ class TomTomSearchFetcher @Inject constructor(
     private val keyStore: TrafficApiKeyStore,
 ) {
     private val client by lazy {
-        OkHttpClient.Builder()
+        OkHttpClient.Builder().guarded(com.simone.jarvismobile.core.net.NetOperation.MAP_SEARCH)
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(15, TimeUnit.SECONDS)
             .build()

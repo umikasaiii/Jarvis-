@@ -55,7 +55,7 @@ jobs:
           arch: x86_64
           target: google_apis
           script: |
-            ./gradlew --no-daemon :app:connectedDebugAndroidTest -Pjarvis.emulatorAbi=x86_64 -Pandroid.testInstrumentationRunnerArguments.class=com.simone.jarvismobile.background.JarvisMigrationInstrumentedTest,com.simone.jarvismobile.archive.NotesStoreInstrumentedTest,com.simone.jarvismobile.document.DocumentPipelineInstrumentedTest,com.simone.jarvismobile.offlinehub.OfflineHubIntentInstrumentedTest,com.simone.jarvismobile.reliability.DailyReliabilityInstrumentedTest,com.simone.jarvismobile.reliability.CrossModuleInstrumentedTest,com.simone.jarvismobile.regex.ParserInitInstrumentedTest,com.simone.jarvismobile.regex.ConversationRoutingInstrumentedTest,com.simone.jarvismobile.background.AssistantQueueRecoveryInstrumentedTest,com.simone.jarvismobile.quality.QualityAssetInstrumentedTest,com.simone.jarvismobile.knowledge.ZimModernArchiveInstrumentedTest,com.simone.jarvismobile.knowledge.KnowledgeIndexInstrumentedTest,com.simone.jarvismobile.knowledge.KnowledgeIndexBenchInstrumentedTest,com.simone.jarvismobile.audio.SessionCoordinatorPublicationInstrumentedTest,com.simone.jarvismobile.audio.ConversationStateInstrumentedTest,com.simone.jarvismobile.audio.M1ClosureInstrumentedTest,com.simone.jarvismobile.knowledge.M2RetrievalInstrumentedTest,com.simone.jarvismobile.knowledge.KnowledgeRepositoryInstrumentedTest
+            ./gradlew --no-daemon :app:connectedDebugAndroidTest -Pjarvis.emulatorAbi=x86_64 -Pandroid.testInstrumentationRunnerArguments.class=com.simone.jarvismobile.background.JarvisMigrationInstrumentedTest,com.simone.jarvismobile.archive.NotesStoreInstrumentedTest,com.simone.jarvismobile.document.DocumentPipelineInstrumentedTest,com.simone.jarvismobile.offlinehub.OfflineHubIntentInstrumentedTest,com.simone.jarvismobile.reliability.DailyReliabilityInstrumentedTest,com.simone.jarvismobile.reliability.CrossModuleInstrumentedTest,com.simone.jarvismobile.regex.ParserInitInstrumentedTest,com.simone.jarvismobile.regex.ConversationRoutingInstrumentedTest,com.simone.jarvismobile.background.AssistantQueueRecoveryInstrumentedTest,com.simone.jarvismobile.quality.QualityAssetInstrumentedTest,com.simone.jarvismobile.knowledge.ZimModernArchiveInstrumentedTest,com.simone.jarvismobile.knowledge.KnowledgeIndexInstrumentedTest,com.simone.jarvismobile.knowledge.KnowledgeIndexBenchInstrumentedTest,com.simone.jarvismobile.audio.SessionCoordinatorPublicationInstrumentedTest,com.simone.jarvismobile.audio.ConversationStateInstrumentedTest,com.simone.jarvismobile.audio.M1ClosureInstrumentedTest,com.simone.jarvismobile.knowledge.M2RetrievalInstrumentedTest,com.simone.jarvismobile.knowledge.KnowledgeRepositoryInstrumentedTest,com.simone.jarvismobile.net.M3OfflineInstrumentedTest,com.simone.jarvismobile.audio.M3RuntimeInstrumentedTest
             adb logcat -d -s JarvisBench:I > app/build/jarvis_bench_emulator.txt || true
       - name: LiteRT-LM API inspection (read-only; looks for a tokenizer / token counter)
         if: always()
@@ -67,6 +67,10 @@ jobs:
             for c in $(unzip -l classes.jar | awk '{print $4}' | grep -E '\.class$' | grep -v '\$' | sed 's/\.class$//;s#/#.#g'); do
               out=$(javap -public -cp classes.jar "$c" 2>/dev/null | grep -i -E 'token|count' || true)
               if [ -n "$out" ]; then echo "== $c"; echo "$out"; fi
+            done
+            echo "---- full public API of the classes M3 relies on (exact AAR above) ----"
+            for c in Conversation BenchmarkInfo Engine EngineConfig ConversationConfig SamplerConfig; do
+              echo "== FULL com.google.ai.edge.litertlm.$c"; javap -public -cp classes.jar com.google.ai.edge.litertlm.$c 2>&1 | head -60
             done
           fi
       - name: Test results summary (failures with their messages)
