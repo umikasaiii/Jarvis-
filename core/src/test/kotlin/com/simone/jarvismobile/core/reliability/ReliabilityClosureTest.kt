@@ -58,14 +58,22 @@ class ReliabilityClosureTest {
         assertTrue(Regex("13 litri \\[1].*8 ore \\[2]").containsMatchIn(pub.text), pub.text)
     }
 
-    @Test fun incompatibleSameTitlePassagesPointOnlyToTheOneThatSupports() {
+    @Test fun equallyRelevantPassagesThatDisagreeAreNotPublishedAsOneVersionOfTheFact() {
         val ev = EvidencePackage.of(listOf(
             raw("Scheda", "Il peso è di 300 grammi.", "0"),
             raw("Scheda", "Il peso è di 450 grammi.", "1"),
         ))
         val pub = PublicationPolicy.decide("Quanto pesa?", "Il peso è di 450 grammi.", ev)
-        assertEquals(listOf("E2"), pub.sources.map { it.id }, pub.text)
-        assertTrue(pub.text.contains("[1]")) // numbered by order of citation, mapped to E2
+        assertTrue(pub.mode != PublicationMode.VERIFIED, pub.text)
+        // both versions are quoted, each with its own marker: the reader sees the disagreement instead of a silent pick
+        assertTrue("300 grammi" in pub.text && "450 grammi" in pub.text, pub.text)
+        assertEquals(setOf("E1", "E2"), pub.sources.map { it.id }.toSet())
+    }
+
+    @Test fun aClaimSupportedByOnePassageAndNotContradictedStaysSingleSourced() {
+        val ev = EvidencePackage.of(listOf(raw("Scheda", "Il peso è di 450 grammi.", "0"), raw("Altro", "La lunghezza è di 20 centimetri.", "1")))
+        val pub = PublicationPolicy.decide("Quanto pesa?", "Il peso è di 450 grammi.", ev)
+        assertEquals(PublicationMode.VERIFIED, pub.mode); assertEquals(listOf("E1"), pub.sources.map { it.id })
     }
 
     @Test fun relevantButInsufficientPassageIsNotListedAsSupport() {
@@ -77,7 +85,8 @@ class ReliabilityClosureTest {
     @Test fun markersChosenByTheModelAreIgnored() {
         val ev = EvidencePackage.of(listOf(raw("A", "Il peso è di 300 grammi.", "0"), raw("B", "Il peso è di 450 grammi.", "1")))
         val pub = PublicationPolicy.decide("Quanto pesa?", "Il peso è di 450 grammi [E1] [1].", ev)
-        assertEquals(listOf("B"), pub.sources.map { it.title })
+        assertTrue(pub.sources.all { it.title == "A" || it.title == "B" })
+        assertFalse("[E1]" in pub.text)
     }
 
     // P0-C — extracts are never cut mid-sentence
@@ -118,17 +127,6 @@ class ReliabilityClosureTest {
         assertEquals(RequestKind.CONVERSATION, RequestClassifier.classify("mi sento un po' stanco oggi"))
     }
 
-    // tool receipts: restatement may not add data
-    @Test fun toolRestatementWithInventedNumberFallsBackToTheReceipt() {
-        val receipt = EvidencePackage.of(listOf(raw("Risultati del sistema", "Batteria: 41%.", "t0", EvidenceKind.TOOL)))
-        val ok = PublicationPolicy.decideToolOnly("Quanta batteria ho?", "Hai il 41% di batteria.", receipt)
-        assertEquals(PublicationMode.VERIFIED, ok.mode)
-        val bad = PublicationPolicy.decideToolOnly("Quanta batteria ho?", "Hai il 41% di batteria e restano 3 ore.", receipt)
-        assertEquals(PublicationMode.FAITHFUL_EXTRACT, bad.mode); assertEquals("Batteria: 41%.", bad.text)
-        val chat = PublicationPolicy.decideToolOnly("Timer?", "Fatto, ho impostato il timer.", receipt)
-        assertEquals(PublicationMode.VERIFIED, chat.mode) // no new data: untouched
-    }
-
     // false refusals: correct answers stay
     @Test fun correctSupportedParaphrasingWithSameKeyWordsIsPublished() {
         val ev = EvidencePackage.of(listOf(raw("Rame", "Il rame fonde a 1.085 °C. È un ottimo conduttore elettrico.", "0")))
@@ -142,5 +140,68 @@ class ReliabilityClosureTest {
         ))
         val pub = PublicationPolicy.decide("Confronta A e B.", "La catena va lubrificata ogni 500 km. Il motore è garantito dieci anni.", ev, PublicationKind.COMPARE)
         assertFalse("garantito" in pub.text); assertTrue("500 km" in pub.text && "10.000 km" in pub.text)
+    }
+
+    // ---- tool receipts: a value is not a licence to claim another property or an action the tool did not report ----
+    private fun rc(tool: String, status: ReceiptStatus, text: String) = ToolReceipt(tool, status, text)
+    private val battery = listOf(rc("battery_status", ReceiptStatus.INFO, "Batteria: 41%."))
+
+    @Test fun anActionNeverReportedByTheReceiptIsNotPublishedAsDone() {
+        val bad = PublicationPolicy.decideToolOnly("Che batteria ho?", "Fatto, ho impostato il timer.", battery)
+        assertEquals(PublicationMode.FAITHFUL_EXTRACT, bad.mode); assertEquals("Batteria: 41%.", bad.text)
+        assertTrue(PublicationPolicy.decideToolOnly("Che batteria ho?", "Ho impostato il timer.", battery).mode != PublicationMode.VERIFIED)
+        assertTrue(PublicationPolicy.decideToolOnly("Che batteria ho?", "Fatto.", battery).mode != PublicationMode.VERIFIED) // an info receipt authorises no "done"
+    }
+
+    @Test fun aRestatementThatFollowsTheReceiptIsPublished() {
+        assertEquals(PublicationMode.VERIFIED, PublicationPolicy.decideToolOnly("Che batteria ho?", "Hai il 41% di batteria.", battery).mode)
+        assertEquals(PublicationMode.VERIFIED, PublicationPolicy.decideToolOnly("Che batteria ho?", "La batteria è al 41%.", battery).mode)
+    }
+
+    @Test fun aValueAttachedToAnotherPropertyIsRejected() {
+        val bad = PublicationPolicy.decideToolOnly("Che batteria ho?", "Il volume è al 41%.", battery)
+        assertTrue(bad.mode != PublicationMode.VERIFIED, bad.text)
+        val inventedNumber = PublicationPolicy.decideToolOnly("Che batteria ho?", "Hai il 41% di batteria e restano 3 ore.", battery)
+        assertTrue(inventedNumber.mode != PublicationMode.VERIFIED)
+    }
+
+    @Test fun flashlightSuccessAndItsOppositeAreDistinguished() {
+        val on = listOf(rc("flashlight", ReceiptStatus.DONE, "Torcia accesa."))
+        assertEquals(PublicationMode.VERIFIED, PublicationPolicy.decideToolOnly("Accendi la torcia", "Ho acceso la torcia.", on).mode)
+        val wrongVerb = PublicationPolicy.decideToolOnly("Accendi la torcia", "Ho spento la torcia.", on)
+        assertTrue(wrongVerb.mode != PublicationMode.VERIFIED); assertEquals("Torcia accesa.", wrongVerb.text)
+    }
+
+    @Test fun aFailureIsNeverTurnedIntoASuccess() {
+        val failed = listOf(rc("flashlight", ReceiptStatus.FAILED, "Non riesco ad accendere la torcia: permesso mancante."))
+        for (claim in listOf("Ho acceso la torcia.", "Fatto, torcia accesa.", "La torcia è stata accesa.")) {
+            val pub = PublicationPolicy.decideToolOnly("Accendi la torcia", claim, failed)
+            assertTrue(pub.mode != PublicationMode.VERIFIED && "permesso mancante" in pub.text && "Ho acceso" !in pub.text, "$claim -> ${pub.text}")
+        }
+        // an honest failure restatement is kept
+        assertEquals(PublicationMode.VERIFIED, PublicationPolicy.decideToolOnly("Accendi la torcia", "Non sono riuscito ad accendere la torcia.", failed).mode)
+        // and a claimed failure when the tool succeeded is rejected too
+        val ok = listOf(rc("flashlight", ReceiptStatus.DONE, "Torcia accesa."))
+        assertTrue(PublicationPolicy.decideToolOnly("Accendi la torcia", "Non sono riuscito ad accendere la torcia.", ok).mode != PublicationMode.VERIFIED)
+    }
+
+    @Test fun cancelledAndUnconfirmedReceiptsAuthoriseNoSuccess() {
+        for (st in listOf(ReceiptStatus.CANCELLED, ReceiptStatus.NEEDS_CONFIRMATION)) {
+            val r = listOf(rc("set_timer", st, "Timer di 10 minuti non avviato."))
+            assertTrue(PublicationPolicy.decideToolOnly("Timer", "Ho impostato il timer di 10 minuti.", r).mode != PublicationMode.VERIFIED, st.name)
+        }
+    }
+
+    @Test fun mixedAnswerKeepsKnowledgeButRejectsAnInventedAction() {
+        val ev = EvidencePackage.of(listOf(raw("Portogallo", "La capitale è Lisbona.", "0"))).plus(ToolReceipts.toPackage(battery, 400))
+        val pub = PublicationPolicy.decide("Capitale del Portogallo e batteria?", "La capitale è Lisbona. Ho impostato il timer.", ev, receipts = battery)
+        assertTrue("Lisbona" in pub.text && "timer" !in pub.text, pub.text)
+        assertTrue(pub.mode != PublicationMode.VERIFIED)
+    }
+
+    @Test fun footerDatesAreShownNotInventedAndNoRecencyOrderIsClaimed() {
+        val f = com.simone.jarvismobile.core.knowledge.SourceFooter.numbered(listOf("A", "B"), emptyList(), true, true, 2026, listOf("2012", ""))
+        assertTrue("[1] A (2012)" in f && "[2] B" in f && "(" !in f.substringAfter("[2] B").substringBefore("\n"))
+        assertFalse("più recente" in f)
     }
 }

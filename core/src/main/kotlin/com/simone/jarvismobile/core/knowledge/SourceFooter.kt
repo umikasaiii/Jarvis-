@@ -35,13 +35,14 @@ object SourceFooter {
      * source; [dated] are the knowledge passages among them, used only for the staleness note). [supporting] separates the
      * sources the answer rests on from sources merely consulted.
      */
-    fun numbered(labels: List<String>, dated: List<KnowledgeChunk>, supporting: Boolean, conflict: Boolean, currentYear: Int): String {
+    fun numbered(labels: List<String>, dated: List<KnowledgeChunk>, supporting: Boolean, conflict: Boolean, currentYear: Int, dates: List<String> = emptyList()): String {
         if (labels.isEmpty()) return ""
         val header = if (supporting) "Fonti a supporto:" else "Fonti consultate (non confermano la risposta):"
         val stale = dated.mapNotNull { yearOf(it.date) }.filter { currentYear - it >= STALE_AFTER_YEARS }.maxOrNull()
         return buildString {
-            append(header).append('\n').append(labels.mapIndexed { i, l -> "[${i + 1}] $l" }.joinToString("\n"))
-            if (conflict) append("\nAttenzione: le fonti non concordano; la più recente è indicata per prima.")
+            append(header).append('\n').append(labels.mapIndexed { i, l -> "[${i + 1}] $l" + (dates.getOrNull(i)?.takeIf { it.isNotBlank() && it !in l }?.let { " ($it)" } ?: "") }.joinToString("\n"))
+            // the numbering follows the order of citation in the answer, NOT the date: no claim about "most recent first" is made here
+            if (conflict) append("\nAttenzione: le fonti non concordano; le date, quando note, sono indicate accanto a ciascuna.")
             if (stale != null) append("\nNota: una fonte è del ").append(stale).append(" e potrebbe essere superata.")
         }
     }

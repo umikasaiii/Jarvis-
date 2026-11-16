@@ -24,9 +24,11 @@ class QualityEngineGuardTest {
         val chatReply = c.substringAfter("private suspend fun chatReply(").substringBefore("private fun chatHistoryForSeed")
         assertTrue("ValidatedGeneration.run(" in chatReply)
         assertFalse("AssistantReplyCleaner.clean(" in chatReply) // cleaning happens inside the stage, once
-        assertTrue("router.chat(message, system, slot, seed = seed)" in chatReply)
+        // the model call goes through ONE helper that is the only caller of router.chat (it also hosts the instrumented-test seam)
+        assertTrue("chatModel(message, system, slot, seed)" in chatReply)
+        assertTrue("router.chat(message, system, slot, seed = seed)" in c)
         // Bounded retry: one retry branch only, and it runs on a fresh conversation.
-        assertTrue(Regex("""router\.chat\(message, retrySystem, slot, seed = retrySeed\)""").findAll(chatReply).count() == 1)
+        assertTrue(Regex("""chatModel\(message, retrySystem, slot, retrySeed\)""").findAll(chatReply).count() == 1)
         assertTrue("router.resetConversation(slot)" in chatReply)
     }
 

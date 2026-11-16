@@ -51,3 +51,17 @@ package), Documents / summaries / comparisons and Knowledge/Memory focus (`gener
 | Chat with no retrieved evidence | nothing to verify against; handled only by the unverified-knowledge qualifier for precise facts | M1/P2 |
 | Internal read errors inside `DocumentImportManager` (`runCatching … getOrDefault`) | surface as "no result" | M1 |
 | Semantic paraphrase / NLI | lexical selection + consistency checks only | P2 (disabled unless proven) |
+
+## M0 final qualification round
+- **Tool receipts are structured** (`ToolReceipt`: tool, status DONE/FAILED/CANCELLED/NEEDS_CONFIRMATION/INFO, the tool's sentence). A claim that an
+  action was carried out needs a DONE receipt reporting the SAME kind of action ("acceso" is not supported by "Torcia spenta"); an
+  info receipt (battery…) authorises no "fatto"; a failed/cancelled/unconfirmed receipt contradicts success; a claimed failure when the tool
+  succeeded is rejected too. A value is accepted only attached to the property the receipt states. If the restatement is not provable,
+  the receipts are rendered verbatim — no extra generation, no second model. Earlier turns of the same message ("Simone:/JARVIS:") are context, never evidence.
+- **Conflicting passages**: if one passage supports a claim and another equally relevant one states a different value, the claim is not
+  published as one version of the fact; both passages are quoted with their own markers.
+- **Footer order**: numbering follows citation order, not recency. The "most recent first" statement is removed from the numbered footer
+  (dates, when the source has one, are shown beside each source; none are invented).
+- **Real-coordinator test** (`SessionCoordinatorPublicationInstrumentedTest`, emulator workflow): the production `SessionCoordinator` via the
+  Hilt graph and `processQueuedText`, with only the model call and the knowledge retrieval replaced through `ChatTestSeam`
+  (null in production). The seam is counted against the same attempt ledger. It proves the publication pipeline, not model quality.

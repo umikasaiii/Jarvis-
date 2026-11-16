@@ -48,9 +48,9 @@ object PublicationPolicy {
     /** The candidate without any citation marker or presentation note: citations are rebuilt, never trusted. */
     fun stripCitations(candidate: String): String = AnswerQuality.stripPresentationNotes(MARKER.replace(candidate, "")).trim()
 
-    fun decide(question: String, candidate: String, pkg: EvidencePackage, kind: PublicationKind = PublicationKind.ANSWER): Publication {
+    fun decide(question: String, candidate: String, pkg: EvidencePackage, kind: PublicationKind = PublicationKind.ANSWER, receipts: List<ToolReceipt> = emptyList()): Publication {
         val clean = stripCitations(candidate)
-        val report = ClaimVerifier.verify(question, clean, pkg, askRelevance = kind == PublicationKind.ANSWER)
+        val report = ClaimVerifier.verify(question, clean, pkg, askRelevance = kind == PublicationKind.ANSWER, receipts = receipts)
         val supported = report.supported
         val rejected = report.rejected
         val link = SourceLinks(pkg)
@@ -66,6 +66,17 @@ object PublicationPolicy {
                 val cover = coverageExtract(pkg, link)
                 Publication(listOf(body, cover).filter { it.isNotBlank() }.joinToString("\n") , PublicationMode.ALLOWED_PARTS, link.sources, true, report, rejected, "parti non verificate sostituite da estratti")
             }
+        }
+        // sources that DISAGREE on the claim: quote each version with its own marker, never silently pick one
+        val conflict = rejected.firstOrNull { it.reason.startsWith("fonti in conflitto") && it.evidenceIds.size >= 2 }
+        if (conflict != null && supported.isEmpty()) {
+            val stems = ClaimVerifier.contentStems(conflict.text).toSet()
+            val lines = conflict.evidenceIds.distinct().mapNotNull { id ->
+                val item = pkg.item(id) ?: return@mapNotNull null
+                val best = Sentences.split(item.text).maxByOrNull { s -> ClaimVerifier.contentStems(s).count { it in stems } } ?: return@mapNotNull null
+                withMarker(best, link.mark(listOf(id)))
+            }
+            if (lines.size >= 2) return Publication("Le fonti non concordano: " + lines.joinToString(" "), PublicationMode.FAITHFUL_EXTRACT, link.sources, true, report, rejected, "fonti in conflitto")
         }
         // nothing in the candidate is supported (or it only declared a limit): quote what the sources say, never what the model said
         if (kind != PublicationKind.ANSWER) {
@@ -181,14 +192,17 @@ object PublicationPolicy {
     }
 
     /**
-     * A tool receipt restated by the model: published as written unless it states a number or a name the receipt does not contain;
-     * then the receipt itself is rendered, verbatim. No new generation, no second verification engine.
+     * A tool answer (no knowledge/document evidence). The model's restatement is published only if EVERY clause is shown to follow
+     * from the structured receipts: an action claim needs a receipt that reports it done (a failed/cancelled/unconfirmed receipt
+     * contradicts it), and every other clause must be supported by the receipt text with its numbers attached to the right property.
+     * Anything else → the receipts themselves, verbatim (deterministic, no new generation, no second model).
      */
-    fun decideToolOnly(question: String, candidate: String, receipt: EvidencePackage): Publication {
+    fun decideToolOnly(question: String, candidate: String, receipts: List<ToolReceipt>): Publication {
         val clean = stripCitations(candidate)
-        val report = ClaimVerifier.verifyFigures(question, clean, receipt)
-        if (report.rejected.isEmpty()) return Publication(clean, PublicationMode.VERIFIED, emptyList(), true, report, emptyList(), "dati conformi alla ricevuta")
-        val rendered = receipt.items.joinToString("\n") { it.text }
-        return Publication(rendered, PublicationMode.FAITHFUL_EXTRACT, emptyList(), true, report, report.rejected, "dati non presenti nella ricevuta: reso il risultato dello strumento")
+        val pkg = ToolReceipts.toPackage(receipts, 1200)
+        val report = ClaimVerifier.verify(question, clean, pkg, askRelevance = false, receipts = receipts)
+        if (report.rejected.isEmpty() && report.supported.isNotEmpty()) return Publication(clean, PublicationMode.VERIFIED, emptyList(), true, report, emptyList(), "riformulazione conforme alle ricevute")
+        // nothing provable (or something contradicted): the receipts, not the model's words
+        return Publication(ToolReceipts.render(receipts), PublicationMode.FAITHFUL_EXTRACT, emptyList(), true, report, report.rejected, "riformulazione non dimostrabile: rese le ricevute")
     }
 }

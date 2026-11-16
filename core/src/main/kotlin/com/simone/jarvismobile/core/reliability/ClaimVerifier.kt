@@ -63,7 +63,11 @@ object ClaimVerifier {
     )
 
     /** Content stems with the quantities removed: numbers are compared by [Quantities], not by token overlap. */
-    internal fun contentStems(text: String): List<String> {
+    private val AUX = setOf("hai", "ho", "hanno", "abbiamo", "avete", "sei", "siamo", "siete")
+
+    internal fun contentStems(text: String): List<String> = rawStems(text).filter { it !in AUX }
+
+    private fun rawStems(text: String): List<String> {
         val q = Quantities.extract(text)
         if (q.isEmpty()) return SupportJudge.stems(text)
         val sb = StringBuilder(text)
@@ -140,12 +144,19 @@ object ClaimVerifier {
         return listOf(left.trim()) + splitMainVerbClauses(right.trim())
     }
 
-    fun verify(question: String, answer: String, pkg: EvidencePackage, askRelevance: Boolean = true): ClaimReport {
+    fun verify(question: String, answer: String, pkg: EvidencePackage, askRelevance: Boolean = true, receipts: List<ToolReceipt> = emptyList()): ClaimReport {
         val windows = pkg.items.flatMap { item -> Sentences.split(item.text).map { toSent(item, it) } }
         val qStems = contentStems(question).toSet()
         val known = pkg.items.joinToString(" ") { it.title + " " + it.section + " " + it.text }
         val claims = ArrayList<Claim>()
         for (sentence in sentences(AnswerQuality.stripPresentationNotes(answer))) for (clause in clauses(sentence)) {
+            val action = ToolReceipts.classify(clause)
+            if (action != ToolReceipts.ActionClaim.None) {
+                // an action claim is checked against what the tools REPORTED, never against word overlap
+                val (status, why) = ToolReceipts.check(clause, action, receipts)
+                claims += Claim(clause, status, if (status == ClaimStatus.EXPLICITLY_SUPPORTED) pkg.items.filter { it.kind == EvidenceKind.TOOL }.map { it.id } else emptyList(), why)
+                continue
+            }
             claims += checkClaim(clause, if (askRelevance) qStems else emptySet(), windows, known)
         }
         return ClaimReport(claims)
@@ -184,12 +195,22 @@ object ClaimVerifier {
             return Claim(piece, ClaimStatus.UNVERIFIED, emptyList(), if ((near?.let(::cover) ?: 0.0) < 0.4) "nessun passaggio lo conferma" else "supporto parziale")
         }
         var firstFailure: Claim? = null
+        var support: Claim? = null
+        var contradiction: Claim? = null
         for ((win, _) in candidates) {
             val r = checkAgainst(piece, text, folded, quants, negC, qStems, win)
-            if (r.status == ClaimStatus.EXPLICITLY_SUPPORTED || r.status == ClaimStatus.DERIVED) return r
-            if (firstFailure == null) firstFailure = r
+            if (r.status == ClaimStatus.EXPLICITLY_SUPPORTED || r.status == ClaimStatus.DERIVED) { if (support == null) support = r }
+            else {
+                if (firstFailure == null) firstFailure = r
+                if (r.status == ClaimStatus.CONTRADICTED && contradiction == null) contradiction = r
+            }
         }
-        return firstFailure!!
+        // One passage supports it, another EQUALLY relevant one states a different value or the opposite: the sources disagree, and
+        // a single citation would present one version as the fact. It is not published as fact; the policy quotes both.
+        if (support != null && contradiction != null && contradiction.evidenceIds != support.evidenceIds) {
+            return Claim(piece, ClaimStatus.UNVERIFIED, support.evidenceIds + contradiction.evidenceIds, "fonti in conflitto: ${contradiction.reason}")
+        }
+        return support ?: firstFailure!!
     }
 
     private fun checkAgainst(piece: String, text: String, folded: String, quants: List<Quantity>, negC: Boolean, qStems: Set<String>, best: Sent): Claim {
@@ -266,8 +287,13 @@ object ClaimVerifier {
         Regex("\\p{Lu}[\\p{L}\\d'’-]{2,}").findAll(text).filter { it.range.first > 0 && !text.substring(0, it.range.first).trimEnd().let { p -> p.endsWith(".") || p.endsWith("!") || p.endsWith("?") } }
             .map { it.value.substringAfter('\'').substringAfter('’') }.filter { it.length >= 3 }.toList()
 
+    /** Words a clause may START with (capitalised only because they open the sentence): they are not names. */
+    private val OPENERS = AUX + setOf("ecco", "certo", "allora", "dunque", "quindi", "infatti", "inoltre", "invece", "ovviamente", "naturalmente", "purtroppo", "comunque", "esatto", "perfetto", "bene", "ok")
+
     private fun capitalised(text: String): List<String> =
-        Regex("\\p{Lu}[\\p{L}\\d'’-]{2,}").findAll(text).map { it.value.substringAfter('\'').substringAfter('’') }.filter { it.length >= 3 }.toList()
+        Regex("\\p{Lu}[\\p{L}\\d'’-]{2,}").findAll(text)
+            .filterNot { it.range.first == 0 && KnowledgeText.fold(it.value) in OPENERS }
+            .map { it.value.substringAfter('\'').substringAfter('’') }.filter { it.length >= 3 }.toList()
 
     private fun context(text: String, start: Int, end: Int): Set<String> {
         val before = SupportJudge.stems(text.substring(0, start).takeLast(60)).takeLast(CONTEXT_WORDS)

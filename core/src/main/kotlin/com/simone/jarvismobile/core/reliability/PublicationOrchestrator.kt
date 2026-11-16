@@ -15,8 +15,8 @@ class PublicationOrchestrator(
 ) {
     data class Outcome(val publication: Publication, val revised: Boolean)
 
-    suspend fun finish(question: String, candidate: String, pkg: EvidencePackage, kind: PublicationKind, ledger: AttemptLedger): Outcome {
-        var pub = PublicationPolicy.decide(question, candidate, pkg, kind)
+    suspend fun finish(question: String, candidate: String, pkg: EvidencePackage, kind: PublicationKind, ledger: AttemptLedger, receipts: List<ToolReceipt> = emptyList()): Outcome {
+        var pub = PublicationPolicy.decide(question, candidate, pkg, kind, receipts)
         var revised = false
         if (pub.mode != PublicationMode.VERIFIED && !ledger.exhausted) {
             val note = PublicationPolicy.revisionNote(pub)
@@ -26,7 +26,7 @@ class PublicationOrchestrator(
                 val raw = regenerate(note, "revision:" + pub.mode.name.lowercase())
                 val cand = raw?.trim()?.takeIf { it.isNotBlank() }
                 if (cand != null) {
-                    val second = PublicationPolicy.decide(question, cand, pkg, kind)
+                    val second = PublicationPolicy.decide(question, cand, pkg, kind, receipts)
                     if (rank(second.mode) > rank(pub.mode)) pub = second
                 }
             }
