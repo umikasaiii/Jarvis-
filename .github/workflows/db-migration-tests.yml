@@ -61,8 +61,11 @@ jobs:
           AAR=$(find ~/.gradle -name 'litertlm-android-*.aar' 2>/dev/null | head -1)
           echo "artifact: ${AAR:-not found}"
           if [ -n "$AAR" ]; then
-            mkdir -p /tmp/litertlm && cd /tmp/litertlm && unzip -oq "$AAR" classes.jar && unzip -l classes.jar | awk '{print $4}' | grep -i -E 'token|count' || echo "no class or file name containing token/count"
-            javap -cp classes.jar $(unzip -l classes.jar | awk '{print $4}' | grep -E '^com/google/ai/edge/litertlm/[A-Za-z]+\.class$' | sed 's/\.class$//;s#/#.#g') 2>/dev/null | grep -i -E 'token|count' || echo "no public member named token/count in the top-level litertlm classes"
+            mkdir -p /tmp/litertlm && cd /tmp/litertlm && unzip -oq "$AAR" classes.jar
+            for c in $(unzip -l classes.jar | awk '{print $4}' | grep -E '\.class$' | grep -v '\$' | sed 's/\.class$//;s#/#.#g'); do
+              out=$(javap -public -cp classes.jar "$c" 2>/dev/null | grep -i -E 'token|count' || true)
+              if [ -n "$out" ]; then echo "== $c"; echo "$out"; fi
+            done
           fi
       - name: Test results summary (failures with their messages)
         if: always()

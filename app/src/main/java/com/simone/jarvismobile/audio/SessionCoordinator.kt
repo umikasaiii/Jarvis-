@@ -1962,7 +1962,7 @@ class SessionCoordinator @Inject constructor(
             else -> ""
         }
         recordContext(c, "unverified:" + state.name.lowercase())
-        return AnswerFraming.frame(c.kind, state, text, c.question) + (if (consulted.isNotBlank()) "\n$consulted" else "") + (if (c.excludedByBudget) "" else uncoveredNote(kctx))
+        return AnswerFraming.frame(c.kind, state, AnswerQuality.stripPresentationNotes(text), c.question) + (if (consulted.isNotBlank()) "\n$consulted" else "") + (if (c.excludedByBudget) "" else uncoveredNote(kctx))
     }
 
     private fun recordContext(c: ChatPublicationContext, outcome: String) {
