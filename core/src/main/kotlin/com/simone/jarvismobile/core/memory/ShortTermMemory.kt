@@ -18,7 +18,7 @@ data class ShortTermMemorySnapshot(
 
     fun forPrompt(): String = buildString {
         if (facts.isNotEmpty()) {
-            append("Fatti/decisioni: ")
+            append("Dichiarazioni dell'utente in questa conversazione (non verificate): ")
             append(facts.joinToString(" · "))
         }
         if (topics.isNotEmpty()) append("\nArgomenti: ").append(topics.joinToString(", "))
@@ -48,12 +48,21 @@ object ShortTermMemorySummarizer {
             .filter { it.length in 8..360 }
             .filterNot { it in ACKNOWLEDGMENTS }
             .filterNot { it.endsWith('?') }
+            // a question or a request phrased without "?", a supposition or a guess is not something the user STATED about themselves
+            .filterNot { ASKING.containsMatchIn(com.simone.jarvismobile.core.knowledge.KnowledgeText.fold(it)) }
+            .filterNot(MemoryAdmission::looksSpeculative)
             .filterNot(MemoryStructure::containsCredential)
             .toList()
 
-        val facts = (previous.facts + candidates)
-            .distinctBy { it.lowercase() }
-            .takeLast(maxFacts.coerceAtLeast(1))
+        // a later correction REPLACES the earlier value of the same subject in this recap (the full history stays in the chat)
+        val merged = ArrayList(previous.facts)
+        for (c in candidates) {
+            if (merged.any { it.equals(c, ignoreCase = true) }) continue
+            val key = FactKey.parse(c)
+            if (key != null && key.correction) merged.removeAll { FactKey.parse(it)?.key == key.key }
+            merged += c
+        }
+        val facts = merged.takeLast(maxFacts.coerceAtLeast(1))
         val structure = MemoryStructure.extract(facts.joinToString(". "))
         return ShortTermMemorySnapshot(
             facts = facts,
@@ -63,6 +72,8 @@ object ShortTermMemorySummarizer {
             updatedAt = now,
         )
     }
+
+    private val ASKING = Regex("^(?:qual|quali|chi|quando|dove|quanto|quanti|quante|quanta|come|cosa|che cosa|perche|parlami|dimmi|spiegami|descrivi|elenca|traduci|riscrivi|calcola|cerca|mostra|puoi|potresti|riassumi|confronta)\\b")
 
     private fun normalize(value: String): String = value.replace(Regex("""\s+"""), " ").trim()
 

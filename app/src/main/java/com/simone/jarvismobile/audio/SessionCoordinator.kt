@@ -44,6 +44,7 @@ import com.simone.jarvismobile.core.llm.SeedTurn
 import com.simone.jarvismobile.core.quality.AnswerQuality
 import com.simone.jarvismobile.core.quality.ClassicPromptComposer
 import com.simone.jarvismobile.core.quality.ContextBudget
+import com.simone.jarvismobile.core.quality.ContextFit
 import com.simone.jarvismobile.core.quality.ConversationTokenLedger
 import com.simone.jarvismobile.core.quality.DebugTextProbe
 import com.simone.jarvismobile.core.quality.GenerationTrace
@@ -382,6 +383,10 @@ class SessionCoordinator @Inject constructor(
     val messages: StateFlow<List<ChatMessage>> = _messages.asStateFlow()
 
     @Volatile internal var testSeam: ChatTestSeam? = null
+
+    /** Last context-assembly figures (token counts are ESTIMATES): counts and flags only, never text. */
+    @Volatile private var lastContextDiag = ""
+    private fun plan0Tokens(system: String) = TokenEstimator.message(system)
 
     /** One model call for a chat turn. With the test seam installed the call is counted against the request's ledger like a native one. */
     private suspend fun chatModel(message: String, system: String, slot: ModelSlot, seed: ChatSeed): String? {
@@ -1592,7 +1597,7 @@ class SessionCoordinator @Inject constructor(
         // notes, which change with every question) forced the engine to recreate
         // the conversation, wiping the chat memory — the reason JARVIS could not
         // remember even the previous message.
-        val system = activeSystems[slot] ?: buildSystem(notes).also {
+        var system = activeSystems[slot] ?: buildSystem(notes).also {
             activeSystems[slot] = it
             activeEpochs[slot] = router.conversationEpoch(slot)
             injectedContext += notes
@@ -1624,10 +1629,25 @@ class SessionCoordinator @Inject constructor(
         val storedFact = StoredFactQuestion.matches(transcript)
         // ONE immutable package, built before inference, after sanitising and every size limit: the prompt below renders it and
         // the verifier reads the same items (text left out here can never support the answer).
-        val pkg = EvidencePackage.of(knowledgeCtx?.raws.orEmpty(), KNOWLEDGE_CHARS)
+        val pkgFull = EvidencePackage.of(knowledgeCtx?.raws.orEmpty(), KNOWLEDGE_CHARS)
             .plus(com.simone.jarvismobile.core.document.GroundedPrompt.packageFor(docBlocks))
             .plus(EvidencePackage.of(notes.mapIndexed { i, n -> EvidencePackage.Companion.Raw("Memoria", "", n, "n$i", EvidenceKind.MEMORY) }, 600))
             .plus(ToolReceipts.toPackage(receipts, COMPOUND_CONTEXT_CHARS))
+        // M1 — the evidence is fitted to what is LEFT of the window after everything else that is really sent (system, history, the
+        // question, the prompt framing, a reserve for one revision note). Whole items are dropped, least useful first, and the prompt says
+        // so. All figures are estimates (no verified tokenizer): the diagnostic labels them as such.
+        val fitHistory = chatHistoryForSeed()
+        val fitBase = PromptBudgeter.plan(system, emptyList(), fitHistory, transcript, promptBudget)
+        if (fitBase.userExceedsBudget) {
+            return "La richiesta è troppo lunga per la memoria del modello (circa ${fitBase.estUser} token stimati, ne restano " +
+                "${(promptBudget.promptCeiling - fitBase.estSystem).coerceAtLeast(0)} per la domanda): accorciala o dividila in più parti."
+        }
+        val contextFit = ContextFit.fit(
+            pkgFull,
+            fixedTokens = fitBase.estSystem + fitBase.estHistory + fitBase.estUser + PROMPT_FRAMING_TOKENS + REVISION_RESERVE_TOKENS,
+            ceiling = promptBudget.promptCeiling,
+        )
+        val pkg = contextFit.pkg
         val evidence = pkg.render(setOf(EvidenceKind.KNOWLEDGE)).takeIf { pkg.has(EvidenceKind.KNOWLEDGE) }
         val docEvidence = pkg.render(setOf(EvidenceKind.DOCUMENT)).takeIf { pkg.has(EvidenceKind.DOCUMENT) }
         // receipts are evidence (structured, verified); earlier turns of the same message are only CONTEXT and never support a claim
@@ -1694,6 +1714,16 @@ class SessionCoordinator @Inject constructor(
             append(transcript)
         }
 
+        // M1 — rotate BEFORE overflow using the message actually assembled (the early check only knew the question): a live
+        // conversation that cannot take this turn is dropped and reseeded from the PUBLISHED history, never left to overflow.
+        if (!rotated && activeSystems.containsKey(slot) && tokenLedgers[slot]?.needsRotation(TokenEstimator.message(message)) == true) {
+            invalidateSlot(slot)
+            rotated = true
+            system = buildSystem(notes).also { activeSystems[slot] = it; activeEpochs[slot] = router.conversationEpoch(slot) }
+            injectedContexts[slot] = LinkedHashSet<String>().also { it += notes }
+        }
+
+        lastContextDiag = "ctx≈${TokenEstimator.message(message) + plan0Tokens(system)}t(stima) omessi=${contextFit.droppedIds.size} ruotato=$rotated"
         tryRemoteChat(message, system, needsReasoning)?.let { return it }
 
         val brain = if (slot == ModelSlot.ADVANCED) "avanzato" else "rapido"
@@ -1859,14 +1889,14 @@ class SessionCoordinator @Inject constructor(
                 invalidate = { invalidateSlot(c.slot) },
             ).finish(c.question, text, c.pkg, PublicationKind.ANSWER, c.ledger, c.receipts)
             val pub = outcome.publication
-            _diagnostic.value = pub.diagnostic() + " attempts=" + c.ledger.summary()
+            _diagnostic.value = pub.diagnostic() + " attempts=" + c.ledger.summary() + " " + lastContextDiag
             return pub.text + sourceFooter(pub, kctx, c.pkg).let { if (it.isBlank()) "" else "\n$it" } + uncoveredNote(kctx)
         }
         // Tool receipts (no knowledge/document evidence): the model may restate the structured result, but any number or name the
         // receipt does not contain is replaced by the receipt itself, rendered verbatim (no extra generation, no second engine).
         if (c.receipts.isNotEmpty()) {
             val pub = PublicationPolicy.decideToolOnly(c.question, text, c.receipts)
-            _diagnostic.value = pub.diagnostic() + " attempts=" + c.ledger.summary()
+            _diagnostic.value = pub.diagnostic() + " attempts=" + c.ledger.summary() + " " + lastContextDiag
             if (pub.mode != PublicationMode.VERIFIED) invalidateSlot(c.slot) // the restated draft must not be continued
             return pub.text
         }
@@ -2134,11 +2164,14 @@ class SessionCoordinator @Inject constructor(
      */
     private suspend fun focusedAnswer(query: String, focus: ChatFocus): String {
         var kctx: KnowledgeContext? = null
+        var documentsUnreadable = false
         val pkg: EvidencePackage = when (focus) {
             // Memoria + documenti importati.
             ChatFocus.MEMORY -> {
                 val hits = runCancellable { memory.retrieveSmart(query, MEMORY_TOP_K) }.getOrDefault(emptyList())
-                val blocks = runCancellable { documents.evidenceBlocks(query, null) }.getOrDefault(emptyList())
+                val blockRes = runCancellable { documents.evidenceBlocks(query, null) }
+                val blocks = blockRes.getOrDefault(emptyList())
+                documentsUnreadable = blockRes.isFailure
                 EvidencePackage.of(
                     hits.mapIndexed { i, h -> EvidencePackage.Companion.Raw("Memoria", "", h.chunk.text.replace('\n', ' ').trim(), "m$i", EvidenceKind.MEMORY) },
                     KNOWLEDGE_CHARS,
@@ -2154,8 +2187,10 @@ class SessionCoordinator @Inject constructor(
 
         if (pkg.isEmpty) {
             return when (focus) {
+                // a read error is not "nothing found": say which
                 ChatFocus.MEMORY ->
-                    "Non ho trovato nulla nella tua memoria o nei tuoi documenti su questo."
+                    if (documentsUnreadable) "Non sono riuscito a leggere i tuoi documenti (errore di lettura): non posso dire se contengano qualcosa su questo."
+                    else "Non ho trovato nulla nella tua memoria o nei tuoi documenti su questo."
                 else ->
                     "Non ho trovato nulla nella conoscenza offline importata."
             }
@@ -3073,6 +3108,9 @@ class SessionCoordinator @Inject constructor(
 
         /** Cap per passage, so evidence cannot crowd out the conversation. */
         const val KNOWLEDGE_CHARS = 900
+        /** Estimated tokens of the instruction brackets around the evidence, and of one revision note kept in reserve. */
+        const val PROMPT_FRAMING_TOKENS = 300
+        const val REVISION_RESERVE_TOKENS = 120
 
         /** How many vault chunks to inject as grounding context per question. */
         const val MEMORY_TOP_K = 4

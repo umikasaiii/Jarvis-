@@ -36,6 +36,19 @@ data class MemoryRecord(
     val theme: String = "",
     /** Line spacing for the note editor (one of [MemoryLineSpacing.ALL]) or "" for the default. */
     val spacing: String = "",
+    // ---- M1 provenance (all additive: records saved before this keep loading as USER_STATEMENT / ACTIVE) ----
+    val source: MemorySource = MemorySource.USER_STATEMENT,
+    val verification: Verification = Verification.USER_ASSERTED,
+    /** Id of the source item (document id, tool name, ZIM article…) when the record is not a user statement. */
+    val sourceRef: String = "",
+    /** Conversation the item was stated in, when known. */
+    val conversationId: String = "",
+    val status: RecordStatus = RecordStatus.ACTIVE,
+    /** What this record corrects (the previous active value of the same subject). */
+    val supersedes: String = "",
+    val supersededBy: String = "",
+    /** Normalised subject of a simple self-statement ("peso"); links corrections to earlier values. */
+    val subjectKey: String = "",
 )
 
 /**
@@ -193,7 +206,7 @@ object MemoryRecordCodec {
     private const val HEADER = "# Memoria di JARVIS"
     private const val PREFIX = "<!-- jarvis-memory-v2:"
     private const val SUFFIX = " -->"
-    private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+    private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true; coerceInputValues = true }
 
     fun render(records: List<MemoryRecord>): String = buildString {
         append(HEADER).append("\n\n")

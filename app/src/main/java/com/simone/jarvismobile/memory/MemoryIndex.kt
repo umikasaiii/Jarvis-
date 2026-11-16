@@ -93,12 +93,13 @@ class MemoryIndex @Inject constructor(
                 val vaultChunks = notes.flatMap { note ->
                     chunkNote(MarkdownParser.parse(note.path, note.content))
                 }
-                val memoryRecords = vault.readMemoryRecords()
+                // a superseded value is never offered to the model; an unresolved conflict is offered and marked as such
+                val memoryRecords = com.simone.jarvismobile.core.memory.MemoryLedger.retrievable(vault.readMemoryRecordsOrThrow())
                 val memoryChunks = memoryRecords.map { record ->
                     MemoryChunk(
                         notePath = "local://memoria/${record.id}",
                         title = "Memoria",
-                        text = record.text,
+                        text = com.simone.jarvismobile.core.memory.MemoryLedger.promptText(record),
                         tags = record.topics,
                         folder = "memoria",
                     )

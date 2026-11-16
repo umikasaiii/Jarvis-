@@ -61,6 +61,12 @@ class EvidencePackage private constructor(val items: List<EvidenceItem>, val omi
 
     fun has(kind: EvidenceKind): Boolean = items.any { it.kind == kind }
 
+    /** The package without item [id] (ids of the others are unchanged); the removal is recorded as omitted, never silent. */
+    fun without(id: String, reason: String): EvidencePackage {
+        val gone = items.firstOrNull { it.id == id } ?: return this
+        return EvidencePackage(items.filter { it.id != id }, omitted + OmittedEvidence(gone.title, gone.sourceKey, reason))
+    }
+
     /** Same package, plus [more] items appended (ids continue); used to add tool results to knowledge evidence BEFORE generation. */
     fun plus(more: EvidencePackage): EvidencePackage {
         var n = items.size

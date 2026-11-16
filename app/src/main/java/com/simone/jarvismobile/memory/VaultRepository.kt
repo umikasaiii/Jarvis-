@@ -139,10 +139,14 @@ class VaultRepository @Inject constructor(
         category: String = "",
         theme: String = "",
         spacing: String = "",
+        source: com.simone.jarvismobile.core.memory.MemorySource = com.simone.jarvismobile.core.memory.MemorySource.USER_STATEMENT,
+        sourceRef: String = "",
     ): MemoryRecord? =
         memoryMutex.withLock {
             val body = text.trim()
             if (body.isBlank() || MemoryStructure.containsCredential(body)) return@withLock null
+            // M1: a model inference, a supposition, an unverified claim or a rejected draft never enters durable memory
+            if (!com.simone.jarvismobile.core.memory.MemoryAdmission.mayBeDurable(source)) return@withLock null
             // No vault required: the local store always accepts the write, and the
             // vault is mirrored when present. So "ricorda …" works offline too.
             val now = System.currentTimeMillis()
@@ -159,11 +163,22 @@ class VaultRepository @Inject constructor(
                 category = category,
                 theme = theme,
                 spacing = spacing,
+                source = source,
+                verification = com.simone.jarvismobile.core.memory.MemoryAdmission.verificationFor(source),
+                sourceRef = sourceRef,
             )
-            val records = readMemoryRecordsUnlocked()
-            if (!writeMemory(records + record)) return@withLock null
+            // A read ERROR is not an empty archive: writing "records + new" on top of an unreadable file would erase the user's memory.
+            val records = readMemoryRecordsStrict() ?: return@withLock null
+            val applied = com.simone.jarvismobile.core.memory.MemoryLedger.apply(records, record)
+            when (applied.outcome) {
+                com.simone.jarvismobile.core.memory.MemoryLedger.Outcome.REJECTED -> return@withLock null
+                com.simone.jarvismobile.core.memory.MemoryLedger.Outcome.DUPLICATE -> return@withLock applied.stored // already there: nothing to write
+                else -> Unit
+            }
+            val stored = applied.stored ?: return@withLock null
+            if (!writeMemory(applied.records)) return@withLock null
             // Verify the write actually landed before reporting success.
-            if (readMemoryRecordsUnlocked().any { it.id == record.id }) record else null
+            if (readMemoryRecordsUnlocked().any { it.id == stored.id }) stored else null
         }
 
     suspend fun updateMemory(
@@ -176,7 +191,7 @@ class VaultRepository @Inject constructor(
         memoryMutex.withLock {
             val body = text.trim()
             if (body.isBlank() || MemoryStructure.containsCredential(body)) return@withLock null
-            val records = readMemoryRecordsUnlocked()
+            val records = readMemoryRecordsStrict() ?: return@withLock null
             val current = records.firstOrNull { it.id == id } ?: return@withLock null
             val fields = MemoryStructure.extract(body)
             val updated = current.copy(
@@ -196,7 +211,7 @@ class VaultRepository @Inject constructor(
     /** Sets just the macro-category on one record (AI re-classification). */
     suspend fun setMemoryCategory(id: String, category: String): MemoryRecord? =
         memoryMutex.withLock {
-            val records = readMemoryRecordsUnlocked()
+            val records = readMemoryRecordsStrict() ?: return@withLock null
             val current = records.firstOrNull { it.id == id } ?: return@withLock null
             val updated = current.copy(category = category)
             val next = records.map { if (it.id == id) updated else it }
@@ -204,7 +219,7 @@ class VaultRepository @Inject constructor(
         }
 
     suspend fun deleteMemory(id: String): MemoryRecord? = memoryMutex.withLock {
-        val records = readMemoryRecordsUnlocked()
+        val records = readMemoryRecordsStrict() ?: return@withLock null
         val removed = records.firstOrNull { it.id == id } ?: return@withLock null
         if (writeMemory(records.filterNot { it.id == id })) removed else null
     }
@@ -216,6 +231,17 @@ class VaultRepository @Inject constructor(
     private suspend fun readMemoryRecordsUnlocked(): List<MemoryRecord> =
         MemoryRecordCodec.parse(readLocalMemory())
 
+    /** Like [readMemoryRecords] but a read failure is reported (null) instead of looking like an empty archive. Used before every rewrite. */
+    private suspend fun readMemoryRecordsStrict(): List<MemoryRecord>? {
+        val raw = readLocalMemoryStrict() ?: return null
+        return MemoryRecordCodec.parse(raw)
+    }
+
+    /** For retrieval (index rebuild): throws on a read error so the caller records it instead of indexing "nothing". */
+    suspend fun readMemoryRecordsOrThrow(): List<MemoryRecord> = memoryMutex.withLock {
+        readMemoryRecordsStrict() ?: throw java.io.IOException("memory_read_failed")
+    }
+
     /** Writes the whole record set to the local archive only — no vault mirror. */
     private suspend fun writeMemory(records: List<MemoryRecord>): Boolean {
         val rendered = MemoryRecordCodec.render(records)
@@ -224,6 +250,11 @@ class VaultRepository @Inject constructor(
 
     private suspend fun readLocalMemory(): String = withContext(Dispatchers.IO) {
         runCatching { if (localMemoryFile.exists()) localMemoryFile.readText() else "" }.getOrDefault("")
+    }
+
+    /** null = the file exists but could not be read; "" = there is no file yet (a genuinely empty archive). */
+    private suspend fun readLocalMemoryStrict(): String? = withContext(Dispatchers.IO) {
+        try { if (localMemoryFile.exists()) localMemoryFile.readText() else "" } catch (e: java.io.IOException) { null }
     }
 
     private suspend fun writeLocalMemory(content: String): Boolean = withContext(Dispatchers.IO) {
