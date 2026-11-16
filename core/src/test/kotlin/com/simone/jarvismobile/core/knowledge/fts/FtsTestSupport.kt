@@ -45,6 +45,7 @@ class JdbcFtsDb(val file: File, private val failOnExecNumber: Int = -1) : FtsDb,
                 val row = object : FtsRow {
                     override fun string(i: Int): String = rs.getString(i + 1) ?: ""
                     override fun long(i: Int): Long = rs.getLong(i + 1)
+                    override fun blob(i: Int): ByteArray = rs.getBytes(i + 1) ?: ByteArray(0)
                 }
                 while (rs.next()) out += map(row)
                 out

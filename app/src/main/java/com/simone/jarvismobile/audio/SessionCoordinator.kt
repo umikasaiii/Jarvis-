@@ -2466,9 +2466,10 @@ class SessionCoordinator @Inject constructor(
             if (knowledge.isConfigured()) knowledge.ensureBuilt()
         }
         val found = seamEvidence ?: knowledge.gather(question, KNOWLEDGE_TOP_K)
+        val partialTag = if (seamEvidence == null && knowledge.lastReport.partial) " · ricerca parziale (fonti non consultabili o indice incompleto)" else ""
         return when (found) {
             is Evidence.Grounded -> {
-                _diagnostic.value = "fonti: ${found.passages.size} passaggi (${if (found.supportEstablished) found.strength.name.lowercase() else "correlati"})"
+                _diagnostic.value = "fonti: ${found.passages.size} passaggi (${if (found.supportEstablished) found.strength.name.lowercase() else "correlati"})$partialTag"
                 // Only the sentences in which the question's terms co-occur are shown to the model as evidence, not the whole
                 // article lead: what is cited is what supports.
                 val raws = if (!found.supportEstablished) emptyList() else found.passages.mapIndexed { i, p ->
@@ -2478,7 +2479,7 @@ class SessionCoordinator @Inject constructor(
             }
             // Relevant sources, none of which contains an answer: reported, NOT injected as if they answered.
             is Evidence.Insufficient -> {
-                _diagnostic.value = "fonti pertinenti ma insufficienti (${found.consulted.size})"
+                _diagnostic.value = "fonti pertinenti ma insufficienti (${found.consulted.size})$partialTag"
                 KnowledgeContext(found)
             }
             Evidence.NoEvidence -> KnowledgeContext(found)

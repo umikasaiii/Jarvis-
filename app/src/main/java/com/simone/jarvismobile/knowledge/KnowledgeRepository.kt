@@ -75,12 +75,22 @@ class KnowledgeRepository @Inject constructor(
      */
     suspend fun gather(question: String, limit: Int = 3): Evidence = withContext(Dispatchers.Default) {
         val opened = runCatching { indexManager.index }
-        val found = gatherer.gather(question, zim.sources(), opened.getOrNull(), emptyList(), limit)
+        opened.exceptionOrNull()?.let { if (it is kotlin.coroutines.cancellation.CancellationException) throw it }
+        val job = kotlin.coroutines.coroutineContext[kotlinx.coroutines.Job]
+        val found = gatherer.gatherDetailed(question, zim.sources(), opened.getOrNull(), emptyList(), limit) { job?.isActive != false }
+        // M2: what the search could NOT consult is kept (counts and stage names only, never text) so "no result" and "search was partial" differ.
+        val report = if (opened.isFailure) found.report.copy(indexFailed = true, indexAvailable = false, issues = found.report.issues + "index_open") else found.report
+        lastReport = report
         // An index that cannot be opened is a READ ERROR, not "no information": unless the archives alone found support, the caller
         // must be able to tell the user the sources could not be read (the exception is handled by the caller's retrieval guard).
-        if (opened.isFailure && found !is Evidence.Grounded) throw opened.exceptionOrNull()!!
-        found
+        if (opened.isFailure && found.evidence !is Evidence.Grounded) throw opened.exceptionOrNull()!!
+        if (report.unreadable && found.evidence !is Evidence.Grounded) throw java.io.IOException("knowledge_sources_unreadable")
+        found.evidence
     }
+
+    /** Report of the LAST [gather]: lets the caller declare a partial search (some source unreadable / index incomplete) instead of "nothing found". */
+    @Volatile var lastReport: com.simone.jarvismobile.core.knowledge.RetrievalReport = com.simone.jarvismobile.core.knowledge.RetrievalReport.EMPTY
+        private set
 
     /** Persists the picked folder and takes a durable READ permission only. */
     suspend fun setLibrary(treeUri: Uri) {
@@ -172,7 +182,15 @@ class KnowledgeRepository @Inject constructor(
 
     /** Passages from the TEXT LIBRARY that support [question], or [Evidence.NoEvidence] (lexical gate only; see [gather] for the full judge). */
     fun find(question: String, limit: Int = 3): Evidence {
-        val candidates = runCatching { indexManager.index.search(question, 24, setOf("doc")) }.getOrDefault(emptyList())
+        val candidates = try {
+            indexManager.index.search(question, 24, setOf("doc"))
+        } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // not "no result": recorded as a failed search stage (the caller still gets an empty list but lastReport says the search was not complete)
+            lastReport = lastReport.copy(indexFailed = true, issues = lastReport.issues + "find_index")
+            emptyList()
+        }
         return search.search(question, candidates, limit)
     }
 

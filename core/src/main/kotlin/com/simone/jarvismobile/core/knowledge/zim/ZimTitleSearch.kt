@@ -86,7 +86,10 @@ class ZimTitleSearch(
             val maxDist = if (foldedPhrase.length >= 9) 2 else 1
             for (probe in listOf(3, 4, 5, 6)) {
                 val head = seq.first().original.take(probe)
-                for (variant in caseVariants(head)) {
+                // a typo inside the probed prefix ("Osrtovia") would miss every title starting differently: also probe the prefix with each pair of
+                // adjacent letters swapped (the commonest slip), the edit distance below still decides
+                val heads = listOf(head) + (0 until head.length - 1).map { i -> head.substring(0, i) + head[i + 1] + head[i] + head.substring(i + 2) }.distinct().filter { it != head }
+                for (variant in heads.flatMap { caseVariants(it) }.distinct()) {
                     for (e in zim.titlesWithPrefix(ns, variant, fuzzyPoolPerProbe)) {
                         if (!seen.add(foldedPhrase + "|" + e.path)) continue
                         val title = KnowledgeText.fold(stripDisambiguation(e.displayTitle))

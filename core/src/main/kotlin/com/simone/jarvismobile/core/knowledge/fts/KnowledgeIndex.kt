@@ -3,10 +3,16 @@ package com.simone.jarvismobile.core.knowledge.fts
 import com.simone.jarvismobile.core.knowledge.KnowledgeChunk
 import com.simone.jarvismobile.core.knowledge.KnowledgeSearch
 import com.simone.jarvismobile.core.knowledge.KnowledgeText
+import com.simone.jarvismobile.core.knowledge.RetrievalOptions
 import com.simone.jarvismobile.core.knowledge.SupportJudge
 
 /** The few SQLite operations the index needs — implemented over `SQLiteDatabase` on Android and JDBC in the JVM tests. */
-interface FtsRow { fun string(i: Int): String; fun long(i: Int): Long }
+interface FtsRow {
+    fun string(i: Int): String
+    fun long(i: Int): Long
+    /** Raw bytes of a BLOB column (FTS4 `matchinfo`). Implementations that cannot provide it throw, and the index falls back to the legacy candidate selection. */
+    fun blob(i: Int): ByteArray = throw UnsupportedOperationException("blob")
+}
 interface FtsDb {
     fun exec(sql: String, vararg args: Any?)
     fun <T> query(sql: String, vararg args: Any?, map: (FtsRow) -> T): List<T>
@@ -57,7 +63,7 @@ data class PassageIn(
  * Search returns CANDIDATE passages only: whether they are sufficient evidence is decided downstream by the same
  * [com.simone.jarvismobile.core.knowledge.EvidenceAssembler] / [SupportJudge] — the index proves nothing by itself.
  */
-class KnowledgeIndex(private val db: FtsDb, var profiler: IndexProfiler? = null) {
+class KnowledgeIndex(private val db: FtsDb, var profiler: IndexProfiler? = null, var options: RetrievalOptions = RetrievalOptions()) {
     init { ensureSchema() }
 
     /** Next free passage id (single writer: [addBatch] is serialised). Avoids a `last_insert_rowid()` query per row. */
@@ -234,30 +240,93 @@ class KnowledgeIndex(private val db: FtsDb, var profiler: IndexProfiler? = null)
         val byRarity = known.distinctBy { it.first }.sortedBy { it.second }.map { it.first }
 
         val ids = LinkedHashSet<Long>()
+        // BM25 mode: docid -> best score over the queries below; the candidates are then the TOP of that scan, not the first rows in docid order
+        val scored = HashMap<Long, Double>()
         // AND of all terms first, then every subset that drops one, then two terms (a rare word in the question may simply not
         // occur in the answer-bearing passage). A single common word is never a query: it would drag in unrelated passages.
         var queries = 0
+        var bm25Works = options.bm25
         for (k in byRarity.size downTo maxOf(1, byRarity.size - 2)) {
             for (subset in subsets(byRarity, k)) {
-                if (ids.size >= CANDIDATES || queries >= MAX_QUERIES) break
+                if ((ids.size >= CANDIDATES && !bm25Works) || queries >= MAX_QUERIES) break
                 if (subset.size == 1 && known.first { it.first == subset[0] }.second > SINGLE_TERM_MAX_DF && raw.size > 1) continue
                 val expr = subset.joinToString(" ") { it.filter { c -> c.isLetterOrDigit() } }.trim()
                 if (expr.isEmpty()) continue
                 queries++
+                if (bm25Works) {
+                    val hits = runCatching { bm25Scan(expr, options.scanCap) }.getOrNull()
+                    if (hits != null) { for ((id, sc) in hits) scored.merge(id, sc, ::maxOf); continue }
+                    bm25Works = false // matchinfo not usable on this build/adapter: legacy selection from here on
+                }
                 db.query("SELECT docid FROM kx_fts WHERE kx_fts MATCH ? LIMIT ?", expr, CANDIDATES) { it.long(0) }.forEach { ids += it }
             }
-            if (ids.size >= limit * 2) break
+            if (!bm25Works && ids.size >= limit * 2) break
+            // the drop-one level always runs: the best passage may lack the one generic word of the question that every look-alike passage has
+            if (bm25Works && scored.size >= limit * 2 && k <= byRarity.size - 1) break
+        }
+        if (scored.isNotEmpty()) {
+            // scores of different expressions are not comparable: the union is re-scored by ONE disjunctive expression over exactly those rows
+            val pool = scored.entries.sortedByDescending { it.value }.take(RESCORE_POOL).map { it.key }
+            val any = byRarity.joinToString(" OR ") { it.filter { c -> c.isLetterOrDigit() } }
+            val uniform = runCatching { bm25Rescore(any, pool) }.getOrNull()
+            val finalScores = uniform?.takeIf { it.isNotEmpty() } ?: scored.entries.map { it.key to it.value }
+            finalScores.sortedByDescending { it.second }.take(options.rerank).forEach { ids += it.first }
         }
         if (ids.isEmpty()) return emptyList()
-        val rows = ids.toList().take(CANDIDATES).chunked(400).flatMap { part ->
+        val rows = ids.toList().take(maxOf(CANDIDATES, options.rerank)).chunked(400).flatMap { part ->
             db.query(
-                "SELECT p.docKey, p.title, p.section, p.text, p.lead, s.kind, s.collection, s.date, s.lexical FROM kx_passage p JOIN kx_source s ON s.id = p.sourceId WHERE p.id IN (${part.joinToString(",") { "?" }})",
+                "SELECT p.docKey, p.title, p.section, p.text, p.lead, s.kind, s.collection, s.date, s.lexical, p.id FROM kx_passage p JOIN kx_source s ON s.id = p.sourceId WHERE p.id IN (${part.joinToString(",") { "?" }})",
                 *part.toTypedArray(),
-            ) { Row(it.string(0), it.string(1), it.string(2), it.string(3), it.long(4) == 1L, it.string(5), it.string(6), it.string(7), it.long(8) == 1L) }
+            ) { Row(it.long(9), it.string(0), it.string(1), it.string(2), it.string(3), it.long(4) == 1L, it.string(5), it.string(6), it.string(7), it.long(8) == 1L) }
         }.filter { kinds == null || it.kind in kinds }
+        val bmRank = HashMap<Long, Int>().also { m -> ids.forEachIndexed { i, id -> m[id] = i } }
         val chunks = rows.map { KnowledgeChunk(it.docKey, it.title, it.section, it.text, it.kind, it.collection, it.date, it.lead, it.lexical) }
         val ranked = (KnowledgeSearch(minScore = 0.0).search(question, chunks, chunks.size) as? com.simone.jarvismobile.core.knowledge.Evidence.Grounded)?.passages.orEmpty()
-        return ranked.map { it.chunk }.take(limit)
+        if (!options.bm25 || scored.isEmpty()) return ranked.map { it.chunk }.take(limit)
+        // Reciprocal-rank fusion of the two orders (BM25 of the index, TF-IDF + headings of KnowledgeSearch): neither alone decides, the answer
+        // that one order buries and the other lifts is not lost to the final cut.
+        val idOf = rows.associateBy({ r -> r.docKey + "\u0000" + r.section + "\u0000" + r.text.take(80) }, { it.id })
+        return ranked.mapIndexed { i, sc ->
+            val id = idOf[sc.chunk.sourceId + "\u0000" + sc.chunk.section + "\u0000" + sc.chunk.text.take(80)]
+            val bm = id?.let { bmRank[it] } ?: ids.size
+            sc.chunk to (1.0 / (RRF_K + i) + 1.0 / (RRF_K + bm))
+        }.sortedByDescending { it.second }.map { it.first }.take(limit)
+    }
+
+    /**
+     * BM25 (k1 = 1.2, b = 0.75) of every row matching [expr], from FTS4 `matchinfo(kx_fts,'pcnalx')` — no FTS5, no custom SQL function. At most [cap] rows are
+     * scanned (a bounded cost: only the small matchinfo blob is read, never the passage text). Layout of the blob (32-bit native-endian integers):
+     * `p` phrases, `c` columns, `n` rows in the table, `a` average tokens per column, `l` tokens of this row's column, then per phrase and column `x`:
+     * hits in this row, hits in all rows, rows with hits.
+     */
+    internal fun bm25Scan(expr: String, cap: Int): List<Pair<Long, Double>> =
+        db.query("SELECT docid, matchinfo(kx_fts, 'pcnalx') FROM kx_fts WHERE kx_fts MATCH ? LIMIT ?", expr, cap) { row ->
+            row.long(0) to bm25(row.blob(1))
+        }
+
+    /** BM25 of exactly the rows [pool] under [expr] (one query per 400 ids, no scan beyond them). */
+    internal fun bm25Rescore(expr: String, pool: List<Long>): List<Pair<Long, Double>> = pool.chunked(400).flatMap { part ->
+        db.query("SELECT docid, matchinfo(kx_fts, 'pcnalx') FROM kx_fts WHERE kx_fts MATCH ? AND docid IN (${part.joinToString(",") { "?" }})", expr, *part.toTypedArray()) { row ->
+            row.long(0) to bm25(row.blob(1))
+        }
+    }
+
+    private fun bm25(blob: ByteArray): Double {
+        if (blob.size < 12) return 0.0
+        val bb = java.nio.ByteBuffer.wrap(blob).order(java.nio.ByteOrder.nativeOrder())
+        fun i(n: Int) = bb.getInt(n * 4).toLong() and 0xFFFFFFFFL
+        val phrases = i(0).toInt(); val cols = i(1).toInt(); val rows = i(2).toDouble()
+        val avg = i(3).toDouble().coerceAtLeast(1.0)
+        val len = i(3 + cols).toDouble()
+        var score = 0.0
+        for (p in 0 until phrases) {
+            val base = 3 + 2 * cols + 3 * (p * cols)
+            val tf = i(base).toDouble(); val docsWith = i(base + 2).toDouble()
+            if (tf <= 0.0) continue
+            val idf = Math.log(1.0 + (rows - docsWith + 0.5) / (docsWith + 0.5))
+            score += idf * tf * (K1 + 1.0) / (tf + K1 * (1.0 - B + B * len / avg))
+        }
+        return score
     }
 
     /** All k-element subsets of [items], keeping the original order (rarest first). */
@@ -272,7 +341,7 @@ class KnowledgeIndex(private val db: FtsDb, var profiler: IndexProfiler? = null)
         return out
     }
 
-    private data class Row(val docKey: String, val title: String, val section: String, val text: String, val lead: Boolean, val kind: String, val collection: String, val date: String, val lexical: Boolean)
+    private data class Row(val id: Long, val docKey: String, val title: String, val section: String, val text: String, val lead: Boolean, val kind: String, val collection: String, val date: String, val lexical: Boolean)
 
     companion object {
         const val SCHEMA = "2"
@@ -281,6 +350,10 @@ class KnowledgeIndex(private val db: FtsDb, var profiler: IndexProfiler? = null)
         private const val MAX_TERMS = 8
         private const val CANDIDATES = 150
         private const val MAX_QUERIES = 40
+        private const val RESCORE_POOL = 800
+        private const val RRF_K = 20
         private const val SINGLE_TERM_MAX_DF = 300
+        private const val K1 = 1.2
+        private const val B = 0.75
     }
 }

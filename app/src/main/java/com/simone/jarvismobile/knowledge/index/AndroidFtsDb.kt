@@ -58,6 +58,7 @@ class AndroidFtsDb(context: Context, name: String = FILE) : SQLiteOpenHelper(con
             val row = object : FtsRow {
                 override fun string(i: Int): String = if (c.isNull(i)) "" else c.getString(i)
                 override fun long(i: Int): Long = if (c.isNull(i)) 0L else c.getLong(i)
+                override fun blob(i: Int): ByteArray = if (c.isNull(i)) ByteArray(0) else c.getBlob(i)
             }
             while (c.moveToNext()) out += map(row)
             return out
