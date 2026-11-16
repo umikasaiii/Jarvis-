@@ -227,6 +227,7 @@ class AssistantTaskWorker(
         fun coordinator(): SessionCoordinator
         fun taskDao(): AssistantTaskDao
         fun settings(): SettingsRepository
+        fun memoryIndex(): com.simone.jarvismobile.memory.MemoryIndex
     }
 
     companion object {

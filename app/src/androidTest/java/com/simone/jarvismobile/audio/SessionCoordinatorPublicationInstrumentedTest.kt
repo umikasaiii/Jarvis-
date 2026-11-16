@@ -3,6 +3,7 @@ package com.simone.jarvismobile.audio
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import org.junit.Assert.assertNull
 import com.simone.jarvismobile.background.AssistantTaskWorker
 import com.simone.jarvismobile.core.knowledge.Evidence
 import com.simone.jarvismobile.core.knowledge.EvidenceStrength
@@ -125,5 +126,78 @@ class SessionCoordinatorPublicationInstrumentedTest {
         assertTrue(fact, fact.contains("non è verificato") || fact.contains("non verificato"))
         val chat = say("Dimmi una barzelletta")
         assertFalse(chat, chat.contains("non è verificato") || chat.contains("Fonti"))
+    }
+}
+
+/**
+ * M1 — conversation state, context budget and memory provenance through the REAL coordinator / real memory file. As above: only the model call
+ * and the retrieval are replaced; no language model, so this proves state handling, not answer quality, and it is not device verification.
+ */
+@RunWith(AndroidJUnit4::class)
+class ConversationStateInstrumentedTest {
+    private lateinit var entry: AssistantTaskWorker.WorkerEntryPoint
+    private lateinit var coordinator: SessionCoordinator
+    private var n = 0
+    private val created = ArrayList<String>()
+
+    @Before fun setUp() {
+        val context: Context = ApplicationProvider.getApplicationContext()
+        entry = EntryPointAccessors.fromApplication(context.applicationContext, AssistantTaskWorker.WorkerEntryPoint::class.java)
+        coordinator = entry.coordinator()
+        coordinator.newConversation()
+    }
+
+    @After fun tearDown() = runBlocking {
+        coordinator.testSeam = null; coordinator.newConversation()
+        created.forEach { runCatching { entry.memoryIndex().delete(it) } }
+    }
+
+    private fun say(text: String): String = runBlocking {
+        withTimeout(90_000) { coordinator.processQueuedText("m1-${System.nanoTime()}-${n++}", text) }
+    }.also { assertNotNull(text, it) }!!
+
+    @Test fun aLateAnswerFromBeforeAResetIsNeverPublishedOrStored() = runBlocking {
+        val entered = CompletableDeferred<Unit>(); val release = CompletableDeferred<Unit>()
+        coordinator.testSeam = ChatTestSeam(chat = { entered.complete(Unit); release.await(); "Risposta del turno precedente: Madrid." })
+        val job = async(Dispatchers.Default) { runCatching { coordinator.processQueuedText("m1-late-${System.nanoTime()}", "Qual è la capitale della Spagna?") } }
+        withTimeout(60_000) { entered.await() }
+        coordinator.newConversation() // the user starts over while the old turn is still generating
+        release.complete(Unit)
+        job.await()
+        delay(1_500)
+        assertTrue("the old turn leaked into the new conversation: ${coordinator.messages.value}", coordinator.messages.value.none { "Madrid" in it.text })
+    }
+
+    @Test fun twelveTurnsWithTopicChangesKeepTheContextBounded() {
+        val seen = java.util.concurrent.CopyOnWriteArrayList<Int>()
+        coordinator.testSeam = ChatTestSeam(chat = { m -> seen += m.length; "Risposta numero ${seen.size} su un argomento qualsiasi, abbastanza lunga da occupare spazio nella conversazione." })
+        val topics = listOf("la cucina", "i treni", "la musica", "il giardino", "la storia romana", "il calcio", "la fotografia", "i vulcani", "il caffè", "la chimica", "il cinema", "lo spazio")
+        topics.forEach { say("Parlami di $it e dei suoi aspetti più importanti nella vita quotidiana") }
+        assertEquals(12, coordinator.messages.value.count { !it.fromUser })
+        assertTrue("each prompt stayed far below the window (chars): $seen", seen.all { it < 6_000 })
+    }
+
+    @Test fun aRequestLargerThanTheWindowIsRefusedExplicitlyNotSilentlyTruncated() {
+        var calls = 0
+        coordinator.testSeam = ChatTestSeam(chat = { calls++; "ok" })
+        val reply = say("Parlami di " + "argomento ".repeat(6_000))
+        assertTrue(reply, reply.contains("troppo lunga"))
+        assertEquals("no generation pretends to have read it", 0, calls)
+    }
+
+    @Test fun aCorrectionSupersedesWithoutErasingAndModelOutputNeverEntersMemory() = runBlocking {
+        val mem = entry.memoryIndex()
+        val a = mem.remember("Il mio peso è 78 kg", autoCategorize = false)!!.also { created += it.id }
+        val b = mem.remember("Correggo: ora peso 80 kg", autoCategorize = false)!!.also { created += it.id }
+        val all = mem.listRecords()
+        assertEquals(com.simone.jarvismobile.core.memory.RecordStatus.SUPERSEDED, all.first { it.id == a.id }.status)
+        assertEquals(a.id, all.first { it.id == b.id }.supersedes)
+        mem.rebuild()
+        val offered = mem.retrieve("quanto peso", 8).map { it.chunk.text }
+        assertTrue(offered.toString(), offered.any { "80 kg" in it } && offered.none { "78 kg" in it })
+        // a draft the gate rejected, a model inference and a supposition are not stored
+        assertNull(mem.remember("Il tuo peso è 90 kg", source = com.simone.jarvismobile.core.memory.MemorySource.REJECTED_DRAFT))
+        assertNull(mem.remember("Probabilmente pesi 90 kg", source = com.simone.jarvismobile.core.memory.MemorySource.MODEL_INFERENCE))
+        assertTrue(mem.listRecords().none { "90 kg" in it.text })
     }
 }

@@ -65,3 +65,22 @@ package), Documents / summaries / comparisons and Knowledge/Memory focus (`gener
 - **Real-coordinator test** (`SessionCoordinatorPublicationInstrumentedTest`, emulator workflow): the production `SessionCoordinator` via the
   Hilt graph and `processQueuedText`, with only the model call and the knowledge retrieval replaced through `ChatTestSeam`
   (null in production). The seam is counted against the same attempt ledger. It proves the publication pipeline, not model quality.
+
+## M1 — memory, conversation state, context budget
+- **Provenance** (`MemoryRecord` additive fields, old files load unchanged): source (USER_STATEMENT, USER_PREFERENCE, TOOL_RESULT, DOCUMENT, ZIM,
+  MODEL_INFERENCE, HYPOTHESIS, UNVERIFIED, REJECTED_DRAFT), verification, sourceRef, conversationId, status (ACTIVE / SUPERSEDED / CONFLICT),
+  supersedes / supersededBy, subjectKey. `MemoryAdmission`: model inference, hypotheses, unverified items and rejected drafts are never durable;
+  a document/ZIM/tool item is a referenced source, never a personal fact. The existing explicit-save confirmations are untouched; no new automatic saves.
+- **Corrections** (`MemoryLedger`): "Correggo: ora peso 80 kg" marks the earlier value SUPERSEDED and links both (history kept for audit); a different value
+  with no correction cue marks both CONFLICT (offered to the model flagged as unresolved); the same value twice is stored once. Retrieval never offers a superseded value.
+- **Three levels stay separate**: published history (chat store; what the next turn is rebuilt from, footers stripped, uncertainty qualifiers kept) · native
+  context (dropped whenever the published text is not the model's candidate, on model/slot change, on rotation) · durable memory (only explicit saves).
+- **Recap** (`ShortTermMemorySummarizer`): questions/commands without "?", suppositions and guesses are not recorded as the user's facts; a correction replaces the earlier
+  value; the prompt label says they are unverified user statements.
+- **Budget** (`ContextFit`): estimates only — no tokenizer API of LiteRT-LM 0.14.0 was verified (the artifact is not available in the build environment and none was invented);
+  `TokenEstimator` keeps its 3 chars/token over-count. The evidence is fitted to what remains after system + history + question + framing + a revision reserve; whole items are
+  dropped (memory, then later passages; receipts never) and the prompt says so; a request that alone exceeds the window is refused explicitly (no silent truncation, no generation).
+  Rotation is now also decided on the ASSEMBLED message, before overflow. Window size is a `ContextBudget` parameter (not hard-wired as universal).
+- **Read errors**: personal-memory rewrites fail closed when the archive cannot be read (previously an unreadable file looked empty and was overwritten);
+  document reads that answer questions throw `DocumentReadException` instead of returning an empty list (cancellation untouched).
+- Not done in M1: real tokenizer integration; DAO-level instrumented fault injection for documents; durable storage of tool receipts (nothing writes them to memory).

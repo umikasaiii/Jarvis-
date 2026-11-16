@@ -140,7 +140,11 @@ class MemoryIndex @Inject constructor(
         autoCategorize: Boolean = true,
         theme: String = "",
         spacing: String = "",
+        source: com.simone.jarvismobile.core.memory.MemorySource = com.simone.jarvismobile.core.memory.MemorySource.USER_STATEMENT,
+        sourceRef: String = "",
     ): MemoryRecord? {
+        // M1: nothing the model produced, supposed or had rejected is written to durable memory, whoever asks
+        if (!com.simone.jarvismobile.core.memory.MemoryAdmission.mayBeDurable(source)) return null
         val resolved = kind ?: com.simone.jarvismobile.core.memory.MemoryStructure.classify(text)
         if (resolved == MemoryKind.TEMPORARY) {
             val ok = conversationMemory.addTemporary(text)
@@ -157,7 +161,7 @@ class MemoryIndex @Inject constructor(
         // loading model just leaves it uncategorised. Manual "+" adds pass
         // autoCategorize=false so an unselected category means exactly "Senza
         // categoria", ready for the AI button.
-        val saved = vault.addMemory(text, resolved, category, theme, spacing) ?: return null
+        val saved = vault.addMemory(text, resolved, category, theme, spacing, source, sourceRef) ?: return null
         rebuild()
         if (category.isBlank() && autoCategorize) {
             bgScope.launch {
