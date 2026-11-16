@@ -22,7 +22,7 @@ Scope: improve the existing Knowledge Engine (no new model, no embeddings, no ne
 - **Schema** — unchanged (index SCHEMA "2"); existing indexes remain valid; nothing is deleted.
 
 ## Measured (JVM, synthetic corpus, same corpus & index for both rows)
-Corpus: `RetrievalBench`, invented entities, 51 questions (dev/holdout split), real SQLite FTS4 + real ZIM fixture. `RetrievalBenchmarkTest` prints the table.
+Corpus: `RetrievalBench`, invented entities, 50 questions (dev/holdout split), real SQLite FTS4 + real ZIM fixture. `RetrievalBenchmarkTest` prints the table.
 Caveat: the holdout was fixed before the M2 code but its aggregate was visible while the entity guard was added; it is not a blind test.
 
 | set | variant | R@3 | R@5 | P@3 | MRR | section R@5 | false support (absent) | RELATED→STRONG | p50 / p95 ms | sqlite/q |

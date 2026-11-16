@@ -299,13 +299,13 @@ class KnowledgeIndex(private val db: FtsDb, var profiler: IndexProfiler? = null,
      * `p` phrases, `c` columns, `n` rows in the table, `a` average tokens per column, `l` tokens of this row's column, then per phrase and column `x`:
      * hits in this row, hits in all rows, rows with hits.
      */
-    internal fun bm25Scan(expr: String, cap: Int): List<Pair<Long, Double>> =
+    fun bm25Scan(expr: String, cap: Int): List<Pair<Long, Double>> =
         db.query("SELECT docid, matchinfo(kx_fts, 'pcnalx') FROM kx_fts WHERE kx_fts MATCH ? LIMIT ?", expr, cap) { row ->
             row.long(0) to bm25(row.blob(1))
         }
 
     /** BM25 of exactly the rows [pool] under [expr] (one query per 400 ids, no scan beyond them). */
-    internal fun bm25Rescore(expr: String, pool: List<Long>): List<Pair<Long, Double>> = pool.chunked(400).flatMap { part ->
+    fun bm25Rescore(expr: String, pool: List<Long>): List<Pair<Long, Double>> = pool.chunked(400).flatMap { part ->
         db.query("SELECT docid, matchinfo(kx_fts, 'pcnalx') FROM kx_fts WHERE kx_fts MATCH ? AND docid IN (${part.joinToString(",") { "?" }})", expr, *part.toTypedArray()) { row ->
             row.long(0) to bm25(row.blob(1))
         }
