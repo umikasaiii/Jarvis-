@@ -329,7 +329,7 @@ class LitertLmEngine @Inject constructor(
         override fun send(text: String): String = conversation.sendMessage(text).toString()
 
         /**
-         * `Conversation.getTokenCount()` — present in the exact AAR (litertlm-android 0.14.0, javap in CI). Called by reflection so a future signature
+         * `Conversation.getTokenCount()` — a PUBLIC method of the exact AAR (litertlm-android 0.14.0, javap in CI), looked up by name so a future signature
          * change degrades to "no measurement" instead of a crash; the value's semantics are undocumented and it is never used to size a prompt.
          */
         override fun tokenCount(): Int? = runCatching { (conversation.javaClass.getMethod("getTokenCount").invoke(conversation) as? Int) }.getOrNull()

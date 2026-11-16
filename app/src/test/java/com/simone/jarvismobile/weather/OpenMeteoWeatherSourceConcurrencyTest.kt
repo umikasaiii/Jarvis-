@@ -63,6 +63,8 @@ class OpenMeteoWeatherSourceConcurrencyTest {
 
     @Before
     fun setUp() {
+        // M3: the offline gate is fail-closed until initialised; this test models the default user setting (EXPLICIT_ONLINE) against a LOCAL mock server
+        com.simone.jarvismobile.net.OfflineGate.initialise(com.simone.jarvismobile.core.net.OfflineMode.EXPLICIT_ONLINE)
         server = MockWebServer()
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse {

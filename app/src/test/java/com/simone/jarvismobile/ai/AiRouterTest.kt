@@ -12,6 +12,8 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.After
+import org.junit.Before
 import org.junit.Test
 
 /**
@@ -23,6 +25,24 @@ import org.junit.Test
  * (§ `AiEngineQualifiers.kt`, `AiRoutingContextProvider.kt`).
  */
 class AiRouterTest {
+
+    // M3: the process-wide offline gate is fail-closed until initialised; these tests model an app whose user left the default (EXPLICIT_ONLINE).
+    @Before fun gateOpen() = com.simone.jarvismobile.net.OfflineGate.initialise(com.simone.jarvismobile.core.net.OfflineMode.EXPLICIT_ONLINE)
+    @After fun gateReset() = com.simone.jarvismobile.net.OfflineGate.initialise(com.simone.jarvismobile.core.net.OfflineMode.EXPLICIT_ONLINE)
+
+    @Test
+    fun `strict offline routes to local even when Core is online and enabled, and the remote engine is never called`() = runTest {
+        com.simone.jarvismobile.net.OfflineGate.initialise(com.simone.jarvismobile.core.net.OfflineMode.STRICT_OFFLINE)
+        val local = FakeAiEngine(AiExecutionTarget.LOCAL, resultText = "locale")
+        val remote = FakeAiEngine(AiExecutionTarget.REMOTE_FAST, resultText = "remota")
+        val router = AiRouter(local, remote, FakeRoutingContext(remoteAiEnabled = true, coreState = JarvisCoreState.ONLINE), emptySnapshotCache(), FakeSnapshotGate())
+        assertEquals("locale", router.generate(request()).text)
+        val attempt = router.attemptRemoteOnly(request())
+        assertEquals(com.simone.jarvismobile.ai.RemoteAttemptOutcome.NOT_ATTEMPTED, attempt.outcome)
+        assertEquals("strict_offline", attempt.decision.reason)
+        assertEquals(0, remote.callCount)
+        assertTrue(com.simone.jarvismobile.net.OfflineGate.trace.events().any { it.component == "net:core_remote_chat" && it.decision == "BLOCK" })
+    }
 
     private fun request(type: AiRequestType = AiRequestType.CHAT, id: String = "req-1") = AiRequest(
         requestId = id,

@@ -22,7 +22,7 @@ class PublicationWiringGuardTest {
         assertTrue("publishChatTurn(" in chat)
         assertFalse("GroundingVerifier.verify" in c) // the old "answer + trailing note" verdict path is gone
         assertTrue("AttemptLedger(nativeCounting = true)" in chat)
-        assertTrue("withContext(AttemptBudget(attemptLedger))" in chat)
+        assertTrue("withContext(AttemptBudget(attemptLedger)" in chat) // + the per-request TokenLedgerContext (M3)
         assertTrue("retrievalFailed" in chat) // a read error is tracked apart from "no result"
     }
 
