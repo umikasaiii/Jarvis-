@@ -95,6 +95,12 @@ class DiagnosticsViewModel @Inject constructor(
         _llmReport.value = llmDiagnostics.report()
     }
 
+    /** Erases the local request trace (memory and file). */
+    fun clearRequestTrace() {
+        llmDiagnostics.clearRequestTrace()
+        _llmReport.value = llmDiagnostics.report()
+    }
+
     // HOTFIX 5 — TEMPORARY, EXPLICIT, LOCAL text inspection (prompts / raw / cleaned output of the last turns).
     // Off by default, expires on its own, held in memory only (never written to disk, never transmitted).
     private val _probeText = MutableStateFlow("")

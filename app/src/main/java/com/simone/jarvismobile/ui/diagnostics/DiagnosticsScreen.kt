@@ -216,6 +216,9 @@ fun DiagnosticsScreen(
                 OutlinedButton(onClick = viewModel::refreshLlmReport, modifier = Modifier.fillMaxWidth()) {
                     Text("Mostra eventi recenti")
                 }
+                OutlinedButton(onClick = viewModel::clearRequestTrace, modifier = Modifier.fillMaxWidth()) {
+                    Text("Cancella traccia richieste")
+                }
                 if (llmReport.isNotEmpty()) {
                     Text(llmReport, style = MaterialTheme.typography.bodySmall, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
                 }

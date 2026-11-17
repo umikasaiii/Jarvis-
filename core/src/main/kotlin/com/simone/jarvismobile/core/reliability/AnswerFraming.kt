@@ -16,6 +16,8 @@ enum class RetrievalState {
     NO_RESULT_PARTIAL,
     /** Pertinent sources WERE retrieved but did not fit the context window in this request: not "no information", "not used". */
     EXCLUDED_BY_BUDGET,
+    /** The user explicitly asked for the model's own knowledge instead of the offline sources: nothing was retrieved, and the answer says so. */
+    USER_REQUESTED_GENERAL,
 }
 
 /**
@@ -47,8 +49,12 @@ object AnswerFraming {
         return Regex("(?<![.!?]\\s)(?<!^)\\b\\p{Lu}[\\p{L}]{2,}").findAll(answer).any { it.value.lowercase() !in asked }
     }
 
-    fun qualifier(kind: RequestKind, state: RetrievalState, preciseFacts: Boolean = true): String = when {
+    fun qualifier(kind: RequestKind, state: RetrievalState, preciseFacts: Boolean = true, highRisk: Boolean = false): String = when {
         kind != RequestKind.FACTUAL -> ""
+        state == RetrievalState.USER_REQUESTED_GENERAL -> GeneralAnswerPolicy.USER_REQUESTED_GENERAL + (if (highRisk) " " + GeneralAnswerPolicy.HIGH_RISK_NOTE else "")
+        // a high-risk answer without any source always carries its limit, with or without a number or a name in it ("l'insulina è prodotta dal fegato")
+        highRisk && state in setOf(RetrievalState.ABSENT, RetrievalState.UNAVAILABLE, RetrievalState.NO_RESULT) ->
+            (if (state == RetrievalState.NO_RESULT) NO_RELEVANT_SOURCE else NO_SOURCES) + " " + GeneralAnswerPolicy.HIGH_RISK_NOTE
         state == RetrievalState.ERROR -> SOURCES_UNREADABLE
         state == RetrievalState.INSUFFICIENT -> NO_ANSWER_IN_SOURCES
         state == RetrievalState.NO_RESULT_PARTIAL -> NO_RESULT_PARTIAL_TEXT // never "absent" while part of the search did not run, with or without precise facts
@@ -59,7 +65,7 @@ object AnswerFraming {
     }
 
     fun frame(kind: RequestKind, state: RetrievalState, answer: String, question: String = ""): String {
-        val q = qualifier(kind, state, statesPreciseFacts(question, answer))
+        val q = qualifier(kind, state, statesPreciseFacts(question, answer), GeneralAnswerPolicy.isHighRisk(question))
         return if (q.isEmpty()) answer else q + "\n" + answer
     }
 }

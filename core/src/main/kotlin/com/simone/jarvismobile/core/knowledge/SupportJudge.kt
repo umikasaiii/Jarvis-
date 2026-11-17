@@ -88,6 +88,16 @@ object SupportJudge {
         return out
     }
 
+    /**
+     * QUESTION-FRAME words: they say what KIND of question this is, not what it is about ("è vero che…", "quale funzione svolge", "viene prodotta da…",
+     * the category word "organo"). A closed list of function/frame words, never topic words. A title that is only such a word ("Prodotto a tabacco…",
+     * "Organo (anatomia)") does not make an article ABOUT the question, and a passage that contains only frame words has not shown the answer.
+     */
+    internal val GENERIC: Set<String> = stems(
+        "produce produci producono prodotto prodotta prodotti prodotte vero vera veri vere falso falsa viene vengono funzione funzioni svolge svolgono " +
+            "serve servono esempio esempi pratico pratica organo organi spiegami significa significato",
+    ).toSet()
+
     /** Grammar of the question, not its subject: "quanti/quante/quanto…", "in che anno", "a che anno". */
     fun asksQuantity(question: String): Boolean {
         val q = KnowledgeText.fold(question)
@@ -184,7 +194,8 @@ object SupportJudge {
         if (qStems.isEmpty()) return NO_RESULT
         val terms = qStems.distinct()
         val own = ownTerms(terms, chunk.sourceTitle, chunk.section) + namedTerms.filter { it in terms }
-        val aboutSubject = own.isNotEmpty()
+        // an article is ABOUT the question only through a term that says what is asked, not through a frame word ("prodotto", "organo")
+        val aboutSubject = own.any { it !in GENERIC }
         val rest = terms - own
         val others = rest.filter { it in otherEntityTerms }
         val attrs = rest - others.toSet()
@@ -205,7 +216,10 @@ object SupportJudge {
         // The terms that are other articles' subjects are not attributes this article must state — except when there is no
         // attribute at all ("capitale del Portogallo" with both entries retrieved): then the relation itself must be stated.
         // An article that is not ABOUT any asked term must contain every term, whatever other articles were retrieved.
-        val goal = if (aboutSubject && attrs.isNotEmpty()) attrs else rest
+        val fullGoal = if (aboutSubject && attrs.isNotEmpty()) attrs else rest
+        // the terms that say what is asked decide; frame words ("produce", "funzione", "vero") alone prove nothing. Only when EVERY term is a frame word
+        // do they count (a question made of nothing else), so "quale funzione svolge il fegato?" keeps its previous behaviour.
+        val goal = fullGoal.filter { it !in GENERIC }.ifEmpty { fullGoal }
         val needed = when {
             chunk.lexical -> goal.size
             aboutSubject -> kotlin.math.ceil(0.5 * goal.size).toInt().coerceAtLeast(1)

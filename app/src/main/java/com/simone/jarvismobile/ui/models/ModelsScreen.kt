@@ -139,8 +139,10 @@ fun ModelsScreen(
                 autoNote?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                 interrupted.forEach { i ->
                     Text(
-                        "Caricamento interrotto: «${i.name}» (${i.fileBytes / (1024 * 1024)} MiB) non è terminato — Android potrebbe aver chiuso l'app. " +
-                            "Il modello è ancora installato e non viene ricaricato da solo.",
+                        (if (i.phase == "generation") "Risposta interrotta: l'app si è fermata mentre «${i.name}» (${i.fileBytes / (1024 * 1024)} MiB) stava generando — la causa non è nota " +
+                            "(memoria, crash nativo, blocco o altro: vedi i dati di diagnostica). "
+                        else "Caricamento interrotto: «${i.name}» (${i.fileBytes / (1024 * 1024)} MiB) non è terminato — Android potrebbe aver chiuso l'app. ") +
+                            "Il modello è ancora installato e non viene ricaricato da solo; puoi usare un modello più piccolo.",
                         style = MaterialTheme.typography.bodySmall,
                     )
                     TextButton(onClick = { viewModel.dismissInterrupted(i.path) }) { Text("Ho capito, consenti di nuovo il caricamento automatico") }

@@ -47,6 +47,24 @@ class InferenceDiagnostics @Inject constructor(
     private val traceFile = File(context.filesDir, "diag/gen_trace.log")
     val trace = com.simone.jarvismobile.core.quality.GenerationTraceLog(capacity = 100) { line -> persistTrace(line) }
 
+    /** One content-free line per chat request (what the pipeline did, never what was said). Local, bounded, clearable; see [clearRequestTrace]. */
+    private val requestFile = File(context.filesDir, "diag/request_trace.log")
+    val requests = com.simone.jarvismobile.core.quality.RequestTraceLog(capacity = 100) { line ->
+        writer.execute {
+            runCatching {
+                requestFile.parentFile?.mkdirs()
+                requestFile.appendText(line + "\n")
+                if (requestFile.length() > MAX_FILE_BYTES) requestFile.writeText(requestFile.readLines().takeLast(KEEP_LINES).joinToString("\n") + "\n")
+            }
+        }
+    }
+
+    /** Deletes the in-memory ring AND the file: the user's way to erase the request trace. */
+    fun clearRequestTrace() {
+        requests.clear()
+        writer.execute { runCatching { requestFile.delete() } }
+    }
+
     /** Records an app-level event (lifecycle, screen, process) on the same trail as the engine events. */
     fun event(type: InferenceEventType, tag: String = "", n1: Long = -1, n2: Long = -1) {
         log.record(
@@ -148,6 +166,8 @@ class InferenceDiagnostics @Inject constructor(
         append(log.render(limit))
         append("\n\n# Generazioni recenti (solo metadati; token generati e motivo di arresto: UNAVAILABLE)\n")
         append(trace.render(20))
+        append("\n\n# Richieste recenti (solo conteggi e codici, nessun testo)\n")
+        append(requests.render(20))
     }
 
     private fun persist(e: InferenceEvent) {

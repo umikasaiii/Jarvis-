@@ -79,7 +79,19 @@ class EvidenceAssembler(private val search: KnowledgeSearch = KnowledgeSearch(mi
         // relevant but not sufficient: what was consulted, and what it lacked
         fun insufficient(extraMissing: List<String> = emptyList()): Evidence {
             val consulted = LinkedHashMap<String, KnowledgeChunk>()
-            for ((id, lead) in leads) if (id in titleMatched) consulted[id] = lead
+            // a source is "consulted" only if its title names something the question is ABOUT: an article that shares only a frame word ("Prodotto a
+            // tabacco riscaldato" for "…insulina viene prodotta dal fegato") is not listed as a source the user should look at
+            // and an article matched only by a typo-tolerant GUESS ("variabile" ~ "Variable Length Subnet Masking") must share another term of a
+            // multi-term question to count as consulted ("…in Python"): resembling one word of the question is not relevance
+            val central = qStems.filter { it !in SupportJudge.GENERIC }
+            for ((id, lead) in leads) if (id in titleMatched && ownBySource[id].orEmpty().any { it !in SupportJudge.GENERIC }) {
+                if (id in approximate) {
+                    val others = central.filter { it !in ownBySource[id].orEmpty() }
+                    val leadStems = SupportJudge.stems(lead.text + " " + lead.sourceTitle).toSet()
+                    if (central.size > 1 && others.isNotEmpty() && others.none { it in leadStems }) continue
+                }
+                consulted[id] = lead
+            }
             for (c in documentChunks) {
                 val cov = qStems.count { it in search.terms(c.text + " " + c.section + " " + c.sourceTitle).toSet() }.toDouble() / qStems.size
                 if (cov >= DOCUMENT_RELEVANCE) consulted.putIfAbsent(c.sourceId, c)

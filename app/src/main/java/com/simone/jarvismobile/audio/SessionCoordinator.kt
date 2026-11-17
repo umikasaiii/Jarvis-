@@ -388,6 +388,8 @@ class SessionCoordinator @Inject constructor(
     val messages: StateFlow<List<ChatMessage>> = _messages.asStateFlow()
 
     @Volatile internal var testSeam: ChatTestSeam? = null
+    /** Instrumented tests only: the singleton personal-memory index the production chat path queries. */
+    internal val memoryIndex: MemoryIndex get() = memory
 
     /** Last context-assembly figures (token counts are ESTIMATES): counts and flags only, never text. */
     @Volatile private var lastContextDiag = ""
@@ -1623,12 +1625,17 @@ class SessionCoordinator @Inject constructor(
         // calculations and hypotheticals get no retrieval, no citations and no verification claims.
         val requestKind = RequestClassifier.classify(transcript)
         val useEvidence = requestKind == RequestKind.FACTUAL || requestKind == RequestKind.CONVERSATION
-        val kRes: Result<KnowledgeContext?> = if (useEvidence) runCancellable { knowledgeContext(transcript) } else Result.success(null)
+        // a question about something the user told JARVIS is answered from personal memory (or declared not found): an encyclopedic article that merely
+        // shares a word ("progetto", "memoria") is never a substitute for it
+        val personalFirst = StoredFactQuestion.skipEncyclopedia(transcript, retrieved.any { it.score > 0.0 })
+        // the user explicitly asked for the model's own knowledge ("senza usare gli archivi…"): nothing is retrieved, the answer is labelled as such
+        val generalOnly = com.simone.jarvismobile.core.reliability.GeneralAnswerPolicy.requestsGeneralOnly(transcript)
+        val kRes: Result<KnowledgeContext?> = if (useEvidence && !personalFirst && !generalOnly) runCancellable { knowledgeContext(transcript) } else Result.success(null)
         val knowledgeCtx = kRes.getOrNull()
         // Imported documents/attachments are searched on the same pre-generation path as the offline library, as structured
         // blocks: they join the one evidence package instead of being pasted as an unverifiable string.
         val dRes: Result<List<com.simone.jarvismobile.core.document.EvidenceBlock>> =
-            if (useEvidence) runCancellable { documents.evidenceBlocks(transcript, null) } else Result.success(emptyList())
+            if (useEvidence && !generalOnly) runCancellable { documents.evidenceBlocks(transcript, null) } else Result.success(emptyList())
         val docBlocks = dRes.getOrDefault(emptyList())
         // a read error is NOT "no information": it is reported as such
         val retrievalFailed = kRes.isFailure || dRes.isFailure
@@ -1865,6 +1872,13 @@ class SessionCoordinator @Inject constructor(
                     receipts = receipts, excludedByBudget = excludedByBudget,
                     estimatedTokens = measured.estTotal, droppedItems = contextFit.droppedIds.size + finalDrops,
                     verify = pkg.has(EvidenceKind.KNOWLEDGE) || pkg.has(EvidenceKind.DOCUMENT) || (storedFact && pkg.has(EvidenceKind.MEMORY)),
+                    generalOnly = generalOnly,
+                    trace = TraceDraft(
+                        memoryFound = retrieved.size, memoryAdmitted = pkg.items.count { it.kind == EvidenceKind.MEMORY },
+                        knowledgeQueried = useEvidence && !personalFirst && !generalOnly,
+                        fallbacks = buildList { if (personalFirst) add("personal_first"); if (generalOnly) add("general_only"); addAll(turnResets.map { it }); if (rotated) add("rotation") },
+                        startedAt = startedAt,
+                    ),
                 ),
                 text,
             )
@@ -1901,7 +1915,13 @@ class SessionCoordinator @Inject constructor(
         val droppedItems: Int,
         /** True when the answer must be checked against the package (knowledge, documents, tool results, stored facts). */
         val verify: Boolean,
+        /** The user explicitly asked for general knowledge instead of the offline sources. */
+        val generalOnly: Boolean = false,
+        /** Counts and routing flags for the content-free request trace (never text). */
+        val trace: TraceDraft? = null,
     )
+
+    private class TraceDraft(val memoryFound: Int, val memoryAdmitted: Int, val knowledgeQueried: Boolean, val fallbacks: List<String>, val startedAt: Long)
 
     private class Assembled(val pkg: EvidencePackage, val message: String, val evidence: String?, val docEvidence: String?)
 
@@ -1955,6 +1975,7 @@ class SessionCoordinator @Inject constructor(
             return pub.text
         }
         val state = when {
+            c.generalOnly -> RetrievalState.USER_REQUESTED_GENERAL
             c.excludedByBudget -> RetrievalState.EXCLUDED_BY_BUDGET
             c.retrievalFailed -> RetrievalState.ERROR
             kctx?.evidence is Evidence.Insufficient || kctx?.evidence is Evidence.Grounded -> RetrievalState.INSUFFICIENT
@@ -1985,6 +2006,24 @@ class SessionCoordinator @Inject constructor(
     }
 
     private fun recordContext(c: ChatPublicationContext, outcome: String) {
+        c.trace?.let { d ->
+            val ev = c.kctx?.evidence
+            val (found, relevance) = when (ev) {
+                is Evidence.Grounded -> ev.passages.size to (if (ev.supportEstablished) "supported" else "related")
+                is Evidence.Insufficient -> ev.consulted.size to "insufficient"
+                else -> 0 to "none"
+            }
+            runCatching {
+                inferenceDiagnostics.requests.record(
+                    com.simone.jarvismobile.core.quality.RequestTrace(
+                        atMs = System.currentTimeMillis(), intent = c.kind.name, memoryQueried = true, memoryFound = d.memoryFound, memoryAdmitted = d.memoryAdmitted,
+                        knowledgeQueried = d.knowledgeQueried, candidatePassages = found, relevance = relevance, retrievalError = c.retrievalFailed,
+                        modelAvailable = true, publication = outcome, fallbacks = d.fallbacks, durationMs = System.currentTimeMillis() - d.startedAt,
+                        reason = if (outcome.contains("abstain")) "abstain" else if (c.retrievalFailed) "retrieval_error" else "",
+                    ),
+                )
+            }
+        }
         val m = c.tokens?.latest()
         contextDiag.record(
             ContextEvent(

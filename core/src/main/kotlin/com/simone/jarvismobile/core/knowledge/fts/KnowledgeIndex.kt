@@ -247,20 +247,28 @@ class KnowledgeIndex(private val db: FtsDb, var profiler: IndexProfiler? = null,
         // occur in the answer-bearing passage). A single common word is never a query: it would drag in unrelated passages.
         var queries = 0
         var bm25Works = options.bm25
-        for (k in byRarity.size downTo maxOf(1, byRarity.size - 2)) {
-            for (subset in subsets(byRarity, k)) {
-                if ((ids.size >= CANDIDATES && !bm25Works) || queries >= MAX_QUERIES) break
-                if (subset.size == 1 && known.first { it.first == subset[0] }.second > SINGLE_TERM_MAX_DF && raw.size > 1) continue
-                val expr = subset.joinToString(" ") { it.filter { c -> c.isLetterOrDigit() } }.trim()
-                if (expr.isEmpty()) continue
-                queries++
-                if (bm25Works) {
-                    val hits = catchingKeepCancel { bm25Scan(expr, options.scanCap) }.getOrNull()
-                    if (hits != null) { for ((id, sc) in hits) scored.merge(id, sc, ::maxOf); continue }
-                    bm25Works = false // matchinfo not usable on this build/adapter: legacy selection from here on
-                }
-                db.query("SELECT docid FROM kx_fts WHERE kx_fts MATCH ? LIMIT ?", expr, CANDIDATES) { it.long(0) }.forEach { ids += it }
+        fun run(subset: List<String>) {
+            if ((ids.size >= CANDIDATES && !bm25Works) || queries >= MAX_QUERIES) return
+            if (subset.size == 1 && known.first { it.first == subset[0] }.second > SINGLE_TERM_MAX_DF && raw.size > 1) return
+            val expr = subset.joinToString(" ") { it.filter { c -> c.isLetterOrDigit() } }.trim()
+            if (expr.isEmpty()) return
+            queries++
+            if (bm25Works) {
+                val hits = catchingKeepCancel { bm25Scan(expr, options.scanCap) }.getOrNull()
+                if (hits != null) { for ((id, sc) in hits) scored.merge(id, sc, ::maxOf); return }
+                bm25Works = false // matchinfo not usable on this build/adapter: legacy selection from here on
             }
+            db.query("SELECT docid FROM kx_fts WHERE kx_fts MATCH ? LIMIT ?", expr, CANDIDATES) { it.long(0) }.forEach { ids += it }
+        }
+        // CENTRAL terms first: the words that say what is asked ("insulina"), without the question's frame words ("organo", "produce", "funzione").
+        // Dropping up to two terms from the full set can leave ONLY frame words, which match any generic article ("Organo (anatomia)") and never
+        // reach the passages that actually contain the subject.
+        val central = byRarity.filter { it !in SupportJudge.GENERIC }
+        if (central.isNotEmpty() && central.size < byRarity.size) {
+            for (k in central.size downTo maxOf(1, central.size - 1)) for (subset in subsets(central, k)) run(subset)
+        }
+        for (k in byRarity.size downTo maxOf(1, byRarity.size - 2)) {
+            for (subset in subsets(byRarity, k)) run(subset)
             if (!bm25Works && ids.size >= limit * 2) break
             // the drop-one level always runs: the best passage may lack the one generic word of the question that every look-alike passage has
             if (bm25Works && scored.size >= limit * 2 && k <= byRarity.size - 1) break

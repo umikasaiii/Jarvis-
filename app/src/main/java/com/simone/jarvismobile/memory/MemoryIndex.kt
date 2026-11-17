@@ -66,10 +66,9 @@ class MemoryIndex @Inject constructor(
     suspend fun ensureBuilt() {
         conversationMemory.ensureLoaded()
         if (_status.value.building) return
-        if (!vault.isConfigured()) {
-            _status.value = _status.value.copy(configured = false)
-            return
-        }
+        // Memoria lives in the LOCAL archive and needs no vault: gating the build on a configured vault left the index empty after every
+        // process restart (only `remember()` rebuilt it), so a saved fact was visible in the Memory screen but never retrieved.
+        if (!vault.isConfigured()) _status.value = _status.value.copy(configured = false)
         if (lastBuiltAt == 0L || System.currentTimeMillis() - lastBuiltAt >= STALE_AFTER_MS) rebuild()
     }
 
@@ -308,6 +307,8 @@ class MemoryIndex @Inject constructor(
      */
     suspend fun retrieveSmart(query: String, limit: Int = 4): List<RankedChunk> {
         if (query.isBlank()) return emptyList()
+        // self-healing: the first query of a fresh process must not depend on a screen having warmed the index
+        if (lastBuiltAt == 0L) runCatching { ensureBuilt() }
         runCatching { embeddings.ensureLoaded() }
         if (!embeddings.isReady()) return retrieve(query, limit)
 

@@ -195,7 +195,15 @@ class LitertLmEngine @Inject constructor(
                 engine = LiteRtNativeEngine(e),
                 scheduler = scheduler,
                 log = diagnostics.log,
-                onGenerating = { _generating.value = it },
+                onGenerating = { g ->
+                    _generating.value = g
+                    // a durable marker for the duration of every generation: if the process dies meanwhile (native crash, OOM kill, ANR kill — cause NOT assumed)
+                    // the next start knows the model was interrupted while generating and does not reload it by itself
+                    runCatching {
+                        if (g) loadGuard.guard.beginGeneration(com.simone.jarvismobile.core.llm.LoadGuard.Attempt(label, modelPath, modelName, file.length(), System.currentTimeMillis(), "gen"))
+                        else loadGuard.guard.finishGeneration()
+                    }
+                },
                 onWedged = { wedgedSlot -> engineScope.launch { recoverFromWedge(wedgedSlot) } },
                 configuredWindow = MAX_CONTEXT_TOKENS,
             )
