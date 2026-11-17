@@ -83,7 +83,10 @@ object PublicationPolicy {
             val cover = coverageExtract(pkg, link)
             if (cover.isNotBlank()) return Publication(cover, PublicationMode.FAITHFUL_EXTRACT, link.sources, true, report, rejected, "candidato non supportato: estratti dai passaggi")
         } else {
-            faithfulExtract(question, pkg, link)?.let {
+            // A candidate that only DECLARED A LIMIT ("non trovo chi l'ha inventato") is an abstention: it is kept unless the sources answer the question IN FULL.
+            // Quoting a sentence that merely shares some words would replace a correct abstention with irrelevant content.
+            val limitOnly = report.claims.isNotEmpty() && report.claims.all { it.status == ClaimStatus.UNKNOWN }
+            faithfulExtract(question, pkg, link, strict = limitOnly)?.let {
                 return Publication(it, PublicationMode.FAITHFUL_EXTRACT, link.sources, true, report, rejected, if (rejected.isEmpty()) "nessuna affermazione verificabile" else "candidato non supportato")
             }
         }
@@ -150,7 +153,7 @@ object PublicationPolicy {
     }
 
     /** The evidence sentences that speak about the question, verbatim and in source order; null when none does. */
-    private fun faithfulExtract(question: String, pkg: EvidencePackage, link: SourceLinks): String? {
+    private fun faithfulExtract(question: String, pkg: EvidencePackage, link: SourceLinks, strict: Boolean = false): String? {
         val q = SupportJudge.stems(question).distinct()
         if (q.isEmpty()) return null
         data class Cand(val itemId: String, val text: String, val cover: Double, val order: Int)
@@ -165,8 +168,9 @@ object PublicationPolicy {
             }
             for (s in Sentences.split(item.text)) {
                 val st = SupportJudge.stems(s).toSet()
-                val c = asked.count { it in st }.toDouble() / asked.size
-                if (c >= EXTRACT_RELEVANCE) cands += Cand(item.id, s, c, order)
+                // near forms count ("produce"/"prodotto"); a strict extract needs EVERY asked term, not most of them
+                val c = asked.count { a -> a in st || st.any { ClaimVerifier.near(a, it) } }.toDouble() / asked.size
+                if (c >= (if (strict) 1.0 else EXTRACT_RELEVANCE)) cands += Cand(item.id, s, c, order)
                 order++
             }
         }

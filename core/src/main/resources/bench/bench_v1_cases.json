@@ -3950,7 +3950,7 @@
     "2 bar"
    ],
    "forbiddenClaims": [
-    "1,5 bar"
+    "Termo-Y&&1,5 bar"
    ],
    "supportingEvidence": [
     "doc:caldaia_y#1"

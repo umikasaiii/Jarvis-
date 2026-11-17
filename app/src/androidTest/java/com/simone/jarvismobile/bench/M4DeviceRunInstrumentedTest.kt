@@ -30,6 +30,7 @@ import java.io.File
  *   ./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.simone.jarvismobile.bench.M4DeviceRunInstrumentedTest \
  *       -Pandroid.testInstrumentationRunnerArguments.m4device=true [-Pandroid.testInstrumentationRunnerArguments.m4split=DEV]
  *
+ * To resume an interrupted run: `-Pandroid.testInstrumentationRunnerArguments.m4resume=<runId>` (the id is in the report file name / logcat).
  * It is NOT in the CI class list and does nothing (skipped) unless `m4device=true` AND a model path is configured: CI/emulator can never produce a
  * "device" result with it. It loads the model through the guard-respecting `ModelLoader.autoLoad` (no "load anyway", no forced retry after a killed load),
  * keeps the persisted offline mode and puts it back, runs with STRICT_OFFLINE, computes the model's SHA-256 once, and writes the report files to the app's
@@ -57,7 +58,9 @@ class M4DeviceRunInstrumentedTest {
             val start = BenchDeviceProbe.read(ctx)
             val coordinator = EntryPointAccessors.fromApplication(ctx, AssistantTaskWorker.WorkerEntryPoint::class.java).coordinator()
             val id = RunIdentity(
-                runId = "dev-" + System.currentTimeMillis(), kind = "MODEL", datasetFingerprint = BenchDataset.bundledFingerprint(),
+                // `-e m4resume <runId>` continues an interrupted run: same id, same store file. The runner refuses (ResumeIdentityMismatch) unless build, dataset,
+                // model file + SHA-256, runtime, backend, slot, sampling and device are all identical, so two sessions are never mixed.
+                runId = args.getString("m4resume")?.takeIf { it.isNotBlank() } ?: ("dev-" + System.currentTimeMillis()), kind = "MODEL", commit = com.simone.jarvismobile.BuildConfig.BUILD_ID, datasetFingerprint = BenchDataset.bundledFingerprint(),
                 datasetVersion = data.version, fixturesVersion = fx.version, offlineMode = "STRICT_OFFLINE", modelFile = File(path).name, modelSha256 = sha,
                 runtime = "litertlm", runtimeVersion = ModelProfileStore.LITERTLM_VERSION, backend = "CPU", slot = "FAST", configuredWindow = 4096,
                 environment = "device:" + BenchDeviceProbe.deviceKey(ctx), startedAt = System.currentTimeMillis(),

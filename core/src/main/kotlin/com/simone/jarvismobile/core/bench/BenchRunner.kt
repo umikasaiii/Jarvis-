@@ -35,7 +35,25 @@ data class RunIdentity(
     val performance: PerfFacts = PerfFacts(),
 ) {
     val deviceRun: Boolean get() = kind == "MODEL" && environment.startsWith("device:") && modelSha256 != null
+
+    /**
+     * Every field that makes two runs the SAME measurement. A stored run may be resumed only when none differs: a different build, model file, runtime,
+     * backend, slot, sampling/window, offline mode, run kind (a simulated control must never be completed as a real-model report) or device would silently
+     * mix results of two different systems. The run id, start time and performance facts are deliberately not part of the identity.
+     */
+    fun resumeMismatches(other: RunIdentity): List<String> = buildList {
+        fun chk(name: String, a: Any?, b: Any?) { if (a != b) add(name) }
+        chk("kind", kind, other.kind); chk("commit", commit, other.commit); chk("buildSha256", buildSha256, other.buildSha256)
+        chk("datasetFingerprint", datasetFingerprint, other.datasetFingerprint); chk("datasetVersion", datasetVersion, other.datasetVersion); chk("fixturesVersion", fixturesVersion, other.fixturesVersion)
+        chk("offlineMode", offlineMode, other.offlineMode); chk("modelFile", modelFile, other.modelFile); chk("modelSha256", modelSha256, other.modelSha256)
+        chk("runtime", runtime, other.runtime); chk("runtimeVersion", runtimeVersion, other.runtimeVersion); chk("backend", backend, other.backend); chk("slot", slot, other.slot)
+        chk("configuredWindow", configuredWindow, other.configuredWindow); chk("temperature", temperature, other.temperature); chk("topK", topK, other.topK); chk("topP", topP, other.topP)
+        chk("environment", environment, other.environment)
+    }
 }
+
+/** Resuming [runId] was refused because the stored run measured something different: [fields] differ. Nothing was read, mixed or overwritten. */
+class ResumeIdentityMismatch(val runId: String, val fields: List<String>) : IllegalStateException("run $runId cannot be resumed: ${fields.joinToString()} differ")
 
 @Serializable
 data class PerfFacts(
@@ -108,8 +126,10 @@ class BenchRunner(
     suspend fun run(identity: RunIdentity, select: (BenchCase) -> Boolean = { true }, resume: Boolean = true): List<CaseScore> {
         val done = LinkedHashMap<String, CaseScore>()
         if (resume) store?.load(identity.runId)?.let { (old, scores) ->
-            // results of another dataset/fixtures/build must never be mixed into this run
-            if (old.datasetFingerprint == identity.datasetFingerprint && old.fixturesVersion == identity.fixturesVersion && old.kind == identity.kind) scores.forEach { done[it.id] = it }
+            // results of another dataset/fixtures/build/model/runtime/device/kind must never be mixed into this run, and the stored file must not be overwritten either
+            val diff = old.resumeMismatches(identity)
+            if (diff.isNotEmpty()) throw ResumeIdentityMismatch(identity.runId, diff)
+            scores.forEach { done[it.id] = it }
         }
         for (c in dataset.cases.filter(select)) {
             coroutineContext.ensureActive()

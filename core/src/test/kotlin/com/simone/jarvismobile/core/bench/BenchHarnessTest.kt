@@ -189,9 +189,23 @@ class BenchHarnessTest {
         val full = BenchRunner(data, fx, Counting(log2), store).run(identity("res"), select = { it.category == "geografia" })
         assertEquals(12, full.size)
         assertEquals(7, log2.count { it.startsWith("run:") }, "only the 7 missing cases ran")
-        // another dataset version's results are not reused
-        val other = BenchRunner(data, fx, Counting(ArrayList()), store).run(identity("res").copy(datasetFingerprint = "different"), select = { it.category == "geografia" })
-        assertEquals(12, other.size)
+        // another dataset / build / model / runtime / backend / slot / sampling / environment / kind is REFUSED, never mixed, and the stored file is not overwritten
+        val before = store.load("res")!!.second.map { it.id to it.passed }
+        val variants = mapOf(
+            "datasetFingerprint" to identity("res").copy(datasetFingerprint = "different"), "commit" to identity("res").copy(commit = "other"),
+            "modelSha256" to identity("res").copy(modelSha256 = "00"), "modelFile" to identity("res").copy(modelFile = "m2.litertlm"),
+            "runtimeVersion" to identity("res").copy(runtimeVersion = "9.9"), "backend" to identity("res").copy(backend = "GPU"), "slot" to identity("res").copy(slot = "ADVANCED"),
+            "temperature" to identity("res").copy(temperature = 0.9), "configuredWindow" to identity("res").copy(configuredWindow = 8192),
+            "offlineMode" to identity("res").copy(offlineMode = "EXPLICIT_ONLINE"), "environment" to identity("res").copy(environment = "device:other"),
+            "kind" to identity("res").copy(kind = "MODEL"),
+        )
+        for ((field, other) in variants) {
+            val e = try { BenchRunner(data, fx, Counting(ArrayList()), store).run(other, select = { it.category == "geografia" }); null } catch (x: ResumeIdentityMismatch) { x }
+            assertEquals(true, e != null && field in e.fields, "a different $field must refuse the resume")
+        }
+        assertEquals(before, store.load("res")!!.second.map { it.id to it.passed }, "a refused resume leaves the stored run untouched")
+        // the same identity (even with another start time) resumes
+        assertEquals(12, BenchRunner(data, fx, Counting(ArrayList()), store).run(identity("res").copy(startedAt = 999), select = { it.category == "geografia" }).size)
     }
 
     @Test fun aDamagedStoreLineIsSkippedAndTheFileIsNeverLostOnAFailedWrite() {

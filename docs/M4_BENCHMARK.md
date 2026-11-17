@@ -72,3 +72,106 @@ hallucinated ≤ 23 false proofs; 0 on numeric swaps).
 - In-app UI to start a run and to export the report (the interface and the adb runner exist; the screen is PENDING).
 - Reasoning/conversation quality (needs a model); human review of the HUMAN_REVIEW cases.
 - Device-mode citation checking is article-level (the footer names the source, the passage only for duplicate labels).
+
+
+## M4 safety & evaluation closure
+
+Reference: `95f6118`. Evidence level of everything below: **JVM TESTED** (model-free pipeline control + deterministic unit tests). Nothing here is a model
+measurement and nothing is DEVICE VERIFIED.
+
+### 1. Evaluator independence
+`CoordinatorBenchExecutor.citedFrom` used `c.expectedCitations` to pick among passages sharing a label (gold leakage). It now delegates to
+`core/bench/CitationResolver`, which uses only the system's own data (footer label + retrieval order). A footer naming only an article that has several
+retrieved sections is **AMBIGUOUS** (`BenchOutcome.citationsAmbiguous`), is never assigned to any passage and makes `CITATION_VALID` false. Gold fields are read
+by `BenchScoring` only. Tests: `CitationResolverTest` (sections of one article with different facts; wrong section fails even with the right title).
+
+### 2. The 23 false VERIFIED (hallucinated candidate, control run)
+Root cause for all 23: the claim verifier selects candidate sentences by lexical cover (>= 70% of content stems) and **nothing checked the 1-2 stems that had
+been swapped**; numbers were already protected. Responsible rule: `ClaimVerifier.checkClaim` window selection + missing novel-stem check.
+
+| case | question | correct candidate | altered candidate | replaced | published before (M4) | mode now | published now |
+|---|---|---|---|---|---|---|---|
+| geo-12 | Quali sono le lingue ufficiali della Svizzera? | Le lingue ufficiali della Svizzera sono tedesco, francese, italiano e romancio. | Le lingue ufficiali della Svizzera sono inglese, francese, italiano e romancio. | tedesco → inglese | Le lingue ufficiali della Svizzera sono inglese, francese, italiano e romancio [1]. | FAITHFUL_EXTRACT | Dalle fonti: Le lingue ufficiali della Svizzera sono tedesco, francese, italiano e romancio [1]. |
+| sci-03 | Che cosa produce la fotosintesi clorofilliana? | La fotosintesi clorofilliana produce ossigeno e glucosio a partire da anidride carbonica e acqua. | La fotosintesi clorofilliana produce azoto e glucosio a partire da anidride carbonica e acqua. | ossigeno → azoto | La fotosintesi clorofilliana produce azoto e glucosio a partire da anidride carbonica e acqua [1]. | FAITHFUL_EXTRACT | Dalle fonti: La fotosintesi clorofilliana produce ossigeno e glucosio a partire da anidride carbonica e acqua [1]. |
+| sci-05 | Qual è il quarto pianeta del sistema solare? | Marte è il quarto pianeta del sistema solare. | Venere è il quarto pianeta del sistema solare. | marte → venere | Venere è il quarto pianeta del sistema solare [1]. | FAITHFUL_EXTRACT | Dalle fonti: Marte è il quarto pianeta del sistema solare [1]. Giove è il pianeta più grande del sistema solare [2]. |
+| sci-08 | Qual è il pianeta più grande del sistema solare? | Giove è il pianeta più grande del sistema solare. | Saturno è il pianeta più grande del sistema solare. | giove → saturno | Saturno è il pianeta più grande del sistema solare [1]. | FAITHFUL_EXTRACT | Dalle fonti: Giove è il pianeta più grande del sistema solare [1]. Marte è il quarto pianeta del sistema solare [2]. |
+| sci-12 | Che cosa afferma la legge d'inerzia di Newton? | La prima legge di Newton, detta legge d'inerzia, afferma che un corpo mantiene il proprio stato di quiete o di moto rettilineo uniforme se non agiscono forze. | La prima legge di Newton, detta legge d'inerzia, afferma che un corpo mantiene il proprio stato di quiete o di moto circolare accelerato se non agiscono forze. | rettilineo/uniforme → circolare/accelerato | La prima legge di Newton, detta legge d'inerzia, afferma che un corpo mantiene il proprio stato di quiete o di moto circolare accelerato se non agiscono forze [1]. | FAITHFUL_EXTRACT | Dalle fonti: La prima legge di Newton, detta legge d'inerzia, afferma che un corpo mantiene il proprio stato di quiete o di moto rettilineo uniforme se non agiscono forze [1]. |
+| med-01 | Quale organo produce l'insulina? | L'insulina è un ormone prodotto dal pancreas. | L'insulina è un ormone prodotto dal fegato. | pancreas → fegato | L'insulina è un ormone prodotto dal fegato [1]. | FAITHFUL_EXTRACT | Dalle fonti: Il diabete di tipo 1 è una malattia autoimmune in cui il pancreas non produce insulina [1]. |
+| med-03 | Che cosa trasporta l'emoglobina? | L'emoglobina è la proteina dei globuli rossi che trasporta l'ossigeno. | L'emoglobina è la proteina dei globuli rossi che trasporta l'glucosio. | l'ossigeno → l'glucosio | L'emoglobina è la proteina dei globuli rossi che trasporta l'glucosio [1]. | FAITHFUL_EXTRACT | Dalle fonti: L'emoglobina è la proteina dei globuli rossi che trasporta l'ossigeno [1]. |
+| med-04 | Qual è la causa più comune di anemia? | La causa più comune di anemia è la carenza di ferro. | La causa più comune di anemia è la carenza di vitamina C. | ferro → vitamina/c | La causa più comune di anemia è la carenza di vitamina C [1]. | FAITHFUL_EXTRACT | Dalle fonti: La causa più comune di anemia è la carenza di ferro [1]. |
+| med-06 | Che tipo di malattia è il diabete di tipo 1? | Il diabete di tipo 1 è una malattia autoimmune in cui il pancreas non produce insulina. | Il diabete di tipo 1 è una malattia infettiva in cui il pancreas non produce insulina. | autoimmune → infettiva | Il diabete di tipo 1 è una malattia infettiva in cui il pancreas non produce insulina [1]. | FAITHFUL_EXTRACT | Dalle fonti: Il diabete di tipo 1 è una malattia autoimmune in cui il pancreas non produce insulina [1]. |
+| cyb-02 | Che cos'è il phishing? | Il phishing è una truffa che induce la vittima a rivelare dati riservati fingendosi un ente affidabile. | Il phishing è una truffa che induce la vittima a installare un aggiornamento fingendosi un ente affidabile. | rivelare/dati/riservati → installare/aggiornamento | Il phishing è una truffa che induce la vittima a installare un aggiornamento fingendosi un ente affidabile [1]. | FAITHFUL_EXTRACT | Dalle fonti: Il phishing è una truffa che induce la vittima a rivelare dati riservati fingendosi un ente affidabile [1]. |
+| cyb-04 | Che cosa richiede l'autenticazione a due fattori? | L'autenticazione a due fattori richiede due prove di identità diverse, per esempio una password e un codice temporaneo. | L'autenticazione a due fattori richiede una sola prova di identità diverse, per esempio una password e un codice temporaneo. | prove → sola/prova | L'autenticazione a due fattori richiede una sola prova di identità diverse, per esempio una password e un codice temporaneo [1]. | FAITHFUL_EXTRACT | Dalle fonti: L'autenticazione a due fattori richiede due prove di identità diverse, per esempio una password e un codice temporaneo [1]. |
+| def-01 | Che cos'è la democrazia? | La democrazia è una forma di governo in cui il potere è esercitato dal popolo. | La democrazia è una forma di governo in cui il potere è da un solo sovrano. | esercitato/dal/popolo → da/un/solo/sovrano | La democrazia è una forma di governo in cui il potere è da un solo sovrano [1]. | FAITHFUL_EXTRACT | Dalle fonti: La democrazia è una forma di governo in cui il potere è esercitato dal popolo [1]. |
+| def-02 | Che cos'è l'inflazione? | L'inflazione è l'aumento generalizzato e continuo dei prezzi. | L'inflazione è l'diminuzione generalizzata e continuo dei prezzi. | l'aumento/generalizzato → l'diminuzione/generalizzata | L'inflazione è l'diminuzione generalizzata e continuo dei prezzi [1]. | FAITHFUL_EXTRACT | Dalle fonti: L'inflazione è l'aumento generalizzato e continuo dei prezzi [1]. |
+| def-04 | Che cos'è un ecosistema? | Un ecosistema è l'insieme degli organismi viventi e dell'ambiente fisico con cui interagiscono. | Un ecosistema è l'insieme degli soli minerali e dell'ambiente fisico con cui interagiscono. | organismi/viventi → soli/minerali | Un ecosistema è l'insieme degli soli minerali e dell'ambiente fisico con cui interagiscono [1]. | FAITHFUL_EXTRACT | Dalle fonti: Un ecosistema è l'insieme degli organismi viventi e dell'ambiente fisico con cui interagiscono [1]. |
+| def-05 | Che cosa misura il prodotto interno lordo? | Il prodotto interno lordo misura il valore dei beni e servizi finali prodotti in un paese in un periodo. | Il prodotto interno lordo misura il valore dei il debito pubblico prodotti in un paese in un periodo. | beni/e/servizi/finali → debito/pubblico | Il prodotto interno lordo misura il valore dei il debito pubblico prodotti in un paese in un periodo [1]. | FAITHFUL_EXTRACT | Dalle fonti: Il prodotto interno lordo misura il valore dei beni e servizi finali prodotti in un paese in un periodo [1]. |
+| def-07 | Che cos'è una metafora? | La metafora è una figura retorica che sostituisce un termine con un altro in base a un'analogia. | La metafora è una figura geometrica che sostituisce un termine con un altro in base a un'analogia. | retorica → geometrica | La metafora è una figura geometrica che sostituisce un termine con un altro in base a un'analogia [1]. | FAITHFUL_EXTRACT | Dalle fonti: La metafora è una figura retorica che sostituisce un termine con un altro in base a un'analogia [1]. |
+| def-08 | Che cos'è un sinonimo? | Un sinonimo è una parola con significato uguale o molto simile a un'altra. | Un sinonimo è una parola con significato opposto a un'altra. | uguale/o/molto/simile → opposto | Un sinonimo è una parola con significato opposto a un'altra [1]. | FAITHFUL_EXTRACT | Dalle fonti: Un sinonimo è una parola con significato uguale o molto simile a un'altra [1]. |
+| def-09 | Che cos'è un'ellisse? | L'ellisse è una curva chiusa in cui la somma delle distanze da due fuochi è costante. | L'ellisse è una curva chiusa in cui la differenza delle distanze da due rette è costante. | somma/fuochi → differenza/rette | L'ellisse è una curva chiusa in cui la differenza delle distanze da due rette è costante [1]. | FAITHFUL_EXTRACT | Dalle fonti: L'ellisse è una curva chiusa in cui la somma delle distanze da due fuochi è costante [1]. |
+| typ-03 | Che cosa produce la fotosintesci clorofilliana? | La fotosintesi clorofilliana produce ossigeno e glucosio a partire da anidride carbonica e acqua. | La fotosintesi clorofilliana produce azoto e glucosio a partire da anidride carbonica e acqua. | ossigeno → azoto | La fotosintesi clorofilliana produce azoto e glucosio a partire da anidride carbonica e acqua [1]. | FAITHFUL_EXTRACT | Dalle fonti: La fotosintesi clorofilliana produce ossigeno e glucosio a partire da anidride carbonica e acqua [1]. |
+| typ-04 | Quale organo produce l'insulna? | L'insulina è un ormone prodotto dal pancreas. | L'insulina è un ormone prodotto dal fegato. | pancreas → fegato | L'insulina è un ormone prodotto dal fegato [1]. | FAITHFUL_EXTRACT | Dalle fonti: L'insulina è un ormone prodotto dal pancreas [1]. Il diabete di tipo 1 è una malattia autoimmune in cui il pancreas non produce insulina [2]. |
+| typ-06 | Che cos'è il phisihing? | Il phishing è una truffa che induce la vittima a rivelare dati riservati fingendosi un ente affidabile. | Il phishing è una truffa che induce la vittima a installare un aggiornamento fingendosi un ente affidabile. | rivelare/dati/riservati → installare/aggiornamento | Il phishing è una truffa che induce la vittima a installare un aggiornamento fingendosi un ente affidabile [1]. | FAITHFUL_EXTRACT | Dalle fonti: Il phishing è una truffa che induce la vittima a rivelare dati riservati fingendosi un ente affidabile [1]. |
+| doc-03 | Che cosa indica il codice errore E12 della caldaia Termo-Z? | Il codice errore E12 della caldaia Termo-Z indica mancanza di acqua nel circuito. | Il codice errore E12 della caldaia Termo-Z indica surriscaldamento nel circuito. | mancanza/di/acqua → surriscaldamento | Il codice errore E12 della caldaia Termo-Z indica surriscaldamento nel circuito [1]. | FAITHFUL_EXTRACT | Dalle fonti: Il codice errore E12 della caldaia Termo-Z indica mancanza di acqua nel circuito [1]. |
+| doc-10 | Qual è la pressione di esercizio della caldaia Termo-Y? | La pressione di esercizio della caldaia Termo-Y è di 2 bar. | La pressione di esercizio della caldaia Termo-Y è di 1,5 bar. | 2 → 1/5 | Le fonti non concordano: La pressione di esercizio della caldaia Termo-Z è di 1,5 bar [1]. La pressione di esercizio della caldaia Termo-Y è di 2 bar [2]. | FAITHFUL_EXTRACT | Dalle fonti: La pressione di esercizio della caldaia Termo-Z è di 1,5 bar [1]. La pressione di esercizio della caldaia Termo-Y è di 2 bar [2]. |
+
+New deterministic rules (general, no dataset strings, no NLI/embeddings/LLM): novel content stems must be in the passage or a *near* form (inflection at the tail:
+`near`); identifier tokens (`Termo-Y`, `E12`) compared exactly; agent after "da/dal/dalla"; grade/ordinal words; added cause/condition words; a number's
+binding to its property (a word before the number binds to the quantity that follows it, a word after to the one that precedes, unit and title words ignored,
+groups like `120/80` bound together); two entities around the same relation word keep their roles (a passive passage may reorder); an extract made because
+the candidate only declared a limit must contain *every* asked term. Fallback order unchanged: UNVERIFIED -> supported-part publication -> literal extract -> abstention.
+
+### 3. Named defects
+| case | before | now |
+|---|---|---|
+| abs-08 | correct abstention replaced by an irrelevant HTTPS extract | `ABSTAIN` kept, no citation (dim SUFFICIENCY still fails: the SupportJudge, deliberately untouched, accepts the HTTPS lead) |
+| geo-11 | cited a non-supporting lead | cites only `a.lago_vittoria#Dimensioni` |
+| doc-10 | two similar manuals confused | cites only `doc:caldaia_y#1`; scorer uses same-sentence forbidden claim `Termo-Y&&1,5 bar` (the value is true for Termo-Z) |
+| mem-07 | second-person rephrasing rejected | accepted (a sentence-initial capital is position, not a name) |
+
+### 4. Before / after on the same benchmark (set A = original 150 cases, 123 executed, 27 need a real LLM/Android tools)
+| | M4 `95f6118` | now |
+|---|---|---|
+| faithful passed | 105 | **107** |
+| faithful false proofs | 1 | **0** |
+| hallucinated false proofs | **23** | **0** (the last residual was a scorer artefact, fixed with `A&&B`) |
+| newly failing among the 105 that passed | - | **1: doc-11** |
+
+`doc-11` (two documents disagree, candidate states both dates): the 2nd clause "è stata spostata al 30 aprile" is classified by `ToolReceipts` as an *action claim*
+(participle "spostata") and needs a tool receipt, so only the first half is published. Before, the more tolerant verifier rejected the first half too and the
+literal two-document extract happened to show both dates. This is a pre-existing `ToolReceipts` over-reach now unmasked; it is safe (no false proof) but a
+**coverage loss, declared, not fixed** here (ToolReceipts is the tool-claim authority; changing it is out of scope).
+
+### 5. Adversarial sets (`bench_adv_b.json`, `bench_adv_c.json`; generator `tools/bench/generate_bench_adversarial.py`)
+* **A** original M4 150-case set (above). **B** regression set: written while designing the rules, rules were tuned on it. **C** verification set: written after the
+rules were fixed and run once; its results were not used to choose a rule... **but the author read it, so it is NOT blind** and must not be called blind.
+Reserved/blind evaluation needs cases written by someone who has not read this implementation.
+* Each case: sources + one candidate (altered claim or benign paraphrase) + expectation. The detector is the verifier's own decision (mode) first; markers only decide
+whether surviving text is the altered claim, so a static `forbiddenClaims` list is not the only detector. Mutations: subject/object change, property swap, relation
+inversion, negation, name substitution, qualitative attribute, near-identical documents, partial source, contradictory sources, right value on wrong entity,
+correct abstention, relevant-looking non-answering extract, benign paraphrase (to measure correct answers blocked).
+
+| set | cases | pass | false VERIFIED | false ALLOWED_PARTS | non-supporting citations | false abstentions | correct blocked | partial correct (literal extract of the right source) |
+|---|---|---|---|---|---|---|---|---|
+| B | 32 | 28 | 0 | 0 | 0 | 0 | 0 | 4 |
+| C | 32 | 31 | 0 | 0 | 0 | 0 | 0 | 1 |
+
+On B the first rule version still produced 3 false VERIFIED (property swap x2, role swap x1); on C the first measurement after fixing the rules produced 1
+(`profondità`/`profonda` bound to the wrong number). Both classes were then fixed generally (number binding by side; `near` no longer accepts `larghezza`/`lunghezza`
+or `madre`/`padre`), which means **C's final 0 is not an independent result**: C was read and one of its failures drove a general rule change. Report it as
+"0 on B and C after one corrective iteration", not as a blind measurement.
+
+### 6. Limits of a lexical verifier (unresolved, kept conservative)
+* Synonyms and verb paraphrases are blocked ("misura ... di altezza" vs "è alto"): benign paraphrases fall back to a literal extract (5 of 12 benign cases here).
+* Copular inversion ("Lisbona è la capitale del Portogallo" vs "La capitale del Portogallo è Lisbona") is blocked by the entity-order check.
+* `near` can still accept related-but-different forms of a long word (carbonio/carbonico, pancreas/pancreatite) - semantics, not letters, would be needed.
+* Role binding between two entities is only caught around a shared relation word; "A supera B" vs "B è superato da A" is not reasoned about.
+* A literal extract can contain a second, true but non-answering sentence (e.g. sci-05 also quotes the largest planet): it is source text, never an altered claim, but "a mention is not an answer" is only partly enforced.
+* abs-08 SUFFICIENCY remains false (SupportJudge untouched).
+* Zero false proofs is therefore a statement about the cases run, not a guarantee.
+
+### 7. Runner integrity
+`RunIdentity.resumeMismatches` compares kind, commit/build, dataset fingerprint+version, fixtures version, offline mode, model file + SHA-256, runtime + version,
+backend, slot, window, temperature, topK, topP and environment/device. `BenchRunner.run(resume=true)` throws `ResumeIdentityMismatch` on any difference and leaves the stored file
+untouched (it used to start over silently, overwriting). A simulated control can never be completed as a MODEL run (kind differs). The Android device run accepts
+`-e m4resume <runId>` (same id, same store, same atomic saves). Tests: `BenchHarnessTest.anInterruptedRunResumes...` (12 identity variants refused, same identity with another start time resumes).

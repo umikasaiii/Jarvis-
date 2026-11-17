@@ -48,6 +48,19 @@ class M4BenchInstrumentedTest {
 
     private fun identity(id: String, kind: String = "PIPELINE_CONTROL") = RunIdentity(runId = id, kind = kind, datasetFingerprint = BenchDataset.bundledFingerprint(), datasetVersion = loaded.first.version, fixturesVersion = loaded.second.version, environment = "emulator", startedAt = 1)
 
+    @Test fun aStoredRunIsNeverResumedAsADifferentRunKindOrBuild() = runBlocking {
+        val (d, f) = loaded
+        val store = BenchStore(dir)
+        val ex = PipelineControlExecutor(PipelineControlExecutor.chunkRetrieval(f), "faithful")
+        BenchRunner(d, f, ex, store).run(identity("emu-resume"), select = { it.category == "calcoli_strumenti" })
+        val before = store.load("emu-resume")!!.second.size
+        for (other in listOf(identity("emu-resume", "MODEL"), identity("emu-resume").copy(commit = "other-build"), identity("emu-resume").copy(modelSha256 = "00"))) {
+            val refused = try { BenchRunner(d, f, ex, store).run(other, select = { it.category == "calcoli_strumenti" }); false } catch (e: com.simone.jarvismobile.core.bench.ResumeIdentityMismatch) { true }
+            assertTrue("a different run identity must refuse the resume", refused)
+        }
+        assertEquals(before, store.load("emu-resume")!!.second.size)
+    }
+
     @Test fun theBundledDatasetShipsInsideTheApkAndValidatesOnAndroid() {
         val (d, f) = loaded
         assertEquals(emptyList<String>(), BenchDataset.validate(d, f))

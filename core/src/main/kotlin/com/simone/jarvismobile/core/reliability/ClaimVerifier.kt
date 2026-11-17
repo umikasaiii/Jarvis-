@@ -60,6 +60,8 @@ object ClaimVerifier {
     internal class Sent(
         val title: Set<String>, val itemId: String, val text: String, val folded: String, val stems: Set<String>,
         val quantities: List<Quantity>, val neg: Boolean, val words: List<String>,
+        /** Identifier tokens of the item (title + section + sentence): "Y", "Z", "E12" — what tells two near-identical sources apart. */
+        val ids: Set<String> = emptySet(),
     )
 
     /** Content stems with the quantities removed: numbers are compared by [Quantities], not by token overlap. */
@@ -76,6 +78,43 @@ object ClaimVerifier {
     }
 
     fun sentences(text: String): List<String> = Sentences.split(text)
+
+    // ---- M4 closure: the lexical overlap that SELECTS a sentence is not allowed to vouch for the words it does NOT contain -----------------
+    private val ID_SUFFIX = Regex("(?<=[\\p{L}\\p{N}]-)\\p{Lu}\\p{N}*(?![\\p{L}\\p{N}])")
+    private val ID_CODE = Regex("(?<![\\p{L}\\p{N}-])\\p{Lu}\\p{N}{1,4}(?![\\p{L}\\p{N}])")
+
+    /** "Termo-Y" → "y", "E12" → "e12": identifiers distinguish near-identical sources; stems drop them, so they are compared exactly. */
+    internal fun identifiers(text: String): Set<String> = (ID_SUFFIX.findAll(text) + ID_CODE.findAll(text)).map { KnowledgeText.fold(it.value) }.toSet()
+
+    /**
+     * Two stems are "the same word" if they are equal or one edit away (two for long stems), or share a long common prefix (verb families:
+     * "produc"/"prodott"). A swapped content word (fegato/pancreas, quarto/secondo, autoimmune/infettiva) has no such neighbour in the passage.
+     * Known limit: related forms of DIFFERENT meaning ("carbonio"/"carbonico") are accepted — that needs semantics, not letters.
+     */
+    internal fun near(a: String, b: String): Boolean {
+        if (a == b) return true
+        val m = minOf(a.length, b.length)
+        if (m < 4 || a.any { it.isDigit() } || b.any { it.isDigit() }) return false
+        val d = KnowledgeText.editDistance(a, b, 2)
+        var p = 0; while (p < m && a[p] == b[p]) p++
+        // inflection differs at the TAIL; a difference near the start is a different word ("madre"/"padre", "larghezza"/"lunghezza")
+        if ((d <= 1 && p >= 3) || (m >= 6 && d <= 2 && p >= m - 3)) return true
+        return m >= 5 && p >= 4 && p * 10 >= m * 6
+    }
+
+    private fun covered(stem: String, s: Sent) = stem in s.stems || s.stems.any { near(stem, it) }
+
+    /** Content stems of the claim that the passage does not contain (nor anything near them): the claim says something the passage does not. */
+    internal fun novelStems(claimStems: Collection<String>, s: Sent): List<String> = claimStems.filter { !covered(it, s) }
+
+    private val AGENT_MARK = setOf("da", "dal", "dallo", "dalla", "dall", "dai", "dagli", "dalle")
+    private fun agents(w: List<String>): Set<String> = w.indices.filter { w[it] in AGENT_MARK }.flatMap { i -> w.drop(i + 1).take(2).mapNotNull { SupportJudge.stems(it).firstOrNull() } }.toSet()
+
+    /** Degree and order words change WHAT is claimed ("il più grande", "il quarto"): they must be in the passage too. */
+    private val GRADE = setOf("piu", "meno", "primo", "prima", "ultimo", "ultima", "secondo", "seconda", "terzo", "terza", "quarto", "quarta", "quinto", "quinta", "sesto", "sesta",
+        "settimo", "ottavo", "nono", "decimo", "massimo", "massima", "minimo", "minima", "maggiore", "minore", "migliore", "peggiore")
+    /** Causes and conditions the claim ADDS: a causal link or a restriction the passage does not state is not "supported by" the passage. */
+    private val ADDED = setOf("perche", "poiche", "quindi", "percio", "causa", "causato", "causata", "provoca", "provocato", "determina", "comporta", "dovuto", "dovuta", "purche", "qualora", "solo", "soltanto", "unicamente")
 
     /**
      * Restatement check for a tool receipt: the model may rephrase a structured result, but every number and name it states must
@@ -111,7 +150,7 @@ object ClaimVerifier {
     private fun toSent(item: EvidenceItem, text: String): Sent {
         val folded = KnowledgeText.fold(text)
         val titleStems = SupportJudge.stems(item.title + " " + item.section)
-        return Sent(titleStems.toSet(), item.id, text, folded, (contentStems(text) + titleStems).toSet(), Quantities.extract(text), negated(folded), words(folded))
+        return Sent(titleStems.toSet(), item.id, text, folded, (contentStems(text) + titleStems).toSet(), Quantities.extract(text), negated(folded), words(folded), identifiers(item.title + " " + item.section + " " + text))
     }
 
     /** The clauses of one sentence: attribution removed, then split at ';' and at "e/ma/mentre" when a new quantity starts. */
@@ -178,7 +217,7 @@ object ClaimVerifier {
         val short = stems.size < SHORT
         val negC = negated(folded)
 
-        fun cover(s: Sent) = if (stems.isEmpty()) 1.0 else stems.count { it in s.stems }.toDouble() / stems.size
+        fun cover(s: Sent) = if (stems.isEmpty()) 1.0 else stems.count { covered(it, s) }.toDouble() / stems.size
         fun relevant(s: Sent): Boolean {
             val asked = qStems.filter { it !in s.title }
             return asked.isEmpty() || asked.count { it in s.stems }.toDouble() / asked.size >= QUESTION_RELEVANCE
@@ -198,7 +237,7 @@ object ClaimVerifier {
         var support: Claim? = null
         var contradiction: Claim? = null
         for ((win, _) in candidates) {
-            val r = checkAgainst(piece, text, folded, quants, negC, qStems, win)
+            val r = checkAgainst(piece, text, folded, quants, negC, qStems, win, stems)
             if (r.status == ClaimStatus.EXPLICITLY_SUPPORTED || r.status == ClaimStatus.DERIVED) { if (support == null) support = r }
             else {
                 if (firstFailure == null) firstFailure = r
@@ -213,13 +252,18 @@ object ClaimVerifier {
         return support ?: firstFailure!!
     }
 
-    private fun checkAgainst(piece: String, text: String, folded: String, quants: List<Quantity>, negC: Boolean, qStems: Set<String>, best: Sent): Claim {
+    private fun checkAgainst(piece: String, text: String, folded: String, quants: List<Quantity>, negC: Boolean, qStems: Set<String>, best: Sent, claimStems: List<String> = emptyList()): Claim {
+        // a passage about ANOTHER item ("Termo-Z" for "Termo-Y"): not a contradiction, simply not the source of this claim
+        identifiers(text).firstOrNull { it !in best.ids }?.let { return Claim(piece, ClaimStatus.UNVERIFIED, listOf(best.itemId), "identificativo non nel passaggio: $it") }
+        // every content word of the claim must be in the passage (or have a near form): one swapped word is not "70% overlap"
+        novelStems(claimStems, best).firstOrNull()?.let { return Claim(piece, ClaimStatus.UNVERIFIED, listOf(best.itemId), "termine non nel passaggio: $it") }
         judge(piece, negC, quants, best)?.let { return it }
 
         // names: each must occur in the sentence; two names must keep their order
         val allEntities = capitalised(text).map { KnowledgeText.fold(it) }.filter { SupportJudge.stems(it).isNotEmpty() }.distinct()
         for (e in allEntities.filter { e -> SupportJudge.stems(e).first() !in qStems }) {
-            if (e !in best.folded) return Claim(piece, ClaimStatus.UNVERIFIED, listOf(best.itemId), "nome non presente nel passaggio: $e")
+            // a capital letter at the start of the clause is only position ("Bevi il caffè"): the word is accepted if the passage has it or a near form of it
+            if (e !in best.folded && !covered(SupportJudge.stems(e).first(), best)) return Claim(piece, ClaimStatus.UNVERIFIED, listOf(best.itemId), "nome non presente nel passaggio: $e")
         }
         // order matters only between names the sentence itself contains (the article's own title is implied, not repeated)
         val present = allEntities.filter { it in best.folded }
@@ -230,8 +274,19 @@ object ClaimVerifier {
                 return Claim(piece, ClaimStatus.UNVERIFIED, listOf(best.itemId), "attribuzione invertita rispetto al passaggio")
             }
         }
+        // who does what: "prodotto DAL pancreas" cannot be supported by "prodotto dall'insulina" (same words, roles swapped)
+        val cAgents = agents(words(folded)); val sAgents = agents(best.words)
+        if (cAgents.isNotEmpty() && sAgents.isNotEmpty() && cAgents.none { c -> sAgents.any { near(c, it) } }) {
+            return Claim(piece, ClaimStatus.UNVERIFIED, listOf(best.itemId), "agente diverso da quello del passaggio")
+        }
+        // two entities around the same relation word must keep their roles: "il gatto insegue il topo" is not "il topo insegue il gatto" (a passive passage legitimately reorders)
+        if (sAgents.isEmpty() && cAgents.isEmpty() && rolesSwapped(claimStems, contentStems(best.text))) {
+            return Claim(piece, ClaimStatus.UNVERIFIED, listOf(best.itemId), "ruoli invertiti rispetto al passaggio")
+        }
         // qualifiers of the evidence must survive; a universal the evidence does not state must not appear
         val claimWords = words(folded).toSet()
+        GRADE.firstOrNull { it in claimWords && it !in best.words }?.let { return Claim(piece, ClaimStatus.UNVERIFIED, listOf(best.itemId), "grado/ordinale non nel passaggio: $it") }
+        ADDED.firstOrNull { it in claimWords && it !in best.words }?.let { return Claim(piece, ClaimStatus.UNVERIFIED, listOf(best.itemId), "relazione o condizione non nel passaggio: $it") }
         HEDGES.firstOrNull { it in best.words && it !in claimWords }?.let {
             if (!(it == "se" && "quando" in claimWords)) return Claim(piece, ClaimStatus.UNVERIFIED, listOf(best.itemId), "qualificatore omesso: $it")
         }
@@ -240,6 +295,18 @@ object ClaimVerifier {
         }
         val converted = quants.any { q -> best.quantities.none { Quantities.compare(q, it) == Quantities.Match.EXACT } }
         return Claim(piece, if (converted) ClaimStatus.DERIVED else ClaimStatus.EXPLICITLY_SUPPORTED, listOf(best.itemId), if (converted) "conversione di unità" else "")
+    }
+
+    /** x … pivot … y in the claim but y … pivot … x in the passage, for words the two share (digits excluded): the same words with the roles exchanged. */
+    internal fun rolesSwapped(claim: List<String>, passage: List<String>): Boolean {
+        val shared = claim.filter { it in passage && !it.first().isDigit() }.distinct()
+        if (shared.size < 3) return false
+        for (p in shared) for (x in shared) for (y in shared) {
+            if (x == p || y == p || x == y) continue
+            if (claim.indexOf(x) < claim.indexOf(p) && claim.indexOf(p) < claim.indexOf(y) &&
+                passage.indexOf(y) < passage.indexOf(p) && passage.indexOf(p) < passage.indexOf(x)) return true
+        }
+        return false
     }
 
     /** A file name or page number the evidence does not contain. */
@@ -256,11 +323,18 @@ object ClaimVerifier {
     /** CONTRADICTED / UNVERIFIED verdicts on polarity and numbers of [win], or null when they raise nothing. */
     private fun judge(text: String, negC: Boolean, quants: List<Quantity>, win: Sent): Claim? {
         if (negC != win.neg) return Claim(text, ClaimStatus.CONTRADICTED, listOf(win.itemId), "polarità opposta al passaggio")
+        // "120/80", "tra 60 e 100": the words around one number of a group are bound to the group, not to that single number
+        val groupOk = quants.flatMap { g -> win.quantities.filter { Quantities.compare(g, it) != Quantities.Match.DIFFERENT } }.distinct()
         for (q in quants) {
             val ok = win.quantities.filter { Quantities.compare(q, it) != Quantities.Match.DIFFERENT }
             val ctxC = context(text, q.start, q.end)
             if (ok.isNotEmpty()) {
-                if (win.quantities.size > 1 && misattributed(ctxC, ok, win)) {
+                // the number's own unit and the item's title words are no evidence of WHICH quantity is meant ("5 metri" in a sentence about the room)
+                val own = SupportJudge.stems(text.substring(q.start, minOf(q.end, text.length)).filterNot { it.isDigit() }).toSet()
+                val skip = own + win.title
+                val bef = SupportJudge.stems(text.substring(0, q.start).takeLast(60)).takeLast(CONTEXT_WORDS).filter { it !in skip }.toSet()
+                val aft = SupportJudge.stems(text.substring(minOf(q.end, text.length)).take(60)).take(CONTEXT_WORDS).filter { it !in skip }.toSet()
+                if (win.quantities.size > 1 && misattributed(bef, aft, groupOk, win)) {
                     return Claim(text, ClaimStatus.UNVERIFIED, listOf(win.itemId), "numero ${q.raw} attribuito a un altro elemento")
                 }
                 continue
@@ -272,13 +346,20 @@ object ClaimVerifier {
         return null
     }
 
-    /** True when the claim's words around the number sit, in the evidence, next to a DIFFERENT quantity and never next to the matched one. */
-    private fun misattributed(ctx: Set<String>, matched: List<Quantity>, win: Sent): Boolean {
+    /**
+     * True when the claim's words around the number sit, in the evidence, next to a DIFFERENT quantity and never next to the matched one. A word BEFORE the
+     * claim's number is bound to the quantity that FOLLOWS it in the evidence ("profonda 2 metri"), a word AFTER it to the quantity that PRECEDES it
+     * ("5 metri di lunghezza"); only when no quantity lies on that side does the nearest one decide.
+     */
+    private fun misattributed(before: Set<String>, after: Set<String>, matched: List<Quantity>, win: Sent): Boolean {
         var forMatched = 0; var forOthers = 0
-        for (st in ctx) {
-            val w = win.words.firstOrNull { SupportJudge.stems(it).firstOrNull() == st } ?: continue
+        fun find(st: String): String? = win.words.firstOrNull { SupportJudge.stems(it).firstOrNull() == st } ?: win.words.firstOrNull { SupportJudge.stems(it).firstOrNull()?.let { x -> near(x, st) } == true }
+        for ((st, isBefore) in before.map { it to true } + after.map { it to false }) {
+            val w = find(st) ?: continue
             val pos = win.folded.indexOf(w)
-            val nearest = win.quantities.minByOrNull { minOf(kotlin.math.abs(it.start - pos), kotlin.math.abs(it.end - pos)) } ?: continue
+            val side = if (isBefore) win.quantities.filter { it.start >= pos } else win.quantities.filter { it.end <= pos }
+            val pool = side.ifEmpty { win.quantities }
+            val nearest = pool.minByOrNull { minOf(kotlin.math.abs(it.start - pos), kotlin.math.abs(it.end - pos)) } ?: continue
             if (nearest in matched) forMatched++ else forOthers++
         }
         return forOthers > 0 && forMatched == 0

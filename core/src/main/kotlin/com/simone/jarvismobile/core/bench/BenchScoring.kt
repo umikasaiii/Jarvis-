@@ -14,6 +14,8 @@ data class BenchOutcome(
     val conflictFlagged: Boolean? = null,
     val toolName: String? = null,
     val toolNumber: Double? = null,
+    /** Footer citations that could not be tied to ONE retrieved passage (AMBIGUOUS / NOT_VERIFIABLE): never counted as valid. */
+    val citationsAmbiguous: Int = 0,
     val error: String? = null,
     val latencyMs: Long? = null,
 )
@@ -47,6 +49,13 @@ object BenchScoring {
         }
     }
 
+    /** A forbidden claim "A&&B" is hit only when A and B occur in the SAME sentence (e.g. an entity bound to the wrong value); a plain claim is a whole-word match. */
+    fun hasForbidden(text: String, claim: String): Boolean {
+        if (!claim.contains("&&")) return has(text, claim)
+        val parts = claim.split("&&").map { it.trim() }.filter { it.isNotEmpty() }
+        return text.split(Regex("(?<=[.!?;\\n])\\s+")).any { sentence -> parts.all { has(sentence, it) } }
+    }
+
     fun numbersIn(s: String): List<Double> = Regex("""-?\d+(?:[.,]\d+)?""").findAll(norm(s)).mapNotNull { it.value.toDoubleOrNull() }.toList()
 
     fun withinTolerance(got: Double, g: NumericGold): Boolean = if (g.kind == "rel") kotlin.math.abs(got - g.value) <= g.tolerance * kotlin.math.abs(g.value) else kotlin.math.abs(got - g.value) <= g.tolerance
@@ -58,7 +67,7 @@ object BenchScoring {
         // the `[n]` markers are citations, not part of the claim: "tra 60 [1] e 100" states "tra 60 e 100"
         val text = o.publishedText.replace(CITATION_RE, " ").replace(Regex("\\s+"), " ")
         val abstained = ABSTAIN_RE.containsMatchIn(text) || o.mode == "ABSTAIN"
-        val forbiddenHit = c.forbiddenClaims.filter { has(text, it) }
+        val forbiddenHit = c.forbiddenClaims.filter { hasForbidden(text, it) }
         // an ABSENT case may answer from general knowledge ONLY if the answer is explicitly qualified as unverified and cites nothing: that is a cautious,
         // honestly-labelled answer, not a hallucination (it is counted separately as "qualified unverified")
         val qualifiedOnly = c.criterion == "ABSTAIN" && o.mode == "UNVERIFIED_FRAMED" && ABSTAIN_RE.containsMatchIn(o.publishedText) && o.citedPassages.isEmpty()
@@ -79,18 +88,19 @@ object BenchScoring {
                 c.numeric?.let { g -> d[Dim.NUMERIC] = numbersIn(text).any { withinTolerance(it, g) } }
                 val allowed = (c.expectedCitations + c.supportingEvidence).toSet()
                 val invalid = cited.filter { it !in allowed }
-                d[Dim.CITATION_VALID] = cited.isNotEmpty() && invalid.isEmpty() && cited.any { it in c.expectedCitations }
+                d[Dim.CITATION_VALID] = cited.isNotEmpty() && invalid.isEmpty() && o.citationsAmbiguous == 0 && cited.any { it in c.expectedCitations }
+                if (o.citationsAmbiguous > 0) notes += "citation not verifiable (article label shared by several passages): ${o.citationsAmbiguous}"
                 if (invalid.isNotEmpty()) notes += "citation to a passage that does not support: " + invalid.joinToString()
             }
             "ABSTAIN" -> {
                 d[Dim.SUFFICIENCY] = o.supportEstablished?.let { !it }
                 d[Dim.ABSTENTION] = abstained
-                d[Dim.CITATION_VALID] = cited.isEmpty()
+                d[Dim.CITATION_VALID] = cited.isEmpty() && o.citationsAmbiguous == 0
                 if (!abstained) notes += "no abstention/qualification in the published text"
             }
             "CONFLICT" -> {
                 d[Dim.CONFLICT_SHOWN] = c.requiredClaims.all { has(text, it, c.acceptableVariants) } && (o.conflictFlagged == true || ABSTAIN_RE.containsMatchIn(text) || norm(text).contains("non concord"))
-                d[Dim.CITATION_VALID] = cited.isNotEmpty() && cited.toSet().containsAll(c.expectedCitations.toSet())
+                d[Dim.CITATION_VALID] = cited.isNotEmpty() && o.citationsAmbiguous == 0 && cited.toSet().containsAll(c.expectedCitations.toSet())
             }
             "TOOL_NUMERIC" -> {
                 val exp = c.expectedActions.firstOrNull()

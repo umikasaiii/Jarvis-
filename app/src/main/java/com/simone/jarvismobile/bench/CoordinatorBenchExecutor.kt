@@ -6,6 +6,7 @@ import com.simone.jarvismobile.core.bench.BenchCase
 import com.simone.jarvismobile.core.bench.BenchExecutor
 import com.simone.jarvismobile.core.bench.BenchFixtures
 import com.simone.jarvismobile.core.bench.BenchOutcome
+import com.simone.jarvismobile.core.bench.CitationResolver
 import com.simone.jarvismobile.core.bench.RetrievedEvidence
 import com.simone.jarvismobile.core.knowledge.Evidence
 
@@ -63,27 +64,19 @@ class CoordinatorBenchExecutor(
         val ev = retrieved?.evidence as? Evidence.Grounded
         val passages = ev?.passages.orEmpty()
         val ids = passages.map { retrieved!!.passageId(it) }
+        val cites = citedFrom(text, passages, ids)
         return BenchOutcome(
-            publishedText = text, mode = "MODEL", retrievedPassages = ids, citedPassages = citedFrom(text, passages.map { it.chunk.reference to it }, ids, c),
+            publishedText = text, mode = "MODEL", retrievedPassages = ids, citedPassages = cites.passageIds, citationsAmbiguous = cites.ambiguous + cites.unresolved,
             supportEstablished = ev?.supportEstablished, conflictFlagged = ev?.conflict,
         )
     }
 
     /**
-     * Maps the published footer back to fixture passages. The footer names the SOURCE (title + collection), and a passage only when two passages share a label
-     * (`(brano E3)` = the third supporting passage); otherwise the passage inside that article that the case expects is chosen. Section-level exactness is therefore
-     * verified only for duplicate labels — a documented limit of device-mode citation checking.
+     * Maps the published footer back to retrieved passages from the system's own data only (label + retrieval order). It never reads the case's gold
+     * citations: an article-only label shared by several retrieved passages is AMBIGUOUS and is reported as such, never assigned to the expected one.
      */
-    private fun citedFrom(text: String, refs: List<Pair<String, com.simone.jarvismobile.core.knowledge.ScoredChunk>>, ids: List<String>, c: BenchCase): List<String> {
+    private fun citedFrom(text: String, passages: List<com.simone.jarvismobile.core.knowledge.ScoredChunk>, ids: List<String>): CitationResolver.Resolved {
         val footer = text.substringAfter("Fonti a supporto:", "").lines().map { it.trim() }.filter { Regex("""^\[\d+]""").containsMatchIn(it) }
-        val out = ArrayList<String>()
-        for (line in footer) {
-            val label = line.replace(Regex("""^\[\d+]\s*"""), "")
-            Regex("""\(brano E(\d+)\)""").find(label)?.let { m -> ids.getOrNull(m.groupValues[1].toInt() - 1)?.let { out += it }; continue }
-            val matching = refs.indices.filter { i -> label.startsWith(refs[i].first.substringBefore(" (")) }
-            val pick = matching.map { ids[it] }.let { cand -> cand.firstOrNull { it in c.expectedCitations } ?: cand.firstOrNull() }
-            if (pick != null) out += pick
-        }
-        return out.distinct()
+        return CitationResolver.resolve(footer, passages.indices.map { CitationResolver.Candidate(ids[it], passages[it].chunk.reference) })
     }
 }

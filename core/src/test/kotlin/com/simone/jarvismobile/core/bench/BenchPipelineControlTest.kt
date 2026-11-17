@@ -8,10 +8,10 @@ import kotlin.test.assertTrue
 
 class BenchPipelineControlTest {
     private companion object {
-        // recorded on the first complete run of dataset 1.0.0 (JVM pipeline control, commit of M4); see docs/M4_BENCHMARK.md
-        const val BASELINE_HALLUCINATED_FALSE_PROOFS = 23
-        const val BASELINE_FAITHFUL_FALSE_PROOFS = 1
-        const val BASELINE_FAITHFUL_PASSED = 105
+        // M4 first run (95f6118): 23 / 1 / 105.  After the M4 safety closure the same dataset gives 0 / 0 / 107; see docs/M4_BENCHMARK.md
+        const val BASELINE_HALLUCINATED_FALSE_PROOFS = 0
+        const val BASELINE_FAITHFUL_FALSE_PROOFS = 0
+        const val BASELINE_FAITHFUL_PASSED = 107
     }
 
     private val loaded = BenchDataset.loadBundled()
@@ -57,5 +57,42 @@ class BenchPipelineControlTest {
         assertTrue(faithful.count { it.passed == true } >= BASELINE_FAITHFUL_PASSED, "faithful pass count fell: ${faithful.count { it.passed == true }}")
         // an absent-information case never gets a cited/verified forbidden claim, even from a hallucinating candidate
         assertEquals(0, halluc.filter { it.category == "assenti" }.count { it.falseProof })
+    }
+
+    private suspend fun outcome(id: String, variant: String = "faithful"): Pair<BenchCase, BenchOutcome> {
+        val c = data.cases.first { it.id == id }
+        return c to PipelineControlExecutor(BenchHarness(fx).retrieve(), variant).execute(c, fx)!!
+    }
+
+    @Test fun abs08ACorrectAbstentionIsNotReplacedByAnIrrelevantExtract() = runBlocking {
+        val (c, o) = outcome("abs-08")
+        assertEquals("ABSTAIN", o.mode)
+        assertTrue(BenchScoring.score(c, o).dims[Dim.ABSTENTION] == true && o.citedPassages.isEmpty())
+    }
+
+    @Test fun geo11CitesOnlyThePassageThatContainsTheClaim() = runBlocking {
+        val (c, o) = outcome("geo-11")
+        assertEquals(listOf("a.lago_vittoria#Dimensioni"), o.citedPassages)
+        assertEquals(true, BenchScoring.score(c, o).dims[Dim.CITATION_VALID])
+    }
+
+    @Test fun doc10TwoSimilarManualsKeepTheirIdentity() = runBlocking {
+        val (c, o) = outcome("doc-10")
+        assertEquals(listOf("doc:caldaia_y#1"), o.citedPassages)
+        assertEquals(true, BenchScoring.score(c, o).passed)
+        // the Termo-Z value attributed to Termo-Y is a false proof; the same value correctly attributed to Termo-Z is not
+        val wrong = BenchOutcome("La pressione di esercizio della caldaia Termo-Y è di 1,5 bar [1].", "VERIFIED", emptyList(), listOf("doc:caldaia_y#1"))
+        val right = BenchOutcome("La pressione di esercizio della caldaia Termo-Z è di 1,5 bar [1].", "VERIFIED", emptyList(), listOf("doc:caldaia_z#1"))
+        assertTrue(BenchScoring.score(c, wrong).falseProof); assertTrue(!BenchScoring.score(c, right).falseProof)
+    }
+
+    @Test fun mem07SecondPersonRephrasingIsAccepted() = runBlocking {
+        val (c, o) = outcome("mem-07")
+        assertEquals(true, BenchScoring.score(c, o).passed, o.publishedText)
+    }
+
+    @Test fun sameSentenceForbiddenClaimNeedsBothParts() {
+        assertTrue(BenchScoring.hasForbidden("La caldaia Termo-Y ha 1,5 bar. Altro.", "Termo-Y&&1,5 bar"))
+        assertTrue(!BenchScoring.hasForbidden("La caldaia Termo-Y ha 2 bar. La Termo-Z ha 1,5 bar.", "Termo-Y&&1,5 bar"))
     }
 }

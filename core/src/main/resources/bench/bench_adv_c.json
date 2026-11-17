@@ -1,0 +1,975 @@
+{
+ "version": "1.0.0",
+ "set": "C",
+ "role": "verification (run once after the rules were fixed; not used to choose them; NOT blind)",
+ "cases": [
+  {
+   "id": "advC-01",
+   "set": "C",
+   "mutation": "subject",
+   "question": "Quale ghiandola produce l'adrenalina?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.adrenalina",
+     "title": "Adrenalina",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "L'adrenalina è un ormone prodotto dalle ghiandole surrenali."
+      ]
+     ]
+    }
+   ],
+   "candidate": "L'adrenalina è prodotta dalla tiroide.",
+   "expect": "NOT_VERIFIED",
+   "alteredMarkers": [
+    "tiroide"
+   ],
+   "trueMarker": null,
+   "expectedCitation": null,
+   "note": ""
+  },
+  {
+   "id": "advC-02",
+   "set": "C",
+   "mutation": "subject",
+   "question": "Chi formulò la teoria della relatività?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.relativit",
+     "title": "Relatività",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "La teoria della relatività fu formulata da Albert Einstein."
+      ]
+     ]
+    }
+   ],
+   "candidate": "La teoria della relatività fu formulata da Isaac Newton.",
+   "expect": "NOT_VERIFIED",
+   "alteredMarkers": [
+    "newton"
+   ],
+   "trueMarker": null,
+   "expectedCitation": null,
+   "note": ""
+  },
+  {
+   "id": "advC-03",
+   "set": "C",
+   "mutation": "object",
+   "question": "Che cosa trasportano le arterie?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.arterie",
+     "title": "Arterie",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "Le arterie trasportano il sangue dal cuore verso i tessuti."
+      ]
+     ]
+    }
+   ],
+   "candidate": "Le arterie trasportano l'aria dal cuore verso i tessuti.",
+   "expect": "NOT_VERIFIED",
+   "alteredMarkers": [
+    "aria"
+   ],
+   "trueMarker": null,
+   "expectedCitation": null,
+   "note": ""
+  },
+  {
+   "id": "advC-04",
+   "set": "C",
+   "mutation": "object",
+   "question": "Che cosa mangia il panda?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.panda_gigante",
+     "title": "Panda gigante",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "Il panda gigante si nutre soprattutto di bambù."
+      ]
+     ]
+    }
+   ],
+   "candidate": "Il panda gigante si nutre soprattutto di pesce.",
+   "expect": "NOT_VERIFIED",
+   "alteredMarkers": [
+    "pesce"
+   ],
+   "trueMarker": null,
+   "expectedCitation": null,
+   "note": ""
+  },
+  {
+   "id": "advC-05",
+   "set": "C",
+   "mutation": "property_swap",
+   "question": "Quanto pesa il pacco?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.pacco_di_prova",
+     "title": "Pacco di prova",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "Pacco di prova è una voce di prova."
+      ],
+      [
+       "Dati",
+       "Il pacco è alto 30 centimetri e pesa 4 chilogrammi."
+      ]
+     ]
+    }
+   ],
+   "candidate": "Il pacco pesa 30 chilogrammi.",
+   "expect": "NOT_VERIFIED",
+   "alteredMarkers": [
+    "pesa 30"
+   ],
+   "trueMarker": null,
+   "expectedCitation": null,
+   "note": ""
+  },
+  {
+   "id": "advC-06",
+   "set": "C",
+   "mutation": "property_swap",
+   "question": "Qual è la profondità della piscina?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.piscina_comunale",
+     "title": "Piscina comunale",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "Piscina comunale è una voce di prova."
+      ],
+      [
+       "Misure",
+       "La piscina è lunga 25 metri e profonda 2 metri."
+      ]
+     ]
+    }
+   ],
+   "candidate": "La profondità della piscina è di 25 metri.",
+   "expect": "NOT_VERIFIED",
+   "alteredMarkers": [
+    "profondità della piscina è di 25"
+   ],
+   "trueMarker": null,
+   "expectedCitation": null,
+   "note": ""
+  },
+  {
+   "id": "advC-07",
+   "set": "C",
+   "mutation": "relation_inversion",
+   "question": "Chi ha sconfitto chi nella finale?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.finale_di_prova",
+     "title": "Finale di prova",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "La squadra rossa ha sconfitto la squadra blu."
+      ]
+     ]
+    }
+   ],
+   "candidate": "La squadra blu ha sconfitto la squadra rossa.",
+   "expect": "NOT_VERIFIED",
+   "alteredMarkers": [
+    "blu ha sconfitto la squadra rossa"
+   ],
+   "trueMarker": null,
+   "expectedCitation": null,
+   "note": ""
+  },
+  {
+   "id": "advC-08",
+   "set": "C",
+   "mutation": "relation_inversion",
+   "question": "Chi è il padre di chi?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.famiglia_di_prova",
+     "title": "Famiglia di prova",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "Marco è il padre di Luca."
+      ]
+     ]
+    }
+   ],
+   "candidate": "Luca è il padre di Marco.",
+   "expect": "NOT_VERIFIED",
+   "alteredMarkers": [
+    "luca è il padre di marco"
+   ],
+   "trueMarker": null,
+   "expectedCitation": null,
+   "note": ""
+  },
+  {
+   "id": "advC-09",
+   "set": "C",
+   "mutation": "negation",
+   "question": "La balena è un pesce?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.balena",
+     "title": "Balena",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "La balena è un mammifero e non è un pesce."
+      ]
+     ]
+    }
+   ],
+   "candidate": "La balena è un pesce.",
+   "expect": "NOT_VERIFIED",
+   "alteredMarkers": [
+    "balena è un pesce"
+   ],
+   "trueMarker": null,
+   "expectedCitation": null,
+   "note": ""
+  },
+  {
+   "id": "advC-10",
+   "set": "C",
+   "mutation": "negation",
+   "question": "Il silenzio è consentito in biblioteca?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.regolamento_biblioteca",
+     "title": "Regolamento biblioteca",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "In biblioteca è vietato usare il telefono."
+      ]
+     ]
+    }
+   ],
+   "candidate": "In biblioteca è consentito usare il telefono.",
+   "expect": "NOT_VERIFIED",
+   "alteredMarkers": [
+    "consentito usare"
+   ],
+   "trueMarker": null,
+   "expectedCitation": null,
+   "note": ""
+  },
+  {
+   "id": "advC-11",
+   "set": "C",
+   "mutation": "name_substitution",
+   "question": "Chi ha dipinto la Gioconda?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.gioconda",
+     "title": "Gioconda",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "La Gioconda fu dipinta da Leonardo da Vinci."
+      ]
+     ]
+    }
+   ],
+   "candidate": "La Gioconda fu dipinta da Raffaello.",
+   "expect": "NOT_VERIFIED",
+   "alteredMarkers": [
+    "raffaello"
+   ],
+   "trueMarker": null,
+   "expectedCitation": null,
+   "note": ""
+  },
+  {
+   "id": "advC-12",
+   "set": "C",
+   "mutation": "name_substitution",
+   "question": "Qual è la capitale della Norvegia?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.norvegia",
+     "title": "Norvegia",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "La capitale della Norvegia è Oslo."
+      ]
+     ]
+    }
+   ],
+   "candidate": "La capitale della Norvegia è Stoccolma.",
+   "expect": "NOT_VERIFIED",
+   "alteredMarkers": [
+    "stoccolma"
+   ],
+   "trueMarker": null,
+   "expectedCitation": null,
+   "note": ""
+  },
+  {
+   "id": "advC-13",
+   "set": "C",
+   "mutation": "quality_attribute",
+   "question": "Com'è il deserto?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.deserto",
+     "title": "Deserto",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "Il deserto è un ambiente arido e poco piovoso."
+      ]
+     ]
+    }
+   ],
+   "candidate": "Il deserto è un ambiente umido e molto piovoso.",
+   "expect": "NOT_VERIFIED",
+   "alteredMarkers": [
+    "umido"
+   ],
+   "trueMarker": null,
+   "expectedCitation": null,
+   "note": ""
+  },
+  {
+   "id": "advC-14",
+   "set": "C",
+   "mutation": "quality_attribute",
+   "question": "Com'è il ferro rispetto all'acqua?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.ferro",
+     "title": "Ferro",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "Il ferro è più denso dell'acqua."
+      ]
+     ]
+    }
+   ],
+   "candidate": "Il ferro è meno denso dell'acqua.",
+   "expect": "NOT_VERIFIED",
+   "alteredMarkers": [
+    "meno denso"
+   ],
+   "trueMarker": null,
+   "expectedCitation": null,
+   "note": ""
+  },
+  {
+   "id": "advC-15",
+   "set": "C",
+   "mutation": "similar_documents",
+   "question": "Qual è la garanzia del frigorifero F10?",
+   "sources": [
+    {
+     "kind": "document",
+     "id": "f10",
+     "title": "Frigorifero F10",
+     "pages": [
+      "Il frigorifero F10 ha una garanzia di 2 anni."
+     ]
+    },
+    {
+     "kind": "document",
+     "id": "f20",
+     "title": "Frigorifero F20",
+     "pages": [
+      "Il frigorifero F20 ha una garanzia di 5 anni."
+     ]
+    }
+   ],
+   "candidate": "Il frigorifero F10 ha una garanzia di 5 anni.",
+   "expect": "NOT_VERIFIED",
+   "alteredMarkers": [
+    "f10 ha una garanzia di 5"
+   ],
+   "trueMarker": null,
+   "expectedCitation": null,
+   "note": ""
+  },
+  {
+   "id": "advC-16",
+   "set": "C",
+   "mutation": "similar_documents",
+   "question": "Quante pagine ha il manuale Beta-1?",
+   "sources": [
+    {
+     "kind": "document",
+     "id": "beta1",
+     "title": "Manuale Beta-1",
+     "pages": [
+      "Il manuale Beta-1 ha 80 pagine."
+     ]
+    },
+    {
+     "kind": "document",
+     "id": "beta2",
+     "title": "Manuale Beta-2",
+     "pages": [
+      "Il manuale Beta-2 ha 120 pagine."
+     ]
+    }
+   ],
+   "candidate": "Il manuale Beta-1 ha 120 pagine.",
+   "expect": "NOT_VERIFIED",
+   "alteredMarkers": [
+    "beta-1 ha 120"
+   ],
+   "trueMarker": null,
+   "expectedCitation": null,
+   "note": ""
+  },
+  {
+   "id": "advC-17",
+   "set": "C",
+   "mutation": "partial_source",
+   "question": "Dove sorge Valdora e quanti abitanti ha?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.valdora",
+     "title": "Valdora",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "Valdora sorge sulla costa orientale."
+      ]
+     ]
+    }
+   ],
+   "candidate": "Valdora sorge sulla costa orientale e ha 9.000 abitanti.",
+   "expect": "NOT_VERIFIED",
+   "alteredMarkers": [
+    "9.000"
+   ],
+   "trueMarker": null,
+   "expectedCitation": null,
+   "note": ""
+  },
+  {
+   "id": "advC-18",
+   "set": "C",
+   "mutation": "partial_source",
+   "question": "Chi vinse e con che punteggio?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.torneo_di_prova",
+     "title": "Torneo di prova",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "Il torneo fu vinto dalla squadra verde."
+      ]
+     ]
+    }
+   ],
+   "candidate": "Il torneo fu vinto dalla squadra verde per 3 a 1.",
+   "expect": "NOT_VERIFIED",
+   "alteredMarkers": [
+    "3 a 1"
+   ],
+   "trueMarker": null,
+   "expectedCitation": null,
+   "note": ""
+  },
+  {
+   "id": "advC-19",
+   "set": "C",
+   "mutation": "contradictory",
+   "question": "Quanto è alta la torre Campanella?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.torre_campanella",
+     "title": "Torre Campanella",
+     "collection": "Fixture A",
+     "date": "2025-03-01",
+     "sections": [
+      [
+       "",
+       "La torre Campanella è alta 74 metri."
+      ]
+     ]
+    },
+    {
+     "kind": "article",
+     "id": "a.torre_campanella.fixture_b",
+     "title": "Torre Campanella",
+     "collection": "Fixture B",
+     "date": "2026-02-01",
+     "sections": [
+      [
+       "",
+       "La torre Campanella è alta 69 metri."
+      ]
+     ]
+    }
+   ],
+   "candidate": "La torre Campanella è alta 69 metri.",
+   "expect": "CONFLICT",
+   "alteredMarkers": [
+    "74",
+    "69"
+   ],
+   "trueMarker": null,
+   "expectedCitation": null,
+   "note": ""
+  },
+  {
+   "id": "advC-20",
+   "set": "C",
+   "mutation": "contradictory",
+   "question": "Quanto è lungo il ponte Alvero?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.ponte_alvero",
+     "title": "Ponte Alvero",
+     "collection": "Fixture A",
+     "date": "2025-03-01",
+     "sections": [
+      [
+       "",
+       "Il ponte Alvero è lungo 860 metri."
+      ]
+     ]
+    },
+    {
+     "kind": "article",
+     "id": "a.ponte_alvero.fixture_b",
+     "title": "Ponte Alvero",
+     "collection": "Fixture B",
+     "date": "2026-02-01",
+     "sections": [
+      [
+       "",
+       "Il ponte Alvero è lungo 790 metri."
+      ]
+     ]
+    }
+   ],
+   "candidate": "Il ponte Alvero è lungo 860 metri.",
+   "expect": "CONFLICT",
+   "alteredMarkers": [
+    "860",
+    "790"
+   ],
+   "trueMarker": null,
+   "expectedCitation": null,
+   "note": ""
+  },
+  {
+   "id": "advC-21",
+   "set": "C",
+   "mutation": "right_value_wrong_entity",
+   "question": "Quanto è lungo il Tevere?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.fiumi",
+     "title": "Fiumi",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "Fiumi è una voce di prova."
+      ],
+      [
+       "Lunghezze",
+       "Il Po è lungo 652 chilometri. Il Tevere è lungo 405 chilometri."
+      ]
+     ]
+    }
+   ],
+   "candidate": "Il Tevere è lungo 652 chilometri.",
+   "expect": "NOT_VERIFIED",
+   "alteredMarkers": [
+    "tevere è lungo 652"
+   ],
+   "trueMarker": null,
+   "expectedCitation": null,
+   "note": ""
+  },
+  {
+   "id": "advC-22",
+   "set": "C",
+   "mutation": "right_value_wrong_entity",
+   "question": "Quando morì Dante?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.date",
+     "title": "Date",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "Date è una voce di prova."
+      ],
+      [
+       "Morti",
+       "Dante morì nel 1321. Petrarca morì nel 1374."
+      ]
+     ]
+    }
+   ],
+   "candidate": "Dante morì nel 1374.",
+   "expect": "NOT_VERIFIED",
+   "alteredMarkers": [
+    "dante morì nel 1374"
+   ],
+   "trueMarker": null,
+   "expectedCitation": null,
+   "note": ""
+  },
+  {
+   "id": "advC-23",
+   "set": "C",
+   "mutation": "abstain_unsupported",
+   "question": "Chi ha costruito il faro di Capo Verdi?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.faro_di_capo_verdi",
+     "title": "Faro di Capo Verdi",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "Il faro di Capo Verdi è alto 30 metri."
+      ]
+     ]
+    }
+   ],
+   "candidate": "Il faro di Capo Verdi è stato costruito da Eiffel.",
+   "expect": "NOT_VERIFIED",
+   "alteredMarkers": [
+    "eiffel"
+   ],
+   "trueMarker": null,
+   "expectedCitation": null,
+   "note": ""
+  },
+  {
+   "id": "advC-24",
+   "set": "C",
+   "mutation": "abstain_correct",
+   "question": "Chi ha progettato la rete di prova?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.rete_di_prova",
+     "title": "Rete di prova",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "La rete di prova usa il protocollo TCP sulla porta 8080."
+      ]
+     ]
+    }
+   ],
+   "candidate": "Nelle fonti che ho non trovo chi ha progettato la rete di prova.",
+   "expect": "ABSTAIN",
+   "alteredMarkers": [
+    "porta 8080",
+    "tcp"
+   ],
+   "trueMarker": null,
+   "expectedCitation": null,
+   "note": ""
+  },
+  {
+   "id": "advC-25",
+   "set": "C",
+   "mutation": "abstain_correct",
+   "question": "Quando è stata inaugurata la biblioteca?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.biblioteca_civica",
+     "title": "Biblioteca civica",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "La biblioteca civica ha 12.000 volumi."
+      ]
+     ]
+    }
+   ],
+   "candidate": "Non trovo nelle fonti la data di inaugurazione della biblioteca.",
+   "expect": "ABSTAIN",
+   "alteredMarkers": [
+    "12.000"
+   ],
+   "trueMarker": null,
+   "expectedCitation": null,
+   "note": ""
+  },
+  {
+   "id": "advC-26",
+   "set": "C",
+   "mutation": "irrelevant_extract",
+   "question": "Qual è il presidente della Nemoria?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.nemoria_clima",
+     "title": "Nemoria, clima",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "La Nemoria ha un clima mite e inverni brevi."
+      ]
+     ]
+    }
+   ],
+   "candidate": "Non trovo nelle fonti il presidente della Nemoria.",
+   "expect": "ABSTAIN",
+   "alteredMarkers": [
+    "clima mite",
+    "inverni brevi"
+   ],
+   "trueMarker": null,
+   "expectedCitation": null,
+   "note": ""
+  },
+  {
+   "id": "advC-27",
+   "set": "C",
+   "mutation": "paraphrase_benign",
+   "question": "Quale pianeta è il più vicino al Sole?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.mercurio",
+     "title": "Mercurio",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "Mercurio è il pianeta più vicino al Sole."
+      ]
+     ]
+    }
+   ],
+   "candidate": "Il pianeta più vicino al Sole è Mercurio.",
+   "expect": "VERIFIED",
+   "alteredMarkers": [],
+   "trueMarker": "mercurio",
+   "expectedCitation": "a.mercurio",
+   "note": ""
+  },
+  {
+   "id": "advC-28",
+   "set": "C",
+   "mutation": "paraphrase_benign",
+   "question": "Quanti giorni ha febbraio negli anni bisestili?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.febbraio",
+     "title": "Febbraio",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "Negli anni bisestili febbraio ha 29 giorni."
+      ]
+     ]
+    }
+   ],
+   "candidate": "Febbraio ha 29 giorni negli anni bisestili.",
+   "expect": "VERIFIED",
+   "alteredMarkers": [],
+   "trueMarker": "29",
+   "expectedCitation": "a.febbraio",
+   "note": ""
+  },
+  {
+   "id": "advC-29",
+   "set": "C",
+   "mutation": "paraphrase_benign",
+   "question": "Che cos'è un ecosistema?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.ecosistema",
+     "title": "Ecosistema",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "Un ecosistema è l'insieme degli organismi viventi e dell'ambiente fisico in cui vivono."
+      ]
+     ]
+    }
+   ],
+   "candidate": "Un ecosistema è l'insieme di organismi viventi e ambiente fisico in cui vivono.",
+   "expect": "VERIFIED",
+   "alteredMarkers": [],
+   "trueMarker": "organismi viventi",
+   "expectedCitation": "a.ecosistema",
+   "note": ""
+  },
+  {
+   "id": "advC-30",
+   "set": "C",
+   "mutation": "paraphrase_benign",
+   "question": "Come si chiama il cane?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.cane_di_prova",
+     "title": "Cane di prova",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "Il cane della famiglia si chiama Fido."
+      ]
+     ]
+    }
+   ],
+   "candidate": "Il cane della famiglia si chiama Fido.",
+   "expect": "VERIFIED",
+   "alteredMarkers": [],
+   "trueMarker": "fido",
+   "expectedCitation": "a.cane_di_prova",
+   "note": ""
+  },
+  {
+   "id": "advC-31",
+   "set": "C",
+   "mutation": "paraphrase_benign",
+   "question": "Dove si trova la Torre Eiffel?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.torre_eiffel",
+     "title": "Torre Eiffel",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "La Torre Eiffel si trova a Parigi."
+      ]
+     ]
+    }
+   ],
+   "candidate": "La Torre Eiffel è a Parigi.",
+   "expect": "VERIFIED",
+   "alteredMarkers": [],
+   "trueMarker": "parigi",
+   "expectedCitation": "a.torre_eiffel",
+   "note": ""
+  },
+  {
+   "id": "advC-32",
+   "set": "C",
+   "mutation": "paraphrase_benign",
+   "question": "Qual è il simbolo chimico dell'oro?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.oro",
+     "title": "Oro",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "Il simbolo chimico dell'oro è Au."
+      ]
+     ]
+    }
+   ],
+   "candidate": "L'oro ha simbolo chimico Au.",
+   "expect": "VERIFIED",
+   "alteredMarkers": [],
+   "trueMarker": "au",
+   "expectedCitation": "a.oro",
+   "note": ""
+  }
+ ]
+}

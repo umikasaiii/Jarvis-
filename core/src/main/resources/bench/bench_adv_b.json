@@ -1,0 +1,975 @@
+{
+ "version": "1.0.0",
+ "set": "B",
+ "role": "regression (rules were tuned on these cases)",
+ "cases": [
+  {
+   "id": "advB-01",
+   "set": "B",
+   "mutation": "subject",
+   "question": "Quale organo produce l'insulina?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.insulina",
+     "title": "Insulina",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "L'insulina è un ormone prodotto dal pancreas."
+      ]
+     ]
+    }
+   ],
+   "candidate": "L'insulina è prodotta dal fegato.",
+   "expect": "NOT_VERIFIED",
+   "alteredMarkers": [
+    "fegato"
+   ],
+   "trueMarker": null,
+   "expectedCitation": null,
+   "note": ""
+  },
+  {
+   "id": "advB-02",
+   "set": "B",
+   "mutation": "subject",
+   "question": "Chi scoprì il polonio?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.polonio",
+     "title": "Polonio",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "Il polonio fu scoperto da Marie Curie nel 1898."
+      ]
+     ]
+    }
+   ],
+   "candidate": "Il polonio fu scoperto da Albert Einstein nel 1898.",
+   "expect": "NOT_VERIFIED",
+   "alteredMarkers": [
+    "einstein"
+   ],
+   "trueMarker": null,
+   "expectedCitation": null,
+   "note": ""
+  },
+  {
+   "id": "advB-03",
+   "set": "B",
+   "mutation": "object",
+   "question": "Che cosa pompa il cuore?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.cuore",
+     "title": "Cuore",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "Il cuore pompa il sangue in tutto il corpo."
+      ]
+     ]
+    }
+   ],
+   "candidate": "Il cuore pompa la linfa in tutto il corpo.",
+   "expect": "NOT_VERIFIED",
+   "alteredMarkers": [
+    "linfa"
+   ],
+   "trueMarker": null,
+   "expectedCitation": null,
+   "note": ""
+  },
+  {
+   "id": "advB-04",
+   "set": "B",
+   "mutation": "object",
+   "question": "Che cosa assorbono le radici?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.radice",
+     "title": "Radice",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "Le radici assorbono acqua e sali minerali dal terreno."
+      ]
+     ]
+    }
+   ],
+   "candidate": "Le radici assorbono luce e anidride carbonica dal terreno.",
+   "expect": "NOT_VERIFIED",
+   "alteredMarkers": [
+    "luce"
+   ],
+   "trueMarker": null,
+   "expectedCitation": null,
+   "note": ""
+  },
+  {
+   "id": "advB-05",
+   "set": "B",
+   "mutation": "property_swap",
+   "question": "Quanto è lungo il Po?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.fiumi_italiani",
+     "title": "Fiumi italiani",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "Fiumi italiani è una voce di prova."
+      ],
+      [
+       "Dati",
+       "Il Monte Bianco è alto 4.806 metri e il Po è lungo 652 chilometri."
+      ]
+     ]
+    }
+   ],
+   "candidate": "Il Po è lungo 4.806 metri.",
+   "expect": "NOT_VERIFIED",
+   "alteredMarkers": [
+    "po è lungo 4.806"
+   ],
+   "trueMarker": null,
+   "expectedCitation": null,
+   "note": ""
+  },
+  {
+   "id": "advB-06",
+   "set": "B",
+   "mutation": "property_swap",
+   "question": "Qual è la larghezza della stanza?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.stanza_di_prova",
+     "title": "Stanza di prova",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "Stanza di prova è una voce di prova."
+      ],
+      [
+       "Misure",
+       "La stanza misura 5 metri di lunghezza e 3 metri di larghezza."
+      ]
+     ]
+    }
+   ],
+   "candidate": "La larghezza della stanza è di 5 metri.",
+   "expect": "NOT_VERIFIED",
+   "alteredMarkers": [
+    "larghezza della stanza è di 5"
+   ],
+   "trueMarker": null,
+   "expectedCitation": null,
+   "note": ""
+  },
+  {
+   "id": "advB-07",
+   "set": "B",
+   "mutation": "relation_inversion",
+   "question": "Di quale Stato Roma è la capitale?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.roma",
+     "title": "Roma",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "Roma è la capitale dell'Italia."
+      ]
+     ]
+    }
+   ],
+   "candidate": "L'Italia è la capitale di Roma.",
+   "expect": "NOT_VERIFIED",
+   "alteredMarkers": [
+    "italia è la capitale di roma"
+   ],
+   "trueMarker": null,
+   "expectedCitation": null,
+   "note": ""
+  },
+  {
+   "id": "advB-08",
+   "set": "B",
+   "mutation": "relation_inversion",
+   "question": "Chi insegue chi tra il gatto e il topo?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.gatto_e_topo",
+     "title": "Gatto e topo",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "Il gatto insegue il topo."
+      ]
+     ]
+    }
+   ],
+   "candidate": "Il topo insegue il gatto.",
+   "expect": "NOT_VERIFIED",
+   "alteredMarkers": [
+    "topo insegue il gatto"
+   ],
+   "trueMarker": null,
+   "expectedCitation": null,
+   "note": ""
+  },
+  {
+   "id": "advB-09",
+   "set": "B",
+   "mutation": "negation",
+   "question": "Il pomodoro è un frutto?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.pomodoro",
+     "title": "Pomodoro",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "Il pomodoro è un frutto."
+      ]
+     ]
+    }
+   ],
+   "candidate": "Il pomodoro non è un frutto.",
+   "expect": "NOT_VERIFIED",
+   "alteredMarkers": [
+    "non è un frutto"
+   ],
+   "trueMarker": null,
+   "expectedCitation": null,
+   "note": ""
+  },
+  {
+   "id": "advB-10",
+   "set": "B",
+   "mutation": "negation",
+   "question": "L'acqua bolle a 100 gradi?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.ebollizione",
+     "title": "Ebollizione",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "L'acqua bolle a 100 gradi al livello del mare."
+      ]
+     ]
+    }
+   ],
+   "candidate": "L'acqua non bolle a 100 gradi al livello del mare.",
+   "expect": "NOT_VERIFIED",
+   "alteredMarkers": [
+    "non bolle"
+   ],
+   "trueMarker": null,
+   "expectedCitation": null,
+   "note": ""
+  },
+  {
+   "id": "advB-11",
+   "set": "B",
+   "mutation": "name_substitution",
+   "question": "Chi ha scritto la Divina Commedia?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.divina_commedia",
+     "title": "Divina Commedia",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "La Divina Commedia fu scritta da Dante Alighieri."
+      ]
+     ]
+    }
+   ],
+   "candidate": "La Divina Commedia fu scritta da Petrarca.",
+   "expect": "NOT_VERIFIED",
+   "alteredMarkers": [
+    "petrarca"
+   ],
+   "trueMarker": null,
+   "expectedCitation": null,
+   "note": ""
+  },
+  {
+   "id": "advB-12",
+   "set": "B",
+   "mutation": "name_substitution",
+   "question": "Di chi è la scultura del David?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.david_scultura",
+     "title": "David (scultura)",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "Il David è una scultura di Michelangelo."
+      ]
+     ]
+    }
+   ],
+   "candidate": "Il David è una scultura di Donatello.",
+   "expect": "NOT_VERIFIED",
+   "alteredMarkers": [
+    "donatello"
+   ],
+   "trueMarker": null,
+   "expectedCitation": null,
+   "note": ""
+  },
+  {
+   "id": "advB-13",
+   "set": "B",
+   "mutation": "quality_attribute",
+   "question": "Com'è il ghiaccio?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.ghiaccio",
+     "title": "Ghiaccio",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "Il ghiaccio è freddo e solido."
+      ]
+     ]
+    }
+   ],
+   "candidate": "Il ghiaccio è caldo e solido.",
+   "expect": "NOT_VERIFIED",
+   "alteredMarkers": [
+    "caldo"
+   ],
+   "trueMarker": null,
+   "expectedCitation": null,
+   "note": ""
+  },
+  {
+   "id": "advB-14",
+   "set": "B",
+   "mutation": "quality_attribute",
+   "question": "Di che alimentazione è il leone?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.leone",
+     "title": "Leone",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "Il leone è un animale carnivoro."
+      ]
+     ]
+    }
+   ],
+   "candidate": "Il leone è un animale erbivoro.",
+   "expect": "NOT_VERIFIED",
+   "alteredMarkers": [
+    "erbivoro"
+   ],
+   "trueMarker": null,
+   "expectedCitation": null,
+   "note": ""
+  },
+  {
+   "id": "advB-15",
+   "set": "B",
+   "mutation": "similar_documents",
+   "question": "Qual è la capacità del serbatoio del modello Alfa-A?",
+   "sources": [
+    {
+     "kind": "document",
+     "id": "alfa_a",
+     "title": "Scheda Alfa-A",
+     "pages": [
+      "Il serbatoio del modello Alfa-A ha una capacità di 40 litri."
+     ]
+    },
+    {
+     "kind": "document",
+     "id": "alfa_b",
+     "title": "Scheda Alfa-B",
+     "pages": [
+      "Il serbatoio del modello Alfa-B ha una capacità di 55 litri."
+     ]
+    }
+   ],
+   "candidate": "Il serbatoio del modello Alfa-A ha una capacità di 55 litri.",
+   "expect": "NOT_VERIFIED",
+   "alteredMarkers": [
+    "alfa-a ha una capacità di 55",
+    "alfa-a&&55 litri"
+   ],
+   "trueMarker": null,
+   "expectedCitation": null,
+   "note": ""
+  },
+  {
+   "id": "advB-16",
+   "set": "B",
+   "mutation": "similar_documents",
+   "question": "Quanti volt richiede il caricatore C100?",
+   "sources": [
+    {
+     "kind": "document",
+     "id": "c100",
+     "title": "Caricatore C100",
+     "pages": [
+      "Il caricatore C100 richiede 12 volt."
+     ]
+    },
+    {
+     "kind": "document",
+     "id": "c200",
+     "title": "Caricatore C200",
+     "pages": [
+      "Il caricatore C200 richiede 24 volt."
+     ]
+    }
+   ],
+   "candidate": "Il caricatore C100 richiede 24 volt.",
+   "expect": "NOT_VERIFIED",
+   "alteredMarkers": [
+    "c100 richiede 24"
+   ],
+   "trueMarker": null,
+   "expectedCitation": null,
+   "note": ""
+  },
+  {
+   "id": "advB-17",
+   "set": "B",
+   "mutation": "partial_source",
+   "question": "Quanto è lungo il Tevere e dove passa?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.tevere",
+     "title": "Tevere",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "Il Tevere attraversa la città di Roma."
+      ]
+     ]
+    }
+   ],
+   "candidate": "Il Tevere attraversa Roma ed è lungo 405 chilometri.",
+   "expect": "NOT_VERIFIED",
+   "alteredMarkers": [
+    "405"
+   ],
+   "trueMarker": null,
+   "expectedCitation": null,
+   "note": ""
+  },
+  {
+   "id": "advB-18",
+   "set": "B",
+   "mutation": "partial_source",
+   "question": "Chi ha costruito il ponte e quando?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.ponte_antico",
+     "title": "Ponte antico",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "Il ponte antico fu costruito da un architetto romano."
+      ]
+     ]
+    }
+   ],
+   "candidate": "Il ponte antico fu costruito da un architetto romano nel 1250.",
+   "expect": "NOT_VERIFIED",
+   "alteredMarkers": [
+    "1250"
+   ],
+   "trueMarker": null,
+   "expectedCitation": null,
+   "note": ""
+  },
+  {
+   "id": "advB-19",
+   "set": "B",
+   "mutation": "contradictory",
+   "question": "Quanto è profondo il lago Verdello?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.lago_verdello",
+     "title": "Lago Verdello",
+     "collection": "Fixture A",
+     "date": "2025-03-01",
+     "sections": [
+      [
+       "",
+       "La profondità massima del lago Verdello è di 112 metri."
+      ]
+     ]
+    },
+    {
+     "kind": "article",
+     "id": "a.lago_verdello.fixture_b",
+     "title": "Lago Verdello",
+     "collection": "Fixture B",
+     "date": "2026-02-01",
+     "sections": [
+      [
+       "",
+       "La profondità massima del lago Verdello è di 98 metri."
+      ]
+     ]
+    }
+   ],
+   "candidate": "La profondità massima del lago Verdello è di 112 metri.",
+   "expect": "CONFLICT",
+   "alteredMarkers": [
+    "112",
+    "98"
+   ],
+   "trueMarker": null,
+   "expectedCitation": null,
+   "note": ""
+  },
+  {
+   "id": "advB-20",
+   "set": "B",
+   "mutation": "contradictory",
+   "question": "Quanti abitanti ha Valmora?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.valmora",
+     "title": "Valmora",
+     "collection": "Fixture A",
+     "date": "2025-03-01",
+     "sections": [
+      [
+       "",
+       "Valmora ha 52.000 abitanti."
+      ]
+     ]
+    },
+    {
+     "kind": "article",
+     "id": "a.valmora.fixture_b",
+     "title": "Valmora",
+     "collection": "Fixture B",
+     "date": "2026-02-01",
+     "sections": [
+      [
+       "",
+       "Valmora ha 48.500 abitanti."
+      ]
+     ]
+    }
+   ],
+   "candidate": "Valmora ha 48.500 abitanti.",
+   "expect": "CONFLICT",
+   "alteredMarkers": [
+    "48.500",
+    "52.000"
+   ],
+   "trueMarker": null,
+   "expectedCitation": null,
+   "note": ""
+  },
+  {
+   "id": "advB-21",
+   "set": "B",
+   "mutation": "right_value_wrong_entity",
+   "question": "Quanto è alto il Cervino?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.montagne_alpine",
+     "title": "Montagne alpine",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "Montagne alpine è una voce di prova."
+      ],
+      [
+       "Altezze",
+       "Il Monte Rosa è alto 4.634 metri. Il Cervino è alto 4.478 metri."
+      ]
+     ]
+    }
+   ],
+   "candidate": "Il Cervino è alto 4.634 metri.",
+   "expect": "NOT_VERIFIED",
+   "alteredMarkers": [
+    "cervino è alto 4.634"
+   ],
+   "trueMarker": null,
+   "expectedCitation": null,
+   "note": ""
+  },
+  {
+   "id": "advB-22",
+   "set": "B",
+   "mutation": "right_value_wrong_entity",
+   "question": "Quando nacque Galileo?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.nascite",
+     "title": "Nascite",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "Nascite è una voce di prova."
+      ],
+      [
+       "Date",
+       "Galileo nacque nel 1564. Newton nacque nel 1643."
+      ]
+     ]
+    }
+   ],
+   "candidate": "Galileo nacque nel 1643.",
+   "expect": "NOT_VERIFIED",
+   "alteredMarkers": [
+    "galileo nacque nel 1643"
+   ],
+   "trueMarker": null,
+   "expectedCitation": null,
+   "note": ""
+  },
+  {
+   "id": "advB-23",
+   "set": "B",
+   "mutation": "abstain_unsupported",
+   "question": "Chi ha progettato la torre di Valmora?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.torre_di_valmora",
+     "title": "Torre di Valmora",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "La torre di Valmora è alta 60 metri."
+      ]
+     ]
+    }
+   ],
+   "candidate": "La torre di Valmora è stata progettata da Brunelleschi.",
+   "expect": "NOT_VERIFIED",
+   "alteredMarkers": [
+    "brunelleschi"
+   ],
+   "trueMarker": null,
+   "expectedCitation": null,
+   "note": ""
+  },
+  {
+   "id": "advB-24",
+   "set": "B",
+   "mutation": "abstain_correct",
+   "question": "Chi ha inventato il protocollo SSH?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.porta_ssh",
+     "title": "Porta SSH",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "Il protocollo SSH usa di norma la porta 22."
+      ]
+     ]
+    }
+   ],
+   "candidate": "Nelle fonti che ho non trovo chi ha inventato SSH.",
+   "expect": "ABSTAIN",
+   "alteredMarkers": [
+    "porta 22"
+   ],
+   "trueMarker": null,
+   "expectedCitation": null,
+   "note": ""
+  },
+  {
+   "id": "advB-25",
+   "set": "B",
+   "mutation": "abstain_correct",
+   "question": "In che anno fu fondata Valmora?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.valmora",
+     "title": "Valmora",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "Valmora ha 52.000 abitanti."
+      ]
+     ]
+    }
+   ],
+   "candidate": "Non trovo nelle fonti l'anno di fondazione di Valmora.",
+   "expect": "ABSTAIN",
+   "alteredMarkers": [
+    "52.000"
+   ],
+   "trueMarker": null,
+   "expectedCitation": null,
+   "note": ""
+  },
+  {
+   "id": "advB-26",
+   "set": "B",
+   "mutation": "irrelevant_extract",
+   "question": "Qual è la moneta della Nemoria?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.nemoria_geografia",
+     "title": "Nemoria, geografia",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "La Nemoria confina con tre Stati e ha un clima temperato."
+      ]
+     ]
+    }
+   ],
+   "candidate": "Nelle fonti che ho non trovo la moneta della Nemoria.",
+   "expect": "ABSTAIN",
+   "alteredMarkers": [
+    "clima temperato",
+    "tre stati"
+   ],
+   "trueMarker": null,
+   "expectedCitation": null,
+   "note": ""
+  },
+  {
+   "id": "advB-27",
+   "set": "B",
+   "mutation": "paraphrase_benign",
+   "question": "Quale organo produce l'insulina?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.insulina",
+     "title": "Insulina",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "L'insulina è un ormone prodotto dal pancreas."
+      ]
+     ]
+    }
+   ],
+   "candidate": "Il pancreas produce l'insulina.",
+   "expect": "VERIFIED",
+   "alteredMarkers": [],
+   "trueMarker": "pancreas",
+   "expectedCitation": "a.insulina",
+   "note": ""
+  },
+  {
+   "id": "advB-28",
+   "set": "B",
+   "mutation": "paraphrase_benign",
+   "question": "Quanto è alto l'Everest?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.everest",
+     "title": "Everest",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "L'Everest è alto 8.849 metri."
+      ]
+     ]
+    }
+   ],
+   "candidate": "L'Everest misura 8.849 metri di altezza.",
+   "expect": "VERIFIED",
+   "alteredMarkers": [],
+   "trueMarker": "8.849",
+   "expectedCitation": "a.everest",
+   "note": ""
+  },
+  {
+   "id": "advB-29",
+   "set": "B",
+   "mutation": "paraphrase_benign",
+   "question": "Che cos'è il phishing?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.phishing",
+     "title": "Phishing",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "Il phishing è una truffa che induce la vittima a rivelare dati riservati."
+      ]
+     ]
+    }
+   ],
+   "candidate": "Il phishing è una truffa per far rivelare alla vittima dati riservati.",
+   "expect": "VERIFIED",
+   "alteredMarkers": [],
+   "trueMarker": "dati riservati",
+   "expectedCitation": "a.phishing",
+   "note": ""
+  },
+  {
+   "id": "advB-30",
+   "set": "B",
+   "mutation": "paraphrase_benign",
+   "question": "Qual è la capitale del Portogallo?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.portogallo",
+     "title": "Portogallo",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "La capitale del Portogallo è Lisbona."
+      ]
+     ]
+    }
+   ],
+   "candidate": "Lisbona è la capitale del Portogallo.",
+   "expect": "VERIFIED",
+   "alteredMarkers": [],
+   "trueMarker": "lisbona",
+   "expectedCitation": "a.portogallo",
+   "note": ""
+  },
+  {
+   "id": "advB-31",
+   "set": "B",
+   "mutation": "paraphrase_benign",
+   "question": "Come si chiama il gatto?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.gatto_di_prova",
+     "title": "Gatto di prova",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "Il gatto della famiglia si chiama Briciola."
+      ]
+     ]
+    }
+   ],
+   "candidate": "Il gatto della famiglia si chiama Briciola.",
+   "expect": "VERIFIED",
+   "alteredMarkers": [],
+   "trueMarker": "briciola",
+   "expectedCitation": "a.gatto_di_prova",
+   "note": ""
+  },
+  {
+   "id": "advB-32",
+   "set": "B",
+   "mutation": "paraphrase_benign",
+   "question": "Dove si trova il Colosseo?",
+   "sources": [
+    {
+     "kind": "article",
+     "id": "a.colosseo",
+     "title": "Colosseo",
+     "collection": "Fixture A",
+     "date": "2026-01-01",
+     "sections": [
+      [
+       "",
+       "Il Colosseo si trova a Roma."
+      ]
+     ]
+    }
+   ],
+   "candidate": "Il Colosseo è a Roma.",
+   "expect": "VERIFIED",
+   "alteredMarkers": [],
+   "trueMarker": "roma",
+   "expectedCitation": "a.colosseo",
+   "note": ""
+  }
+ ]
+}
