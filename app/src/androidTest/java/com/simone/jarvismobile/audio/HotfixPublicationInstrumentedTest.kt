@@ -39,7 +39,7 @@ class HotfixPublicationInstrumentedTest {
         sourceId = "zim:wikibooks", sourceTitle = "Progetti universitari", section = "",
         text = "I progetti universitari sono attività di gruppo.", sourceKind = "zim", collection = "Wikibooks (it)", lead = true,
     )
-    private val unrelated = Evidence.Grounded(listOf(ScoredChunk(wikibooks, 1.0, wikibooks.text, false)), EvidenceStrength.WEAK, titleMatched = true)
+    private val unrelated = Evidence.Grounded(listOf(ScoredChunk(wikibooks, 1.0, wikibooks.text, false)), EvidenceStrength.MODERATE, titleMatched = true)
 
     @Before fun setUp() {
         val context: Context = ApplicationProvider.getApplicationContext()

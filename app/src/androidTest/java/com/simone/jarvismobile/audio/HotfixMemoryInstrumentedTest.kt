@@ -42,7 +42,7 @@ class HotfixMemoryInstrumentedTest {
         text = "I progetti universitari sono attività di gruppo. Il codice di un corso identifica l'insegnamento.",
         sourceKind = "zim", collection = "Wikibooks (it)", lead = true,
     )
-    private val irrelevantZim = Evidence.Grounded(listOf(ScoredChunk(wikibooks, 1.0, wikibooks.text, false)), EvidenceStrength.WEAK, titleMatched = true)
+    private val irrelevantZim = Evidence.Grounded(listOf(ScoredChunk(wikibooks, 1.0, wikibooks.text, false)), EvidenceStrength.MODERATE, titleMatched = true)
 
     @Before fun setUp() {
         val context: Context = ApplicationProvider.getApplicationContext()
