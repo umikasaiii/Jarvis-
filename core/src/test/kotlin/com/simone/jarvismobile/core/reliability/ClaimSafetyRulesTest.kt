@@ -40,4 +40,13 @@ class ClaimSafetyRulesTest {
         assertTrue(verify("Il pomodoro è un frutto.", "Il pomodoro non è un frutto.") != ClaimStatus.EXPLICITLY_SUPPORTED)
         assertTrue(verify("Il ponte crollò nel 1990.", "Il ponte crollò nel 1990 perché era vecchio.") != ClaimStatus.EXPLICITLY_SUPPORTED)
     }
+
+    @Test fun aStoredFactIsVerifiedEvenWhenTheQuestionUsesAVerbTheNoteDoesNotContain() {
+        val note = "Il codice del mio progetto di prova è Orione."
+        val memory = EvidencePackage.of(listOf(EvidencePackage.Companion.Raw("Memoria", "", note, "n0", EvidenceKind.MEMORY)))
+        val q = "Come avevo chiamato il progetto di prova?"
+        assertEquals(ClaimStatus.EXPLICITLY_SUPPORTED, ClaimVerifier.verify(q, "Il codice del tuo progetto di prova è Orione.", memory).claims.first().status)
+        // the claim itself must still match the note: a different value is not verified
+        assertTrue(ClaimVerifier.verify(q, "Il codice del tuo progetto di prova è Sirio.", memory).claims.first().status != ClaimStatus.EXPLICITLY_SUPPORTED)
+    }
 }

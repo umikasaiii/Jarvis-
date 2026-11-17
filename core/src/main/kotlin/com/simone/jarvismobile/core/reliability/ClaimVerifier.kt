@@ -62,10 +62,13 @@ object ClaimVerifier {
         val quantities: List<Quantity>, val neg: Boolean, val words: List<String>,
         /** Identifier tokens of the item (title + section + sentence): "Y", "Z", "E12" — what tells two near-identical sources apart. */
         val ids: Set<String> = emptySet(),
+        /** The window comes from a saved personal note: retrieval already chose it for the question, so the question's own verb ("come avevo CHIAMATO…") need not occur in it. */
+        val memory: Boolean = false,
     )
 
     /** Content stems with the quantities removed: numbers are compared by [Quantities], not by token overlap. */
-    private val AUX = setOf("hai", "ho", "hanno", "abbiamo", "avete", "sei", "siamo", "siete")
+    // auxiliaries and second-person possessives: restating "il MIO progetto" as "il TUO progetto" changes the speaker, not the fact (the first-person forms are already function words)
+    private val AUX = setOf("hai", "ho", "hanno", "abbiamo", "avete", "sei", "siamo", "siete", "tuo", "tua", "tuoi", "tue")
 
     internal fun contentStems(text: String): List<String> = rawStems(text).filter { it !in AUX }
 
@@ -150,7 +153,7 @@ object ClaimVerifier {
     private fun toSent(item: EvidenceItem, text: String): Sent {
         val folded = KnowledgeText.fold(text)
         val titleStems = SupportJudge.stems(item.title + " " + item.section)
-        return Sent(titleStems.toSet(), item.id, text, folded, (contentStems(text) + titleStems).toSet(), Quantities.extract(text), negated(folded), words(folded), identifiers(item.title + " " + item.section + " " + text))
+        return Sent(titleStems.toSet(), item.id, text, folded, (contentStems(text) + titleStems).toSet(), Quantities.extract(text), negated(folded), words(folded), identifiers(item.title + " " + item.section + " " + text), item.kind == EvidenceKind.MEMORY)
     }
 
     /** The clauses of one sentence: attribution removed, then split at ';' and at "e/ma/mentre" when a new quantity starts. */
@@ -219,6 +222,7 @@ object ClaimVerifier {
 
         fun cover(s: Sent) = if (stems.isEmpty()) 1.0 else stems.count { covered(it, s) }.toDouble() / stems.size
         fun relevant(s: Sent): Boolean {
+            if (s.memory) return true
             val asked = qStems.filter { it !in s.title }
             return asked.isEmpty() || asked.count { it in s.stems }.toDouble() / asked.size >= QUESTION_RELEVANCE
         }
