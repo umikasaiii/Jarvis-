@@ -1,0 +1,1222 @@
+{
+ "version": "1.0.0",
+ "articles": [
+  {
+   "id": "a.portogallo",
+   "title": "Portogallo",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "La capitale del Portogallo è Lisbona."
+    }
+   ]
+  },
+  {
+   "id": "a.giappone",
+   "title": "Giappone",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "La capitale del Giappone è Tokyo. Tokyo ospita la sede del governo e del parlamento."
+    }
+   ]
+  },
+  {
+   "id": "a.australia",
+   "title": "Australia",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "La capitale dell'Australia è Canberra."
+    }
+   ]
+  },
+  {
+   "id": "a.brasile",
+   "title": "Brasile",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "La capitale del Brasile è Brasilia."
+    }
+   ]
+  },
+  {
+   "id": "a.canada",
+   "title": "Canada",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "La capitale del Canada è Ottawa. Ottawa è la sede del governo federale."
+    }
+   ]
+  },
+  {
+   "id": "a.egitto",
+   "title": "Egitto",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "Egitto è una voce dell'enciclopedia di prova."
+    },
+    {
+     "name": "Geografia",
+     "text": "Il fiume principale dell'Egitto è il Nilo."
+    }
+   ]
+  },
+  {
+   "id": "a.monte_everest",
+   "title": "Monte Everest",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "Il monte Everest è alto 8.849 metri."
+    }
+   ]
+  },
+  {
+   "id": "a.danubio",
+   "title": "Danubio",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "Danubio è una voce dell'enciclopedia di prova."
+    },
+    {
+     "name": "Corso",
+     "text": "Il Danubio è lungo circa 2.850 chilometri."
+    }
+   ]
+  },
+  {
+   "id": "a.islanda",
+   "title": "Islanda",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "La capitale dell'Islanda è Reykjavik."
+    }
+   ]
+  },
+  {
+   "id": "a.turchia",
+   "title": "Turchia",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "La capitale della Turchia è Ankara."
+    }
+   ]
+  },
+  {
+   "id": "a.lago_vittoria",
+   "title": "Lago Vittoria",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "Il lago Vittoria è un grande lago dell'Africa orientale."
+    },
+    {
+     "name": "Dimensioni",
+     "text": "Il lago Vittoria è il più grande lago dell'Africa."
+    }
+   ]
+  },
+  {
+   "id": "a.svizzera",
+   "title": "Svizzera",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "Svizzera è una voce dell'enciclopedia di prova."
+    },
+    {
+     "name": "Lingue",
+     "text": "Le lingue ufficiali della Svizzera sono tedesco, francese, italiano e romancio."
+    }
+   ]
+  },
+  {
+   "id": "a.acqua",
+   "title": "Acqua",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "La formula chimica dell'acqua è H2O."
+    }
+   ]
+  },
+  {
+   "id": "a.velocit_della_luce",
+   "title": "Velocità della luce",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "Velocità della luce è una voce dell'enciclopedia di prova."
+    },
+    {
+     "name": "Valore",
+     "text": "La velocità della luce nel vuoto è di circa 299.792 chilometri al secondo."
+    }
+   ]
+  },
+  {
+   "id": "a.fotosintesi_clorofilliana",
+   "title": "Fotosintesi clorofilliana",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "La fotosintesi clorofilliana produce ossigeno e glucosio a partire da anidride carbonica e acqua."
+    }
+   ]
+  },
+  {
+   "id": "a.dna",
+   "title": "DNA",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "Il DNA è l'acido desossiribonucleico, che contiene le informazioni genetiche."
+    }
+   ]
+  },
+  {
+   "id": "a.marte",
+   "title": "Marte",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "Marte è il quarto pianeta del sistema solare."
+    }
+   ]
+  },
+  {
+   "id": "a.ebollizione_dell_acqua",
+   "title": "Ebollizione dell'acqua",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "L'acqua bolle a 100 gradi Celsius al livello del mare; l'ebollizione dell'acqua avviene a questa temperatura."
+    }
+   ]
+  },
+  {
+   "id": "a.carbonio",
+   "title": "Carbonio",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "Il carbonio ha numero atomico 6."
+    }
+   ]
+  },
+  {
+   "id": "a.giove",
+   "title": "Giove",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "Giove è il pianeta più grande del sistema solare."
+    }
+   ]
+  },
+  {
+   "id": "a.mitocondrio",
+   "title": "Mitocondrio",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "Mitocondrio è una voce dell'enciclopedia di prova."
+    },
+    {
+     "name": "Funzione",
+     "text": "I mitocondri producono la maggior parte dell'ATP della cellula."
+    }
+   ]
+  },
+  {
+   "id": "a.gravit",
+   "title": "Gravità",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "Gravità è una voce dell'enciclopedia di prova."
+    },
+    {
+     "name": "Terra",
+     "text": "L'accelerazione di gravità sulla superficie terrestre è circa 9,81 metri al secondo quadrato."
+    }
+   ]
+  },
+  {
+   "id": "a.luna",
+   "title": "Luna",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "Luna è una voce dell'enciclopedia di prova."
+    },
+    {
+     "name": "Orbita",
+     "text": "La distanza media tra la Terra e la Luna è circa 384.400 chilometri."
+    }
+   ]
+  },
+  {
+   "id": "a.prima_legge_di_newton",
+   "title": "Prima legge di Newton",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "La prima legge di Newton, detta legge d'inerzia, afferma che un corpo mantiene il proprio stato di quiete o di moto rettilineo uniforme se non agiscono forze."
+    }
+   ]
+  },
+  {
+   "id": "a.insulina",
+   "title": "Insulina",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "L'insulina è un ormone prodotto dal pancreas."
+    }
+   ]
+  },
+  {
+   "id": "a.pressione_arteriosa",
+   "title": "Pressione arteriosa",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "Pressione arteriosa è una voce dell'enciclopedia di prova."
+    },
+    {
+     "name": "Valori",
+     "text": "Una pressione arteriosa normale è intorno a 120/80 mmHg."
+    }
+   ]
+  },
+  {
+   "id": "a.emoglobina",
+   "title": "Emoglobina",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "L'emoglobina è la proteina dei globuli rossi che trasporta l'ossigeno."
+    }
+   ]
+  },
+  {
+   "id": "a.anemia",
+   "title": "Anemia",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "Anemia è una voce dell'enciclopedia di prova."
+    },
+    {
+     "name": "Cause",
+     "text": "La causa più comune di anemia è la carenza di ferro."
+    }
+   ]
+  },
+  {
+   "id": "a.febbre",
+   "title": "Febbre",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "Si parla di febbre quando la temperatura corporea supera i 38 gradi."
+    }
+   ]
+  },
+  {
+   "id": "a.diabete_di_tipo_1",
+   "title": "Diabete di tipo 1",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "Il diabete di tipo 1 è una malattia autoimmune in cui il pancreas non produce insulina."
+    }
+   ]
+  },
+  {
+   "id": "a.antibiotici",
+   "title": "Antibiotici",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "Gli antibiotici agiscono sui batteri ma non sui virus."
+    }
+   ]
+  },
+  {
+   "id": "a.colesterolo",
+   "title": "Colesterolo",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "Colesterolo è una voce dell'enciclopedia di prova."
+    },
+    {
+     "name": "LDL",
+     "text": "Il colesterolo LDL è detto comunemente colesterolo cattivo."
+    }
+   ]
+  },
+  {
+   "id": "a.frequenza_cardiaca",
+   "title": "Frequenza cardiaca",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "Frequenza cardiaca è una voce dell'enciclopedia di prova."
+    },
+    {
+     "name": "Valori",
+     "text": "La frequenza cardiaca a riposo di un adulto è di solito tra 60 e 100 battiti al minuto."
+    }
+   ]
+  },
+  {
+   "id": "a.vitamina_d",
+   "title": "Vitamina D",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "La vitamina D favorisce l'assorbimento del calcio."
+    }
+   ]
+  },
+  {
+   "id": "a.https",
+   "title": "HTTPS",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "HTTPS protegge le comunicazioni web con il protocollo TLS."
+    }
+   ]
+  },
+  {
+   "id": "a.phishing",
+   "title": "Phishing",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "Il phishing è una truffa che induce la vittima a rivelare dati riservati fingendosi un ente affidabile."
+    }
+   ]
+  },
+  {
+   "id": "a.ransomware",
+   "title": "Ransomware",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "Un ransomware cifra i file della vittima e chiede un riscatto per ripristinarli."
+    }
+   ]
+  },
+  {
+   "id": "a.autenticazione_a_due_fattori",
+   "title": "Autenticazione a due fattori",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "L'autenticazione a due fattori richiede due prove di identità diverse, per esempio una password e un codice temporaneo."
+    }
+   ]
+  },
+  {
+   "id": "a.sql_injection",
+   "title": "SQL injection",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "La SQL injection inserisce codice SQL malevolo in un campo di input per manipolare il database."
+    }
+   ]
+  },
+  {
+   "id": "a.sha_256",
+   "title": "SHA-256",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "SHA-256 è una voce dell'enciclopedia di prova."
+    },
+    {
+     "name": "Caratteristiche",
+     "text": "SHA-256 produce un hash di 256 bit."
+    }
+   ]
+  },
+  {
+   "id": "a.firewall",
+   "title": "Firewall",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "Un firewall filtra il traffico di rete in base a regole di sicurezza."
+    }
+   ]
+  },
+  {
+   "id": "a.porta_di_rete",
+   "title": "Porta di rete",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "Porta di rete è una voce dell'enciclopedia di prova."
+    },
+    {
+     "name": "Porte comuni",
+     "text": "Il protocollo HTTPS usa di norma la porta 443."
+    }
+   ]
+  },
+  {
+   "id": "a.ssh",
+   "title": "SSH",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "SSH è un protocollo per l'accesso remoto sicuro e usa di norma la porta 22."
+    }
+   ]
+  },
+  {
+   "id": "a.password_manager",
+   "title": "Password manager",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "Un password manager conserva password robuste in un archivio cifrato."
+    }
+   ]
+  },
+  {
+   "id": "a.crittografia_simmetrica",
+   "title": "Crittografia simmetrica",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "Nella crittografia simmetrica la stessa chiave serve per cifrare e decifrare."
+    }
+   ]
+  },
+  {
+   "id": "a.funzione_di_hash",
+   "title": "Funzione di hash",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "Funzione di hash è una voce dell'enciclopedia di prova."
+    },
+    {
+     "name": "Proprietà",
+     "text": "Una funzione di hash è a senso unico: dal valore calcolato non si può risalire al dato originale."
+    }
+   ]
+  },
+  {
+   "id": "a.democrazia",
+   "title": "Democrazia",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "La democrazia è una forma di governo in cui il potere è esercitato dal popolo."
+    }
+   ]
+  },
+  {
+   "id": "a.inflazione",
+   "title": "Inflazione",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "L'inflazione è l'aumento generalizzato e continuo dei prezzi."
+    }
+   ]
+  },
+  {
+   "id": "a.algoritmo",
+   "title": "Algoritmo",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "Un algoritmo è una sequenza finita di istruzioni per risolvere un problema."
+    }
+   ]
+  },
+  {
+   "id": "a.ecosistema",
+   "title": "Ecosistema",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "Un ecosistema è l'insieme degli organismi viventi e dell'ambiente fisico con cui interagiscono."
+    }
+   ]
+  },
+  {
+   "id": "a.prodotto_interno_lordo",
+   "title": "Prodotto interno lordo",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "Il prodotto interno lordo misura il valore dei beni e servizi finali prodotti in un paese in un periodo."
+    }
+   ]
+  },
+  {
+   "id": "a.fotone",
+   "title": "Fotone",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "Il fotone è il quanto della radiazione elettromagnetica."
+    }
+   ]
+  },
+  {
+   "id": "a.metafora",
+   "title": "Metafora",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "La metafora è una figura retorica che sostituisce un termine con un altro in base a un'analogia."
+    }
+   ]
+  },
+  {
+   "id": "a.sinonimo",
+   "title": "Sinonimo",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "Un sinonimo è una parola con significato uguale o molto simile a un'altra."
+    }
+   ]
+  },
+  {
+   "id": "a.ellisse",
+   "title": "Ellisse",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "L'ellisse è una curva chiusa in cui la somma delle distanze da due fuochi è costante."
+    }
+   ]
+  },
+  {
+   "id": "a.entropia",
+   "title": "Entropia",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "In termodinamica l'entropia misura il grado di disordine di un sistema."
+    }
+   ]
+  },
+  {
+   "id": "a.spagna",
+   "title": "Spagna",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "La capitale della Spagna è Madrid."
+    }
+   ]
+  },
+  {
+   "id": "a.francia",
+   "title": "Francia",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "La capitale della Francia è Parigi."
+    }
+   ]
+  },
+  {
+   "id": "a.germania",
+   "title": "Germania",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "La capitale della Germania è Berlino."
+    }
+   ]
+  },
+  {
+   "id": "a.italia",
+   "title": "Italia",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "La capitale dell'Italia è Roma."
+    }
+   ]
+  },
+  {
+   "id": "a.norvegia",
+   "title": "Norvegia",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "La capitale della Norvegia è Oslo."
+    }
+   ]
+  },
+  {
+   "id": "a.cile",
+   "title": "Cile",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "La capitale del Cile è Santiago."
+    }
+   ]
+  },
+  {
+   "id": "a.monte_bianco",
+   "title": "Monte Bianco",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "Il Monte Bianco è alto 4.806 metri."
+    }
+   ]
+  },
+  {
+   "id": "a.po",
+   "title": "Po",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "Il Po è lungo circa 652 chilometri."
+    }
+   ]
+  },
+  {
+   "id": "a.venere",
+   "title": "Venere",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "Venere è il secondo pianeta del sistema solare."
+    }
+   ]
+  },
+  {
+   "id": "a.saturno",
+   "title": "Saturno",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "Saturno è il sesto pianeta del sistema solare."
+    }
+   ]
+  },
+  {
+   "id": "a.glucosio",
+   "title": "Glucosio",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "Il glucosio è uno zucchero semplice."
+    }
+   ]
+  },
+  {
+   "id": "a.ftp",
+   "title": "FTP",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "FTP è un protocollo per il trasferimento di file."
+    }
+   ]
+  },
+  {
+   "id": "a.everest_esplorazioni",
+   "title": "Everest, esplorazioni",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2026-01-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "L'Everest è la montagna più alta della Terra e attira molti alpinisti."
+    }
+   ]
+  },
+  {
+   "id": "c.lago_verdello.a",
+   "title": "Lago Verdello",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2025-03-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "La profondità massima del lago Verdello è di 112 metri."
+    }
+   ]
+  },
+  {
+   "id": "c.lago_verdello.b",
+   "title": "Lago Verdello",
+   "collection": "Fixture Enciclopedia B",
+   "date": "2026-02-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "La profondità massima del lago Verdello è di 98 metri."
+    }
+   ]
+  },
+  {
+   "id": "c.monte_orsaro.a",
+   "title": "Monte Orsaro",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2025-03-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "La altezza del monte Orsaro è di 2.310 metri."
+    }
+   ]
+  },
+  {
+   "id": "c.monte_orsaro.b",
+   "title": "Monte Orsaro",
+   "collection": "Fixture Enciclopedia B",
+   "date": "2026-02-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "La altezza del monte Orsaro è di 2.285 metri."
+    }
+   ]
+  },
+  {
+   "id": "c.fiume_calmera.a",
+   "title": "Fiume Calmera",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2025-03-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "La lunghezza del fiume Calmera è di 412 chilometri."
+    }
+   ]
+  },
+  {
+   "id": "c.fiume_calmera.b",
+   "title": "Fiume Calmera",
+   "collection": "Fixture Enciclopedia B",
+   "date": "2026-02-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "La lunghezza del fiume Calmera è di 397 chilometri."
+    }
+   ]
+  },
+  {
+   "id": "c.citt_di_valmora.a",
+   "title": "Città di Valmora",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2025-03-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "La popolazione di Valmora è di 52.000 abitanti."
+    }
+   ]
+  },
+  {
+   "id": "c.citt_di_valmora.b",
+   "title": "Città di Valmora",
+   "collection": "Fixture Enciclopedia B",
+   "date": "2026-02-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "La popolazione di Valmora è di 48.500 abitanti."
+    }
+   ]
+  },
+  {
+   "id": "c.isola_di_serrata.a",
+   "title": "Isola di Serrata",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2025-03-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "La superficie dell'isola di Serrata è di 140 chilometri quadrati."
+    }
+   ]
+  },
+  {
+   "id": "c.isola_di_serrata.b",
+   "title": "Isola di Serrata",
+   "collection": "Fixture Enciclopedia B",
+   "date": "2026-02-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "La superficie dell'isola di Serrata è di 126 chilometri quadrati."
+    }
+   ]
+  },
+  {
+   "id": "c.ponte_alvero.a",
+   "title": "Ponte Alvero",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2025-03-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "La lunghezza del ponte Alvero è di 860 metri."
+    }
+   ]
+  },
+  {
+   "id": "c.ponte_alvero.b",
+   "title": "Ponte Alvero",
+   "collection": "Fixture Enciclopedia B",
+   "date": "2026-02-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "La lunghezza del ponte Alvero è di 790 metri."
+    }
+   ]
+  },
+  {
+   "id": "c.torre_campanella.a",
+   "title": "Torre Campanella",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2025-03-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "La altezza della torre Campanella è di 74 metri."
+    }
+   ]
+  },
+  {
+   "id": "c.torre_campanella.b",
+   "title": "Torre Campanella",
+   "collection": "Fixture Enciclopedia B",
+   "date": "2026-02-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "La altezza della torre Campanella è di 69 metri."
+    }
+   ]
+  },
+  {
+   "id": "c.diga_di_roccaverde.a",
+   "title": "Diga di Roccaverde",
+   "collection": "Fixture Enciclopedia A",
+   "date": "2025-03-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "La capacità della diga di Roccaverde è di 310 milioni di metri cubi."
+    }
+   ]
+  },
+  {
+   "id": "c.diga_di_roccaverde.b",
+   "title": "Diga di Roccaverde",
+   "collection": "Fixture Enciclopedia B",
+   "date": "2026-02-01",
+   "sections": [
+    {
+     "name": "",
+     "text": "La capacità della diga di Roccaverde è di 280 milioni di metri cubi."
+    }
+   ]
+  }
+ ],
+ "memory": [
+  {
+   "id": "dentista",
+   "type": "permanente",
+   "text": "Il dentista dell'utente è la dottoressa Bianchi."
+  },
+  {
+   "id": "dentista_old",
+   "type": "permanente",
+   "text": "Il dentista dell'utente è la dottoressa Rossi.",
+   "supersedes": null,
+   "kind": "superseded"
+  },
+  {
+   "id": "allergia",
+   "type": "sensibile",
+   "text": "L'utente è allergico alla penicillina."
+  },
+  {
+   "id": "gatto",
+   "type": "permanente",
+   "text": "Il gatto dell'utente si chiama Briciola."
+  },
+  {
+   "id": "compleanno",
+   "type": "permanente",
+   "text": "Il compleanno della sorella dell'utente è il 12 maggio."
+  },
+  {
+   "id": "box",
+   "type": "permanente",
+   "text": "L'utente parcheggia nel box numero 14."
+  },
+  {
+   "id": "caffe",
+   "type": "permanente",
+   "text": "L'utente beve il caffè senza zucchero."
+  },
+  {
+   "id": "scarpe",
+   "type": "permanente",
+   "text": "La taglia di scarpe dell'utente è 42."
+  },
+  {
+   "id": "riunione",
+   "type": "temporanea",
+   "text": "Domani l'utente ha una riunione alle 15."
+  },
+  {
+   "id": "medico_ipotesi",
+   "type": "supposizione",
+   "text": "L'utente ha detto: immagino che il mio medico sia il dottor Verdi.",
+   "kind": "supposition"
+  }
+ ],
+ "documents": [
+  {
+   "id": "caldaia_z",
+   "title": "Manuale caldaia Termo-Z",
+   "pages": [
+    {
+     "page": 1,
+     "text": "La pressione di esercizio della caldaia Termo-Z è di 1,5 bar."
+    },
+    {
+     "page": 2,
+     "text": "Il filtro della caldaia Termo-Z va pulito ogni 6 mesi."
+    },
+    {
+     "page": 3,
+     "text": "Il codice errore E12 della caldaia Termo-Z indica mancanza di acqua nel circuito."
+    }
+   ]
+  },
+  {
+   "id": "caldaia_y",
+   "title": "Manuale caldaia Termo-Y",
+   "pages": [
+    {
+     "page": 1,
+     "text": "La pressione di esercizio della caldaia Termo-Y è di 2 bar."
+    }
+   ]
+  },
+  {
+   "id": "affitto",
+   "title": "Contratto di affitto di prova",
+   "pages": [
+    {
+     "page": 1,
+     "text": "Il canone mensile è di 750 euro."
+    },
+    {
+     "page": 2,
+     "text": "Il preavviso di disdetta è di 3 mesi."
+    },
+    {
+     "page": 3,
+     "text": "Il deposito cauzionale è pari a 2 mensilità."
+    }
+   ]
+  },
+  {
+   "id": "polizza",
+   "title": "Polizza auto di prova",
+   "pages": [
+    {
+     "page": 1,
+     "text": "La franchigia per i danni da grandine è di 300 euro."
+    },
+    {
+     "page": 2,
+     "text": "La polizza scade il 31 dicembre 2026."
+    }
+   ]
+  },
+  {
+   "id": "verbale_a",
+   "title": "Verbale riunione del 2 marzo",
+   "pages": [
+    {
+     "page": 1,
+     "text": "La scadenza del progetto è fissata al 15 marzo."
+    }
+   ]
+  },
+  {
+   "id": "verbale_b",
+   "title": "Verbale riunione del 20 marzo",
+   "pages": [
+    {
+     "page": 1,
+     "text": "La scadenza del progetto è stata spostata al 30 aprile."
+    }
+   ]
+  }
+ ]
+}

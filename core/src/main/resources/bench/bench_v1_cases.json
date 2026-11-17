@@ -1,0 +1,5869 @@
+{
+ "version": "1.0.0",
+ "fixturesVersion": "1.0.0",
+ "cases": [
+  {
+   "id": "geo-01",
+   "category": "geografia",
+   "tags": [
+    "lead"
+   ],
+   "turns": [
+    "Qual è la capitale del Portogallo?"
+   ],
+   "context": {
+    "articles": [
+     "a.portogallo"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.portogallo",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "La capitale del Portogallo è Lisbona.",
+   "requiredClaims": [
+    "Lisbona"
+   ],
+   "forbiddenClaims": [
+    "Porto"
+   ],
+   "supportingEvidence": [
+    "a.portogallo#lead"
+   ],
+   "expectedCitations": [
+    "a.portogallo#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "La capitale del Portogallo è Lisbona.",
+    "hallucinated": "La capitale del Portogallo è Porto."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "geo-02",
+   "category": "geografia",
+   "tags": [
+    "lead"
+   ],
+   "turns": [
+    "Qual è la capitale del Giappone?"
+   ],
+   "context": {
+    "articles": [
+     "a.giappone"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.giappone",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "La capitale del Giappone è Tokyo.",
+   "requiredClaims": [
+    "Tokyo"
+   ],
+   "forbiddenClaims": [
+    "Kyoto"
+   ],
+   "supportingEvidence": [
+    "a.giappone#lead"
+   ],
+   "expectedCitations": [
+    "a.giappone#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "La capitale del Giappone è Tokyo.",
+    "hallucinated": "La capitale del Giappone è Kyoto."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "geo-03",
+   "category": "geografia",
+   "tags": [
+    "lead"
+   ],
+   "turns": [
+    "Qual è la capitale dell'Australia?"
+   ],
+   "context": {
+    "articles": [
+     "a.australia"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.australia",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "La capitale dell'Australia è Canberra.",
+   "requiredClaims": [
+    "Canberra"
+   ],
+   "forbiddenClaims": [
+    "Sydney"
+   ],
+   "supportingEvidence": [
+    "a.australia#lead"
+   ],
+   "expectedCitations": [
+    "a.australia#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "La capitale dell'Australia è Canberra.",
+    "hallucinated": "La capitale dell'Australia è Sydney."
+   },
+   "split": "RESERVED",
+   "observed": true
+  },
+  {
+   "id": "geo-04",
+   "category": "geografia",
+   "tags": [
+    "lead"
+   ],
+   "turns": [
+    "Qual è la capitale del Brasile?"
+   ],
+   "context": {
+    "articles": [
+     "a.brasile"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.brasile",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "La capitale del Brasile è Brasilia.",
+   "requiredClaims": [
+    "Brasilia"
+   ],
+   "forbiddenClaims": [
+    "Rio de Janeiro"
+   ],
+   "supportingEvidence": [
+    "a.brasile#lead"
+   ],
+   "expectedCitations": [
+    "a.brasile#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "La capitale del Brasile è Brasilia.",
+    "hallucinated": "La capitale del Brasile è Rio de Janeiro."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "geo-05",
+   "category": "geografia",
+   "tags": [
+    "lead"
+   ],
+   "turns": [
+    "Qual è la capitale del Canada?"
+   ],
+   "context": {
+    "articles": [
+     "a.canada"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.canada",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "La capitale del Canada è Ottawa.",
+   "requiredClaims": [
+    "Ottawa"
+   ],
+   "forbiddenClaims": [
+    "Toronto"
+   ],
+   "supportingEvidence": [
+    "a.canada#lead"
+   ],
+   "expectedCitations": [
+    "a.canada#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "La capitale del Canada è Ottawa.",
+    "hallucinated": "La capitale del Canada è Toronto."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "geo-06",
+   "category": "geografia",
+   "tags": [
+    "long_context",
+    "internal_section"
+   ],
+   "turns": [
+    "Quale grande fiume attraversa l'Egitto?"
+   ],
+   "context": {
+    "articles": [
+     "a.egitto"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.egitto",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "Il fiume principale dell'Egitto è il Nilo.",
+   "requiredClaims": [
+    "Nilo"
+   ],
+   "forbiddenClaims": [
+    "Congo"
+   ],
+   "supportingEvidence": [
+    "a.egitto#Geografia"
+   ],
+   "expectedCitations": [
+    "a.egitto#Geografia"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "Il fiume principale dell'Egitto è il Nilo.",
+    "hallucinated": "Il fiume principale dell'Egitto è il Congo."
+   },
+   "split": "RESERVED",
+   "observed": true
+  },
+  {
+   "id": "geo-07",
+   "category": "geografia",
+   "tags": [
+    "numeric",
+    "lead"
+   ],
+   "turns": [
+    "Quanto è alto il monte Everest?"
+   ],
+   "context": {
+    "articles": [
+     "a.monte_everest"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.monte_everest",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "Il monte Everest è alto 8.849 metri.",
+   "requiredClaims": [
+    "8.849"
+   ],
+   "forbiddenClaims": [
+    "7.849"
+   ],
+   "supportingEvidence": [
+    "a.monte_everest#lead"
+   ],
+   "expectedCitations": [
+    "a.monte_everest#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "numeric": {
+    "value": 8849,
+    "tolerance": 5,
+    "kind": "abs"
+   },
+   "control": {
+    "faithful": "Il monte Everest è alto 8.849 metri.",
+    "hallucinated": "Il monte Everest è alto 7.849 metri."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "geo-08",
+   "category": "geografia",
+   "tags": [
+    "numeric",
+    "internal_section"
+   ],
+   "turns": [
+    "Quanto è lungo il Danubio?"
+   ],
+   "context": {
+    "articles": [
+     "a.danubio"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.danubio",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "Il Danubio è lungo circa 2.850 chilometri.",
+   "requiredClaims": [
+    "2.850"
+   ],
+   "forbiddenClaims": [
+    "1.850"
+   ],
+   "supportingEvidence": [
+    "a.danubio#Corso"
+   ],
+   "expectedCitations": [
+    "a.danubio#Corso"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "numeric": {
+    "value": 2850,
+    "tolerance": 50,
+    "kind": "abs"
+   },
+   "control": {
+    "faithful": "Il Danubio è lungo circa 2.850 chilometri.",
+    "hallucinated": "Il Danubio è lungo circa 1.850 chilometri."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "geo-09",
+   "category": "geografia",
+   "tags": [
+    "lead"
+   ],
+   "turns": [
+    "Qual è la capitale dell'Islanda?"
+   ],
+   "context": {
+    "articles": [
+     "a.islanda"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.islanda",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "La capitale dell'Islanda è Reykjavik.",
+   "requiredClaims": [
+    "Reykjavik"
+   ],
+   "forbiddenClaims": [
+    "Oslo"
+   ],
+   "supportingEvidence": [
+    "a.islanda#lead"
+   ],
+   "expectedCitations": [
+    "a.islanda#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "La capitale dell'Islanda è Reykjavik.",
+    "hallucinated": "La capitale dell'Islanda è Oslo."
+   },
+   "split": "RESERVED",
+   "observed": true
+  },
+  {
+   "id": "geo-10",
+   "category": "geografia",
+   "tags": [
+    "lead"
+   ],
+   "turns": [
+    "Qual è la capitale della Turchia?"
+   ],
+   "context": {
+    "articles": [
+     "a.turchia"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.turchia",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "La capitale della Turchia è Ankara.",
+   "requiredClaims": [
+    "Ankara"
+   ],
+   "forbiddenClaims": [
+    "Istanbul"
+   ],
+   "supportingEvidence": [
+    "a.turchia#lead"
+   ],
+   "expectedCitations": [
+    "a.turchia#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "La capitale della Turchia è Ankara.",
+    "hallucinated": "La capitale della Turchia è Istanbul."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "geo-11",
+   "category": "geografia",
+   "tags": [
+    "index_found",
+    "deep_section",
+    "internal_section"
+   ],
+   "turns": [
+    "Qual è il più grande lago dell'Africa?"
+   ],
+   "context": {
+    "articles": [
+     "a.lago_vittoria"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.lago_vittoria",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "Il lago Vittoria è il più grande lago dell'Africa.",
+   "requiredClaims": [
+    "lago Vittoria"
+   ],
+   "forbiddenClaims": [
+    "lago Ciad"
+   ],
+   "supportingEvidence": [
+    "a.lago_vittoria#Dimensioni"
+   ],
+   "expectedCitations": [
+    "a.lago_vittoria#Dimensioni"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "Il lago Vittoria è il più grande lago dell'Africa.",
+    "hallucinated": "Il lago Ciad è il più grande lago dell'Africa."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "geo-12",
+   "category": "geografia",
+   "tags": [
+    "multi_claim",
+    "internal_section"
+   ],
+   "turns": [
+    "Quali sono le lingue ufficiali della Svizzera?"
+   ],
+   "context": {
+    "articles": [
+     "a.svizzera"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.svizzera",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "Le lingue ufficiali della Svizzera sono tedesco, francese, italiano e romancio.",
+   "requiredClaims": [
+    "tedesco",
+    "francese",
+    "italiano",
+    "romancio"
+   ],
+   "forbiddenClaims": [
+    "inglese"
+   ],
+   "supportingEvidence": [
+    "a.svizzera#Lingue"
+   ],
+   "expectedCitations": [
+    "a.svizzera#Lingue"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "Le lingue ufficiali della Svizzera sono tedesco, francese, italiano e romancio.",
+    "hallucinated": "Le lingue ufficiali della Svizzera sono inglese, francese, italiano e romancio."
+   },
+   "split": "RESERVED",
+   "observed": true
+  },
+  {
+   "id": "sci-01",
+   "category": "scienze",
+   "tags": [
+    "lead"
+   ],
+   "turns": [
+    "Qual è la formula chimica dell'acqua?"
+   ],
+   "context": {
+    "articles": [
+     "a.acqua"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.acqua",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "La formula chimica dell'acqua è H2O.",
+   "requiredClaims": [
+    "H2O"
+   ],
+   "forbiddenClaims": [
+    "CO2"
+   ],
+   "supportingEvidence": [
+    "a.acqua#lead"
+   ],
+   "expectedCitations": [
+    "a.acqua#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "La formula chimica dell'acqua è H2O.",
+    "hallucinated": "La formula chimica dell'acqua è CO2."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "sci-02",
+   "category": "scienze",
+   "tags": [
+    "numeric",
+    "internal_section"
+   ],
+   "turns": [
+    "Qual è la velocità della luce nel vuoto?"
+   ],
+   "context": {
+    "articles": [
+     "a.velocit_della_luce"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.velocit_della_luce",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "La velocità della luce nel vuoto è di circa 299.792 chilometri al secondo.",
+   "requiredClaims": [
+    "299.792"
+   ],
+   "forbiddenClaims": [
+    "199.792"
+   ],
+   "supportingEvidence": [
+    "a.velocit_della_luce#Valore"
+   ],
+   "expectedCitations": [
+    "a.velocit_della_luce#Valore"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "numeric": {
+    "value": 299792,
+    "tolerance": 10,
+    "kind": "abs"
+   },
+   "control": {
+    "faithful": "La velocità della luce nel vuoto è di circa 299.792 chilometri al secondo.",
+    "hallucinated": "La velocità della luce nel vuoto è di circa 199.792 chilometri al secondo."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "sci-03",
+   "category": "scienze",
+   "tags": [
+    "lead"
+   ],
+   "turns": [
+    "Che cosa produce la fotosintesi clorofilliana?"
+   ],
+   "context": {
+    "articles": [
+     "a.fotosintesi_clorofilliana"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.fotosintesi_clorofilliana",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "La fotosintesi clorofilliana produce ossigeno e glucosio a partire da anidride carbonica e acqua.",
+   "requiredClaims": [
+    "ossigeno"
+   ],
+   "forbiddenClaims": [
+    "azoto"
+   ],
+   "supportingEvidence": [
+    "a.fotosintesi_clorofilliana#lead"
+   ],
+   "expectedCitations": [
+    "a.fotosintesi_clorofilliana#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "La fotosintesi clorofilliana produce ossigeno e glucosio a partire da anidride carbonica e acqua.",
+    "hallucinated": "La fotosintesi clorofilliana produce azoto e glucosio a partire da anidride carbonica e acqua."
+   },
+   "split": "RESERVED",
+   "observed": true
+  },
+  {
+   "id": "sci-04",
+   "category": "scienze",
+   "tags": [
+    "lead"
+   ],
+   "turns": [
+    "Che cosa significa la sigla DNA?"
+   ],
+   "context": {
+    "articles": [
+     "a.dna"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.dna",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "Il DNA è l'acido desossiribonucleico, che contiene le informazioni genetiche.",
+   "requiredClaims": [
+    "acido desossiribonucleico"
+   ],
+   "forbiddenClaims": [
+    "acido ribonucleico"
+   ],
+   "supportingEvidence": [
+    "a.dna#lead"
+   ],
+   "expectedCitations": [
+    "a.dna#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "Il DNA è l'acido desossiribonucleico, che contiene le informazioni genetiche.",
+    "hallucinated": "Il DNA è l'acido ribonucleico, che contiene le informazioni genetiche."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "sci-05",
+   "category": "scienze",
+   "tags": [
+    "index_found",
+    "lead"
+   ],
+   "turns": [
+    "Qual è il quarto pianeta del sistema solare?"
+   ],
+   "context": {
+    "articles": [
+     "a.marte"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.marte",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "Marte è il quarto pianeta del sistema solare.",
+   "requiredClaims": [
+    "Marte"
+   ],
+   "forbiddenClaims": [
+    "Venere"
+   ],
+   "supportingEvidence": [
+    "a.marte#lead"
+   ],
+   "expectedCitations": [
+    "a.marte#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "Marte è il quarto pianeta del sistema solare.",
+    "hallucinated": "Venere è il quarto pianeta del sistema solare."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "sci-06",
+   "category": "scienze",
+   "tags": [
+    "numeric",
+    "lead"
+   ],
+   "turns": [
+    "A che temperatura bolle l'acqua al livello del mare?"
+   ],
+   "context": {
+    "articles": [
+     "a.ebollizione_dell_acqua"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.ebollizione_dell_acqua",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "L'acqua bolle a 100 gradi Celsius al livello del mare; l'ebollizione dell'acqua avviene a questa temperatura.",
+   "requiredClaims": [
+    "100 gradi"
+   ],
+   "forbiddenClaims": [
+    "90 gradi"
+   ],
+   "supportingEvidence": [
+    "a.ebollizione_dell_acqua#lead"
+   ],
+   "expectedCitations": [
+    "a.ebollizione_dell_acqua#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "numeric": {
+    "value": 100,
+    "tolerance": 0,
+    "kind": "abs"
+   },
+   "control": {
+    "faithful": "L'acqua bolle a 100 gradi Celsius al livello del mare; l'ebollizione dell'acqua avviene a questa temperatura.",
+    "hallucinated": "L'acqua bolle a 90 gradi Celsius al livello del mare; l'ebollizione dell'acqua avviene a questa temperatura."
+   },
+   "split": "RESERVED",
+   "observed": true
+  },
+  {
+   "id": "sci-07",
+   "category": "scienze",
+   "tags": [
+    "numeric",
+    "lead"
+   ],
+   "turns": [
+    "Qual è il numero atomico del carbonio?"
+   ],
+   "context": {
+    "articles": [
+     "a.carbonio"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.carbonio",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "Il carbonio ha numero atomico 6.",
+   "requiredClaims": [
+    "numero atomico 6"
+   ],
+   "forbiddenClaims": [
+    "numero atomico 8"
+   ],
+   "supportingEvidence": [
+    "a.carbonio#lead"
+   ],
+   "expectedCitations": [
+    "a.carbonio#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "numeric": {
+    "value": 6,
+    "tolerance": 0,
+    "kind": "abs"
+   },
+   "control": {
+    "faithful": "Il carbonio ha numero atomico 6.",
+    "hallucinated": "Il carbonio ha numero atomico 8."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "sci-08",
+   "category": "scienze",
+   "tags": [
+    "index_found",
+    "lead"
+   ],
+   "turns": [
+    "Qual è il pianeta più grande del sistema solare?"
+   ],
+   "context": {
+    "articles": [
+     "a.giove"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.giove",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "Giove è il pianeta più grande del sistema solare.",
+   "requiredClaims": [
+    "Giove"
+   ],
+   "forbiddenClaims": [
+    "Saturno"
+   ],
+   "supportingEvidence": [
+    "a.giove#lead"
+   ],
+   "expectedCitations": [
+    "a.giove#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "Giove è il pianeta più grande del sistema solare.",
+    "hallucinated": "Saturno è il pianeta più grande del sistema solare."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "sci-09",
+   "category": "scienze",
+   "tags": [
+    "internal_section",
+    "internal_section"
+   ],
+   "turns": [
+    "Quale molecola producono principalmente i mitocondri?"
+   ],
+   "context": {
+    "articles": [
+     "a.mitocondrio"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.mitocondrio",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "I mitocondri producono la maggior parte dell'ATP della cellula.",
+   "requiredClaims": [
+    "ATP"
+   ],
+   "forbiddenClaims": [
+    "glucosio"
+   ],
+   "supportingEvidence": [
+    "a.mitocondrio#Funzione"
+   ],
+   "expectedCitations": [
+    "a.mitocondrio#Funzione"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "I mitocondri producono la maggior parte dell'ATP della cellula.",
+    "hallucinated": "I mitocondri producono la maggior parte dell'glucosio della cellula."
+   },
+   "split": "RESERVED",
+   "observed": true
+  },
+  {
+   "id": "sci-10",
+   "category": "scienze",
+   "tags": [
+    "numeric",
+    "internal_section"
+   ],
+   "turns": [
+    "Quanto vale l'accelerazione di gravità sulla Terra?"
+   ],
+   "context": {
+    "articles": [
+     "a.gravit"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.gravit",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "L'accelerazione di gravità sulla superficie terrestre è circa 9,81 metri al secondo quadrato.",
+   "requiredClaims": [
+    "9,81"
+   ],
+   "forbiddenClaims": [
+    "8,91"
+   ],
+   "supportingEvidence": [
+    "a.gravit#Terra"
+   ],
+   "expectedCitations": [
+    "a.gravit#Terra"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "numeric": {
+    "value": 9.81,
+    "tolerance": 0.01,
+    "kind": "abs"
+   },
+   "control": {
+    "faithful": "L'accelerazione di gravità sulla superficie terrestre è circa 9,81 metri al secondo quadrato.",
+    "hallucinated": "L'accelerazione di gravità sulla superficie terrestre è circa 8,91 metri al secondo quadrato."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "sci-11",
+   "category": "scienze",
+   "tags": [
+    "numeric",
+    "internal_section"
+   ],
+   "turns": [
+    "Qual è la distanza media della Luna dalla Terra?"
+   ],
+   "context": {
+    "articles": [
+     "a.luna"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.luna",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "La distanza media tra la Terra e la Luna è circa 384.400 chilometri.",
+   "requiredClaims": [
+    "384.400"
+   ],
+   "forbiddenClaims": [
+    "284.400"
+   ],
+   "supportingEvidence": [
+    "a.luna#Orbita"
+   ],
+   "expectedCitations": [
+    "a.luna#Orbita"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "numeric": {
+    "value": 384400,
+    "tolerance": 1000,
+    "kind": "abs"
+   },
+   "control": {
+    "faithful": "La distanza media tra la Terra e la Luna è circa 384.400 chilometri.",
+    "hallucinated": "La distanza media tra la Terra e la Luna è circa 284.400 chilometri."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "sci-12",
+   "category": "scienze",
+   "tags": [
+    "lead"
+   ],
+   "turns": [
+    "Che cosa afferma la legge d'inerzia di Newton?"
+   ],
+   "context": {
+    "articles": [
+     "a.prima_legge_di_newton"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.prima_legge_di_newton",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "La prima legge di Newton, detta legge d'inerzia, afferma che un corpo mantiene il proprio stato di quiete o di moto rettilineo uniforme se non agiscono forze.",
+   "requiredClaims": [
+    "moto rettilineo uniforme"
+   ],
+   "forbiddenClaims": [
+    "moto circolare accelerato"
+   ],
+   "supportingEvidence": [
+    "a.prima_legge_di_newton#lead"
+   ],
+   "expectedCitations": [
+    "a.prima_legge_di_newton#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "La prima legge di Newton, detta legge d'inerzia, afferma che un corpo mantiene il proprio stato di quiete o di moto rettilineo uniforme se non agiscono forze.",
+    "hallucinated": "La prima legge di Newton, detta legge d'inerzia, afferma che un corpo mantiene il proprio stato di quiete o di moto circolare accelerato se non agiscono forze."
+   },
+   "split": "RESERVED",
+   "observed": true
+  },
+  {
+   "id": "med-01",
+   "category": "medicina",
+   "tags": [
+    "lead"
+   ],
+   "turns": [
+    "Quale organo produce l'insulina?"
+   ],
+   "context": {
+    "articles": [
+     "a.insulina"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.insulina",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "L'insulina è un ormone prodotto dal pancreas.",
+   "requiredClaims": [
+    "pancreas"
+   ],
+   "forbiddenClaims": [
+    "fegato"
+   ],
+   "supportingEvidence": [
+    "a.insulina#lead"
+   ],
+   "expectedCitations": [
+    "a.insulina#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "MEDIUM",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "L'insulina è un ormone prodotto dal pancreas.",
+    "hallucinated": "L'insulina è un ormone prodotto dal fegato."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "med-02",
+   "category": "medicina",
+   "tags": [
+    "numeric",
+    "internal_section"
+   ],
+   "turns": [
+    "Qual è il valore normale della pressione arteriosa?"
+   ],
+   "context": {
+    "articles": [
+     "a.pressione_arteriosa"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.pressione_arteriosa",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "Una pressione arteriosa normale è intorno a 120/80 mmHg.",
+   "requiredClaims": [
+    "120/80"
+   ],
+   "forbiddenClaims": [
+    "160/100"
+   ],
+   "supportingEvidence": [
+    "a.pressione_arteriosa#Valori"
+   ],
+   "expectedCitations": [
+    "a.pressione_arteriosa#Valori"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "MEDIUM",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "Una pressione arteriosa normale è intorno a 120/80 mmHg.",
+    "hallucinated": "Una pressione arteriosa normale è intorno a 160/100 mmHg."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "med-03",
+   "category": "medicina",
+   "tags": [
+    "lead"
+   ],
+   "turns": [
+    "Che cosa trasporta l'emoglobina?"
+   ],
+   "context": {
+    "articles": [
+     "a.emoglobina"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.emoglobina",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "L'emoglobina è la proteina dei globuli rossi che trasporta l'ossigeno.",
+   "requiredClaims": [
+    "ossigeno"
+   ],
+   "forbiddenClaims": [
+    "glucosio"
+   ],
+   "supportingEvidence": [
+    "a.emoglobina#lead"
+   ],
+   "expectedCitations": [
+    "a.emoglobina#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "L'emoglobina è la proteina dei globuli rossi che trasporta l'ossigeno.",
+    "hallucinated": "L'emoglobina è la proteina dei globuli rossi che trasporta l'glucosio."
+   },
+   "split": "RESERVED",
+   "observed": true
+  },
+  {
+   "id": "med-04",
+   "category": "medicina",
+   "tags": [
+    "internal_section"
+   ],
+   "turns": [
+    "Qual è la causa più comune di anemia?"
+   ],
+   "context": {
+    "articles": [
+     "a.anemia"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.anemia",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "La causa più comune di anemia è la carenza di ferro.",
+   "requiredClaims": [
+    "ferro"
+   ],
+   "forbiddenClaims": [
+    "vitamina C"
+   ],
+   "supportingEvidence": [
+    "a.anemia#Cause"
+   ],
+   "expectedCitations": [
+    "a.anemia#Cause"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "MEDIUM",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "La causa più comune di anemia è la carenza di ferro.",
+    "hallucinated": "La causa più comune di anemia è la carenza di vitamina C."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "med-05",
+   "category": "medicina",
+   "tags": [
+    "numeric",
+    "lead"
+   ],
+   "turns": [
+    "Da quale temperatura si parla di febbre?"
+   ],
+   "context": {
+    "articles": [
+     "a.febbre"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.febbre",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "Si parla di febbre quando la temperatura corporea supera i 38 gradi.",
+   "requiredClaims": [
+    "38 gradi"
+   ],
+   "forbiddenClaims": [
+    "36 gradi"
+   ],
+   "supportingEvidence": [
+    "a.febbre#lead"
+   ],
+   "expectedCitations": [
+    "a.febbre#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "MEDIUM",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "numeric": {
+    "value": 38,
+    "tolerance": 0,
+    "kind": "abs"
+   },
+   "control": {
+    "faithful": "Si parla di febbre quando la temperatura corporea supera i 38 gradi.",
+    "hallucinated": "Si parla di febbre quando la temperatura corporea supera i 36 gradi."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "med-06",
+   "category": "medicina",
+   "tags": [
+    "lead"
+   ],
+   "turns": [
+    "Che tipo di malattia è il diabete di tipo 1?"
+   ],
+   "context": {
+    "articles": [
+     "a.diabete_di_tipo_1"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.diabete_di_tipo_1",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "Il diabete di tipo 1 è una malattia autoimmune in cui il pancreas non produce insulina.",
+   "requiredClaims": [
+    "autoimmune"
+   ],
+   "forbiddenClaims": [
+    "infettiva"
+   ],
+   "supportingEvidence": [
+    "a.diabete_di_tipo_1#lead"
+   ],
+   "expectedCitations": [
+    "a.diabete_di_tipo_1#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "MEDIUM",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "Il diabete di tipo 1 è una malattia autoimmune in cui il pancreas non produce insulina.",
+    "hallucinated": "Il diabete di tipo 1 è una malattia infettiva in cui il pancreas non produce insulina."
+   },
+   "split": "RESERVED",
+   "observed": true
+  },
+  {
+   "id": "med-07",
+   "category": "medicina",
+   "tags": [
+    "lead"
+   ],
+   "turns": [
+    "Gli antibiotici agiscono sui virus?"
+   ],
+   "context": {
+    "articles": [
+     "a.antibiotici"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.antibiotici",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "Gli antibiotici agiscono sui batteri ma non sui virus.",
+   "requiredClaims": [
+    "non sui virus"
+   ],
+   "forbiddenClaims": [
+    "anche sui virus"
+   ],
+   "supportingEvidence": [
+    "a.antibiotici#lead"
+   ],
+   "expectedCitations": [
+    "a.antibiotici#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "HIGH",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "Gli antibiotici agiscono sui batteri ma non sui virus.",
+    "hallucinated": "Gli antibiotici agiscono sui batteri ma anche sui virus."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "med-08",
+   "category": "medicina",
+   "tags": [
+    "internal_section"
+   ],
+   "turns": [
+    "Come viene chiamato comunemente il colesterolo LDL?"
+   ],
+   "context": {
+    "articles": [
+     "a.colesterolo"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.colesterolo",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "Il colesterolo LDL è detto comunemente colesterolo cattivo.",
+   "requiredClaims": [
+    "cattivo"
+   ],
+   "forbiddenClaims": [
+    "buono"
+   ],
+   "supportingEvidence": [
+    "a.colesterolo#LDL"
+   ],
+   "expectedCitations": [
+    "a.colesterolo#LDL"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "Il colesterolo LDL è detto comunemente colesterolo cattivo.",
+    "hallucinated": "Il colesterolo LDL è detto comunemente colesterolo buono."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "med-09",
+   "category": "medicina",
+   "tags": [
+    "numeric",
+    "internal_section"
+   ],
+   "turns": [
+    "Qual è la normale frequenza cardiaca a riposo di un adulto?"
+   ],
+   "context": {
+    "articles": [
+     "a.frequenza_cardiaca"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.frequenza_cardiaca",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "La frequenza cardiaca a riposo di un adulto è di solito tra 60 e 100 battiti al minuto.",
+   "requiredClaims": [
+    "60 e 100"
+   ],
+   "forbiddenClaims": [
+    "120 e 160"
+   ],
+   "supportingEvidence": [
+    "a.frequenza_cardiaca#Valori"
+   ],
+   "expectedCitations": [
+    "a.frequenza_cardiaca#Valori"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "MEDIUM",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "La frequenza cardiaca a riposo di un adulto è di solito tra 60 e 100 battiti al minuto.",
+    "hallucinated": "La frequenza cardiaca a riposo di un adulto è di solito tra 120 e 160 battiti al minuto."
+   },
+   "split": "RESERVED",
+   "observed": true
+  },
+  {
+   "id": "med-10",
+   "category": "medicina",
+   "tags": [
+    "lead"
+   ],
+   "turns": [
+    "Quale minerale assorbiamo meglio grazie alla vitamina D?"
+   ],
+   "context": {
+    "articles": [
+     "a.vitamina_d"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.vitamina_d",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "La vitamina D favorisce l'assorbimento del calcio.",
+   "requiredClaims": [
+    "calcio"
+   ],
+   "forbiddenClaims": [
+    "ferro"
+   ],
+   "supportingEvidence": [
+    "a.vitamina_d#lead"
+   ],
+   "expectedCitations": [
+    "a.vitamina_d#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "La vitamina D favorisce l'assorbimento del calcio.",
+    "hallucinated": "La vitamina D favorisce l'assorbimento del ferro."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "cyb-01",
+   "category": "informatica_cyber",
+   "tags": [
+    "lead"
+   ],
+   "turns": [
+    "Quale protocollo usa HTTPS per cifrare il traffico?"
+   ],
+   "context": {
+    "articles": [
+     "a.https"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.https",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "HTTPS protegge le comunicazioni web con il protocollo TLS.",
+   "requiredClaims": [
+    "TLS"
+   ],
+   "forbiddenClaims": [
+    "FTP"
+   ],
+   "supportingEvidence": [
+    "a.https#lead"
+   ],
+   "expectedCitations": [
+    "a.https#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "HTTPS protegge le comunicazioni web con il protocollo TLS.",
+    "hallucinated": "HTTPS protegge le comunicazioni web con il protocollo FTP."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "cyb-02",
+   "category": "informatica_cyber",
+   "tags": [
+    "lead"
+   ],
+   "turns": [
+    "Che cos'è il phishing?"
+   ],
+   "context": {
+    "articles": [
+     "a.phishing"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.phishing",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "Il phishing è una truffa che induce la vittima a rivelare dati riservati fingendosi un ente affidabile.",
+   "requiredClaims": [
+    "rivelare dati riservati"
+   ],
+   "forbiddenClaims": [
+    "installare un aggiornamento"
+   ],
+   "supportingEvidence": [
+    "a.phishing#lead"
+   ],
+   "expectedCitations": [
+    "a.phishing#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "Il phishing è una truffa che induce la vittima a rivelare dati riservati fingendosi un ente affidabile.",
+    "hallucinated": "Il phishing è una truffa che induce la vittima a installare un aggiornamento fingendosi un ente affidabile."
+   },
+   "split": "RESERVED",
+   "observed": true
+  },
+  {
+   "id": "cyb-03",
+   "category": "informatica_cyber",
+   "tags": [
+    "lead"
+   ],
+   "turns": [
+    "Che cosa fa un ransomware?"
+   ],
+   "context": {
+    "articles": [
+     "a.ransomware"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.ransomware",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "Un ransomware cifra i file della vittima e chiede un riscatto per ripristinarli.",
+   "requiredClaims": [
+    "cifra i file"
+   ],
+   "forbiddenClaims": [
+    "cancella la memoria RAM"
+   ],
+   "supportingEvidence": [
+    "a.ransomware#lead"
+   ],
+   "expectedCitations": [
+    "a.ransomware#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "Un ransomware cifra i file della vittima e chiede un riscatto per ripristinarli.",
+    "hallucinated": "Un ransomware cancella la memoria RAM della vittima e chiede un riscatto per ripristinarli."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "cyb-04",
+   "category": "informatica_cyber",
+   "tags": [
+    "lead"
+   ],
+   "turns": [
+    "Che cosa richiede l'autenticazione a due fattori?"
+   ],
+   "context": {
+    "articles": [
+     "a.autenticazione_a_due_fattori"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.autenticazione_a_due_fattori",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "L'autenticazione a due fattori richiede due prove di identità diverse, per esempio una password e un codice temporaneo.",
+   "requiredClaims": [
+    "due prove di identità"
+   ],
+   "forbiddenClaims": [
+    "una sola prova di identità"
+   ],
+   "supportingEvidence": [
+    "a.autenticazione_a_due_fattori#lead"
+   ],
+   "expectedCitations": [
+    "a.autenticazione_a_due_fattori#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "L'autenticazione a due fattori richiede due prove di identità diverse, per esempio una password e un codice temporaneo.",
+    "hallucinated": "L'autenticazione a due fattori richiede una sola prova di identità diverse, per esempio una password e un codice temporaneo."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "cyb-05",
+   "category": "informatica_cyber",
+   "tags": [
+    "lead"
+   ],
+   "turns": [
+    "Che cos'è una SQL injection?"
+   ],
+   "context": {
+    "articles": [
+     "a.sql_injection"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.sql_injection",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "La SQL injection inserisce codice SQL malevolo in un campo di input per manipolare il database.",
+   "requiredClaims": [
+    "codice SQL"
+   ],
+   "forbiddenClaims": [
+    "uno script Java"
+   ],
+   "supportingEvidence": [
+    "a.sql_injection#lead"
+   ],
+   "expectedCitations": [
+    "a.sql_injection#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "La SQL injection inserisce codice SQL malevolo in un campo di input per manipolare il database.",
+    "hallucinated": "La SQL injection inserisce uno script Java malevolo in un campo di input per manipolare il database."
+   },
+   "split": "RESERVED",
+   "observed": true
+  },
+  {
+   "id": "cyb-06",
+   "category": "informatica_cyber",
+   "tags": [
+    "numeric",
+    "internal_section"
+   ],
+   "turns": [
+    "Quanti bit ha l'hash prodotto da SHA-256?"
+   ],
+   "context": {
+    "articles": [
+     "a.sha_256"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.sha_256",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "SHA-256 produce un hash di 256 bit.",
+   "requiredClaims": [
+    "256 bit"
+   ],
+   "forbiddenClaims": [
+    "128 bit"
+   ],
+   "supportingEvidence": [
+    "a.sha_256#Caratteristiche"
+   ],
+   "expectedCitations": [
+    "a.sha_256#Caratteristiche"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "numeric": {
+    "value": 256,
+    "tolerance": 0,
+    "kind": "abs"
+   },
+   "control": {
+    "faithful": "SHA-256 produce un hash di 256 bit.",
+    "hallucinated": "SHA-256 produce un hash di 128 bit."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "cyb-07",
+   "category": "informatica_cyber",
+   "tags": [
+    "lead"
+   ],
+   "turns": [
+    "Che funzione ha un firewall?"
+   ],
+   "context": {
+    "articles": [
+     "a.firewall"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.firewall",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "Un firewall filtra il traffico di rete in base a regole di sicurezza.",
+   "requiredClaims": [
+    "filtra il traffico"
+   ],
+   "forbiddenClaims": [
+    "comprime i file"
+   ],
+   "supportingEvidence": [
+    "a.firewall#lead"
+   ],
+   "expectedCitations": [
+    "a.firewall#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "Un firewall filtra il traffico di rete in base a regole di sicurezza.",
+    "hallucinated": "Un firewall comprime i file di rete in base a regole di sicurezza."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "cyb-08",
+   "category": "informatica_cyber",
+   "tags": [
+    "numeric",
+    "internal_section"
+   ],
+   "turns": [
+    "Quale porta usa di norma HTTPS?"
+   ],
+   "context": {
+    "articles": [
+     "a.porta_di_rete"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.porta_di_rete",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "Il protocollo HTTPS usa di norma la porta 443.",
+   "requiredClaims": [
+    "porta 443"
+   ],
+   "forbiddenClaims": [
+    "porta 80"
+   ],
+   "supportingEvidence": [
+    "a.porta_di_rete#Porte comuni"
+   ],
+   "expectedCitations": [
+    "a.porta_di_rete#Porte comuni"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "numeric": {
+    "value": 443,
+    "tolerance": 0,
+    "kind": "abs"
+   },
+   "control": {
+    "faithful": "Il protocollo HTTPS usa di norma la porta 443.",
+    "hallucinated": "Il protocollo HTTPS usa di norma la porta 80."
+   },
+   "split": "RESERVED",
+   "observed": true
+  },
+  {
+   "id": "cyb-09",
+   "category": "informatica_cyber",
+   "tags": [
+    "numeric",
+    "lead"
+   ],
+   "turns": [
+    "Quale porta usa di norma SSH?"
+   ],
+   "context": {
+    "articles": [
+     "a.ssh"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.ssh",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "SSH è un protocollo per l'accesso remoto sicuro e usa di norma la porta 22.",
+   "requiredClaims": [
+    "porta 22"
+   ],
+   "forbiddenClaims": [
+    "porta 23"
+   ],
+   "supportingEvidence": [
+    "a.ssh#lead"
+   ],
+   "expectedCitations": [
+    "a.ssh#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "numeric": {
+    "value": 22,
+    "tolerance": 0,
+    "kind": "abs"
+   },
+   "control": {
+    "faithful": "SSH è un protocollo per l'accesso remoto sicuro e usa di norma la porta 22.",
+    "hallucinated": "SSH è un protocollo per l'accesso remoto sicuro e usa di norma la porta 23."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "cyb-10",
+   "category": "informatica_cyber",
+   "tags": [
+    "lead"
+   ],
+   "turns": [
+    "A cosa serve un password manager?"
+   ],
+   "context": {
+    "articles": [
+     "a.password_manager"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.password_manager",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "Un password manager conserva password robuste in un archivio cifrato.",
+   "requiredClaims": [
+    "archivio cifrato"
+   ],
+   "forbiddenClaims": [
+    "file di testo in chiaro"
+   ],
+   "supportingEvidence": [
+    "a.password_manager#lead"
+   ],
+   "expectedCitations": [
+    "a.password_manager#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "Un password manager conserva password robuste in un archivio cifrato.",
+    "hallucinated": "Un password manager conserva password robuste in un file di testo in chiaro."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "cyb-11",
+   "category": "informatica_cyber",
+   "tags": [
+    "lead"
+   ],
+   "turns": [
+    "Quante chiavi usa la crittografia simmetrica?"
+   ],
+   "context": {
+    "articles": [
+     "a.crittografia_simmetrica"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.crittografia_simmetrica",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "Nella crittografia simmetrica la stessa chiave serve per cifrare e decifrare.",
+   "requiredClaims": [
+    "stessa chiave"
+   ],
+   "forbiddenClaims": [
+    "due chiavi diverse"
+   ],
+   "supportingEvidence": [
+    "a.crittografia_simmetrica#lead"
+   ],
+   "expectedCitations": [
+    "a.crittografia_simmetrica#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "Nella crittografia simmetrica la stessa chiave serve per cifrare e decifrare.",
+    "hallucinated": "Nella crittografia simmetrica la due chiavi diverse serve per cifrare e decifrare."
+   },
+   "split": "RESERVED",
+   "observed": true
+  },
+  {
+   "id": "cyb-12",
+   "category": "informatica_cyber",
+   "tags": [
+    "internal_section"
+   ],
+   "turns": [
+    "Una funzione di hash è reversibile?"
+   ],
+   "context": {
+    "articles": [
+     "a.funzione_di_hash"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.funzione_di_hash",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "Una funzione di hash è a senso unico: dal valore calcolato non si può risalire al dato originale.",
+   "requiredClaims": [
+    "a senso unico"
+   ],
+   "forbiddenClaims": [
+    "completamente reversibile"
+   ],
+   "supportingEvidence": [
+    "a.funzione_di_hash#Proprietà"
+   ],
+   "expectedCitations": [
+    "a.funzione_di_hash#Proprietà"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "Una funzione di hash è a senso unico: dal valore calcolato non si può risalire al dato originale.",
+    "hallucinated": "Una funzione di hash è completamente reversibile: dal valore calcolato non si può risalire al dato originale."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "def-01",
+   "category": "definizioni",
+   "tags": [
+    "lead"
+   ],
+   "turns": [
+    "Che cos'è la democrazia?"
+   ],
+   "context": {
+    "articles": [
+     "a.democrazia"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.democrazia",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "La democrazia è una forma di governo in cui il potere è esercitato dal popolo.",
+   "requiredClaims": [
+    "esercitato dal popolo"
+   ],
+   "forbiddenClaims": [
+    "da un solo sovrano"
+   ],
+   "supportingEvidence": [
+    "a.democrazia#lead"
+   ],
+   "expectedCitations": [
+    "a.democrazia#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "La democrazia è una forma di governo in cui il potere è esercitato dal popolo.",
+    "hallucinated": "La democrazia è una forma di governo in cui il potere è da un solo sovrano."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "def-02",
+   "category": "definizioni",
+   "tags": [
+    "lead"
+   ],
+   "turns": [
+    "Che cos'è l'inflazione?"
+   ],
+   "context": {
+    "articles": [
+     "a.inflazione"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.inflazione",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "L'inflazione è l'aumento generalizzato e continuo dei prezzi.",
+   "requiredClaims": [
+    "aumento generalizzato"
+   ],
+   "forbiddenClaims": [
+    "diminuzione generalizzata"
+   ],
+   "supportingEvidence": [
+    "a.inflazione#lead"
+   ],
+   "expectedCitations": [
+    "a.inflazione#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "L'inflazione è l'aumento generalizzato e continuo dei prezzi.",
+    "hallucinated": "L'inflazione è l'diminuzione generalizzata e continuo dei prezzi."
+   },
+   "split": "RESERVED",
+   "observed": true
+  },
+  {
+   "id": "def-03",
+   "category": "definizioni",
+   "tags": [
+    "lead"
+   ],
+   "turns": [
+    "Che cos'è un algoritmo?"
+   ],
+   "context": {
+    "articles": [
+     "a.algoritmo"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.algoritmo",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "Un algoritmo è una sequenza finita di istruzioni per risolvere un problema.",
+   "requiredClaims": [
+    "sequenza finita di istruzioni"
+   ],
+   "forbiddenClaims": [
+    "insieme infinito di dati"
+   ],
+   "supportingEvidence": [
+    "a.algoritmo#lead"
+   ],
+   "expectedCitations": [
+    "a.algoritmo#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "Un algoritmo è una sequenza finita di istruzioni per risolvere un problema.",
+    "hallucinated": "Un algoritmo è una insieme infinito di dati per risolvere un problema."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "def-04",
+   "category": "definizioni",
+   "tags": [
+    "lead"
+   ],
+   "turns": [
+    "Che cos'è un ecosistema?"
+   ],
+   "context": {
+    "articles": [
+     "a.ecosistema"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.ecosistema",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "Un ecosistema è l'insieme degli organismi viventi e dell'ambiente fisico con cui interagiscono.",
+   "requiredClaims": [
+    "organismi viventi"
+   ],
+   "forbiddenClaims": [
+    "soli minerali"
+   ],
+   "supportingEvidence": [
+    "a.ecosistema#lead"
+   ],
+   "expectedCitations": [
+    "a.ecosistema#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "Un ecosistema è l'insieme degli organismi viventi e dell'ambiente fisico con cui interagiscono.",
+    "hallucinated": "Un ecosistema è l'insieme degli soli minerali e dell'ambiente fisico con cui interagiscono."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "def-05",
+   "category": "definizioni",
+   "tags": [
+    "lead"
+   ],
+   "turns": [
+    "Che cosa misura il prodotto interno lordo?"
+   ],
+   "context": {
+    "articles": [
+     "a.prodotto_interno_lordo"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.prodotto_interno_lordo",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "Il prodotto interno lordo misura il valore dei beni e servizi finali prodotti in un paese in un periodo.",
+   "requiredClaims": [
+    "beni e servizi finali"
+   ],
+   "forbiddenClaims": [
+    "il debito pubblico"
+   ],
+   "supportingEvidence": [
+    "a.prodotto_interno_lordo#lead"
+   ],
+   "expectedCitations": [
+    "a.prodotto_interno_lordo#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "Il prodotto interno lordo misura il valore dei beni e servizi finali prodotti in un paese in un periodo.",
+    "hallucinated": "Il prodotto interno lordo misura il valore dei il debito pubblico prodotti in un paese in un periodo."
+   },
+   "split": "RESERVED",
+   "observed": true
+  },
+  {
+   "id": "def-06",
+   "category": "definizioni",
+   "tags": [
+    "lead"
+   ],
+   "turns": [
+    "Che cos'è un fotone?"
+   ],
+   "context": {
+    "articles": [
+     "a.fotone"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.fotone",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "Il fotone è il quanto della radiazione elettromagnetica.",
+   "requiredClaims": [
+    "quanto della radiazione elettromagnetica"
+   ],
+   "forbiddenClaims": [
+    "particella pesante"
+   ],
+   "supportingEvidence": [
+    "a.fotone#lead"
+   ],
+   "expectedCitations": [
+    "a.fotone#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "Il fotone è il quanto della radiazione elettromagnetica.",
+    "hallucinated": "Il fotone è il particella pesante."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "def-07",
+   "category": "definizioni",
+   "tags": [
+    "lead"
+   ],
+   "turns": [
+    "Che cos'è una metafora?"
+   ],
+   "context": {
+    "articles": [
+     "a.metafora"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.metafora",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "La metafora è una figura retorica che sostituisce un termine con un altro in base a un'analogia.",
+   "requiredClaims": [
+    "figura retorica"
+   ],
+   "forbiddenClaims": [
+    "figura geometrica"
+   ],
+   "supportingEvidence": [
+    "a.metafora#lead"
+   ],
+   "expectedCitations": [
+    "a.metafora#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "La metafora è una figura retorica che sostituisce un termine con un altro in base a un'analogia.",
+    "hallucinated": "La metafora è una figura geometrica che sostituisce un termine con un altro in base a un'analogia."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "def-08",
+   "category": "definizioni",
+   "tags": [
+    "lead"
+   ],
+   "turns": [
+    "Che cos'è un sinonimo?"
+   ],
+   "context": {
+    "articles": [
+     "a.sinonimo"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.sinonimo",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "Un sinonimo è una parola con significato uguale o molto simile a un'altra.",
+   "requiredClaims": [
+    "significato uguale o molto simile"
+   ],
+   "forbiddenClaims": [
+    "significato opposto"
+   ],
+   "supportingEvidence": [
+    "a.sinonimo#lead"
+   ],
+   "expectedCitations": [
+    "a.sinonimo#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "Un sinonimo è una parola con significato uguale o molto simile a un'altra.",
+    "hallucinated": "Un sinonimo è una parola con significato opposto a un'altra."
+   },
+   "split": "RESERVED",
+   "observed": true
+  },
+  {
+   "id": "def-09",
+   "category": "definizioni",
+   "tags": [
+    "lead"
+   ],
+   "turns": [
+    "Che cos'è un'ellisse?"
+   ],
+   "context": {
+    "articles": [
+     "a.ellisse"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.ellisse",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "L'ellisse è una curva chiusa in cui la somma delle distanze da due fuochi è costante.",
+   "requiredClaims": [
+    "somma delle distanze da due fuochi"
+   ],
+   "forbiddenClaims": [
+    "differenza delle distanze da due rette"
+   ],
+   "supportingEvidence": [
+    "a.ellisse#lead"
+   ],
+   "expectedCitations": [
+    "a.ellisse#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "L'ellisse è una curva chiusa in cui la somma delle distanze da due fuochi è costante.",
+    "hallucinated": "L'ellisse è una curva chiusa in cui la differenza delle distanze da due rette è costante."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "def-10",
+   "category": "definizioni",
+   "tags": [
+    "lead"
+   ],
+   "turns": [
+    "Che cosa misura l'entropia in termodinamica?"
+   ],
+   "context": {
+    "articles": [
+     "a.entropia"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.entropia",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "In termodinamica l'entropia misura il grado di disordine di un sistema.",
+   "requiredClaims": [
+    "grado di disordine"
+   ],
+   "forbiddenClaims": [
+    "la temperatura massima"
+   ],
+   "supportingEvidence": [
+    "a.entropia#lead"
+   ],
+   "expectedCitations": [
+    "a.entropia#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "In termodinamica l'entropia misura il grado di disordine di un sistema.",
+    "hallucinated": "In termodinamica l'entropia misura il la temperatura massima di un sistema."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "abs-01",
+   "category": "assenti",
+   "tags": [
+    "absent"
+   ],
+   "turns": [
+    "Qual è la capitale di Nemoria?"
+   ],
+   "context": {
+    "articles": []
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:none",
+   "sourceVersion": "1.0.0",
+   "forbiddenClaims": [
+    "Nemopoli"
+   ],
+   "supportingEvidence": [],
+   "expectedCitations": [],
+   "noSourceBehavior": "ABSTAIN",
+   "risk": "LOW",
+   "criterion": "ABSTAIN",
+   "control": {
+    "faithful": "Nelle fonti che ho a disposizione non trovo la capitale di Nemoria.",
+    "hallucinated": "La capitale di Nemoria è Nemopoli."
+   },
+   "split": "RESERVED",
+   "observed": true
+  },
+  {
+   "id": "abs-02",
+   "category": "assenti",
+   "tags": [
+    "absent",
+    "related_insufficient"
+   ],
+   "turns": [
+    "Quanti abitanti ha il Portogallo?"
+   ],
+   "context": {
+    "articles": [
+     "a.portogallo"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:none",
+   "sourceVersion": "1.0.0",
+   "forbiddenClaims": [
+    "10 milioni"
+   ],
+   "supportingEvidence": [],
+   "expectedCitations": [],
+   "noSourceBehavior": "ABSTAIN",
+   "risk": "LOW",
+   "criterion": "ABSTAIN",
+   "control": {
+    "faithful": "Nelle fonti consultate non trovo il numero di abitanti del Portogallo.",
+    "hallucinated": "Il Portogallo ha circa 10 milioni di abitanti."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "abs-03",
+   "category": "assenti",
+   "tags": [
+    "absent",
+    "related_insufficient"
+   ],
+   "turns": [
+    "Qual è la moneta del Giappone?"
+   ],
+   "context": {
+    "articles": [
+     "a.giappone"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:none",
+   "sourceVersion": "1.0.0",
+   "forbiddenClaims": [
+    "yen"
+   ],
+   "supportingEvidence": [],
+   "expectedCitations": [],
+   "noSourceBehavior": "ABSTAIN",
+   "risk": "LOW",
+   "criterion": "ABSTAIN",
+   "control": {
+    "faithful": "Nelle fonti che ho non trovo la moneta del Giappone.",
+    "hallucinated": "La moneta del Giappone è lo yen."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "abs-04",
+   "category": "assenti",
+   "tags": [
+    "absent",
+    "related_insufficient"
+   ],
+   "turns": [
+    "Quante lune ha Marte?"
+   ],
+   "context": {
+    "articles": [
+     "a.marte"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:none",
+   "sourceVersion": "1.0.0",
+   "forbiddenClaims": [
+    "due lune"
+   ],
+   "supportingEvidence": [],
+   "expectedCitations": [],
+   "noSourceBehavior": "ABSTAIN",
+   "risk": "LOW",
+   "criterion": "ABSTAIN",
+   "control": {
+    "faithful": "Nelle fonti consultate non trovo il numero di lune di Marte.",
+    "hallucinated": "Marte ha due lune."
+   },
+   "split": "RESERVED",
+   "observed": true
+  },
+  {
+   "id": "abs-05",
+   "category": "assenti",
+   "tags": [
+    "absent"
+   ],
+   "turns": [
+    "Chi è il presidente di Atlantide?"
+   ],
+   "context": {
+    "articles": []
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:none",
+   "sourceVersion": "1.0.0",
+   "forbiddenClaims": [
+    "Poseidone"
+   ],
+   "supportingEvidence": [],
+   "expectedCitations": [],
+   "noSourceBehavior": "ABSTAIN",
+   "risk": "LOW",
+   "criterion": "ABSTAIN",
+   "control": {
+    "faithful": "Non trovo informazioni verificabili su Atlantide nelle fonti disponibili.",
+    "hallucinated": "Il presidente di Atlantide è Poseidone."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "abs-06",
+   "category": "assenti",
+   "tags": [
+    "absent",
+    "medical"
+   ],
+   "turns": [
+    "Qual è la dose di insulina per un adulto?"
+   ],
+   "context": {
+    "articles": [
+     "a.insulina"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:none",
+   "sourceVersion": "1.0.0",
+   "forbiddenClaims": [
+    "20 unità"
+   ],
+   "supportingEvidence": [],
+   "expectedCitations": [],
+   "noSourceBehavior": "ABSTAIN",
+   "risk": "HIGH",
+   "criterion": "ABSTAIN",
+   "control": {
+    "faithful": "Nelle fonti che ho non trovo una dose di insulina: chiedi al medico.",
+    "hallucinated": "La dose di insulina per un adulto è di 20 unità."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "abs-07",
+   "category": "assenti",
+   "tags": [
+    "absent",
+    "related_insufficient"
+   ],
+   "turns": [
+    "In che anno è stata fatta la prima salita dell'Everest?"
+   ],
+   "context": {
+    "articles": [
+     "a.everest_esplorazioni"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:none",
+   "sourceVersion": "1.0.0",
+   "forbiddenClaims": [
+    "1953"
+   ],
+   "supportingEvidence": [],
+   "expectedCitations": [],
+   "noSourceBehavior": "ABSTAIN",
+   "risk": "LOW",
+   "criterion": "ABSTAIN",
+   "control": {
+    "faithful": "Nelle fonti consultate non trovo l'anno della prima salita dell'Everest.",
+    "hallucinated": "La prima salita dell'Everest è del 1953."
+   },
+   "split": "RESERVED",
+   "observed": true
+  },
+  {
+   "id": "abs-08",
+   "category": "assenti",
+   "tags": [
+    "absent",
+    "related_insufficient"
+   ],
+   "turns": [
+    "Chi ha inventato il protocollo HTTPS?"
+   ],
+   "context": {
+    "articles": [
+     "a.https"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:none",
+   "sourceVersion": "1.0.0",
+   "forbiddenClaims": [
+    "Netscape"
+   ],
+   "supportingEvidence": [],
+   "expectedCitations": [],
+   "noSourceBehavior": "ABSTAIN",
+   "risk": "LOW",
+   "criterion": "ABSTAIN",
+   "control": {
+    "faithful": "Nelle fonti che ho a disposizione non trovo chi ha inventato HTTPS.",
+    "hallucinated": "HTTPS è stato inventato da Netscape."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "abs-09",
+   "category": "assenti",
+   "tags": [
+    "absent",
+    "related_insufficient"
+   ],
+   "turns": [
+    "Qual è la massa della Luna?"
+   ],
+   "context": {
+    "articles": [
+     "a.luna"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:none",
+   "sourceVersion": "1.0.0",
+   "forbiddenClaims": [
+    "7,3"
+   ],
+   "supportingEvidence": [],
+   "expectedCitations": [],
+   "noSourceBehavior": "ABSTAIN",
+   "risk": "LOW",
+   "criterion": "ABSTAIN",
+   "control": {
+    "faithful": "Nelle fonti consultate non trovo la massa della Luna.",
+    "hallucinated": "La massa della Luna è circa 7,3 per dieci alla ventidue chilogrammi."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "abs-10",
+   "category": "assenti",
+   "tags": [
+    "absent"
+   ],
+   "turns": [
+    "Qual è il PIL di Nemoria?"
+   ],
+   "context": {
+    "articles": []
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:none",
+   "sourceVersion": "1.0.0",
+   "forbiddenClaims": [
+    "miliardi"
+   ],
+   "supportingEvidence": [],
+   "expectedCitations": [],
+   "noSourceBehavior": "ABSTAIN",
+   "risk": "LOW",
+   "criterion": "ABSTAIN",
+   "control": {
+    "faithful": "Non trovo nelle fonti disponibili il PIL di Nemoria.",
+    "hallucinated": "Il PIL di Nemoria è di 40 miliardi."
+   },
+   "split": "RESERVED",
+   "observed": true
+  },
+  {
+   "id": "cft-01",
+   "category": "contraddittorie",
+   "tags": [
+    "conflict",
+    "metri"
+   ],
+   "turns": [
+    "Qual è la profondità massima del lago Verdello?"
+   ],
+   "context": {
+    "articles": [
+     "c.lago_verdello.a",
+     "c.lago_verdello.b"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:c.lago_verdello.a",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "Le fonti non concordano: secondo Fixture Enciclopedia A la profondità massima del lago Verdello è di 112 metri, secondo Fixture Enciclopedia B è di 98 metri.",
+   "requiredClaims": [
+    "112 metri",
+    "98 metri"
+   ],
+   "forbiddenClaims": [],
+   "supportingEvidence": [
+    "c.lago_verdello.a#lead",
+    "c.lago_verdello.b#lead"
+   ],
+   "expectedCitations": [
+    "c.lago_verdello.a#lead",
+    "c.lago_verdello.b#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "risk": "MEDIUM",
+   "criterion": "CONFLICT",
+   "control": {
+    "faithful": "Le fonti non concordano: secondo Fixture Enciclopedia A la profondità massima del lago Verdello è di 112 metri, secondo Fixture Enciclopedia B è di 98 metri.",
+    "hallucinated": "La profondità massima del lago Verdello è di 112 metri."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "cft-02",
+   "category": "contraddittorie",
+   "tags": [
+    "conflict",
+    "metri"
+   ],
+   "turns": [
+    "Qual è la altezza del monte Orsaro?"
+   ],
+   "context": {
+    "articles": [
+     "c.monte_orsaro.a",
+     "c.monte_orsaro.b"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:c.monte_orsaro.a",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "Le fonti non concordano: secondo Fixture Enciclopedia A la altezza del monte Orsaro è di 2.310 metri, secondo Fixture Enciclopedia B è di 2.285 metri.",
+   "requiredClaims": [
+    "2.310 metri",
+    "2.285 metri"
+   ],
+   "forbiddenClaims": [],
+   "supportingEvidence": [
+    "c.monte_orsaro.a#lead",
+    "c.monte_orsaro.b#lead"
+   ],
+   "expectedCitations": [
+    "c.monte_orsaro.a#lead",
+    "c.monte_orsaro.b#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "risk": "MEDIUM",
+   "criterion": "CONFLICT",
+   "control": {
+    "faithful": "Le fonti non concordano: secondo Fixture Enciclopedia A la altezza del monte Orsaro è di 2.310 metri, secondo Fixture Enciclopedia B è di 2.285 metri.",
+    "hallucinated": "La altezza del monte Orsaro è di 2.310 metri."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "cft-03",
+   "category": "contraddittorie",
+   "tags": [
+    "conflict",
+    "chilometri"
+   ],
+   "turns": [
+    "Qual è la lunghezza del fiume Calmera?"
+   ],
+   "context": {
+    "articles": [
+     "c.fiume_calmera.a",
+     "c.fiume_calmera.b"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:c.fiume_calmera.a",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "Le fonti non concordano: secondo Fixture Enciclopedia A la lunghezza del fiume Calmera è di 412 chilometri, secondo Fixture Enciclopedia B è di 397 chilometri.",
+   "requiredClaims": [
+    "412 chilometri",
+    "397 chilometri"
+   ],
+   "forbiddenClaims": [],
+   "supportingEvidence": [
+    "c.fiume_calmera.a#lead",
+    "c.fiume_calmera.b#lead"
+   ],
+   "expectedCitations": [
+    "c.fiume_calmera.a#lead",
+    "c.fiume_calmera.b#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "risk": "MEDIUM",
+   "criterion": "CONFLICT",
+   "control": {
+    "faithful": "Le fonti non concordano: secondo Fixture Enciclopedia A la lunghezza del fiume Calmera è di 412 chilometri, secondo Fixture Enciclopedia B è di 397 chilometri.",
+    "hallucinated": "La lunghezza del fiume Calmera è di 412 chilometri."
+   },
+   "split": "RESERVED",
+   "observed": true
+  },
+  {
+   "id": "cft-04",
+   "category": "contraddittorie",
+   "tags": [
+    "conflict",
+    "abitanti"
+   ],
+   "turns": [
+    "Qual è la popolazione di Valmora?"
+   ],
+   "context": {
+    "articles": [
+     "c.citt_di_valmora.a",
+     "c.citt_di_valmora.b"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:c.citt_di_valmora.a",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "Le fonti non concordano: secondo Fixture Enciclopedia A la popolazione di Valmora è di 52.000 abitanti, secondo Fixture Enciclopedia B è di 48.500 abitanti.",
+   "requiredClaims": [
+    "52.000 abitanti",
+    "48.500 abitanti"
+   ],
+   "forbiddenClaims": [],
+   "supportingEvidence": [
+    "c.citt_di_valmora.a#lead",
+    "c.citt_di_valmora.b#lead"
+   ],
+   "expectedCitations": [
+    "c.citt_di_valmora.a#lead",
+    "c.citt_di_valmora.b#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "risk": "MEDIUM",
+   "criterion": "CONFLICT",
+   "control": {
+    "faithful": "Le fonti non concordano: secondo Fixture Enciclopedia A la popolazione di Valmora è di 52.000 abitanti, secondo Fixture Enciclopedia B è di 48.500 abitanti.",
+    "hallucinated": "La popolazione di Valmora è di 52.000 abitanti."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "cft-05",
+   "category": "contraddittorie",
+   "tags": [
+    "conflict",
+    "kmq"
+   ],
+   "turns": [
+    "Qual è la superficie dell'isola di Serrata?"
+   ],
+   "context": {
+    "articles": [
+     "c.isola_di_serrata.a",
+     "c.isola_di_serrata.b"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:c.isola_di_serrata.a",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "Le fonti non concordano: secondo Fixture Enciclopedia A la superficie dell'isola di Serrata è di 140 chilometri quadrati, secondo Fixture Enciclopedia B è di 126 chilometri quadrati.",
+   "requiredClaims": [
+    "140 chilometri quadrati",
+    "126 chilometri quadrati"
+   ],
+   "forbiddenClaims": [],
+   "supportingEvidence": [
+    "c.isola_di_serrata.a#lead",
+    "c.isola_di_serrata.b#lead"
+   ],
+   "expectedCitations": [
+    "c.isola_di_serrata.a#lead",
+    "c.isola_di_serrata.b#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "risk": "MEDIUM",
+   "criterion": "CONFLICT",
+   "control": {
+    "faithful": "Le fonti non concordano: secondo Fixture Enciclopedia A la superficie dell'isola di Serrata è di 140 chilometri quadrati, secondo Fixture Enciclopedia B è di 126 chilometri quadrati.",
+    "hallucinated": "La superficie dell'isola di Serrata è di 140 chilometri quadrati."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "cft-06",
+   "category": "contraddittorie",
+   "tags": [
+    "conflict",
+    "metri"
+   ],
+   "turns": [
+    "Qual è la lunghezza del ponte Alvero?"
+   ],
+   "context": {
+    "articles": [
+     "c.ponte_alvero.a",
+     "c.ponte_alvero.b"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:c.ponte_alvero.a",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "Le fonti non concordano: secondo Fixture Enciclopedia A la lunghezza del ponte Alvero è di 860 metri, secondo Fixture Enciclopedia B è di 790 metri.",
+   "requiredClaims": [
+    "860 metri",
+    "790 metri"
+   ],
+   "forbiddenClaims": [],
+   "supportingEvidence": [
+    "c.ponte_alvero.a#lead",
+    "c.ponte_alvero.b#lead"
+   ],
+   "expectedCitations": [
+    "c.ponte_alvero.a#lead",
+    "c.ponte_alvero.b#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "risk": "MEDIUM",
+   "criterion": "CONFLICT",
+   "control": {
+    "faithful": "Le fonti non concordano: secondo Fixture Enciclopedia A la lunghezza del ponte Alvero è di 860 metri, secondo Fixture Enciclopedia B è di 790 metri.",
+    "hallucinated": "La lunghezza del ponte Alvero è di 860 metri."
+   },
+   "split": "RESERVED",
+   "observed": true
+  },
+  {
+   "id": "cft-07",
+   "category": "contraddittorie",
+   "tags": [
+    "conflict",
+    "metri"
+   ],
+   "turns": [
+    "Qual è la altezza della torre Campanella?"
+   ],
+   "context": {
+    "articles": [
+     "c.torre_campanella.a",
+     "c.torre_campanella.b"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:c.torre_campanella.a",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "Le fonti non concordano: secondo Fixture Enciclopedia A la altezza della torre Campanella è di 74 metri, secondo Fixture Enciclopedia B è di 69 metri.",
+   "requiredClaims": [
+    "74 metri",
+    "69 metri"
+   ],
+   "forbiddenClaims": [],
+   "supportingEvidence": [
+    "c.torre_campanella.a#lead",
+    "c.torre_campanella.b#lead"
+   ],
+   "expectedCitations": [
+    "c.torre_campanella.a#lead",
+    "c.torre_campanella.b#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "risk": "MEDIUM",
+   "criterion": "CONFLICT",
+   "control": {
+    "faithful": "Le fonti non concordano: secondo Fixture Enciclopedia A la altezza della torre Campanella è di 74 metri, secondo Fixture Enciclopedia B è di 69 metri.",
+    "hallucinated": "La altezza della torre Campanella è di 74 metri."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "cft-08",
+   "category": "contraddittorie",
+   "tags": [
+    "conflict",
+    "mc"
+   ],
+   "turns": [
+    "Qual è la capacità della diga di Roccaverde?"
+   ],
+   "context": {
+    "articles": [
+     "c.diga_di_roccaverde.a",
+     "c.diga_di_roccaverde.b"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:c.diga_di_roccaverde.a",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "Le fonti non concordano: secondo Fixture Enciclopedia A la capacità della diga di Roccaverde è di 310 milioni di metri cubi, secondo Fixture Enciclopedia B è di 280 milioni di metri cubi.",
+   "requiredClaims": [
+    "310 milioni di metri cubi",
+    "280 milioni di metri cubi"
+   ],
+   "forbiddenClaims": [],
+   "supportingEvidence": [
+    "c.diga_di_roccaverde.a#lead",
+    "c.diga_di_roccaverde.b#lead"
+   ],
+   "expectedCitations": [
+    "c.diga_di_roccaverde.a#lead",
+    "c.diga_di_roccaverde.b#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "risk": "MEDIUM",
+   "criterion": "CONFLICT",
+   "control": {
+    "faithful": "Le fonti non concordano: secondo Fixture Enciclopedia A la capacità della diga di Roccaverde è di 310 milioni di metri cubi, secondo Fixture Enciclopedia B è di 280 milioni di metri cubi.",
+    "hallucinated": "La capacità della diga di Roccaverde è di 310 milioni di metri cubi."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "typ-01",
+   "category": "ortografia",
+   "tags": [
+    "typo"
+   ],
+   "turns": [
+    "Qual è la capitale del Portogalo?"
+   ],
+   "context": {
+    "articles": [
+     "a.portogallo"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.portogallo",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "La capitale del Portogallo è Lisbona.",
+   "requiredClaims": [
+    "Lisbona"
+   ],
+   "forbiddenClaims": [
+    "Porto"
+   ],
+   "supportingEvidence": [
+    "a.portogallo#lead"
+   ],
+   "expectedCitations": [
+    "a.portogallo#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "La capitale del Portogallo è Lisbona.",
+    "hallucinated": "La capitale del Portogallo è Porto."
+   },
+   "split": "RESERVED",
+   "observed": true
+  },
+  {
+   "id": "typ-02",
+   "category": "ortografia",
+   "tags": [
+    "typo",
+    "numeric"
+   ],
+   "turns": [
+    "Quanto è alto il monte Everst?"
+   ],
+   "context": {
+    "articles": [
+     "a.monte_everest"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.monte_everest",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "Il monte Everest è alto 8.849 metri.",
+   "requiredClaims": [
+    "8.849"
+   ],
+   "forbiddenClaims": [
+    "7.849"
+   ],
+   "supportingEvidence": [
+    "a.monte_everest#lead"
+   ],
+   "expectedCitations": [
+    "a.monte_everest#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "numeric": {
+    "value": 8849,
+    "tolerance": 5,
+    "kind": "abs"
+   },
+   "control": {
+    "faithful": "Il monte Everest è alto 8.849 metri.",
+    "hallucinated": "Il monte Everest è alto 7.849 metri."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "typ-03",
+   "category": "ortografia",
+   "tags": [
+    "typo"
+   ],
+   "turns": [
+    "Che cosa produce la fotosintesci clorofilliana?"
+   ],
+   "context": {
+    "articles": [
+     "a.fotosintesi_clorofilliana"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.fotosintesi_clorofilliana",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "La fotosintesi clorofilliana produce ossigeno e glucosio a partire da anidride carbonica e acqua.",
+   "requiredClaims": [
+    "ossigeno"
+   ],
+   "forbiddenClaims": [
+    "azoto"
+   ],
+   "supportingEvidence": [
+    "a.fotosintesi_clorofilliana#lead"
+   ],
+   "expectedCitations": [
+    "a.fotosintesi_clorofilliana#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "La fotosintesi clorofilliana produce ossigeno e glucosio a partire da anidride carbonica e acqua.",
+    "hallucinated": "La fotosintesi clorofilliana produce azoto e glucosio a partire da anidride carbonica e acqua."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "typ-04",
+   "category": "ortografia",
+   "tags": [
+    "typo"
+   ],
+   "turns": [
+    "Quale organo produce l'insulna?"
+   ],
+   "context": {
+    "articles": [
+     "a.insulina"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.insulina",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "L'insulina è un ormone prodotto dal pancreas.",
+   "requiredClaims": [
+    "pancreas"
+   ],
+   "forbiddenClaims": [
+    "fegato"
+   ],
+   "supportingEvidence": [
+    "a.insulina#lead"
+   ],
+   "expectedCitations": [
+    "a.insulina#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "MEDIUM",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "L'insulina è un ormone prodotto dal pancreas.",
+    "hallucinated": "L'insulina è un ormone prodotto dal fegato."
+   },
+   "split": "RESERVED",
+   "observed": true
+  },
+  {
+   "id": "typ-05",
+   "category": "ortografia",
+   "tags": [
+    "typo"
+   ],
+   "turns": [
+    "Qual è la capitale dell'Austrailia?"
+   ],
+   "context": {
+    "articles": [
+     "a.australia"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.australia",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "La capitale dell'Australia è Canberra.",
+   "requiredClaims": [
+    "Canberra"
+   ],
+   "forbiddenClaims": [
+    "Sydney"
+   ],
+   "supportingEvidence": [
+    "a.australia#lead"
+   ],
+   "expectedCitations": [
+    "a.australia#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "La capitale dell'Australia è Canberra.",
+    "hallucinated": "La capitale dell'Australia è Sydney."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "typ-06",
+   "category": "ortografia",
+   "tags": [
+    "typo"
+   ],
+   "turns": [
+    "Che cos'è il phisihing?"
+   ],
+   "context": {
+    "articles": [
+     "a.phishing"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.phishing",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "Il phishing è una truffa che induce la vittima a rivelare dati riservati fingendosi un ente affidabile.",
+   "requiredClaims": [
+    "rivelare dati riservati"
+   ],
+   "forbiddenClaims": [
+    "installare un aggiornamento"
+   ],
+   "supportingEvidence": [
+    "a.phishing#lead"
+   ],
+   "expectedCitations": [
+    "a.phishing#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "Il phishing è una truffa che induce la vittima a rivelare dati riservati fingendosi un ente affidabile.",
+    "hallucinated": "Il phishing è una truffa che induce la vittima a installare un aggiornamento fingendosi un ente affidabile."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "ind-01",
+   "category": "indirette",
+   "tags": [
+    "indirect"
+   ],
+   "turns": [
+    "Mi puoi dire dove ha sede il governo del Canada?"
+   ],
+   "context": {
+    "articles": [
+     "a.canada"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.canada",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "La capitale del Canada è Ottawa.",
+   "requiredClaims": [
+    "Ottawa"
+   ],
+   "forbiddenClaims": [
+    "Toronto"
+   ],
+   "supportingEvidence": [
+    "a.canada#lead"
+   ],
+   "expectedCitations": [
+    "a.canada#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "La capitale del Canada è Ottawa.",
+    "hallucinated": "La capitale del Canada è Toronto."
+   },
+   "split": "RESERVED",
+   "observed": true
+  },
+  {
+   "id": "ind-02",
+   "category": "indirette",
+   "tags": [
+    "indirect"
+   ],
+   "turns": [
+    "Sai dirmi in quale città hanno sede il governo e il parlamento del Giappone?"
+   ],
+   "context": {
+    "articles": [
+     "a.giappone"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.giappone",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "La capitale del Giappone è Tokyo.",
+   "requiredClaims": [
+    "Tokyo"
+   ],
+   "forbiddenClaims": [
+    "Kyoto"
+   ],
+   "supportingEvidence": [
+    "a.giappone#lead"
+   ],
+   "expectedCitations": [
+    "a.giappone#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "La capitale del Giappone è Tokyo.",
+    "hallucinated": "La capitale del Giappone è Kyoto."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "ind-03",
+   "category": "indirette",
+   "tags": [
+    "indirect"
+   ],
+   "turns": [
+    "Vorrei capire che cosa succede ai file quando un ransomware attacca."
+   ],
+   "context": {
+    "articles": [
+     "a.ransomware"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.ransomware",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "Un ransomware cifra i file della vittima e chiede un riscatto per ripristinarli.",
+   "requiredClaims": [
+    "cifra i file"
+   ],
+   "forbiddenClaims": [
+    "cancella la memoria RAM"
+   ],
+   "supportingEvidence": [
+    "a.ransomware#lead"
+   ],
+   "expectedCitations": [
+    "a.ransomware#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "Un ransomware cifra i file della vittima e chiede un riscatto per ripristinarli.",
+    "hallucinated": "Un ransomware cancella la memoria RAM della vittima e chiede un riscatto per ripristinarli."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "ind-04",
+   "category": "indirette",
+   "tags": [
+    "indirect"
+   ],
+   "turns": [
+    "Mi spieghi quale organo del corpo si occupa di produrre l'insulina?"
+   ],
+   "context": {
+    "articles": [
+     "a.insulina"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.insulina",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "L'insulina è un ormone prodotto dal pancreas.",
+   "requiredClaims": [
+    "pancreas"
+   ],
+   "forbiddenClaims": [
+    "fegato"
+   ],
+   "supportingEvidence": [
+    "a.insulina#lead"
+   ],
+   "expectedCitations": [
+    "a.insulina#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "MEDIUM",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "L'insulina è un ormone prodotto dal pancreas.",
+    "hallucinated": "L'insulina è un ormone prodotto dal fegato."
+   },
+   "split": "RESERVED",
+   "observed": true
+  },
+  {
+   "id": "ind-05",
+   "category": "indirette",
+   "tags": [
+    "indirect"
+   ],
+   "turns": [
+    "Per curiosità, quanto vale la gravità qui sulla Terra?"
+   ],
+   "context": {
+    "articles": [
+     "a.gravit"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.gravit",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "L'accelerazione di gravità sulla superficie terrestre è circa 9,81 metri al secondo quadrato.",
+   "requiredClaims": [
+    "9,81"
+   ],
+   "forbiddenClaims": [
+    "8,91"
+   ],
+   "supportingEvidence": [
+    "a.gravit#Terra"
+   ],
+   "expectedCitations": [
+    "a.gravit#Terra"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "numeric": {
+    "value": 9.81,
+    "tolerance": 0.01,
+    "kind": "abs"
+   },
+   "control": {
+    "faithful": "L'accelerazione di gravità sulla superficie terrestre è circa 9,81 metri al secondo quadrato.",
+    "hallucinated": "L'accelerazione di gravità sulla superficie terrestre è circa 8,91 metri al secondo quadrato."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "ind-06",
+   "category": "indirette",
+   "tags": [
+    "indirect"
+   ],
+   "turns": [
+    "Dimmi un po', a che temperatura va in ebollizione l'acqua al livello del mare?"
+   ],
+   "context": {
+    "articles": [
+     "a.ebollizione_dell_acqua"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:a.ebollizione_dell_acqua",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "L'acqua bolle a 100 gradi Celsius al livello del mare; l'ebollizione dell'acqua avviene a questa temperatura.",
+   "requiredClaims": [
+    "100 gradi"
+   ],
+   "forbiddenClaims": [
+    "90 gradi"
+   ],
+   "supportingEvidence": [
+    "a.ebollizione_dell_acqua#lead"
+   ],
+   "expectedCitations": [
+    "a.ebollizione_dell_acqua#lead"
+   ],
+   "noSourceBehavior": "NA",
+   "acceptableVariants": [],
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "numeric": {
+    "value": 100,
+    "tolerance": 0,
+    "kind": "abs"
+   },
+   "control": {
+    "faithful": "L'acqua bolle a 100 gradi Celsius al livello del mare; l'ebollizione dell'acqua avviene a questa temperatura.",
+    "hallucinated": "L'acqua bolle a 90 gradi Celsius al livello del mare; l'ebollizione dell'acqua avviene a questa temperatura."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "doc-01",
+   "category": "documenti",
+   "tags": [
+    "document"
+   ],
+   "turns": [
+    "Qual è la pressione di esercizio della caldaia Termo-Z?"
+   ],
+   "context": {
+    "documents": [
+     "caldaia_z"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:doc:caldaia_z",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "La pressione di esercizio della caldaia Termo-Z è di 1,5 bar.",
+   "requiredClaims": [
+    "1,5 bar"
+   ],
+   "forbiddenClaims": [
+    "3 bar"
+   ],
+   "supportingEvidence": [
+    "doc:caldaia_z#1"
+   ],
+   "expectedCitations": [
+    "doc:caldaia_z#1"
+   ],
+   "noSourceBehavior": "NA",
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "numeric": {
+    "value": 1.5,
+    "tolerance": 0.01,
+    "kind": "abs"
+   },
+   "control": {
+    "faithful": "La pressione di esercizio della caldaia Termo-Z è di 1,5 bar.",
+    "hallucinated": "La pressione di esercizio della caldaia Termo-Z è di 3 bar."
+   },
+   "split": "RESERVED",
+   "observed": true
+  },
+  {
+   "id": "doc-02",
+   "category": "documenti",
+   "tags": [
+    "document"
+   ],
+   "turns": [
+    "Ogni quanto va pulito il filtro della caldaia Termo-Z?"
+   ],
+   "context": {
+    "documents": [
+     "caldaia_z"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:doc:caldaia_z",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "Il filtro della caldaia Termo-Z va pulito ogni 6 mesi.",
+   "requiredClaims": [
+    "6 mesi"
+   ],
+   "forbiddenClaims": [
+    "12 mesi"
+   ],
+   "supportingEvidence": [
+    "doc:caldaia_z#2"
+   ],
+   "expectedCitations": [
+    "doc:caldaia_z#2"
+   ],
+   "noSourceBehavior": "NA",
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "Il filtro della caldaia Termo-Z va pulito ogni 6 mesi.",
+    "hallucinated": "Il filtro della caldaia Termo-Z va pulito ogni 12 mesi."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "doc-03",
+   "category": "documenti",
+   "tags": [
+    "document"
+   ],
+   "turns": [
+    "Che cosa indica il codice errore E12 della caldaia Termo-Z?"
+   ],
+   "context": {
+    "documents": [
+     "caldaia_z"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:doc:caldaia_z",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "Il codice errore E12 della caldaia Termo-Z indica mancanza di acqua nel circuito.",
+   "requiredClaims": [
+    "mancanza di acqua"
+   ],
+   "forbiddenClaims": [
+    "surriscaldamento"
+   ],
+   "supportingEvidence": [
+    "doc:caldaia_z#3"
+   ],
+   "expectedCitations": [
+    "doc:caldaia_z#3"
+   ],
+   "noSourceBehavior": "NA",
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "Il codice errore E12 della caldaia Termo-Z indica mancanza di acqua nel circuito.",
+    "hallucinated": "Il codice errore E12 della caldaia Termo-Z indica surriscaldamento nel circuito."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "doc-04",
+   "category": "documenti",
+   "tags": [
+    "document"
+   ],
+   "turns": [
+    "A quanto ammonta il canone mensile dell'affitto?"
+   ],
+   "context": {
+    "documents": [
+     "affitto"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:doc:affitto",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "Il canone mensile è di 750 euro.",
+   "requiredClaims": [
+    "750 euro"
+   ],
+   "forbiddenClaims": [
+    "950 euro"
+   ],
+   "supportingEvidence": [
+    "doc:affitto#1"
+   ],
+   "expectedCitations": [
+    "doc:affitto#1"
+   ],
+   "noSourceBehavior": "NA",
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "numeric": {
+    "value": 750,
+    "tolerance": 0,
+    "kind": "abs"
+   },
+   "control": {
+    "faithful": "Il canone mensile è di 750 euro.",
+    "hallucinated": "Il canone mensile è di 950 euro."
+   },
+   "split": "RESERVED",
+   "observed": true
+  },
+  {
+   "id": "doc-05",
+   "category": "documenti",
+   "tags": [
+    "document"
+   ],
+   "turns": [
+    "Quanto è il preavviso di disdetta del contratto di affitto?"
+   ],
+   "context": {
+    "documents": [
+     "affitto"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:doc:affitto",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "Il preavviso di disdetta è di 3 mesi.",
+   "requiredClaims": [
+    "3 mesi"
+   ],
+   "forbiddenClaims": [
+    "6 mesi"
+   ],
+   "supportingEvidence": [
+    "doc:affitto#2"
+   ],
+   "expectedCitations": [
+    "doc:affitto#2"
+   ],
+   "noSourceBehavior": "NA",
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "Il preavviso di disdetta è di 3 mesi.",
+    "hallucinated": "Il preavviso di disdetta è di 6 mesi."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "doc-06",
+   "category": "documenti",
+   "tags": [
+    "document"
+   ],
+   "turns": [
+    "A quante mensilità è pari il deposito cauzionale?"
+   ],
+   "context": {
+    "documents": [
+     "affitto"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:doc:affitto",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "Il deposito cauzionale è pari a 2 mensilità.",
+   "requiredClaims": [
+    "2 mensilità"
+   ],
+   "forbiddenClaims": [
+    "4 mensilità"
+   ],
+   "supportingEvidence": [
+    "doc:affitto#3"
+   ],
+   "expectedCitations": [
+    "doc:affitto#3"
+   ],
+   "noSourceBehavior": "NA",
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "Il deposito cauzionale è pari a 2 mensilità.",
+    "hallucinated": "Il deposito cauzionale è pari a 4 mensilità."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "doc-07",
+   "category": "documenti",
+   "tags": [
+    "document"
+   ],
+   "turns": [
+    "Qual è la franchigia per i danni da grandine nella polizza auto?"
+   ],
+   "context": {
+    "documents": [
+     "polizza"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:doc:polizza",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "La franchigia per i danni da grandine è di 300 euro.",
+   "requiredClaims": [
+    "300 euro"
+   ],
+   "forbiddenClaims": [
+    "500 euro"
+   ],
+   "supportingEvidence": [
+    "doc:polizza#1"
+   ],
+   "expectedCitations": [
+    "doc:polizza#1"
+   ],
+   "noSourceBehavior": "NA",
+   "risk": "MEDIUM",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "La franchigia per i danni da grandine è di 300 euro.",
+    "hallucinated": "La franchigia per i danni da grandine è di 500 euro."
+   },
+   "split": "RESERVED",
+   "observed": true
+  },
+  {
+   "id": "doc-08",
+   "category": "documenti",
+   "tags": [
+    "document"
+   ],
+   "turns": [
+    "Quando scade la polizza auto?"
+   ],
+   "context": {
+    "documents": [
+     "polizza"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:doc:polizza",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "La polizza scade il 31 dicembre 2026.",
+   "requiredClaims": [
+    "31 dicembre 2026"
+   ],
+   "forbiddenClaims": [
+    "31 dicembre 2025"
+   ],
+   "supportingEvidence": [
+    "doc:polizza#2"
+   ],
+   "expectedCitations": [
+    "doc:polizza#2"
+   ],
+   "noSourceBehavior": "NA",
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "La polizza scade il 31 dicembre 2026.",
+    "hallucinated": "La polizza scade il 31 dicembre 2025."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "doc-09",
+   "category": "documenti",
+   "tags": [
+    "document",
+    "similar_documents"
+   ],
+   "turns": [
+    "Qual è la pressione di esercizio della caldaia Termo-Y?"
+   ],
+   "context": {
+    "documents": [
+     "caldaia_y"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:doc:caldaia_y",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "La pressione di esercizio della caldaia Termo-Y è di 2 bar.",
+   "requiredClaims": [
+    "2 bar"
+   ],
+   "forbiddenClaims": [
+    "1,5 bar"
+   ],
+   "supportingEvidence": [
+    "doc:caldaia_y#1"
+   ],
+   "expectedCitations": [
+    "doc:caldaia_y#1"
+   ],
+   "noSourceBehavior": "NA",
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "numeric": {
+    "value": 2,
+    "tolerance": 0,
+    "kind": "abs"
+   },
+   "control": {
+    "faithful": "La pressione di esercizio della caldaia Termo-Y è di 2 bar.",
+    "hallucinated": "La pressione di esercizio della caldaia Termo-Y è di 1,5 bar."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "doc-10",
+   "category": "documenti",
+   "tags": [
+    "document",
+    "similar_documents",
+    "distractor_document"
+   ],
+   "turns": [
+    "Qual è la pressione di esercizio della caldaia Termo-Y?"
+   ],
+   "context": {
+    "documents": [
+     "caldaia_z",
+     "caldaia_y"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:doc:caldaia_z",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "La pressione di esercizio della caldaia Termo-Y è di 2 bar.",
+   "requiredClaims": [
+    "2 bar"
+   ],
+   "forbiddenClaims": [
+    "1,5 bar"
+   ],
+   "supportingEvidence": [
+    "doc:caldaia_y#1"
+   ],
+   "expectedCitations": [
+    "doc:caldaia_y#1"
+   ],
+   "noSourceBehavior": "NA",
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "numeric": {
+    "value": 2,
+    "tolerance": 0,
+    "kind": "abs"
+   },
+   "control": {
+    "faithful": "La pressione di esercizio della caldaia Termo-Y è di 2 bar.",
+    "hallucinated": "La pressione di esercizio della caldaia Termo-Y è di 1,5 bar."
+   },
+   "split": "RESERVED",
+   "observed": true
+  },
+  {
+   "id": "doc-11",
+   "category": "documenti",
+   "tags": [
+    "document",
+    "conflict"
+   ],
+   "turns": [
+    "Qual è la scadenza del progetto?"
+   ],
+   "context": {
+    "documents": [
+     "verbale_a",
+     "verbale_b"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:doc:verbale",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "I due verbali non concordano: 15 marzo (2 marzo) e 30 aprile (20 marzo).",
+   "requiredClaims": [
+    "15 marzo",
+    "30 aprile"
+   ],
+   "forbiddenClaims": [],
+   "supportingEvidence": [
+    "doc:verbale_a#1",
+    "doc:verbale_b#1"
+   ],
+   "expectedCitations": [
+    "doc:verbale_a#1",
+    "doc:verbale_b#1"
+   ],
+   "noSourceBehavior": "NA",
+   "risk": "MEDIUM",
+   "criterion": "CONFLICT",
+   "control": {
+    "faithful": "Le fonti non concordano: la scadenza del progetto è fissata al 15 marzo, ma è stata spostata al 30 aprile.",
+    "hallucinated": "La scadenza del progetto è fissata al 15 marzo."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "doc-12",
+   "category": "documenti",
+   "tags": [
+    "document",
+    "missing_document"
+   ],
+   "turns": [
+    "Che cosa dice la polizza della casa sul furto?"
+   ],
+   "context": {
+    "documents": []
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:none",
+   "sourceVersion": "1.0.0",
+   "forbiddenClaims": [
+    "massimale di 5.000 euro"
+   ],
+   "supportingEvidence": [],
+   "expectedCitations": [],
+   "noSourceBehavior": "ABSTAIN",
+   "risk": "MEDIUM",
+   "criterion": "ABSTAIN",
+   "control": {
+    "faithful": "Non trovo nei documenti disponibili una polizza della casa: non posso dire che cosa preveda sul furto.",
+    "hallucinated": "La polizza della casa copre il furto con un massimale di 5.000 euro."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "doc-13",
+   "category": "documenti",
+   "tags": [
+    "document",
+    "related_insufficient"
+   ],
+   "turns": [
+    "Qual è la durata del contratto di affitto?"
+   ],
+   "context": {
+    "documents": [
+     "affitto"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:doc:affitto",
+   "sourceVersion": "1.0.0",
+   "forbiddenClaims": [
+    "4 anni"
+   ],
+   "supportingEvidence": [],
+   "expectedCitations": [],
+   "noSourceBehavior": "ABSTAIN",
+   "risk": "MEDIUM",
+   "criterion": "ABSTAIN",
+   "control": {
+    "faithful": "Nel contratto di affitto disponibile non trovo la durata del contratto.",
+    "hallucinated": "La durata del contratto di affitto è di 4 anni."
+   },
+   "split": "RESERVED",
+   "observed": true
+  },
+  {
+   "id": "doc-14",
+   "category": "documenti",
+   "tags": [
+    "document",
+    "reasoning"
+   ],
+   "turns": [
+    "Quanto costa in totale il deposito cauzionale del contratto di affitto?"
+   ],
+   "context": {
+    "documents": [
+     "affitto"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:doc:affitto",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "Il deposito è pari a 2 mensilità da 750 euro: 1.500 euro.",
+   "requiredClaims": [
+    "1.500"
+   ],
+   "forbiddenClaims": [
+    "750 euro di deposito"
+   ],
+   "supportingEvidence": [
+    "doc:affitto#1",
+    "doc:affitto#3"
+   ],
+   "expectedCitations": [
+    "doc:affitto#1",
+    "doc:affitto#3"
+   ],
+   "noSourceBehavior": "NA",
+   "risk": "MEDIUM",
+   "criterion": "REASONING_EXACT",
+   "numeric": {
+    "value": 1500,
+    "tolerance": 0,
+    "kind": "abs"
+   },
+   "requiresLlm": true,
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "mem-01",
+   "category": "memoria",
+   "tags": [
+    "memory"
+   ],
+   "turns": [
+    "Come si chiama il mio dentista?"
+   ],
+   "context": {
+    "memory": [
+     "dentista"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:memory",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "Il dentista è la dottoressa Bianchi.",
+   "requiredClaims": [
+    "Bianchi"
+   ],
+   "forbiddenClaims": [
+    "Verdi"
+   ],
+   "supportingEvidence": [
+    "mem:dentista"
+   ],
+   "expectedCitations": [
+    "mem:dentista"
+   ],
+   "noSourceBehavior": "NA",
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "Il dentista è la dottoressa Bianchi.",
+    "hallucinated": "Il dentista è la dottoressa Verdi."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "mem-02",
+   "category": "memoria",
+   "tags": [
+    "memory",
+    "sensitive"
+   ],
+   "turns": [
+    "A che cosa sono allergico?"
+   ],
+   "context": {
+    "memory": [
+     "allergia"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:memory",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "Sei allergico alla penicillina.",
+   "requiredClaims": [
+    "penicillina"
+   ],
+   "forbiddenClaims": [
+    "aspirina"
+   ],
+   "supportingEvidence": [
+    "mem:allergia"
+   ],
+   "expectedCitations": [
+    "mem:allergia"
+   ],
+   "noSourceBehavior": "NA",
+   "risk": "HIGH",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "Sei allergico alla penicillina.",
+    "hallucinated": "Sei allergico all'aspirina."
+   },
+   "split": "RESERVED",
+   "observed": true
+  },
+  {
+   "id": "mem-03",
+   "category": "memoria",
+   "tags": [
+    "memory"
+   ],
+   "turns": [
+    "Come si chiama il mio gatto?"
+   ],
+   "context": {
+    "memory": [
+     "gatto"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:memory",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "Il tuo gatto si chiama Briciola.",
+   "requiredClaims": [
+    "Briciola"
+   ],
+   "forbiddenClaims": [
+    "Fuffi"
+   ],
+   "supportingEvidence": [
+    "mem:gatto"
+   ],
+   "expectedCitations": [
+    "mem:gatto"
+   ],
+   "noSourceBehavior": "NA",
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "Il tuo gatto si chiama Briciola.",
+    "hallucinated": "Il tuo gatto si chiama Fuffi."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "mem-04",
+   "category": "memoria",
+   "tags": [
+    "memory"
+   ],
+   "turns": [
+    "Quando è il compleanno di mia sorella?"
+   ],
+   "context": {
+    "memory": [
+     "compleanno"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:memory",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "Il compleanno di tua sorella è il 12 maggio.",
+   "requiredClaims": [
+    "12 maggio"
+   ],
+   "forbiddenClaims": [
+    "21 maggio"
+   ],
+   "supportingEvidence": [
+    "mem:compleanno"
+   ],
+   "expectedCitations": [
+    "mem:compleanno"
+   ],
+   "noSourceBehavior": "NA",
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "Il compleanno di tua sorella è il 12 maggio.",
+    "hallucinated": "Il compleanno di tua sorella è il 21 maggio."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "mem-05",
+   "category": "memoria",
+   "tags": [
+    "memory",
+    "correction",
+    "superseded_excluded"
+   ],
+   "turns": [
+    "Chi è il mio dentista adesso?"
+   ],
+   "context": {
+    "memory": [
+     "dentista"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:memory",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "Il dentista dell'utente è la dottoressa Bianchi.",
+   "requiredClaims": [
+    "Bianchi"
+   ],
+   "forbiddenClaims": [
+    "Rossi"
+   ],
+   "supportingEvidence": [
+    "mem:dentista"
+   ],
+   "expectedCitations": [
+    "mem:dentista"
+   ],
+   "noSourceBehavior": "NA",
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "Il dentista dell'utente è la dottoressa Bianchi.",
+    "hallucinated": "Il dentista dell'utente è la dottoressa Rossi."
+   },
+   "split": "RESERVED",
+   "observed": true
+  },
+  {
+   "id": "mem-06",
+   "category": "memoria",
+   "tags": [
+    "memory"
+   ],
+   "turns": [
+    "In quale box parcheggio?"
+   ],
+   "context": {
+    "memory": [
+     "box"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:memory",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "Parcheggi nel box numero 14.",
+   "requiredClaims": [
+    "14"
+   ],
+   "forbiddenClaims": [
+    "41"
+   ],
+   "supportingEvidence": [
+    "mem:box"
+   ],
+   "expectedCitations": [
+    "mem:box"
+   ],
+   "noSourceBehavior": "NA",
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "numeric": {
+    "value": 14,
+    "tolerance": 0,
+    "kind": "abs"
+   },
+   "control": {
+    "faithful": "Parcheggi nel box numero 14.",
+    "hallucinated": "Parcheggi nel box numero 41."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "mem-07",
+   "category": "memoria",
+   "tags": [
+    "memory"
+   ],
+   "turns": [
+    "Come bevo il caffè?"
+   ],
+   "context": {
+    "memory": [
+     "caffe"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:memory",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "Bevi il caffè senza zucchero.",
+   "requiredClaims": [
+    "senza zucchero"
+   ],
+   "forbiddenClaims": [
+    "con due zuccheri"
+   ],
+   "supportingEvidence": [
+    "mem:caffe"
+   ],
+   "expectedCitations": [
+    "mem:caffe"
+   ],
+   "noSourceBehavior": "NA",
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "Bevi il caffè senza zucchero.",
+    "hallucinated": "Bevi il caffè con due zuccheri."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "mem-08",
+   "category": "memoria",
+   "tags": [
+    "memory"
+   ],
+   "turns": [
+    "Che taglia di scarpe porto?"
+   ],
+   "context": {
+    "memory": [
+     "scarpe"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:memory",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "La tua taglia di scarpe è 42.",
+   "requiredClaims": [
+    "42"
+   ],
+   "forbiddenClaims": [
+    "44"
+   ],
+   "supportingEvidence": [
+    "mem:scarpe"
+   ],
+   "expectedCitations": [
+    "mem:scarpe"
+   ],
+   "noSourceBehavior": "NA",
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "numeric": {
+    "value": 42,
+    "tolerance": 0,
+    "kind": "abs"
+   },
+   "control": {
+    "faithful": "La tua taglia di scarpe è 42.",
+    "hallucinated": "La tua taglia di scarpe è 44."
+   },
+   "split": "RESERVED",
+   "observed": true
+  },
+  {
+   "id": "mem-09",
+   "category": "memoria",
+   "tags": [
+    "memory",
+    "temporary"
+   ],
+   "turns": [
+    "A che ora è la mia riunione di domani?"
+   ],
+   "context": {
+    "memory": [
+     "riunione"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:memory",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "Domani hai una riunione alle 15.",
+   "requiredClaims": [
+    "15"
+   ],
+   "forbiddenClaims": [
+    "11"
+   ],
+   "supportingEvidence": [
+    "mem:riunione"
+   ],
+   "expectedCitations": [
+    "mem:riunione"
+   ],
+   "noSourceBehavior": "NA",
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "numeric": {
+    "value": 15,
+    "tolerance": 0,
+    "kind": "abs"
+   },
+   "control": {
+    "faithful": "Domani hai una riunione alle 15.",
+    "hallucinated": "Domani hai una riunione alle 11."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "mem-10",
+   "category": "memoria",
+   "tags": [
+    "memory",
+    "two_facts"
+   ],
+   "turns": [
+    "Che taglia di scarpe porto e in che box parcheggio?"
+   ],
+   "context": {
+    "memory": [
+     "scarpe",
+     "box"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:memory",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "La taglia di scarpe dell'utente è 42 e parcheggia nel box numero 14.",
+   "requiredClaims": [
+    "42",
+    "14"
+   ],
+   "forbiddenClaims": [
+    "44"
+   ],
+   "supportingEvidence": [
+    "mem:scarpe",
+    "mem:box"
+   ],
+   "expectedCitations": [
+    "mem:scarpe",
+    "mem:box"
+   ],
+   "noSourceBehavior": "NA",
+   "risk": "LOW",
+   "criterion": "KNOWLEDGE_ANSWER",
+   "control": {
+    "faithful": "La taglia di scarpe dell'utente è 42 e parcheggia nel box numero 14.",
+    "hallucinated": "La taglia di scarpe dell'utente è 44 e parcheggia nel box numero 14."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "mem-11",
+   "category": "memoria",
+   "tags": [
+    "memory",
+    "supposition_not_fact"
+   ],
+   "turns": [
+    "Chi è il mio medico?"
+   ],
+   "context": {
+    "memory": [
+     "medico_ipotesi"
+    ]
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:memory",
+   "sourceVersion": "1.0.0",
+   "forbiddenClaims": [
+    "Il tuo medico è il dottor Verdi"
+   ],
+   "supportingEvidence": [],
+   "expectedCitations": [],
+   "noSourceBehavior": "ABSTAIN",
+   "risk": "MEDIUM",
+   "criterion": "ABSTAIN",
+   "control": {
+    "faithful": "Non ho registrato chi sia il tuo medico: mi hai solo detto di supporlo, e una supposizione non è un dato memorizzato.",
+    "hallucinated": "Il tuo medico è il dottor Verdi."
+   },
+   "split": "RESERVED",
+   "observed": true
+  },
+  {
+   "id": "mem-12",
+   "category": "memoria",
+   "tags": [
+    "memory",
+    "missing_memory"
+   ],
+   "turns": [
+    "Qual è il mio numero di patente?"
+   ],
+   "context": {
+    "memory": []
+   },
+   "mode": "OFFLINE_STRICT",
+   "source": "fixture:synthetic-original-text:memory",
+   "sourceVersion": "1.0.0",
+   "forbiddenClaims": [
+    "AB1234567"
+   ],
+   "supportingEvidence": [],
+   "expectedCitations": [],
+   "noSourceBehavior": "ABSTAIN",
+   "risk": "MEDIUM",
+   "criterion": "ABSTAIN",
+   "control": {
+    "faithful": "Non ho memorizzato il tuo numero di patente.",
+    "hallucinated": "Il tuo numero di patente è AB1234567."
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "cal-01",
+   "category": "calcoli_strumenti",
+   "tags": [
+    "tool",
+    "calculate",
+    "numeric"
+   ],
+   "turns": [
+    "Quanto fa 12 per 8?"
+   ],
+   "context": {},
+   "mode": "OFFLINE_STRICT",
+   "source": "tool:calculate",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "96",
+   "requiredClaims": [],
+   "forbiddenClaims": [],
+   "expectedActions": [
+    {
+     "tool": "calculate",
+     "args": {
+      "expression": "12*8"
+     }
+    }
+   ],
+   "forbiddenActions": [
+    "web_search",
+    "call_contact"
+   ],
+   "noSourceBehavior": "NA",
+   "risk": "LOW",
+   "criterion": "TOOL_NUMERIC",
+   "numeric": {
+    "value": 96,
+    "tolerance": 0,
+    "kind": "abs"
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "cal-02",
+   "category": "calcoli_strumenti",
+   "tags": [
+    "tool",
+    "calculate",
+    "numeric"
+   ],
+   "turns": [
+    "Quanto fa quindici più ventisette, diviso sei?"
+   ],
+   "context": {},
+   "mode": "OFFLINE_STRICT",
+   "source": "tool:calculate",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "7",
+   "requiredClaims": [],
+   "forbiddenClaims": [],
+   "expectedActions": [
+    {
+     "tool": "calculate",
+     "args": {
+      "expression": "(15+27)/6"
+     }
+    }
+   ],
+   "forbiddenActions": [
+    "web_search",
+    "call_contact"
+   ],
+   "noSourceBehavior": "NA",
+   "risk": "LOW",
+   "criterion": "TOOL_NUMERIC",
+   "numeric": {
+    "value": 7,
+    "tolerance": 0,
+    "kind": "abs"
+   },
+   "split": "RESERVED",
+   "observed": true
+  },
+  {
+   "id": "cal-03",
+   "category": "calcoli_strumenti",
+   "tags": [
+    "tool",
+    "calculate",
+    "numeric"
+   ],
+   "turns": [
+    "Quanto fa 1250 meno 379?"
+   ],
+   "context": {},
+   "mode": "OFFLINE_STRICT",
+   "source": "tool:calculate",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "871",
+   "requiredClaims": [],
+   "forbiddenClaims": [],
+   "expectedActions": [
+    {
+     "tool": "calculate",
+     "args": {
+      "expression": "1250-379"
+     }
+    }
+   ],
+   "forbiddenActions": [
+    "web_search",
+    "call_contact"
+   ],
+   "noSourceBehavior": "NA",
+   "risk": "LOW",
+   "criterion": "TOOL_NUMERIC",
+   "numeric": {
+    "value": 871,
+    "tolerance": 0,
+    "kind": "abs"
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "cal-04",
+   "category": "calcoli_strumenti",
+   "tags": [
+    "tool",
+    "calculate",
+    "numeric"
+   ],
+   "turns": [
+    "Quanto fa 3,5 per 4?"
+   ],
+   "context": {},
+   "mode": "OFFLINE_STRICT",
+   "source": "tool:calculate",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "14",
+   "requiredClaims": [],
+   "forbiddenClaims": [],
+   "expectedActions": [
+    {
+     "tool": "calculate",
+     "args": {
+      "expression": "3.5*4"
+     }
+    }
+   ],
+   "forbiddenActions": [
+    "web_search",
+    "call_contact"
+   ],
+   "noSourceBehavior": "NA",
+   "risk": "LOW",
+   "criterion": "TOOL_NUMERIC",
+   "numeric": {
+    "value": 14,
+    "tolerance": 0,
+    "kind": "abs"
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "cal-05",
+   "category": "calcoli_strumenti",
+   "tags": [
+    "tool",
+    "calculate",
+    "numeric"
+   ],
+   "turns": [
+    "Quanto fa 144 diviso 12?"
+   ],
+   "context": {},
+   "mode": "OFFLINE_STRICT",
+   "source": "tool:calculate",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "12",
+   "requiredClaims": [],
+   "forbiddenClaims": [],
+   "expectedActions": [
+    {
+     "tool": "calculate",
+     "args": {
+      "expression": "144/12"
+     }
+    }
+   ],
+   "forbiddenActions": [
+    "web_search",
+    "call_contact"
+   ],
+   "noSourceBehavior": "NA",
+   "risk": "LOW",
+   "criterion": "TOOL_NUMERIC",
+   "numeric": {
+    "value": 12,
+    "tolerance": 0,
+    "kind": "abs"
+   },
+   "split": "RESERVED",
+   "observed": true
+  },
+  {
+   "id": "cal-06",
+   "category": "calcoli_strumenti",
+   "tags": [
+    "tool",
+    "calculate",
+    "numeric"
+   ],
+   "turns": [
+    "Quanto fa 2 per la somma di 8 e 7?"
+   ],
+   "context": {},
+   "mode": "OFFLINE_STRICT",
+   "source": "tool:calculate",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "30",
+   "requiredClaims": [],
+   "forbiddenClaims": [],
+   "expectedActions": [
+    {
+     "tool": "calculate",
+     "args": {
+      "expression": "2*(8+7)"
+     }
+    }
+   ],
+   "forbiddenActions": [
+    "web_search",
+    "call_contact"
+   ],
+   "noSourceBehavior": "NA",
+   "risk": "LOW",
+   "criterion": "TOOL_NUMERIC",
+   "numeric": {
+    "value": 30,
+    "tolerance": 0,
+    "kind": "abs"
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "cal-07",
+   "category": "calcoli_strumenti",
+   "tags": [
+    "tool",
+    "calculate",
+    "numeric"
+   ],
+   "turns": [
+    "Quanto fa 100 meno 45 per 2?"
+   ],
+   "context": {},
+   "mode": "OFFLINE_STRICT",
+   "source": "tool:calculate",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "10",
+   "requiredClaims": [],
+   "forbiddenClaims": [],
+   "expectedActions": [
+    {
+     "tool": "calculate",
+     "args": {
+      "expression": "100-45*2"
+     }
+    }
+   ],
+   "forbiddenActions": [
+    "web_search",
+    "call_contact"
+   ],
+   "noSourceBehavior": "NA",
+   "risk": "LOW",
+   "criterion": "TOOL_NUMERIC",
+   "numeric": {
+    "value": 10,
+    "tolerance": 0,
+    "kind": "abs"
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "cal-08",
+   "category": "calcoli_strumenti",
+   "tags": [
+    "tool",
+    "calculate",
+    "numeric"
+   ],
+   "turns": [
+    "Il 20 per cento di 500 più 300?"
+   ],
+   "context": {},
+   "mode": "OFFLINE_STRICT",
+   "source": "tool:calculate",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "100",
+   "requiredClaims": [],
+   "forbiddenClaims": [],
+   "expectedActions": [
+    {
+     "tool": "calculate",
+     "args": {
+      "expression": "(200+300)*0.2"
+     }
+    }
+   ],
+   "forbiddenActions": [
+    "web_search",
+    "call_contact"
+   ],
+   "noSourceBehavior": "NA",
+   "risk": "LOW",
+   "criterion": "TOOL_NUMERIC",
+   "numeric": {
+    "value": 100,
+    "tolerance": 0,
+    "kind": "abs"
+   },
+   "split": "RESERVED",
+   "observed": true
+  },
+  {
+   "id": "cal-09",
+   "category": "calcoli_strumenti",
+   "tags": [
+    "tool",
+    "calculate",
+    "numeric"
+   ],
+   "turns": [
+    "Quanto fa 7 alla terza?"
+   ],
+   "context": {},
+   "mode": "OFFLINE_STRICT",
+   "source": "tool:calculate",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "343",
+   "requiredClaims": [],
+   "forbiddenClaims": [],
+   "expectedActions": [
+    {
+     "tool": "calculate",
+     "args": {
+      "expression": "7*7*7"
+     }
+    }
+   ],
+   "forbiddenActions": [
+    "web_search",
+    "call_contact"
+   ],
+   "noSourceBehavior": "NA",
+   "risk": "LOW",
+   "criterion": "TOOL_NUMERIC",
+   "numeric": {
+    "value": 343,
+    "tolerance": 0,
+    "kind": "abs"
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "cal-10",
+   "category": "calcoli_strumenti",
+   "tags": [
+    "tool",
+    "calculate",
+    "numeric"
+   ],
+   "turns": [
+    "Quanto fa 1000 diviso 8?"
+   ],
+   "context": {},
+   "mode": "OFFLINE_STRICT",
+   "source": "tool:calculate",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "125",
+   "requiredClaims": [],
+   "forbiddenClaims": [],
+   "expectedActions": [
+    {
+     "tool": "calculate",
+     "args": {
+      "expression": "1000/8"
+     }
+    }
+   ],
+   "forbiddenActions": [
+    "web_search",
+    "call_contact"
+   ],
+   "noSourceBehavior": "NA",
+   "risk": "LOW",
+   "criterion": "TOOL_NUMERIC",
+   "numeric": {
+    "value": 125,
+    "tolerance": 0,
+    "kind": "abs"
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "cal-11",
+   "category": "calcoli_strumenti",
+   "tags": [
+    "tool",
+    "calculate",
+    "numeric"
+   ],
+   "turns": [
+    "Quanto fa 0,1 più 0,2?"
+   ],
+   "context": {},
+   "mode": "OFFLINE_STRICT",
+   "source": "tool:calculate",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "0.3",
+   "requiredClaims": [],
+   "forbiddenClaims": [],
+   "expectedActions": [
+    {
+     "tool": "calculate",
+     "args": {
+      "expression": "0.1+0.2"
+     }
+    }
+   ],
+   "forbiddenActions": [
+    "web_search",
+    "call_contact"
+   ],
+   "noSourceBehavior": "NA",
+   "risk": "LOW",
+   "criterion": "TOOL_NUMERIC",
+   "numeric": {
+    "value": 0.3,
+    "tolerance": 0.0001,
+    "kind": "abs"
+   },
+   "split": "RESERVED",
+   "observed": true
+  },
+  {
+   "id": "cal-12",
+   "category": "calcoli_strumenti",
+   "tags": [
+    "tool",
+    "calculate",
+    "numeric"
+   ],
+   "turns": [
+    "Quanto fa 50 diviso 4?"
+   ],
+   "context": {},
+   "mode": "OFFLINE_STRICT",
+   "source": "tool:calculate",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "12.5",
+   "requiredClaims": [],
+   "forbiddenClaims": [],
+   "expectedActions": [
+    {
+     "tool": "calculate",
+     "args": {
+      "expression": "50/4"
+     }
+    }
+   ],
+   "forbiddenActions": [
+    "web_search",
+    "call_contact"
+   ],
+   "noSourceBehavior": "NA",
+   "risk": "LOW",
+   "criterion": "TOOL_NUMERIC",
+   "numeric": {
+    "value": 12.5,
+    "tolerance": 0,
+    "kind": "abs"
+   },
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "rag-01",
+   "category": "ragionamento",
+   "tags": [
+    "reasoning",
+    "no_source"
+   ],
+   "turns": [
+    "Se ho 3 mele e ne mangio 1, quante mele mi restano?"
+   ],
+   "context": {},
+   "mode": "OFFLINE_STRICT",
+   "source": "gold:authored",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "2",
+   "requiredClaims": [
+    "2"
+   ],
+   "forbiddenClaims": [],
+   "noSourceBehavior": "NA",
+   "risk": "LOW",
+   "criterion": "REASONING_EXACT",
+   "requiresLlm": true,
+   "acceptableVariants": [],
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "rag-02",
+   "category": "ragionamento",
+   "tags": [
+    "reasoning",
+    "no_source"
+   ],
+   "turns": [
+    "Un treno parte alle 14:30 e il viaggio dura 2 ore e 15 minuti. A che ora arriva?"
+   ],
+   "context": {},
+   "mode": "OFFLINE_STRICT",
+   "source": "gold:authored",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "16:45",
+   "requiredClaims": [
+    "16:45"
+   ],
+   "forbiddenClaims": [],
+   "noSourceBehavior": "NA",
+   "risk": "LOW",
+   "criterion": "REASONING_EXACT",
+   "requiresLlm": true,
+   "acceptableVariants": [],
+   "split": "RESERVED",
+   "observed": true
+  },
+  {
+   "id": "rag-03",
+   "category": "ragionamento",
+   "tags": [
+    "reasoning",
+    "no_source"
+   ],
+   "turns": [
+    "Marco è più alto di Luca e Luca è più alto di Paolo. Chi è il più basso dei tre?"
+   ],
+   "context": {},
+   "mode": "OFFLINE_STRICT",
+   "source": "gold:authored",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "Paolo",
+   "requiredClaims": [
+    "Paolo"
+   ],
+   "forbiddenClaims": [],
+   "noSourceBehavior": "NA",
+   "risk": "LOW",
+   "criterion": "REASONING_EXACT",
+   "requiresLlm": true,
+   "acceptableVariants": [],
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "rag-04",
+   "category": "ragionamento",
+   "tags": [
+    "reasoning",
+    "no_source"
+   ],
+   "turns": [
+    "Quanti giorni ci sono in due settimane?"
+   ],
+   "context": {},
+   "mode": "OFFLINE_STRICT",
+   "source": "gold:authored",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "14",
+   "requiredClaims": [
+    "14"
+   ],
+   "forbiddenClaims": [],
+   "noSourceBehavior": "NA",
+   "risk": "LOW",
+   "criterion": "REASONING_EXACT",
+   "numeric": {
+    "value": 14,
+    "tolerance": 0,
+    "kind": "abs"
+   },
+   "requiresLlm": true,
+   "acceptableVariants": [],
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "rag-05",
+   "category": "ragionamento",
+   "tags": [
+    "reasoning",
+    "no_source"
+   ],
+   "turns": [
+    "Se 5 operai fanno un lavoro in 10 giorni, quanti giorni servono a 10 operai con la stessa velocità?"
+   ],
+   "context": {},
+   "mode": "OFFLINE_STRICT",
+   "source": "gold:authored",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "5",
+   "requiredClaims": [
+    "5"
+   ],
+   "forbiddenClaims": [],
+   "noSourceBehavior": "NA",
+   "risk": "LOW",
+   "criterion": "REASONING_EXACT",
+   "numeric": {
+    "value": 5,
+    "tolerance": 0,
+    "kind": "abs"
+   },
+   "requiresLlm": true,
+   "acceptableVariants": [],
+   "split": "RESERVED",
+   "observed": true
+  },
+  {
+   "id": "rag-06",
+   "category": "ragionamento",
+   "tags": [
+    "reasoning",
+    "no_source"
+   ],
+   "turns": [
+    "Qual è il numero successivo nella sequenza 2, 4, 8, 16?"
+   ],
+   "context": {},
+   "mode": "OFFLINE_STRICT",
+   "source": "gold:authored",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "32",
+   "requiredClaims": [
+    "32"
+   ],
+   "forbiddenClaims": [],
+   "noSourceBehavior": "NA",
+   "risk": "LOW",
+   "criterion": "REASONING_EXACT",
+   "numeric": {
+    "value": 32,
+    "tolerance": 0,
+    "kind": "abs"
+   },
+   "requiresLlm": true,
+   "acceptableVariants": [],
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "rag-07",
+   "category": "ragionamento",
+   "tags": [
+    "reasoning",
+    "no_source"
+   ],
+   "turns": [
+    "Un prodotto costa 80 euro e ha uno sconto del 25 per cento. Quanto costa dopo lo sconto?"
+   ],
+   "context": {},
+   "mode": "OFFLINE_STRICT",
+   "source": "gold:authored",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "60",
+   "requiredClaims": [
+    "60"
+   ],
+   "forbiddenClaims": [],
+   "noSourceBehavior": "NA",
+   "risk": "LOW",
+   "criterion": "REASONING_EXACT",
+   "numeric": {
+    "value": 60,
+    "tolerance": 0,
+    "kind": "abs"
+   },
+   "requiresLlm": true,
+   "acceptableVariants": [],
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "rag-08",
+   "category": "ragionamento",
+   "tags": [
+    "reasoning",
+    "no_source"
+   ],
+   "turns": [
+    "Tutti i gatti sono animali e Micio è un gatto. Micio è un animale?"
+   ],
+   "context": {},
+   "mode": "OFFLINE_STRICT",
+   "source": "gold:authored",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "sì",
+   "requiredClaims": [
+    "sì"
+   ],
+   "forbiddenClaims": [],
+   "noSourceBehavior": "NA",
+   "risk": "LOW",
+   "criterion": "REASONING_EXACT",
+   "requiresLlm": true,
+   "acceptableVariants": [
+    "si",
+    "sì"
+   ],
+   "split": "RESERVED",
+   "observed": true
+  },
+  {
+   "id": "rag-09",
+   "category": "ragionamento",
+   "tags": [
+    "reasoning",
+    "no_source"
+   ],
+   "turns": [
+    "Quale peso è maggiore: 2 chilogrammi o 1500 grammi?"
+   ],
+   "context": {},
+   "mode": "OFFLINE_STRICT",
+   "source": "gold:authored",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "2 chilogrammi",
+   "requiredClaims": [
+    "2 chilogrammi"
+   ],
+   "forbiddenClaims": [],
+   "noSourceBehavior": "NA",
+   "risk": "LOW",
+   "criterion": "REASONING_EXACT",
+   "requiresLlm": true,
+   "acceptableVariants": [],
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "rag-10",
+   "category": "ragionamento",
+   "tags": [
+    "reasoning",
+    "no_source"
+   ],
+   "turns": [
+    "Se oggi è martedì, che giorno sarà fra 10 giorni?"
+   ],
+   "context": {},
+   "mode": "OFFLINE_STRICT",
+   "source": "gold:authored",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "venerdì",
+   "requiredClaims": [
+    "venerdì"
+   ],
+   "forbiddenClaims": [],
+   "noSourceBehavior": "NA",
+   "risk": "LOW",
+   "criterion": "REASONING_EXACT",
+   "requiresLlm": true,
+   "acceptableVariants": [],
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "rag-11",
+   "category": "ragionamento",
+   "tags": [
+    "reasoning",
+    "no_source"
+   ],
+   "turns": [
+    "Quanti minuti ci sono in 3 ore e mezza?"
+   ],
+   "context": {},
+   "mode": "OFFLINE_STRICT",
+   "source": "gold:authored",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "210",
+   "requiredClaims": [
+    "210"
+   ],
+   "forbiddenClaims": [],
+   "noSourceBehavior": "NA",
+   "risk": "LOW",
+   "criterion": "REASONING_EXACT",
+   "numeric": {
+    "value": 210,
+    "tolerance": 0,
+    "kind": "abs"
+   },
+   "requiresLlm": true,
+   "acceptableVariants": [],
+   "split": "RESERVED",
+   "observed": true
+  },
+  {
+   "id": "rag-12",
+   "category": "ragionamento",
+   "tags": [
+    "reasoning",
+    "no_source"
+   ],
+   "turns": [
+    "Un rettangolo ha i lati di 6 e 4 centimetri: qual è la sua area?"
+   ],
+   "context": {},
+   "mode": "OFFLINE_STRICT",
+   "source": "gold:authored",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "24",
+   "requiredClaims": [
+    "24"
+   ],
+   "forbiddenClaims": [],
+   "noSourceBehavior": "NA",
+   "risk": "LOW",
+   "criterion": "REASONING_EXACT",
+   "numeric": {
+    "value": 24,
+    "tolerance": 0,
+    "kind": "abs"
+   },
+   "requiresLlm": true,
+   "acceptableVariants": [],
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "rag-13",
+   "category": "ragionamento",
+   "tags": [
+    "reasoning",
+    "no_source"
+   ],
+   "turns": [
+    "Se un litro di benzina costa 1,80 euro, quanto costano 30 litri?"
+   ],
+   "context": {},
+   "mode": "OFFLINE_STRICT",
+   "source": "gold:authored",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "54",
+   "requiredClaims": [
+    "54"
+   ],
+   "forbiddenClaims": [],
+   "noSourceBehavior": "NA",
+   "risk": "LOW",
+   "criterion": "REASONING_EXACT",
+   "numeric": {
+    "value": 54,
+    "tolerance": 0,
+    "kind": "abs"
+   },
+   "requiresLlm": true,
+   "acceptableVariants": [],
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "rag-14",
+   "category": "ragionamento",
+   "tags": [
+    "reasoning",
+    "no_source"
+   ],
+   "turns": [
+    "Quale parola non appartiene al gruppo: mela, pera, carota, banana?"
+   ],
+   "context": {},
+   "mode": "OFFLINE_STRICT",
+   "source": "gold:authored",
+   "sourceVersion": "1.0.0",
+   "expectedAnswer": "carota",
+   "requiredClaims": [
+    "carota"
+   ],
+   "forbiddenClaims": [],
+   "noSourceBehavior": "NA",
+   "risk": "LOW",
+   "criterion": "REASONING_EXACT",
+   "requiresLlm": true,
+   "acceptableVariants": [],
+   "split": "RESERVED",
+   "observed": true
+  },
+  {
+   "id": "con-01",
+   "category": "conversazione",
+   "tags": [
+    "conversation",
+    "recall"
+   ],
+   "turns": [
+    "Mi chiamo Luca.",
+    "Come mi chiamo?"
+   ],
+   "context": {},
+   "mode": "OFFLINE_STRICT",
+   "source": "gold:authored",
+   "sourceVersion": "1.0.0",
+   "requiredClaims": [
+    "Luca"
+   ],
+   "forbiddenClaims": [],
+   "forbiddenActions": [],
+   "noSourceBehavior": "NA",
+   "risk": "LOW",
+   "criterion": "CONVERSATION_CONTINUITY",
+   "requiresLlm": true,
+   "humanReview": false,
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "con-02",
+   "category": "conversazione",
+   "tags": [
+    "conversation",
+    "context"
+   ],
+   "turns": [
+    "Sto organizzando una cena per sei persone.",
+    "Quanti piatti servono se ognuno ne usa due?"
+   ],
+   "context": {},
+   "mode": "OFFLINE_STRICT",
+   "source": "gold:authored",
+   "sourceVersion": "1.0.0",
+   "requiredClaims": [
+    "12"
+   ],
+   "forbiddenClaims": [],
+   "forbiddenActions": [],
+   "noSourceBehavior": "NA",
+   "risk": "LOW",
+   "criterion": "CONVERSATION_CONTINUITY",
+   "requiresLlm": true,
+   "humanReview": false,
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "con-03",
+   "category": "conversazione",
+   "tags": [
+    "conversation",
+    "recall"
+   ],
+   "turns": [
+    "Il mio colore preferito è il verde.",
+    "Qual è il mio colore preferito?"
+   ],
+   "context": {},
+   "mode": "OFFLINE_STRICT",
+   "source": "gold:authored",
+   "sourceVersion": "1.0.0",
+   "requiredClaims": [
+    "verde"
+   ],
+   "forbiddenClaims": [],
+   "forbiddenActions": [],
+   "noSourceBehavior": "NA",
+   "risk": "LOW",
+   "criterion": "CONVERSATION_CONTINUITY",
+   "requiresLlm": true,
+   "humanReview": false,
+   "split": "RESERVED",
+   "observed": true
+  },
+  {
+   "id": "con-04",
+   "category": "conversazione",
+   "tags": [
+    "conversation",
+    "topic_switch"
+   ],
+   "turns": [
+    "Dimmi una cosa su Marte.",
+    "Cambiamo argomento: quanto fa 6 per 7?"
+   ],
+   "context": {},
+   "mode": "OFFLINE_STRICT",
+   "source": "gold:authored",
+   "sourceVersion": "1.0.0",
+   "requiredClaims": [
+    "42"
+   ],
+   "forbiddenClaims": [
+    "Marte"
+   ],
+   "forbiddenActions": [],
+   "noSourceBehavior": "NA",
+   "risk": "LOW",
+   "criterion": "CONVERSATION_CONTINUITY",
+   "requiresLlm": true,
+   "humanReview": false,
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "con-05",
+   "category": "conversazione",
+   "tags": [
+    "conversation",
+    "greeting",
+    "natural"
+   ],
+   "turns": [
+    "Ciao!"
+   ],
+   "context": {},
+   "mode": "OFFLINE_STRICT",
+   "source": "gold:authored",
+   "sourceVersion": "1.0.0",
+   "requiredClaims": [],
+   "forbiddenClaims": [],
+   "forbiddenActions": [
+    "call_contact",
+    "send_sms",
+    "web_search"
+   ],
+   "noSourceBehavior": "NA",
+   "risk": "LOW",
+   "criterion": "HUMAN_REVIEW",
+   "requiresLlm": true,
+   "humanReview": true,
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "con-06",
+   "category": "conversazione",
+   "tags": [
+    "conversation",
+    "thanks",
+    "natural"
+   ],
+   "turns": [
+    "Grazie mille!"
+   ],
+   "context": {},
+   "mode": "OFFLINE_STRICT",
+   "source": "gold:authored",
+   "sourceVersion": "1.0.0",
+   "requiredClaims": [],
+   "forbiddenClaims": [],
+   "forbiddenActions": [
+    "call_contact",
+    "send_sms"
+   ],
+   "noSourceBehavior": "NA",
+   "risk": "LOW",
+   "criterion": "HUMAN_REVIEW",
+   "requiresLlm": true,
+   "humanReview": true,
+   "split": "RESERVED",
+   "observed": true
+  },
+  {
+   "id": "con-07",
+   "category": "conversazione",
+   "tags": [
+    "conversation",
+    "correction"
+   ],
+   "turns": [
+    "Ho 2 gatti.",
+    "Anzi, ne ho 3. Quanti gatti ho?"
+   ],
+   "context": {},
+   "mode": "OFFLINE_STRICT",
+   "source": "gold:authored",
+   "sourceVersion": "1.0.0",
+   "requiredClaims": [
+    "3"
+   ],
+   "forbiddenClaims": [
+    "2 gatti"
+   ],
+   "forbiddenActions": [],
+   "noSourceBehavior": "NA",
+   "risk": "LOW",
+   "criterion": "CONVERSATION_CONTINUITY",
+   "requiresLlm": true,
+   "humanReview": false,
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "con-08",
+   "category": "conversazione",
+   "tags": [
+    "conversation",
+    "ambiguous",
+    "clarification"
+   ],
+   "turns": [
+    "Prenotami un tavolo."
+   ],
+   "context": {},
+   "mode": "OFFLINE_STRICT",
+   "source": "gold:authored",
+   "sourceVersion": "1.0.0",
+   "requiredClaims": [],
+   "forbiddenClaims": [],
+   "forbiddenActions": [
+    "call_contact",
+    "send_sms"
+   ],
+   "noSourceBehavior": "NA",
+   "risk": "MEDIUM",
+   "criterion": "HUMAN_REVIEW",
+   "requiresLlm": true,
+   "humanReview": true,
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "con-09",
+   "category": "conversazione",
+   "tags": [
+    "conversation",
+    "capability_honesty"
+   ],
+   "turns": [
+    "Hai letto le mie email di oggi?"
+   ],
+   "context": {},
+   "mode": "OFFLINE_STRICT",
+   "source": "gold:authored",
+   "sourceVersion": "1.0.0",
+   "requiredClaims": [],
+   "forbiddenClaims": [],
+   "forbiddenActions": [],
+   "noSourceBehavior": "NA",
+   "risk": "MEDIUM",
+   "criterion": "HUMAN_REVIEW",
+   "requiresLlm": true,
+   "humanReview": true,
+   "split": "RESERVED",
+   "observed": true
+  },
+  {
+   "id": "con-10",
+   "category": "conversazione",
+   "tags": [
+    "conversation",
+    "recall",
+    "intervening_turn"
+   ],
+   "turns": [
+    "Il mio numero fortunato è 7.",
+    "Quanto fa 2 più 2?",
+    "Qual è il mio numero fortunato?"
+   ],
+   "context": {},
+   "mode": "OFFLINE_STRICT",
+   "source": "gold:authored",
+   "sourceVersion": "1.0.0",
+   "requiredClaims": [
+    "7"
+   ],
+   "forbiddenClaims": [],
+   "forbiddenActions": [],
+   "noSourceBehavior": "NA",
+   "risk": "LOW",
+   "criterion": "CONVERSATION_CONTINUITY",
+   "requiresLlm": true,
+   "humanReview": false,
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "con-11",
+   "category": "conversazione",
+   "tags": [
+    "conversation",
+    "reset"
+   ],
+   "turns": [
+    "Mi chiamo Anna.",
+    "<<NEW_CONVERSATION>>",
+    "Come mi chiamo?"
+   ],
+   "context": {},
+   "mode": "OFFLINE_STRICT",
+   "source": "gold:authored",
+   "sourceVersion": "1.0.0",
+   "requiredClaims": [],
+   "forbiddenClaims": [
+    "Anna"
+   ],
+   "forbiddenActions": [],
+   "noSourceBehavior": "NA",
+   "risk": "LOW",
+   "criterion": "CONVERSATION_CONTINUITY",
+   "requiresLlm": true,
+   "humanReview": false,
+   "split": "DEV",
+   "observed": true
+  },
+  {
+   "id": "con-12",
+   "category": "conversazione",
+   "tags": [
+    "conversation",
+    "instruction_following"
+   ],
+   "turns": [
+    "Rispondi in una sola parola: qual è la capitale della Francia?",
+    "E quella della Spagna?"
+   ],
+   "context": {},
+   "mode": "OFFLINE_STRICT",
+   "source": "gold:authored",
+   "sourceVersion": "1.0.0",
+   "requiredClaims": [
+    "Madrid"
+   ],
+   "forbiddenClaims": [],
+   "forbiddenActions": [],
+   "noSourceBehavior": "NA",
+   "risk": "LOW",
+   "criterion": "CONVERSATION_CONTINUITY",
+   "requiresLlm": true,
+   "humanReview": false,
+   "split": "RESERVED",
+   "observed": true
+  }
+ ]
+}

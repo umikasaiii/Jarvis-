@@ -16,4 +16,6 @@ interface OfflineEntryPoint {
     fun settings(): SettingsRepository
     fun profiles(): ModelProfileStore
     fun aiRouter(): AiRouter
+    fun modelLoader(): com.simone.jarvismobile.llm.ModelLoader
+    fun llmRouter(): com.simone.jarvismobile.llm.LlmRouter
 }
