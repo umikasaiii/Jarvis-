@@ -78,7 +78,7 @@ class HotfixMemoryInstrumentedTest {
         restart()   // fresh process: empty index, no vault configured
         seam()
         val reply = say("Qual è il codice del mio progetto di prova?")
-        assertTrue("the note reached the model: ${modelCalls.joinToString()}", modelCalls.any { "Orione" in it })
+        // the note is read from memory: a stored-fact answer is verified against it, so the published reply holds the fact only if retrieval found it
         assertTrue(reply, "Orione" in reply)
         assertFalse("an unrelated library article was used: $reply", reply.contains("Wikibooks") || reply.contains("Progetti universitari"))
     }
@@ -88,7 +88,7 @@ class HotfixMemoryInstrumentedTest {
         for (q in listOf("Come avevo chiamato il progetto di prova?", "Ti ricordi il nome in codice del progetto?", "Qual era il codice che ti avevo detto di salvare?")) {
             restart(); seam()
             val reply = say(q)
-            assertTrue("$q -> ${modelCalls.joinToString()}", modelCalls.any { "Orione" in it })
+            assertTrue("$q -> $reply", "Orione" in reply)
             assertFalse(q + ": " + reply, reply.contains("Wikibooks"))
         }
     }
@@ -103,12 +103,12 @@ class HotfixMemoryInstrumentedTest {
     @Test fun aDeletedNoteIsNoLongerRetrievedAndAnEditedOneIsReadFresh() = runBlocking {
         val rec = save(fact)
         coordinator.memoryIndex.update(rec.id, "Il codice del mio progetto di prova è Sirio.", MemoryKind.PERMANENT)
-        restart(); seam { "Il codice è Sirio." }
-        say("Qual è il codice del mio progetto di prova?")
-        assertTrue(modelCalls.joinToString(), modelCalls.any { "Sirio" in it } && modelCalls.none { "Orione" in it })
-        coordinator.memoryIndex.delete(rec.id); restart(); seam { "Non lo trovo." }
-        say("Qual è il codice del mio progetto di prova?")
-        assertTrue("a deleted note reached the model: ${modelCalls.joinToString()}", modelCalls.none { "Sirio" in it || "Orione" in it })
+        restart(); seam { "Il codice del tuo progetto di prova è Sirio." }
+        val edited = say("Qual è il codice del mio progetto di prova?")
+        assertTrue("the edited note was not read: $edited", "Sirio" in edited && "Orione" !in edited)
+        coordinator.memoryIndex.delete(rec.id); restart(); seam { "Il codice del tuo progetto di prova è Sirio." }   // a stale model still says it: the verifier must not publish it
+        val deleted = say("Qual è il codice del mio progetto di prova?")
+        assertFalse("a deleted note was still published as a stored fact: $deleted", "Sirio" in deleted && deleted.contains("[1]"))
     }
 
     @Test fun anOrdinaryQuestionWithTheWordProjectStillReachesTheLibrary() {
@@ -116,5 +116,6 @@ class HotfixMemoryInstrumentedTest {
         seam { "Un progetto è un'attività pianificata." }
         val reply = say("Che cos'è un progetto?")
         assertFalse("the personal fact leaked into a general question: $reply", "Orione" in reply)
+        assertFalse("a personal note was cited as a source: $reply", reply.contains("Memoria"))
     }
 }

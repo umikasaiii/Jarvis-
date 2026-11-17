@@ -1646,7 +1646,8 @@ class SessionCoordinator @Inject constructor(
         // the verifier reads the same items (text left out here can never support the answer).
         val pkgFull = EvidencePackage.of(knowledgeCtx?.raws.orEmpty(), KNOWLEDGE_CHARS)
             .plus(com.simone.jarvismobile.core.document.GroundedPrompt.packageFor(docBlocks))
-            .plus(EvidencePackage.of(notes.mapIndexed { i, n -> EvidencePackage.Companion.Raw("Memoria", "", n, "n$i", EvidenceKind.MEMORY) }, 600))
+            // a personal note is evidence (citable, quotable) only for a question about the user; for any other question it stays private context for the model
+            .plus(EvidencePackage.of(if (StoredFactQuestion.isAboutUser(transcript)) notes.mapIndexed { i, n -> EvidencePackage.Companion.Raw("Memoria", "", n, "n$i", EvidenceKind.MEMORY) } else emptyList(), 600))
             .plus(ToolReceipts.toPackage(receipts, COMPOUND_CONTEXT_CHARS))
         // M1 — the evidence is fitted to what is LEFT of the window after everything else that is really sent (system, history, the
         // question, the prompt framing, a reserve for one revision note). Whole items are dropped, least useful first, and the prompt says

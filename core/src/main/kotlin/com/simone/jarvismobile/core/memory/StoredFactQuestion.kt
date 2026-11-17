@@ -53,4 +53,17 @@ object StoredFactQuestion {
         val q = question.lowercase().replace('’', '\'').trim()
         return hasLexicalMemoryHit || PERSONAL_MARKER.containsMatchIn(q)
     }
+
+    private val ABOUT_USER = PortableRegex.of("""(?U)\b(di\s+me|mi\s+chiamo|miei|mie|mio|mia|preferit\w*|sai\s+di\s+me|ricordi|ricorda\w*|ti\s+(ho|avevo)\s+(detto|dato|scritto))\b""")
+
+    /**
+     * Whether the question is about the user (their own things or what they told JARVIS). Only then may a saved memory note be offered as EVIDENCE for the published answer
+     * (cited / quoted). For any other question a note that merely shares a word ("progetto") may still help the model as private context, but it is never shown as a source:
+     * quoting a personal note under "Dalle fonti" in reply to "Che cos'è un progetto?" would disclose it without being asked.
+     */
+    fun isAboutUser(question: String): Boolean {
+        if (matches(question)) return true
+        val q = question.lowercase().replace('’', '\'').trim()
+        return ABOUT_USER.containsMatchIn(q)
+    }
 }

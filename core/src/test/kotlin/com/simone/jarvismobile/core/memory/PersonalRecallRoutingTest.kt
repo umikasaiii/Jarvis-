@@ -42,4 +42,10 @@ class PersonalRecallRoutingTest {
         }
         assertTrue(ranker.rank("Qual è il codice del mio progetto di prova?", noise, 3).none { "Orione" in it.chunk.text }, "a deleted note is not retrieved")
     }
+
+    @Test fun aSavedNoteIsEvidenceOnlyForQuestionsAboutTheUser() {
+        equivalent.forEach { assertTrue(StoredFactQuestion.isAboutUser(it), it) }
+        listOf("Come mi chiamo?", "Cosa sai di me?", "Qual è il mio colore preferito?").forEach { assertTrue(StoredFactQuestion.isAboutUser(it), it) }
+        listOf("Che cos'è un progetto?", "Qual è la capitale del Portogallo?", "Spiegami cos'è una variabile in Python").forEach { assertFalse(StoredFactQuestion.isAboutUser(it), it) }
+    }
 }
